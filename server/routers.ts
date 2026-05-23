@@ -288,7 +288,11 @@ const budgetRouter = router({
       await updateTransactionCategory(ctx.user.id, input.transactionId, input.newCategory);
 
       if (input.saveAsRule && input.keyword) {
-        await upsertCategoryRule(ctx.user.id, input.keyword, input.newCategory, input.isExact);
+        try {
+          await upsertCategoryRule(ctx.user.id, input.keyword, input.newCategory, input.isExact);
+        } catch (e) {
+          console.warn("[updateCategory] Rule upsert failed:", e);
+        }
       }
 
       // If new category is savings/investment, remove from excluded_transactions

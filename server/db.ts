@@ -616,8 +616,8 @@ export async function upsertCategoryRule(
 
   await db.execute(
     sql`INSERT INTO category_rules ("userId", keyword, category, "isExact", "ruleType")
-        VALUES (${userId}, ${keyword}, ${category}, ${isExact}, ${ruleType})
-        ON CONFLICT ("userId", keyword) DO UPDATE SET category = ${category}, "isExact" = ${isExact}, "ruleType" = ${ruleType}, "updatedAt" = NOW()`
+        VALUES (${userId}, ${keyword}, ${category}, ${isExact ? 1 : 0}, ${ruleType})
+        ON CONFLICT ("userId", keyword) DO UPDATE SET category = ${category}, "isExact" = ${isExact ? 1 : 0}, "ruleType" = ${ruleType}, "updatedAt" = NOW()`
   );
 
   // 기존 거래에 즉시 반영 (customCategory가 없는 항목만)
