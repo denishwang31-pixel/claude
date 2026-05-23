@@ -181,10 +181,11 @@ const budgetRouter = router({
       z.object({
         includeTransfer: z.boolean().default(false),
         excludedCategories: z.array(z.string()).default([]),
+        yearMonth: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      return getCategoryStats(ctx.user.id, input.includeTransfer, input.excludedCategories, []);
+      return getCategoryStats(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.yearMonth);
     }),
 
   // ── 피벗 데이터 ──────────────────────────────────────────────
@@ -234,6 +235,7 @@ const budgetRouter = router({
         category: z.string(),
         page: z.number().int().positive().default(1),
         pageSize: z.number().int().positive().max(200).default(50),
+        yearMonth: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -241,7 +243,8 @@ const budgetRouter = router({
         ctx.user.id,
         input.category,
         input.page,
-        input.pageSize
+        input.pageSize,
+        input.yearMonth
       );
     }),
 

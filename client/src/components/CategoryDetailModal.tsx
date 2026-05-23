@@ -1,24 +1,26 @@
 import React, { useState } from "react";
 import { trpc } from "../lib/trpc";
-import { formatKRW, formatDate } from "../lib/format";
+import { formatKRW, formatDate, formatYearMonth } from "../lib/format";
 import { CategoryDropdown } from "./CategoryDropdown";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 
 interface Props {
   category: string;
+  yearMonth?: string;
   onClose: () => void;
 }
 
 const PAGE_SIZE = 30;
 
-export function CategoryDetailModal({ category, onClose }: Props) {
+export function CategoryDetailModal({ category, yearMonth, onClose }: Props) {
   const [page, setPage] = useState(1);
 
   const { data, isLoading, refetch } = trpc.budget.getCategoryTransactions.useQuery({
     category,
     page,
     pageSize: PAGE_SIZE,
+    yearMonth,
   });
 
   const toggleMutation = trpc.budget.toggleExcluded.useMutation({
@@ -37,9 +39,14 @@ export function CategoryDetailModal({ category, onClose }: Props) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-cream-200">
           <h2 className="font-serif text-xl font-semibold text-cream-800">
             {category}
+            {yearMonth && (
+              <span className="text-sm font-sans font-normal text-cream-500 ml-2">
+                · {formatYearMonth(yearMonth)}
+              </span>
+            )}
             {data && (
               <span className="text-sm font-sans font-normal text-cream-500 ml-2">
-                {data.total}건 · {formatKRW(data.rows.reduce((s: number, r: any) => s + Math.abs(r.amount), 0))}
+                · {data.total}건 · {formatKRW(data.rows.reduce((s: number, r: any) => s + Math.abs(Number(r.amount)), 0))}
               </span>
             )}
           </h2>
