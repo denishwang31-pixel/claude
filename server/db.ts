@@ -15,11 +15,23 @@ const DB_URL = process.env.DATABASE_URL ?? "postgres://budget:budget123@localhos
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
+  const steps = [
+    `ALTER TABLE category_rules ADD COLUMN IF NOT EXISTS "ruleType" varchar(20) NOT NULL DEFAULT 'expense'`,
+    `ALTER TABLE category_rules ADD COLUMN IF NOT EXISTS "isActive" integer NOT NULL DEFAULT 1`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "category_rules_userId_keyword_idx" ON category_rules ("userId", keyword)`,
+  ];
+  for (const step of steps) {
+    try { await db.execute(sql.raw(step)); } catch {}
+  }
+}
+
 export async function getDb() {
   if (!_db) {
     try {
       const client = postgres(DB_URL);
       _db = drizzle(client);
+      await runAutoMigrations(_db);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -705,6 +717,46 @@ export async function seedDefaultRules(userId: number): Promise<number> {
     } catch {
       // skip on error
     }
+  }
+  return inserted;
+}
+
+export async function generateRulesFromTransactions(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const SAVINGS_KEYWORDS = ["청약", "적금", "저축", "예금", "CMA"];
+  const INVEST_KEYWORDS = ["ETF", "주식", "펀드", "ISA", "IRP", "투자"];
+
+  const rows = await db.execute(sql.raw(
+    `SELECT t.content, COALESCE(t."customCategory", t.category) as category, t."txType", COUNT(*) as cnt
+     FROM transactions t
+     WHERE t."userId" = ${userId}
+       AND t.content IS NOT NULL AND t.content != '' AND t.content != '-'
+     GROUP BY t.content, COALESCE(t."customCategory", t.category), t."txType"
+     ORDER BY cnt DESC`
+  ));
+
+  let inserted = 0;
+  for (const r of rows as any[]) {
+    const keyword = String(r.content).trim();
+    const category = String(r.category).trim();
+    const txType = String(r.txType);
+    if (!keyword || !category || keyword.length > 255) continue;
+
+    let ruleType = "expense";
+    if (txType === "수입") ruleType = "income";
+    else if (SAVINGS_KEYWORDS.some((k) => category.includes(k))) ruleType = "savings";
+    else if (INVEST_KEYWORDS.some((k) => category.includes(k))) ruleType = "investment";
+
+    try {
+      await db.execute(
+        sql`INSERT INTO category_rules ("userId", keyword, category, "isExact", "ruleType", "isActive")
+            VALUES (${userId}, ${keyword}, ${category}, 1, ${ruleType}, 1)
+            ON CONFLICT ("userId", keyword) DO NOTHING`
+      );
+      inserted++;
+    } catch { /* skip */ }
   }
   return inserted;
 }

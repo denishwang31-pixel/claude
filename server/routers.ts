@@ -19,6 +19,7 @@ import {
   updateCategoryRuleActive,
   seedDefaultRules,
   getIncomeDistribution,
+  generateRulesFromTransactions,
   applyMappingRulesToNewTransactions,
   getExistingHashes,
   insertTransactions,
@@ -358,6 +359,12 @@ const budgetRouter = router({
   seedDefaultRules: protectedProcedure
     .mutation(async ({ ctx }) => {
       const count = await seedDefaultRules(ctx.user.id);
+      return { count };
+    }),
+
+  generateRulesFromTransactions: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const count = await generateRulesFromTransactions(ctx.user.id);
       return { count };
     }),
 

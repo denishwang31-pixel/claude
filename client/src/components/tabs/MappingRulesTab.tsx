@@ -16,7 +16,7 @@ interface Rule {
 
 const EXPENSE_CATS = [
   "식비", "카페", "교통", "쇼핑", "의료", "문화", "교육", "여행",
-  "구독", "통신", "주거", "금융", "기타",
+  "구독", "통신", "주거", "금융", "생활", "편의점", "마트", "기타",
 ];
 const INCOME_CATS = ["급여", "상여금", "이자수입", "부업수입", "기타수입"];
 const SAVINGS_CATS_LIST = ["청약", "적금", "저축", "예금", "CMA"];
@@ -173,6 +173,16 @@ export function MappingRulesTab() {
     onError: () => toast.error("기본 규칙 추가에 실패했습니다."),
   });
 
+  const generateMutation = trpc.budget.generateRulesFromTransactions.useMutation({
+    onSuccess: (res) => {
+      utils.budget.getCategoryRules.invalidate();
+      utils.budget.getCategoryStats.invalidate();
+      utils.budget.getIncomeDistribution.invalidate();
+      toast.success(`거래내역에서 규칙 ${res.count}개를 생성했습니다.`);
+    },
+    onError: () => toast.error("규칙 자동 생성에 실패했습니다."),
+  });
+
   const typedRules = (rules ?? []) as Rule[];
   const filtered = search
     ? typedRules.filter((r) => r.keyword.toLowerCase().includes(search.toLowerCase()) || r.category.toLowerCase().includes(search.toLowerCase()))
@@ -196,6 +206,9 @@ export function MappingRulesTab() {
         <div className="flex items-center gap-2">
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="키워드/카테고리 검색..."
             className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500 w-44" />
+          <Button variant="ghost" size="sm" onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending} className="whitespace-nowrap text-xs text-blue-600 hover:text-blue-700">
+            {generateMutation.isPending ? "생성 중..." : "거래내역에서 자동 생성"}
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending} className="whitespace-nowrap text-xs">
             {seedMutation.isPending ? "추가 중..." : "기본 규칙 불러오기"}
           </Button>
