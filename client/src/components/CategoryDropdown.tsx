@@ -30,11 +30,13 @@ export function CategoryDropdown({
     onSuccess: () => {
       utils.budget.getCategoryStats.invalidate();
       utils.budget.getCategoryTransactions.invalidate();
+      utils.budget.getMonthlyStats.invalidate();
       utils.budget.getKpiSummary.invalidate();
       utils.budget.getPivotData.invalidate();
       utils.budget.getSavingsStats.invalidate();
       utils.budget.getTransactions.invalidate();
       utils.budget.getCategoryRules.invalidate();
+      utils.budget.getIncomeDistribution.invalidate();
       onChanged?.();
       toast.success("카테고리가 변경되었습니다.");
     },

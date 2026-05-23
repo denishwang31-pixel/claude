@@ -32,7 +32,15 @@ export function TransactionsTab() {
   const { data, isLoading } = trpc.budget.getTransactions.useQuery({ page, pageSize: PAGE_SIZE, filter });
 
   const toggleMutation = trpc.budget.toggleExcluded.useMutation({
-    onSuccess: () => utils.budget.getTransactions.invalidate(),
+    onSuccess: () => {
+      utils.budget.getTransactions.invalidate();
+      utils.budget.getCategoryStats.invalidate();
+      utils.budget.getMonthlyStats.invalidate();
+      utils.budget.getPivotData.invalidate();
+      utils.budget.getKpiSummary.invalidate();
+      utils.budget.getSavingsStats.invalidate();
+      utils.budget.getIncomeDistribution.invalidate();
+    },
   });
 
   const exportQuery = trpc.budget.getAllTransactionsForExport.useQuery(undefined, { enabled: false });
