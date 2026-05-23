@@ -178,7 +178,7 @@ export async function setExcludedTransactions(
 
 // ── 필터 상수 ──────────────────────────────────────────────────
 
-export const SAVINGS_CATS = ["저축", "투자"];
+export const SAVINGS_CATS = ["저축", "투자", "청약", "적금", "예금", "CMA", "ETF", "주식", "펀드", "ISA", "IRP"];
 export const TRANSFER_TX_TYPES = ["이체"];
 export const TRANSFER_CATS = ["내계좌이체", "이체", "카드대금"];
 export const TRANSFER_PAYMENT_KEYWORDS = ["통장", "예금", "저축", "청약"];
@@ -233,13 +233,15 @@ export async function getMonthlyStats(
   const db = await getDb();
   if (!db) return [];
 
+  const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
+
   const catExclude = [
     ...(includeTransfer ? [] : TRANSFER_CATS),
     ...extraExcluded,
   ].filter((c) => !SAVINGS_CATS.includes(c));
 
   const catExcludeSQL = catExclude.length > 0
-    ? `AND t.category NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
+    ? `AND (${effectiveCatExpr}) NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
     : "";
 
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
@@ -293,9 +295,10 @@ export async function getCategoryStats(
   ].filter((c) => !SAVINGS_CATS.includes(c));
 
   const catExcludeSQL = catExclude.length > 0
-    ? `AND t.category NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
+    ? `AND (${effectiveCatExpr}) NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
     : "";
 
+  const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
   const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
 
@@ -313,7 +316,7 @@ export async function getCategoryStats(
             ${notExcludedSQL}
            )
            OR
-           (COALESCE(t."customCategory", t.category) IN ('저축', '투자')
+           ((${effectiveCatExpr}) IN (${savingsCatsSQL})
             ${notExcludedSQL}
            )
          )
@@ -343,9 +346,10 @@ export async function getPivotData(
   ].filter((c) => !SAVINGS_CATS.includes(c));
 
   const catExcludeSQL = catExclude.length > 0
-    ? `AND t.category NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
+    ? `AND (${effectiveCatExpr}) NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
     : "";
 
+  const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const rows = await db.execute(sql.raw(
@@ -362,7 +366,7 @@ export async function getPivotData(
             ${notExcludedSQL}
            )
            OR
-           (COALESCE(t."customCategory", t.category) IN ('저축', '투자')
+           ((${effectiveCatExpr}) IN (${savingsCatsSQL})
             ${notExcludedSQL}
            )
          )
@@ -389,10 +393,12 @@ export async function getKpiSummary(
     ...extraExcluded,
   ].filter((c) => !SAVINGS_CATS.includes(c));
 
+  const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
   const catExcludeSQL = catExclude.length > 0
-    ? `AND t.category NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
+    ? `AND (${effectiveCatExpr}) NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
     : "";
 
+  const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const [incomeRows, expenseRows, monthRows] = await Promise.all([
@@ -406,7 +412,7 @@ export async function getKpiSummary(
          AND (
            (t."txType" = '지출' ${catExcludeSQL} ${notExcludedSQL})
            OR
-           (COALESCE(t."customCategory", t.category) IN ('저축','투자') ${notExcludedSQL})
+           ((${effectiveCatExpr}) IN (${savingsCatsSQL}) ${notExcludedSQL})
          )`
     )),
     db.execute(sql.raw(
