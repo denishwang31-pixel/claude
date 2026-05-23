@@ -1,5 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import {
   InsertUser,
   InsertTransaction,
@@ -10,12 +11,15 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
+const DB_URL = process.env.DATABASE_URL ?? "postgres://budget:budget123@localhost:5432/household_budget";
+
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (!_db) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const client = postgres(DB_URL);
+      _db = drizzle(client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -58,7 +62,10 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!values.lastSignedIn) values.lastSignedIn = new Date();
   if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
 
-  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+  await db.insert(users).values(values).onConflictDoUpdate({
+    target: users.openId,
+    set: updateSet as Partial<typeof users.$inferInsert>,
+  });
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -99,7 +106,8 @@ export async function saveUserSettings(
     includeTransfer: includeTransfer ? 1 : 0,
   };
 
-  await db.insert(userSettings).values(values).onDuplicateKeyUpdate({
+  await db.insert(userSettings).values(values).onConflictDoUpdate({
+    target: userSettings.userId,
     set: {
       excludedCategories: JSON.stringify(excludedCategories),
       includeTransfer: includeTransfer ? 1 : 0,
@@ -113,19 +121,17 @@ export async function getExcludedTransactionIds(userId: number): Promise<Set<num
   const db = await getDb();
   if (!db) return new Set();
 
-  const rows = await db
-    .select({ transactionId: sql<number>`transactionId` })
-    .from(sql`excluded_transactions`)
-    .where(sql`userId = ${userId}`);
-
-  return new Set(rows.map((r) => Number(r.transactionId)));
+  const rows = await db.execute(
+    sql`SELECT "transactionId" FROM excluded_transactions WHERE "userId" = ${userId}`
+  );
+  return new Set((rows as any[]).map((r) => Number(r.transactionId)));
 }
 
 export async function addExcludedTransaction(userId: number, transactionId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.execute(
-    sql`INSERT IGNORE INTO excluded_transactions (userId, transactionId) VALUES (${userId}, ${transactionId})`
+    sql`INSERT INTO excluded_transactions ("userId", "transactionId") VALUES (${userId}, ${transactionId}) ON CONFLICT DO NOTHING`
   );
 }
 
@@ -133,7 +139,7 @@ export async function removeExcludedTransaction(userId: number, transactionId: n
   const db = await getDb();
   if (!db) return;
   await db.execute(
-    sql`DELETE FROM excluded_transactions WHERE userId = ${userId} AND transactionId = ${transactionId}`
+    sql`DELETE FROM excluded_transactions WHERE "userId" = ${userId} AND "transactionId" = ${transactionId}`
   );
 }
 
@@ -148,11 +154,11 @@ export async function setExcludedTransactions(
   for (const id of transactionIds) {
     if (excluded) {
       await db.execute(
-        sql`INSERT IGNORE INTO excluded_transactions (userId, transactionId) VALUES (${userId}, ${id})`
+        sql`INSERT INTO excluded_transactions ("userId", "transactionId") VALUES (${userId}, ${id}) ON CONFLICT DO NOTHING`
       );
     } else {
       await db.execute(
-        sql`DELETE FROM excluded_transactions WHERE userId = ${userId} AND transactionId = ${id}`
+        sql`DELETE FROM excluded_transactions WHERE "userId" = ${userId} AND "transactionId" = ${id}`
       );
     }
   }
@@ -167,20 +173,14 @@ export const TRANSFER_PAYMENT_KEYWORDS = ["통장", "예금", "저축", "청약"
 
 // ── effectiveCategory 표현식 ───────────────────────────────────
 
-/**
- * 카테고리 우선순위:
- * 1. customCategory (사용자가 직접 수정)
- * 2. category_rules 매핑 규칙 (키워드 기반 자동 분류)
- * 3. 원본 category
- */
 function buildEffectiveCategoryExpr(userId: number): string {
   return `COALESCE(
-    t.customCategory,
+    t."customCategory",
     (SELECT cr.category FROM category_rules cr
-     WHERE cr.userId = ${userId}
-       AND (cr.isExact = 1 AND t.content = cr.keyword
-            OR cr.isExact = 0 AND t.content LIKE CONCAT('%', cr.keyword, '%'))
-     ORDER BY cr.isExact DESC, cr.id ASC
+     WHERE cr."userId" = ${userId}
+       AND (cr."isExact" = true AND t.content = cr.keyword
+            OR cr."isExact" = false AND t.content LIKE '%' || cr.keyword || '%')
+     ORDER BY cr."isExact" DESC, cr.id ASC
      LIMIT 1),
     t.category
   )`;
@@ -230,47 +230,43 @@ export async function getMonthlyStats(
     : "";
 
   const paymentExcludeSQL = !includeTransfer
-    ? `AND NOT (t.paymentMethod IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t.paymentMethod LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t.customCategory, t.category) NOT IN ('저축','투자'))`
+    ? `AND NOT (t."paymentMethod" IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t."paymentMethod" LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t."customCategory", t.category) NOT IN ('저축','투자'))`
     : "";
 
-  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et.userId = ${userId} AND et.transactionId = t.id)`;
+  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const [incomeRows, expenseRows] = await Promise.all([
     db.execute(sql.raw(
-      `SELECT DATE_FORMAT(t.txDate, '%Y-%m') as yearMonth, SUM(ABS(t.amount)) as total
+      `SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth", SUM(ABS(t.amount::numeric)) as total
        FROM transactions t
-       WHERE t.userId = ${userId}
-         AND t.txType = '수입'
+       WHERE t."userId" = ${userId}
+         AND t."txType" = '수입'
          ${catExcludeSQL}
          ${notExcludedSQL}
-       GROUP BY DATE_FORMAT(t.txDate, '%Y-%m')
-       ORDER BY DATE_FORMAT(t.txDate, '%Y-%m')`
-    )) as any,
+       GROUP BY TO_CHAR(t."txDate", 'YYYY-MM')
+       ORDER BY TO_CHAR(t."txDate", 'YYYY-MM')`
+    )),
     db.execute(sql.raw(
-      `SELECT DATE_FORMAT(t.txDate, '%Y-%m') as yearMonth, SUM(ABS(t.amount)) as total
+      `SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth", SUM(ABS(t.amount::numeric)) as total
        FROM transactions t
-       WHERE t.userId = ${userId}
-         AND t.txType = '지출'
-         ${!includeTransfer ? "AND t.txType != '이체'" : ""}
+       WHERE t."userId" = ${userId}
+         AND t."txType" = '지출'
          ${catExcludeSQL}
          ${paymentExcludeSQL}
          ${notExcludedSQL}
-       GROUP BY DATE_FORMAT(t.txDate, '%Y-%m')
-       ORDER BY DATE_FORMAT(t.txDate, '%Y-%m')`
-    )) as any,
+       GROUP BY TO_CHAR(t."txDate", 'YYYY-MM')
+       ORDER BY TO_CHAR(t."txDate", 'YYYY-MM')`
+    )),
   ]);
 
   const result: { yearMonth: string; txType: string; total: number }[] = [];
-  const incomeArr = Array.isArray(incomeRows) ? incomeRows[0] : [];
-  const expenseArr = Array.isArray(expenseRows) ? expenseRows[0] : [];
-
-  for (const r of incomeArr) result.push({ yearMonth: r.yearMonth, txType: "수입", total: Number(r.total) });
-  for (const r of expenseArr) result.push({ yearMonth: r.yearMonth, txType: "지출", total: Number(r.total) });
+  for (const r of incomeRows as any[]) result.push({ yearMonth: r.yearMonth, txType: "수입", total: Number(r.total) });
+  for (const r of expenseRows as any[]) result.push({ yearMonth: r.yearMonth, txType: "지출", total: Number(r.total) });
 
   return result;
 }
 
-/** 카테고리별 지출 집계 (저축/투자 포함) */
+/** 카테고리별 지출 집계 */
 export async function getCategoryStats(
   userId: number,
   includeTransfer: boolean,
@@ -292,40 +288,38 @@ export async function getCategoryStats(
     : "";
 
   const paymentExcludeSQL = !includeTransfer
-    ? `AND NOT (t.paymentMethod IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t.paymentMethod LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t.customCategory, t.category) NOT IN ('저축','투자'))`
+    ? `AND NOT (t."paymentMethod" IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t."paymentMethod" LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t."customCategory", t.category) NOT IN ('저축','투자'))`
     : "";
 
-  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et.userId = ${userId} AND et.transactionId = t.id)`;
+  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const rows = await db.execute(sql.raw(
-    `SELECT sub.effectiveCategory as category, SUM(ABS(sub.amount)) as total, COUNT(*) as cnt
+    `SELECT sub."effectiveCategory" as category, SUM(ABS(sub.amount::numeric)) as total, COUNT(*) as cnt
      FROM (
        SELECT t.amount,
-              (${effectiveCatExpr}) as effectiveCategory
+              (${effectiveCatExpr}) as "effectiveCategory"
        FROM transactions t
-       WHERE t.userId = ${userId}
+       WHERE t."userId" = ${userId}
          AND (
-           (t.txType = '지출'
-            ${!includeTransfer ? "AND t.txType != '이체'" : ""}
+           (t."txType" = '지출'
             ${catExcludeSQL}
             ${paymentExcludeSQL}
             ${notExcludedSQL}
            )
            OR
-           (COALESCE(t.customCategory, t.category) IN ('저축', '투자')
+           (COALESCE(t."customCategory", t.category) IN ('저축', '투자')
             ${notExcludedSQL}
            )
          )
      ) sub
-     GROUP BY sub.effectiveCategory
-     ORDER BY SUM(ABS(sub.amount)) DESC`
-  )) as any;
+     GROUP BY sub."effectiveCategory"
+     ORDER BY SUM(ABS(sub.amount::numeric)) DESC`
+  ));
 
-  const arr = Array.isArray(rows) ? rows[0] : [];
-  return arr.map((r: any) => ({ category: r.category, total: Number(r.total), count: Number(r.cnt) }));
+  return (rows as any[]).map((r) => ({ category: r.category, total: Number(r.total), count: Number(r.cnt) }));
 }
 
-/** 월별 × 카테고리 피벗 (저축/투자 포함) */
+/** 월별 × 카테고리 피벗 */
 export async function getPivotData(
   userId: number,
   includeTransfer: boolean,
@@ -347,38 +341,36 @@ export async function getPivotData(
     : "";
 
   const paymentExcludeSQL = !includeTransfer
-    ? `AND NOT (t.paymentMethod IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t.paymentMethod LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t.customCategory, t.category) NOT IN ('저축','투자'))`
+    ? `AND NOT (t."paymentMethod" IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t."paymentMethod" LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t."customCategory", t.category) NOT IN ('저축','투자'))`
     : "";
 
-  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et.userId = ${userId} AND et.transactionId = t.id)`;
+  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const rows = await db.execute(sql.raw(
-    `SELECT sub.yearMonth, sub.effectiveCategory as category, SUM(ABS(sub.amount)) as total
+    `SELECT sub."yearMonth", sub."effectiveCategory" as category, SUM(ABS(sub.amount::numeric)) as total
      FROM (
-       SELECT DATE_FORMAT(t.txDate, '%Y-%m') as yearMonth,
+       SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth",
               t.amount,
-              (${effectiveCatExpr}) as effectiveCategory
+              (${effectiveCatExpr}) as "effectiveCategory"
        FROM transactions t
-       WHERE t.userId = ${userId}
+       WHERE t."userId" = ${userId}
          AND (
-           (t.txType = '지출'
-            ${!includeTransfer ? "AND t.txType != '이체'" : ""}
+           (t."txType" = '지출'
             ${catExcludeSQL}
             ${paymentExcludeSQL}
             ${notExcludedSQL}
            )
            OR
-           (COALESCE(t.customCategory, t.category) IN ('저축', '투자')
+           (COALESCE(t."customCategory", t.category) IN ('저축', '투자')
             ${notExcludedSQL}
            )
          )
      ) sub
-     GROUP BY sub.yearMonth, sub.effectiveCategory
-     ORDER BY sub.yearMonth`
-  )) as any;
+     GROUP BY sub."yearMonth", sub."effectiveCategory"
+     ORDER BY sub."yearMonth"`
+  ));
 
-  const arr = Array.isArray(rows) ? rows[0] : [];
-  return arr.map((r: any) => ({ yearMonth: r.yearMonth, category: r.category, total: Number(r.total) }));
+  return (rows as any[]).map((r) => ({ yearMonth: r.yearMonth, category: r.category, total: Number(r.total) }));
 }
 
 /** KPI 요약 */
@@ -401,42 +393,38 @@ export async function getKpiSummary(
     : "";
 
   const paymentExcludeSQL = !includeTransfer
-    ? `AND NOT (t.paymentMethod IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t.paymentMethod LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t.customCategory, t.category) NOT IN ('저축','투자'))`
+    ? `AND NOT (t."paymentMethod" IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t."paymentMethod" LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t."customCategory", t.category) NOT IN ('저축','투자'))`
     : "";
 
-  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et.userId = ${userId} AND et.transactionId = t.id)`;
+  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const [incomeRows, expenseRows, monthRows] = await Promise.all([
     db.execute(sql.raw(
-      `SELECT SUM(ABS(t.amount)) as total FROM transactions t
-       WHERE t.userId = ${userId} AND t.txType = '수입' ${catExcludeSQL} ${notExcludedSQL}`
-    )) as any,
+      `SELECT SUM(ABS(t.amount::numeric)) as total FROM transactions t
+       WHERE t."userId" = ${userId} AND t."txType" = '수입' ${catExcludeSQL} ${notExcludedSQL}`
+    )),
     db.execute(sql.raw(
-      `SELECT SUM(ABS(t.amount)) as total FROM transactions t
-       WHERE t.userId = ${userId}
+      `SELECT SUM(ABS(t.amount::numeric)) as total FROM transactions t
+       WHERE t."userId" = ${userId}
          AND (
-           (t.txType = '지출' ${!includeTransfer ? "AND t.txType != '이체'" : ""} ${catExcludeSQL} ${paymentExcludeSQL} ${notExcludedSQL})
+           (t."txType" = '지출' ${catExcludeSQL} ${paymentExcludeSQL} ${notExcludedSQL})
            OR
-           (COALESCE(t.customCategory, t.category) IN ('저축','투자') ${notExcludedSQL})
+           (COALESCE(t."customCategory", t.category) IN ('저축','투자') ${notExcludedSQL})
          )`
-    )) as any,
+    )),
     db.execute(sql.raw(
-      `SELECT COUNT(DISTINCT DATE_FORMAT(t.txDate, '%Y-%m')) as cnt FROM transactions t WHERE t.userId = ${userId}`
-    )) as any,
+      `SELECT COUNT(DISTINCT TO_CHAR(t."txDate", 'YYYY-MM')) as cnt FROM transactions t WHERE t."userId" = ${userId}`
+    )),
   ]);
 
-  const incomeArr = Array.isArray(incomeRows) ? incomeRows[0] : [];
-  const expenseArr = Array.isArray(expenseRows) ? expenseRows[0] : [];
-  const monthArr = Array.isArray(monthRows) ? monthRows[0] : [];
-
   return {
-    totalIncome: Number(incomeArr[0]?.total ?? 0),
-    totalExpense: Number(expenseArr[0]?.total ?? 0),
-    monthCount: Number(monthArr[0]?.cnt ?? 0),
+    totalIncome: Number((incomeRows as any[])[0]?.total ?? 0),
+    totalExpense: Number((expenseRows as any[])[0]?.total ?? 0),
+    monthCount: Number((monthRows as any[])[0]?.cnt ?? 0),
   };
 }
 
-/** 전체 거래 내역 조회 */
+/** 전체 거래 내역 */
 export async function getAllTransactions(userId: number, page = 1, pageSize = 50) {
   const db = await getDb();
   if (!db) return { rows: [], total: 0, excludedIds: new Set<number>() };
@@ -475,47 +463,42 @@ export async function getCategoryTransactions(
   const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
   const escapedCategory = category.replace(/'/g, "''");
 
-  // 저축/투자 카테고리는 제외 필터 무시 (사용자가 직접 exclude한 항목만 제외)
-  // — 업로드 시 이체로 자동 제외된 저축 항목도 보이도록
   const isSavingsCat = SAVINGS_CATS.includes(category);
   const excludeFilter = isSavingsCat
-    ? "" // 저축/투자는 excluded_transactions 무시 (별도로 체크박스로 제어 가능)
+    ? ""
     : `AND NOT EXISTS (
          SELECT 1 FROM excluded_transactions et
-         WHERE et.userId = ${userId} AND et.transactionId = t.id
+         WHERE et."userId" = ${userId} AND et."transactionId" = t.id
        )`;
 
   const [rows, countRows] = await Promise.all([
     db.execute(sql.raw(
       `SELECT sub.*
        FROM (
-         SELECT t.*, (${effectiveCatExpr}) as effectiveCategory
+         SELECT t.*, (${effectiveCatExpr}) as "effectiveCategory"
          FROM transactions t
-         WHERE t.userId = ${userId}
+         WHERE t."userId" = ${userId}
            ${excludeFilter}
        ) sub
-       WHERE sub.effectiveCategory = '${escapedCategory}'
-         AND (sub.txType = '지출' OR sub.effectiveCategory IN ('저축', '투자'))
-       ORDER BY sub.txDate DESC, sub.txTime DESC
+       WHERE sub."effectiveCategory" = '${escapedCategory}'
+         AND (sub."txType" = '지출' OR sub."effectiveCategory" IN ('저축', '투자'))
+       ORDER BY sub."txDate" DESC, sub."txTime" DESC
        LIMIT ${pageSize} OFFSET ${offset}`
-    )) as any,
+    )),
     db.execute(sql.raw(
       `SELECT COUNT(*) as total
        FROM (
-         SELECT t.id, t.txType, (${effectiveCatExpr}) as effectiveCategory
+         SELECT t.id, t."txType", (${effectiveCatExpr}) as "effectiveCategory"
          FROM transactions t
-         WHERE t.userId = ${userId}
+         WHERE t."userId" = ${userId}
            ${excludeFilter}
        ) sub
-       WHERE sub.effectiveCategory = '${escapedCategory}'
-         AND (sub.txType = '지출' OR sub.effectiveCategory IN ('저축', '투자'))`
-    )) as any,
+       WHERE sub."effectiveCategory" = '${escapedCategory}'
+         AND (sub."txType" = '지출' OR sub."effectiveCategory" IN ('저축', '투자'))`
+    )),
   ]);
 
-  const rowArr = Array.isArray(rows) ? rows[0] : [];
-  const countArr = Array.isArray(countRows) ? countRows[0] : [];
-
-  return { rows: rowArr, total: Number(countArr[0]?.total ?? 0) };
+  return { rows: rows as any[], total: Number((countRows as any[])[0]?.total ?? 0) };
 }
 
 /** 모든 카테고리 목록 */
@@ -528,7 +511,7 @@ export async function getAllCategories(userId: number): Promise<string[]> {
   return rows.map((r) => r.category);
 }
 
-/** 카테고리 수정 (customCategory) */
+/** 카테고리 수정 */
 export async function updateTransactionCategory(
   userId: number,
   transactionId: number,
@@ -537,7 +520,7 @@ export async function updateTransactionCategory(
   const db = await getDb();
   if (!db) return;
   await db.execute(
-    sql`UPDATE transactions SET customCategory = ${newCategory} WHERE id = ${transactionId} AND userId = ${userId}`
+    sql`UPDATE transactions SET "customCategory" = ${newCategory} WHERE id = ${transactionId} AND "userId" = ${userId}`
   );
 }
 
@@ -549,7 +532,7 @@ export async function resetTransactionCategory(
   const db = await getDb();
   if (!db) return;
   await db.execute(
-    sql`UPDATE transactions SET customCategory = NULL WHERE id = ${transactionId} AND userId = ${userId}`
+    sql`UPDATE transactions SET "customCategory" = NULL WHERE id = ${transactionId} AND "userId" = ${userId}`
   );
 }
 
@@ -563,23 +546,22 @@ export async function getSavingsStats(userId: number): Promise<{
 
   const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
 
-  // 저축/투자는 excluded_transactions 필터 적용하지 않음 (상세와 일관성)
   const rows = await db.execute(sql.raw(
     `SELECT
        t.content,
-       (${effectiveCatExpr}) as effectiveCategory,
-       SUM(ABS(t.amount)) as total,
+       (${effectiveCatExpr}) as "effectiveCategory",
+       SUM(ABS(t.amount::numeric)) as total,
        COUNT(*) as cnt,
-       MAX(DATE_FORMAT(t.txDate, '%Y-%m-%d')) as lastDate
+       MAX(TO_CHAR(t."txDate", 'YYYY-MM-DD')) as "lastDate"
      FROM transactions t
-     WHERE t.userId = ${userId}
+     WHERE t."userId" = ${userId}
        AND (${effectiveCatExpr}) IN ('저축', '투자')
      GROUP BY t.content, (${effectiveCatExpr})
      ORDER BY total DESC`
-  )) as any;
+  ));
 
-  const arr = Array.isArray(rows) ? rows[0] : [];
-  const items = arr.map((r: any) => ({
+  const arr = rows as any[];
+  const items = arr.map((r) => ({
     content: String(r.content),
     category: String(r.effectiveCategory),
     total: Number(r.total),
@@ -587,7 +569,7 @@ export async function getSavingsStats(userId: number): Promise<{
     lastDate: String(r.lastDate),
   }));
 
-  const grandTotal = items.reduce((s: number, i: any) => s + i.total, 0);
+  const grandTotal = items.reduce((s, i) => s + i.total, 0);
   return { items, grandTotal };
 }
 
@@ -597,16 +579,15 @@ export async function getCategoryRules(userId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  const rows = await db.execute(sql.raw(
-    `SELECT id, keyword, category, isExact, createdAt FROM category_rules WHERE userId = ${userId} ORDER BY createdAt DESC`
-  )) as any;
+  const rows = await db.execute(
+    sql`SELECT id, keyword, category, "isExact", "createdAt" FROM category_rules WHERE "userId" = ${userId} ORDER BY "createdAt" DESC`
+  );
 
-  const arr = Array.isArray(rows) ? rows[0] : [];
-  return arr.map((r: any) => ({
+  return (rows as any[]).map((r) => ({
     id: Number(r.id),
     keyword: String(r.keyword),
     category: String(r.category),
-    isExact: r.isExact === 1,
+    isExact: r.isExact === true || r.isExact === 1,
     createdAt: r.createdAt,
   }));
 }
@@ -620,35 +601,32 @@ export async function upsertCategoryRule(
   const db = await getDb();
   if (!db) return;
 
-  const kw = keyword.replace(/'/g, "''");
-  const cat = category.replace(/'/g, "''");
+  await db.execute(
+    sql`INSERT INTO category_rules ("userId", keyword, category, "isExact")
+        VALUES (${userId}, ${keyword}, ${category}, ${isExact})
+        ON CONFLICT ("userId", keyword) DO UPDATE SET category = ${category}, "isExact" = ${isExact}, "updatedAt" = NOW()`
+  );
 
-  await db.execute(sql.raw(
-    `INSERT INTO category_rules (userId, keyword, category, isExact)
-     VALUES (${userId}, '${kw}', '${cat}', ${isExact ? 1 : 0})
-     ON DUPLICATE KEY UPDATE category = '${cat}', isExact = ${isExact ? 1 : 0}, updatedAt = NOW()`
-  ));
-
-  // 기존 거래 내역에 즉시 적용 (customCategory가 없는 항목만)
+  // 기존 거래에 즉시 반영 (customCategory가 없는 항목만)
   if (isExact) {
-    await db.execute(sql.raw(
-      `UPDATE transactions SET customCategory = '${cat}'
-       WHERE userId = ${userId} AND content = '${kw}' AND customCategory IS NULL`
-    ));
+    await db.execute(
+      sql`UPDATE transactions SET "customCategory" = ${category}
+          WHERE "userId" = ${userId} AND content = ${keyword} AND "customCategory" IS NULL`
+    );
   } else {
-    await db.execute(sql.raw(
-      `UPDATE transactions SET customCategory = '${cat}'
-       WHERE userId = ${userId} AND content LIKE '%${kw}%' AND customCategory IS NULL`
-    ));
+    await db.execute(
+      sql`UPDATE transactions SET "customCategory" = ${category}
+          WHERE "userId" = ${userId} AND content LIKE ${'%' + keyword + '%'} AND "customCategory" IS NULL`
+    );
   }
 }
 
 export async function deleteCategoryRule(userId: number, ruleId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.execute(sql.raw(
-    `DELETE FROM category_rules WHERE id = ${ruleId} AND userId = ${userId}`
-  ));
+  await db.execute(
+    sql`DELETE FROM category_rules WHERE id = ${ruleId} AND "userId" = ${userId}`
+  );
 }
 
 export async function applyMappingRulesToNewTransactions(
@@ -658,12 +636,11 @@ export async function applyMappingRulesToNewTransactions(
   const db = await getDb();
   if (!db || dedupHashes.length === 0) return;
 
-  const hashList = dedupHashes.map((h) => `'${h}'`).join(", ");
-  const newTxRows = await db.execute(sql.raw(
-    `SELECT id, content FROM transactions WHERE userId = ${userId} AND dedupHash IN (${hashList})`
-  )) as any;
+  const newTxRows = await db.execute(
+    sql`SELECT id, content FROM transactions WHERE "userId" = ${userId} AND "dedupHash" IN (${sql.join(dedupHashes.map((h) => sql`${h}`), sql`, `)})`
+  );
 
-  const newTxArr = Array.isArray(newTxRows) ? newTxRows[0] : [];
+  const newTxArr = newTxRows as any[];
   if (newTxArr.length === 0) return;
 
   const rules = await getCategoryRules(userId);
@@ -674,10 +651,10 @@ export async function applyMappingRulesToNewTransactions(
     for (const rule of rules) {
       const matches = rule.isExact ? content === rule.keyword : content.includes(rule.keyword);
       if (matches) {
-        await db.execute(sql.raw(
-          `UPDATE transactions SET customCategory = '${rule.category.replace(/'/g, "''")}'
-           WHERE id = ${tx.id} AND customCategory IS NULL`
-        ));
+        await db.execute(
+          sql`UPDATE transactions SET "customCategory" = ${rule.category}
+              WHERE id = ${tx.id} AND "customCategory" IS NULL`
+        );
         break;
       }
     }

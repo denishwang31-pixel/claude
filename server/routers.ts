@@ -62,7 +62,7 @@ const budgetRouter = router({
 
       const dbRows = newRows.map((r) => ({
         userId,
-        txDate: new Date(r.txDate),
+        txDate: r.txDate,
         txTime: r.txTime,
         txType: r.txType,
         category: r.category,
@@ -87,10 +87,10 @@ const budgetRouter = router({
 
         // Get IDs of inserted transactions
         const insertedRows = await db.execute(sql.raw(
-          `SELECT id, category, customCategory, txType, paymentMethod FROM transactions
-           WHERE userId = ${userId} AND dedupHash IN (${hashList})`
-        )) as any;
-        const insertedArr = Array.isArray(insertedRows) ? insertedRows[0] : [];
+          `SELECT id, category, "customCategory", "txType", "paymentMethod" FROM transactions
+           WHERE "userId" = ${userId} AND "dedupHash" IN (${hashList})`
+        ));
+        const insertedArr = insertedRows as any[];
 
         // Auto-exclude: transfers and card payments, but skip savings/investment
         const toExclude: number[] = [];
@@ -111,11 +111,12 @@ const budgetRouter = router({
 
         // Also remove from excluded any items that mapped to savings/investment
         await db.execute(sql.raw(
-          `DELETE et FROM excluded_transactions et
-           JOIN transactions t ON et.transactionId = t.id
-           WHERE et.userId = ${userId}
-             AND COALESCE(t.customCategory, t.category) IN ('저축', '투자')
-             AND t.dedupHash IN (${hashList})`
+          `DELETE FROM excluded_transactions et
+           USING transactions t
+           WHERE et."transactionId" = t.id
+             AND et."userId" = ${userId}
+             AND COALESCE(t."customCategory", t.category) IN ('저축', '투자')
+             AND t."dedupHash" IN (${hashList})`
         ));
 
         return {
@@ -280,7 +281,7 @@ const budgetRouter = router({
       const db = await getDb();
       if (db && SAVINGS_CATS.includes(input.newCategory)) {
         await db.execute(sql.raw(
-          `DELETE FROM excluded_transactions WHERE userId = ${ctx.user.id} AND transactionId = ${input.transactionId}`
+          `DELETE FROM excluded_transactions WHERE "userId" = ${ctx.user.id} AND "transactionId" = ${input.transactionId}`
         ));
       }
 

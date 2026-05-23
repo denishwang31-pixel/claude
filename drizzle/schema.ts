@@ -1,34 +1,38 @@
 import {
-  bigint,
+  bigserial,
   date,
   decimal,
-  int,
-  mysqlEnum,
-  mysqlTable,
+  integer,
+  pgEnum,
+  pgTable,
+  serial,
+  smallint,
   text,
   timestamp,
+  unique,
   varchar,
-  tinyint,
-} from "drizzle-orm/mysql-core";
+} from "drizzle-orm/pg-core";
 
-export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
+export const roleEnum = pgEnum("role", ["user", "admin"]);
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: roleEnum("role").default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-export const transactions = mysqlTable("transactions", {
-  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+export const transactions = pgTable("transactions", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  userId: integer("userId").notNull(),
   txDate: date("txDate").notNull(),
   txTime: varchar("txTime", { length: 8 }),
   txType: varchar("txType", { length: 16 }).notNull(),
@@ -40,19 +44,19 @@ export const transactions = mysqlTable("transactions", {
   currency: varchar("currency", { length: 8 }).default("KRW"),
   paymentMethod: varchar("paymentMethod", { length: 128 }),
   memo: text("memo"),
-  dedupHash: varchar("dedupHash", { length: 64 }).notNull(),
+  dedupHash: varchar("dedupHash", { length: 64 }).notNull().unique(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = typeof transactions.$inferInsert;
 
-export const userSettings = mysqlTable("user_settings", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().unique(),
+export const userSettings = pgTable("user_settings", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().unique(),
   excludedCategories: text("excludedCategories").default("[]"),
-  includeTransfer: tinyint("includeTransfer").default(0).notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  includeTransfer: smallint("includeTransfer").default(0).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 export type UserSettings = typeof userSettings.$inferSelect;
