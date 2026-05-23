@@ -33,7 +33,10 @@ export async function parseBanksaladExcel(file: File): Promise<ParsedRow[]> {
     const txDate = rawDate instanceof Date
       ? rawDate.toISOString().split("T")[0]
       : String(rawDate).trim();
-    const txTime = String(row["시간"] ?? row["time"] ?? "").trim();
+    const rawTime = row["시간"] ?? row["time"] ?? "";
+    const txTime = rawTime instanceof Date
+      ? rawTime.toTimeString().slice(0, 8)
+      : String(rawTime).trim().slice(0, 8);
     const txType = String(row["타입"] ?? row["type"] ?? "").trim();
     const category = String(row["대분류"] ?? row["category"] ?? "").trim();
     const subCategory = String(row["소분류"] ?? row["subCategory"] ?? "").trim();
