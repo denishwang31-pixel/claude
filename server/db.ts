@@ -271,7 +271,8 @@ export async function getCategoryStats(
   userId: number,
   includeTransfer: boolean,
   extraExcluded: string[],
-  _excludedIds: number[]
+  _excludedIds: number[],
+  yearMonth?: string
 ) {
   const db = await getDb();
   if (!db) return [];
@@ -292,6 +293,7 @@ export async function getCategoryStats(
     : "";
 
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
+  const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
 
   const rows = await db.execute(sql.raw(
     `SELECT sub."effectiveCategory" as category, SUM(ABS(sub.amount::numeric)) as total, COUNT(*) as cnt
@@ -300,6 +302,7 @@ export async function getCategoryStats(
               (${effectiveCatExpr}) as "effectiveCategory"
        FROM transactions t
        WHERE t."userId" = ${userId}
+         ${monthSQL}
          AND (
            (t."txType" = '지출'
             ${catExcludeSQL}
@@ -454,7 +457,8 @@ export async function getCategoryTransactions(
   userId: number,
   category: string,
   page = 1,
-  pageSize = 50
+  pageSize = 50,
+  yearMonth?: string
 ) {
   const db = await getDb();
   if (!db) return { rows: [], total: 0 };
@@ -470,6 +474,7 @@ export async function getCategoryTransactions(
          SELECT 1 FROM excluded_transactions et
          WHERE et."userId" = ${userId} AND et."transactionId" = t.id
        )`;
+  const monthFilter = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
 
   const [rows, countRows] = await Promise.all([
     db.execute(sql.raw(
@@ -479,6 +484,7 @@ export async function getCategoryTransactions(
          FROM transactions t
          WHERE t."userId" = ${userId}
            ${excludeFilter}
+           ${monthFilter}
        ) sub
        WHERE sub."effectiveCategory" = '${escapedCategory}'
          AND (sub."txType" = '지출' OR sub."effectiveCategory" IN ('저축', '투자'))
@@ -492,6 +498,7 @@ export async function getCategoryTransactions(
          FROM transactions t
          WHERE t."userId" = ${userId}
            ${excludeFilter}
+           ${monthFilter}
        ) sub
        WHERE sub."effectiveCategory" = '${escapedCategory}'
          AND (sub."txType" = '지출' OR sub."effectiveCategory" IN ('저축', '투자'))`
