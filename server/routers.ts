@@ -23,6 +23,7 @@ import {
   getUserSettings,
   saveUserSettings,
   getExcludedTransactionIds,
+  deleteAllTransactions,
   SAVINGS_CATS,
   TRANSFER_CATS,
 } from "./db";
@@ -128,6 +129,12 @@ const budgetRouter = router({
 
       return { inserted: newRows.length, skipped: input.rows.length - newRows.length, autoExcluded: 0 };
     }),
+
+  // ── 데이터 전체 삭제 ─────────────────────────────────────────
+  deleteAllTransactions: protectedProcedure.mutation(async ({ ctx }) => {
+    const deleted = await deleteAllTransactions(ctx.user.id);
+    return { deleted };
+  }),
 
   // ── 현재 사용자 ──────────────────────────────────────────────
   me: publicProcedure.query(({ ctx }) => {

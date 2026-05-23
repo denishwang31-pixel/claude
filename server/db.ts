@@ -178,8 +178,8 @@ function buildEffectiveCategoryExpr(userId: number): string {
     t."customCategory",
     (SELECT cr.category FROM category_rules cr
      WHERE cr."userId" = ${userId}
-       AND (cr."isExact" = true AND t.content = cr.keyword
-            OR cr."isExact" = false AND t.content LIKE '%' || cr.keyword || '%')
+       AND (cr."isExact" = 1 AND t.content = cr.keyword
+            OR cr."isExact" = 0 AND t.content LIKE '%' || cr.keyword || '%')
      ORDER BY cr."isExact" DESC, cr.id ASC
      LIMIT 1),
     t.category
@@ -516,6 +516,15 @@ export async function getAllCategories(userId: number): Promise<string[]> {
     .from(transactions).where(eq(transactions.userId, userId))
     .orderBy(transactions.category);
   return rows.map((r) => r.category);
+}
+
+/** 전체 거래 내역 삭제 */
+export async function deleteAllTransactions(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  await db.execute(sql`DELETE FROM excluded_transactions WHERE "userId" = ${userId}`);
+  const result = await db.execute(sql`DELETE FROM transactions WHERE "userId" = ${userId} RETURNING id`);
+  return (result as any[]).length;
 }
 
 /** 카테고리 수정 */
