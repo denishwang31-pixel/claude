@@ -61,3 +61,19 @@ export const userSettings = pgTable("user_settings", {
 
 export type UserSettings = typeof userSettings.$inferSelect;
 export type InsertUserSettings = typeof userSettings.$inferInsert;
+
+export const excludedTransactions = pgTable("excluded_transactions", {
+  userId: integer("userId").notNull(),
+  transactionId: integer("transactionId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const categoryRules = pgTable("category_rules", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
+  keyword: varchar("keyword", { length: 255 }).notNull(),
+  category: varchar("category", { length: 50 }).notNull(),
+  isExact: integer("isExact").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
