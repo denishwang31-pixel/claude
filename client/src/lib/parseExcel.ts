@@ -17,7 +17,7 @@ export interface ParsedRow {
 
 export async function parseBanksaladExcel(file: File): Promise<ParsedRow[]> {
   const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: "array" });
+  const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
 
   const sheetName = workbook.SheetNames.find((n) => n.includes("가계부 내역")) ?? workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
@@ -29,7 +29,10 @@ export async function parseBanksaladExcel(file: File): Promise<ParsedRow[]> {
 
   for (const row of rawData) {
     // Banksalad columns: 날짜, 시간, 타입, 대분류, 소분류, 내용, 금액, 화폐, 결제수단, 메모
-    const txDate = String(row["날짜"] ?? row["date"] ?? "").trim();
+    const rawDate = row["날짜"] ?? row["date"] ?? "";
+    const txDate = rawDate instanceof Date
+      ? rawDate.toISOString().split("T")[0]
+      : String(rawDate).trim();
     const txTime = String(row["시간"] ?? row["time"] ?? "").trim();
     const txType = String(row["타입"] ?? row["type"] ?? "").trim();
     const category = String(row["대분류"] ?? row["category"] ?? "").trim();
