@@ -222,13 +222,15 @@ const budgetRouter = router({
       z.object({
         page: z.number().int().positive().default(1),
         pageSize: z.number().int().positive().max(200).default(50),
+        filter: z.object({ field: z.string(), query: z.string() }).optional(),
       })
     )
     .query(async ({ ctx, input }) => {
       const { rows, total, excludedIds } = await getAllTransactions(
         ctx.user.id,
         input.page,
-        input.pageSize
+        input.pageSize,
+        input.filter
       );
       return {
         rows,

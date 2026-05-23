@@ -14,6 +14,7 @@ interface Props {
 
 export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [catFilter, setCatFilter] = useState("");
 
   const { data: catStats, isLoading, error } = trpc.budget.getCategoryStats.useQuery({
     includeTransfer,
@@ -65,11 +66,32 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
     );
   }
 
-  const rows = catStats as CatRow[];
-  const grandTotal = rows.reduce((s, r) => s + r.total, 0);
+  const allRows = catStats as CatRow[];
+  const rows = catFilter
+    ? allRows.filter((r) => r.category.toLowerCase().includes(catFilter.toLowerCase()))
+    : allRows;
+  const grandTotal = allRows.reduce((s, r) => s + r.total, 0);
 
   return (
     <div className="space-y-6">
+      {/* Search bar */}
+      <div className="bg-white rounded-xl border border-cream-200 shadow-sm px-4 py-3 flex items-center gap-2">
+        <span className="text-sm text-cream-500 whitespace-nowrap">카테고리</span>
+        <input
+          type="text"
+          value={catFilter}
+          onChange={(e) => setCatFilter(e.target.value)}
+          placeholder="카테고리 검색..."
+          className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500 flex-1"
+        />
+        {catFilter && (
+          <button onClick={() => setCatFilter("")} className="text-cream-400 hover:text-cream-600 text-base px-0.5">✕</button>
+        )}
+        <span className="text-sm text-cream-400 whitespace-nowrap ml-1">
+          {catFilter ? `${rows.length} / ${allRows.length}개` : `${allRows.length}개`}
+        </span>
+      </div>
+
       {/* Pie + Table side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Pie chart */}

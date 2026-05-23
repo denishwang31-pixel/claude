@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { trpc } from "../../lib/trpc";
 import { formatKRW, formatDate } from "../../lib/format";
 import { CategoryDropdown } from "../CategoryDropdown";
@@ -8,14 +8,28 @@ import { cn } from "../../lib/utils";
 
 const PAGE_SIZE = 50;
 
+const SEARCH_FIELDS = [
+  { id: "content",      label: "내용" },
+  { id: "category",     label: "카테고리" },
+  { id: "amount_gte",   label: "금액 이상" },
+  { id: "paymentMethod",label: "결제수단" },
+  { id: "txType",       label: "타입" },
+  { id: "date",         label: "월" },
+] as const;
+
+type SearchField = typeof SEARCH_FIELDS[number]["id"];
+
 export function TransactionsTab() {
   const [page, setPage] = useState(1);
+  const [searchField, setSearchField] = useState<SearchField>("content");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => { setPage(1); }, [searchField, searchQuery]);
 
   const utils = trpc.useUtils();
-  const { data, isLoading } = trpc.budget.getTransactions.useQuery({ page, pageSize: PAGE_SIZE });
-  const { data: exportData } = trpc.budget.getAllTransactionsForExport.useQuery(undefined, {
-    enabled: false,
-  });
+  const filter = searchQuery.trim() ? { field: searchField, query: searchQuery.trim() } : undefined;
+
+  const { data, isLoading } = trpc.budget.getTransactions.useQuery({ page, pageSize: PAGE_SIZE, filter });
 
   const toggleMutation = trpc.budget.toggleExcluded.useMutation({
     onSuccess: () => utils.budget.getTransactions.invalidate(),
@@ -35,20 +49,85 @@ export function TransactionsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-cream-600">
-          전체 <span className="font-semibold text-cream-800">{data?.total ?? 0}</span>건
-        </p>
-        <Button variant="secondary" size="sm" onClick={handleExport}>
-          엑셀 다운로드
-        </Button>
+      {/* Search bar */}
+      <div className="bg-white rounded-xl border border-cream-200 shadow-sm px-4 py-3 flex items-center gap-2 flex-wrap">
+        <select
+          value={searchField}
+          onChange={(e) => { setSearchField(e.target.value as SearchField); setSearchQuery(""); }}
+          className="border border-cream-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-cream-500"
+        >
+          {SEARCH_FIELDS.map((f) => (
+            <option key={f.id} value={f.id}>{f.label}</option>
+          ))}
+        </select>
+
+        {searchField === "txType" ? (
+          <select
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="border border-cream-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-cream-500"
+          >
+            <option value="">전체</option>
+            <option value="수입">수입</option>
+            <option value="지출">지출</option>
+            <option value="이체">이체</option>
+          </select>
+        ) : searchField === "date" ? (
+          <input
+            type="month"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="border border-cream-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-cream-500"
+          />
+        ) : searchField === "amount_gte" ? (
+          <input
+            type="number"
+            min="0"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="최소 금액 (원)"
+            className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500 w-44"
+          />
+        ) : (
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={`${SEARCH_FIELDS.find((f) => f.id === searchField)?.label} 검색...`}
+            className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500 flex-1 min-w-[160px]"
+          />
+        )}
+
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery("")}
+            className="text-cream-400 hover:text-cream-600 text-base leading-none px-0.5"
+          >
+            ✕
+          </button>
+        )}
+
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-sm text-cream-500">
+            {filter ? (
+              <><span className="font-semibold text-cream-800">{data?.total ?? 0}</span>건 검색됨</>
+            ) : (
+              <>전체 <span className="font-semibold text-cream-800">{data?.total ?? 0}</span>건</>
+            )}
+          </span>
+          <Button variant="secondary" size="sm" onClick={handleExport}>
+            엑셀 다운로드
+          </Button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-cream-200 shadow-sm overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center h-40 text-cream-400">불러오는 중...</div>
         ) : !data?.rows.length ? (
-          <div className="flex items-center justify-center h-40 text-cream-400">거래 내역이 없습니다.</div>
+          <div className="flex items-center justify-center h-40 text-cream-400">
+            {filter ? "검색 결과가 없습니다." : "거래 내역이 없습니다."}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -65,7 +144,7 @@ export function TransactionsTab() {
               </thead>
               <tbody>
                 {data.rows.map((row) => {
-                  const isExcluded = excludedSet.has(row.id);
+                  const isExcluded = excludedSet.has(Number(row.id));
                   return (
                     <tr
                       key={row.id}
@@ -75,7 +154,7 @@ export function TransactionsTab() {
                       )}
                     >
                       <td className="px-4 py-2.5 text-cream-500 whitespace-nowrap">
-                        {formatDate(row.txDate)}
+                        {formatDate(row.txDate as string)}
                       </td>
                       <td className="px-4 py-2.5 text-cream-800 max-w-[200px] truncate">
                         {row.content}
@@ -85,9 +164,9 @@ export function TransactionsTab() {
                       </td>
                       <td className="px-4 py-2.5">
                         <CategoryDropdown
-                          transactionId={row.id}
-                          currentCategory={row.customCategory ?? row.category}
-                          content={row.content}
+                          transactionId={Number(row.id)}
+                          currentCategory={(row.customCategory ?? row.category) as string}
+                          content={row.content as string}
                           onChanged={() => {
                             utils.budget.getTransactions.invalidate();
                             utils.budget.getCategoryStats.invalidate();
@@ -98,7 +177,7 @@ export function TransactionsTab() {
                         {formatKRW(Math.abs(Number(row.amount)))}
                       </td>
                       <td className="px-4 py-2.5 text-center text-cream-500 text-xs whitespace-nowrap">
-                        {row.paymentMethod ?? ""}
+                        {(row.paymentMethod as string) ?? ""}
                       </td>
                       <td className="px-4 py-2.5 text-center">
                         <span
@@ -111,7 +190,7 @@ export function TransactionsTab() {
                               : "bg-orange-100 text-orange-600"
                           )}
                         >
-                          {row.txType}
+                          {row.txType as string}
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-center">
@@ -121,7 +200,7 @@ export function TransactionsTab() {
                           className="accent-cream-700"
                           onChange={(e) =>
                             toggleMutation.mutate({
-                              transactionIds: [row.id],
+                              transactionIds: [Number(row.id)],
                               excluded: e.target.checked,
                             })
                           }
@@ -136,7 +215,6 @@ export function TransactionsTab() {
         )}
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-3">
           <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>

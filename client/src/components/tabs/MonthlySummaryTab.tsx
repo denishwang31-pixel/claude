@@ -14,6 +14,7 @@ interface Props {
 export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props) {
   const [selectedYearMonth, setSelectedYearMonth] = useState<string | null>(null);
   const [detailCategory, setDetailCategory] = useState<string | null>(null);
+  const [yearFilter, setYearFilter] = useState("");
 
   const { data: monthly, isLoading } = trpc.budget.getMonthlyStats.useQuery({
     includeTransfer,
@@ -67,6 +68,16 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
     return { trendData, topCats };
   }, [pivot]);
 
+  const availableYears = useMemo(
+    () => [...new Set(barData.map((r) => r.yearMonth.slice(0, 4)))].sort().reverse(),
+    [barData]
+  );
+
+  const filteredBarData = useMemo(
+    () => (yearFilter ? barData.filter((r) => r.yearMonth.startsWith(yearFilter)) : barData),
+    [barData, yearFilter]
+  );
+
   // Category breakdown for selected month — derived from pivot (no extra query)
   const monthCatData = useMemo(() => {
     if (!selectedYearMonth || !pivot) return [];
@@ -87,10 +98,31 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
 
   return (
     <div className="space-y-6">
+      {/* Search bar */}
+      {availableYears.length > 1 && (
+        <div className="bg-white rounded-xl border border-cream-200 shadow-sm px-4 py-3 flex items-center gap-2">
+          <span className="text-sm text-cream-500 whitespace-nowrap">연도</span>
+          <select
+            value={yearFilter}
+            onChange={(e) => { setYearFilter(e.target.value); setSelectedYearMonth(null); }}
+            className="border border-cream-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-cream-500"
+          >
+            <option value="">전체</option>
+            {availableYears.map((y) => (
+              <option key={y} value={y}>{y}년</option>
+            ))}
+          </select>
+          {yearFilter && (
+            <button onClick={() => { setYearFilter(""); setSelectedYearMonth(null); }} className="text-cream-400 hover:text-cream-600 text-base px-0.5">✕</button>
+          )}
+          <span className="text-sm text-cream-400 ml-1">{filteredBarData.length}개월</span>
+        </div>
+      )}
+
       {/* Bar chart */}
       <div className="bg-white rounded-xl border border-cream-200 shadow-sm p-5">
         <h3 className="font-serif text-base font-semibold text-cream-700 mb-4">월별 수입 / 지출</h3>
-        <MonthlyBarChart data={barData} />
+        <MonthlyBarChart data={filteredBarData} />
       </div>
 
       {/* Trend chart */}
@@ -113,7 +145,7 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
             </tr>
           </thead>
           <tbody>
-            {barData.map((row) => {
+            {filteredBarData.map((row) => {
               const balance = row.income - row.expense;
               const isSelected = selectedYearMonth === row.yearMonth;
               return (

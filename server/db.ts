@@ -422,20 +422,76 @@ export async function getKpiSummary(
 }
 
 /** 전체 거래 내역 */
-export async function getAllTransactions(userId: number, page = 1, pageSize = 50) {
+function buildTxSearchSQL(userId: number, field: string, query: string): string {
+  const esc = (s: string) => s.replace(/'/g, "''");
+  const escLike = (s: string) => esc(s).replace(/%/g, "\\%").replace(/_/g, "\\_");
+  switch (field) {
+    case "content":      return `t.content ILIKE '%${escLike(query)}%'`;
+    case "category": {
+      const expr = buildEffectiveCategoryExpr(userId);
+      return `(${expr}) ILIKE '%${escLike(query)}%'`;
+    }
+    case "amount_gte": {
+      const n = parseFloat(query.replace(/[^0-9.]/g, ""));
+      return isNaN(n) ? "TRUE" : `ABS(t.amount::numeric) >= ${n}`;
+    }
+    case "paymentMethod": return `t."paymentMethod" ILIKE '%${escLike(query)}%'`;
+    case "txType":        return `t."txType" = '${esc(query)}'`;
+    case "date":          return `TO_CHAR(t."txDate", 'YYYY-MM') = '${esc(query)}'`;
+    default:              return "TRUE";
+  }
+}
+
+export async function getAllTransactions(
+  userId: number,
+  page = 1,
+  pageSize = 50,
+  filter?: { field: string; query: string }
+) {
   const db = await getDb();
   if (!db) return { rows: [], total: 0, excludedIds: new Set<number>() };
 
   const offset = (page - 1) * pageSize;
+
+  if (!filter?.query?.trim()) {
+    const [rows, countRows, excludedIds] = await Promise.all([
+      db.select().from(transactions).where(eq(transactions.userId, userId))
+        .orderBy(desc(transactions.txDate), desc(transactions.txTime))
+        .limit(pageSize).offset(offset),
+      db.select({ total: sql<number>`COUNT(*)` }).from(transactions).where(eq(transactions.userId, userId)),
+      getExcludedTransactionIds(userId),
+    ]);
+    return { rows, total: Number(countRows[0]?.total ?? 0), excludedIds };
+  }
+
+  const filterSQL = buildTxSearchSQL(userId, filter.field, filter.query.trim());
   const [rows, countRows, excludedIds] = await Promise.all([
-    db.select().from(transactions).where(eq(transactions.userId, userId))
-      .orderBy(desc(transactions.txDate), desc(transactions.txTime))
-      .limit(pageSize).offset(offset),
-    db.select({ total: sql<number>`COUNT(*)` }).from(transactions).where(eq(transactions.userId, userId)),
+    db.execute(sql.raw(
+      `SELECT id, "txDate"::text as "txDate", "txTime", "txType", category, "customCategory",
+              content, amount::text as amount, currency, "paymentMethod", memo
+       FROM transactions t
+       WHERE t."userId" = ${userId} AND ${filterSQL}
+       ORDER BY t."txDate" DESC, t."txTime" DESC
+       LIMIT ${pageSize} OFFSET ${offset}`
+    )),
+    db.execute(sql.raw(
+      `SELECT COUNT(*) as total FROM transactions t
+       WHERE t."userId" = ${userId} AND ${filterSQL}`
+    )),
     getExcludedTransactionIds(userId),
   ]);
 
-  return { rows, total: Number(countRows[0]?.total ?? 0), excludedIds };
+  const normalizedRows = (rows as any[]).map((r) => ({
+    ...r,
+    id: Number(r.id),
+    txDate: String(r.txDate),
+    amount: String(r.amount),
+    customCategory: r.customCategory ?? null,
+    paymentMethod: r.paymentMethod ?? null,
+    memo: r.memo ?? null,
+  }));
+
+  return { rows: normalizedRows, total: Number((countRows as any[])[0]?.total ?? 0), excludedIds };
 }
 
 /** 전체 거래 내역 (다운로드용) */
