@@ -16,6 +16,9 @@ import {
   getCategoryRules,
   upsertCategoryRule,
   deleteCategoryRule,
+  updateCategoryRuleActive,
+  seedDefaultRules,
+  getIncomeDistribution,
   applyMappingRulesToNewTransactions,
   getExistingHashes,
   insertTransactions,
@@ -330,10 +333,11 @@ const budgetRouter = router({
         keyword: z.string().min(1),
         category: z.string().min(1),
         isExact: z.boolean().default(false),
+        ruleType: z.string().default("expense"),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await upsertCategoryRule(ctx.user.id, input.keyword, input.category, input.isExact);
+      await upsertCategoryRule(ctx.user.id, input.keyword, input.category, input.isExact, input.ruleType);
       return { success: true };
     }),
 
@@ -343,6 +347,23 @@ const budgetRouter = router({
       await deleteCategoryRule(ctx.user.id, input.ruleId);
       return { success: true };
     }),
+
+  updateRuleActive: protectedProcedure
+    .input(z.object({ ruleId: z.number().int(), isActive: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await updateCategoryRuleActive(ctx.user.id, input.ruleId, input.isActive);
+      return { success: true };
+    }),
+
+  seedDefaultRules: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const count = await seedDefaultRules(ctx.user.id);
+      return { count };
+    }),
+
+  getIncomeDistribution: protectedProcedure.query(async ({ ctx }) => {
+    return getIncomeDistribution(ctx.user.id);
+  }),
 });
 
 export const appRouter = router({

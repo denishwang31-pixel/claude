@@ -74,6 +74,8 @@ export const categoryRules = pgTable("category_rules", {
   keyword: varchar("keyword", { length: 255 }).notNull(),
   category: varchar("category", { length: 50 }).notNull(),
   isExact: integer("isExact").default(0).notNull(),
+  ruleType: varchar("ruleType", { length: 20 }).default("expense").notNull(),
+  isActive: integer("isActive").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });

@@ -1,184 +1,220 @@
 import React, { useState } from "react";
-
-interface Rule { id: number; keyword: string; category: string; isExact: boolean; createdAt: unknown }
 import { trpc } from "../../lib/trpc";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { toast } from "sonner";
 
-const CATEGORIES = [
-  "식비", "카페", "교통", "쇼핑", "의료", "문화", "교육", "여행",
-  "구독", "통신", "주거", "저축", "투자", "금융", "수입", "기타",
-];
+interface Rule {
+  id: number;
+  keyword: string;
+  category: string;
+  isExact: boolean;
+  ruleType: string;
+  isActive: boolean;
+  createdAt: unknown;
+}
 
-export function MappingRulesTab() {
+const EXPENSE_CATS = [
+  "식비", "카페", "교통", "쇼핑", "의료", "문화", "교육", "여행",
+  "구독", "통신", "주거", "금융", "기타",
+];
+const INCOME_CATS = ["급여", "상여금", "이자수입", "부업수입", "기타수입"];
+const SAVINGS_CATS_LIST = ["청약", "적금", "저축", "예금", "CMA"];
+const INVEST_CATS_LIST = ["ETF", "주식", "펀드", "ISA", "IRP", "투자"];
+
+const TYPE_STYLES: Record<string, { badge: string; header: string; border: string }> = {
+  income:     { badge: "bg-emerald-100 text-emerald-700", header: "bg-emerald-50 text-emerald-800", border: "border-emerald-200" },
+  savings:    { badge: "bg-blue-100 text-blue-700",       header: "bg-blue-50 text-blue-800",       border: "border-blue-200" },
+  investment: { badge: "bg-violet-100 text-violet-700",   header: "bg-violet-50 text-violet-800",   border: "border-violet-200" },
+  expense:    { badge: "bg-cream-100 text-cream-700",     header: "bg-cream-50 text-cream-700",     border: "border-cream-200" },
+};
+
+function AddRuleForm({ ruleType, categories }: { ruleType: string; categories: string[] }) {
   const [keyword, setKeyword] = useState("");
-  const [category, setCategory] = useState(CATEGORIES[0]);
+  const [category, setCategory] = useState(categories[0]);
   const [isExact, setIsExact] = useState(false);
-  const [search, setSearch] = useState("");
 
   const utils = trpc.useUtils();
-  const { data: rules, isLoading } = trpc.budget.getCategoryRules.useQuery();
-
   const addMutation = trpc.budget.addCategoryRule.useMutation({
     onSuccess: () => {
       utils.budget.getCategoryRules.invalidate();
       utils.budget.getCategoryStats.invalidate();
-      utils.budget.getTransactions.invalidate();
       utils.budget.getPivotData.invalidate();
       utils.budget.getSavingsStats.invalidate();
+      utils.budget.getIncomeDistribution.invalidate();
       setKeyword("");
-      toast.success("규칙이 추가되었습니다. 기존 내역에도 즉시 반영됩니다.");
+      toast.success("규칙이 추가되었습니다. 기존 내역에 즉시 반영됩니다.");
     },
     onError: () => toast.error("규칙 추가에 실패했습니다."),
   });
 
+  return (
+    <form
+      onSubmit={(e) => { e.preventDefault(); if (!keyword.trim()) { toast.error("키워드를 입력하세요."); return; } addMutation.mutate({ keyword: keyword.trim(), category, isExact, ruleType }); }}
+      className="flex flex-wrap gap-2 items-end pt-3 border-t border-cream-100"
+    >
+      <div className="flex flex-col gap-1 flex-1 min-w-[130px]">
+        <label className="text-xs text-cream-500">키워드</label>
+        <input type="text" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="예: 스타벅스"
+          className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500" />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-cream-500">카테고리</label>
+        <select value={category} onChange={(e) => setCategory(e.target.value)}
+          className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500">
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-cream-500">방식</label>
+        <label className="flex items-center gap-2 border border-cream-300 rounded-lg px-3 py-1.5 text-sm cursor-pointer hover:bg-cream-50">
+          <input type="checkbox" checked={isExact} onChange={(e) => setIsExact(e.target.checked)} className="accent-cream-700" />
+          완전일치
+        </label>
+      </div>
+      <Button type="submit" size="sm" disabled={addMutation.isPending}>추가</Button>
+    </form>
+  );
+}
+
+function RulesSection({ title, ruleType, rules }: { title: string; ruleType: string; rules: Rule[] }) {
+  const [open, setOpen] = useState(true);
+  const style = TYPE_STYLES[ruleType] ?? TYPE_STYLES.expense;
+  const cats = ruleType === "income" ? INCOME_CATS : ruleType === "savings" ? SAVINGS_CATS_LIST : ruleType === "investment" ? INVEST_CATS_LIST : EXPENSE_CATS;
+
+  const utils = trpc.useUtils();
+
   const deleteMutation = trpc.budget.deleteCategoryRule.useMutation({
     onSuccess: () => {
       utils.budget.getCategoryRules.invalidate();
+      utils.budget.getCategoryStats.invalidate();
+      utils.budget.getIncomeDistribution.invalidate();
       toast.success("규칙이 삭제되었습니다.");
     },
-    onError: () => toast.error("규칙 삭제에 실패했습니다."),
   });
 
-  function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
-    if (!keyword.trim()) { toast.error("키워드를 입력하세요."); return; }
-    addMutation.mutate({ keyword: keyword.trim(), category, isExact });
-  }
-
-  const typedRules = (rules ?? []) as Rule[];
-  const filtered = typedRules.filter(
-    (r) =>
-      !search ||
-      r.keyword.toLowerCase().includes(search.toLowerCase()) ||
-      r.category.toLowerCase().includes(search.toLowerCase())
-  );
+  const activeMutation = trpc.budget.updateRuleActive.useMutation({
+    onSuccess: () => {
+      utils.budget.getCategoryRules.invalidate();
+      utils.budget.getCategoryStats.invalidate();
+      utils.budget.getPivotData.invalidate();
+      utils.budget.getKpiSummary.invalidate();
+      utils.budget.getIncomeDistribution.invalidate();
+    },
+  });
 
   return (
-    <div className="space-y-6">
-      {/* Add rule form */}
-      <div className="bg-white rounded-xl border border-cream-200 shadow-sm p-5">
-        <h3 className="font-serif text-base font-semibold text-cream-700 mb-4">새 매핑 규칙 추가</h3>
-        <form onSubmit={handleAdd} className="flex flex-wrap gap-3 items-end">
-          <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
-            <label className="text-xs text-cream-600 font-medium">키워드</label>
-            <input
-              type="text"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="예: 스타벅스"
-              className="border border-cream-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cream-500 focus:ring-1 focus:ring-cream-300"
-            />
-          </div>
+    <div className={cn("rounded-xl border overflow-hidden", style.border)}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={cn("w-full flex items-center justify-between px-5 py-3 text-left text-sm font-semibold", style.header)}
+      >
+        <span>{title} 규칙 <span className="font-normal opacity-60 text-xs ml-1">{rules.length}개</span></span>
+        <span className="text-xs opacity-50">{open ? "▲" : "▼"}</span>
+      </button>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-cream-600 font-medium">카테고리</label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="border border-cream-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cream-500"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-cream-600 font-medium">매칭 방식</label>
-            <label className="flex items-center gap-2 border border-cream-300 rounded-lg px-3 py-2 text-sm cursor-pointer hover:bg-cream-50">
-              <input
-                type="checkbox"
-                checked={isExact}
-                onChange={(e) => setIsExact(e.target.checked)}
-                className="accent-cream-700"
-              />
-              완전 일치
-            </label>
-          </div>
-
-          <Button type="submit" disabled={addMutation.isPending}>
-            {addMutation.isPending ? "추가 중..." : "규칙 추가"}
-          </Button>
-        </form>
-        <p className="text-xs text-cream-400 mt-2">
-          규칙 추가 시 기존 거래 내역에도 즉시 카테고리가 반영됩니다. (사용자가 직접 수정한 항목 제외)
-        </p>
-      </div>
-
-      {/* Rules list */}
-      <div className="bg-white rounded-xl border border-cream-200 shadow-sm p-5">
-        <div className="flex items-center justify-between mb-4 gap-3">
-          <h3 className="font-serif text-base font-semibold text-cream-700 shrink-0">
-            매핑 규칙 목록
-            <span className="text-sm font-sans font-normal text-cream-400 ml-2">
-              {rules?.length ?? 0}개
-            </span>
-          </h3>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="키워드/카테고리 검색..."
-            className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500 w-48"
-          />
-        </div>
-
-        {isLoading ? (
-          <div className="animate-pulse h-32 bg-cream-100 rounded-lg" />
-        ) : !filtered.length ? (
-          <div className="flex items-center justify-center h-24 text-cream-400 text-sm">
-            {search ? "검색 결과가 없습니다." : "등록된 규칙이 없습니다."}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
+      {open && (
+        <div className="bg-white px-5 pb-4">
+          {rules.length > 0 && (
+            <table className="w-full text-sm border-collapse mb-1 mt-2">
               <thead>
-                <tr className="bg-cream-50 border-b border-cream-200">
-                  <th className="text-left px-4 py-2.5 text-cream-600 font-medium">키워드</th>
-                  <th className="text-left px-4 py-2.5 text-cream-600 font-medium">카테고리</th>
-                  <th className="text-center px-4 py-2.5 text-cream-600 font-medium">매칭</th>
-                  <th className="text-right px-4 py-2.5 text-cream-600 font-medium">삭제</th>
+                <tr className="border-b border-cream-100 text-xs text-cream-500">
+                  <th className="text-left py-1.5 font-medium w-7">활성</th>
+                  <th className="text-left py-1.5 font-medium pl-1">키워드</th>
+                  <th className="text-left py-1.5 font-medium">카테고리</th>
+                  <th className="text-center py-1.5 font-medium">방식</th>
+                  <th className="text-right py-1.5 font-medium">삭제</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((rule: Rule) => (
-                  <tr key={rule.id} className="border-b border-cream-100 hover:bg-cream-50">
-                    <td className="px-4 py-2.5 font-medium text-cream-800">{rule.keyword}</td>
-                    <td className="px-4 py-2.5">
-                      <span className="px-2 py-0.5 bg-cream-100 text-cream-700 rounded-full text-xs">
-                        {rule.category}
+                {rules.map((rule) => (
+                  <tr key={rule.id} className={cn("border-b border-cream-50 transition-opacity", !rule.isActive && "opacity-40")}>
+                    <td className="py-2">
+                      <input type="checkbox" checked={rule.isActive} className="accent-cream-700 cursor-pointer"
+                        onChange={(e) => activeMutation.mutate({ ruleId: rule.id, isActive: e.target.checked })} />
+                    </td>
+                    <td className="py-2 pl-1 font-medium text-cream-800">{rule.keyword}</td>
+                    <td className="py-2">
+                      <span className={cn("px-2 py-0.5 rounded-full text-xs", style.badge)}>{rule.category}</span>
+                    </td>
+                    <td className="py-2 text-center">
+                      <span className={cn("px-2 py-0.5 rounded-full text-xs", rule.isExact ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-600")}>
+                        {rule.isExact ? "완전일치" : "포함"}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-center">
-                      <span
-                        className={cn(
-                          "px-2 py-0.5 rounded-full text-xs",
-                          rule.isExact
-                            ? "bg-blue-100 text-blue-600"
-                            : "bg-amber-100 text-amber-600"
-                        )}
-                      >
-                        {rule.isExact ? "완전 일치" : "포함"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-right">
-                      <button
-                        onClick={() => deleteMutation.mutate({ ruleId: rule.id })}
-                        disabled={deleteMutation.isPending}
-                        className="text-red-400 hover:text-red-600 text-xs transition-colors disabled:opacity-50"
-                      >
-                        삭제
-                      </button>
+                    <td className="py-2 text-right">
+                      <button onClick={() => deleteMutation.mutate({ ruleId: rule.id })} disabled={deleteMutation.isPending}
+                        className="text-red-400 hover:text-red-600 text-xs transition-colors disabled:opacity-50">삭제</button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
+          )}
+          <AddRuleForm ruleType={ruleType} categories={cats} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function MappingRulesTab() {
+  const [search, setSearch] = useState("");
+  const utils = trpc.useUtils();
+  const { data: rules, isLoading } = trpc.budget.getCategoryRules.useQuery();
+
+  const seedMutation = trpc.budget.seedDefaultRules.useMutation({
+    onSuccess: (res) => {
+      utils.budget.getCategoryRules.invalidate();
+      utils.budget.getCategoryStats.invalidate();
+      utils.budget.getIncomeDistribution.invalidate();
+      toast.success(`기본 규칙 ${res.count}개가 추가되었습니다.`);
+    },
+    onError: () => toast.error("기본 규칙 추가에 실패했습니다."),
+  });
+
+  const typedRules = (rules ?? []) as Rule[];
+  const filtered = search
+    ? typedRules.filter((r) => r.keyword.toLowerCase().includes(search.toLowerCase()) || r.category.toLowerCase().includes(search.toLowerCase()))
+    : typedRules;
+
+  const byType = {
+    income:     filtered.filter((r) => r.ruleType === "income"),
+    savings:    filtered.filter((r) => r.ruleType === "savings"),
+    investment: filtered.filter((r) => r.ruleType === "investment"),
+    expense:    filtered.filter((r) => !["income", "savings", "investment"].includes(r.ruleType)),
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="bg-white rounded-xl border border-cream-200 shadow-sm px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <h3 className="font-serif text-base font-semibold text-cream-700">매핑 규칙</h3>
+          <span className="text-sm text-cream-400">{typedRules.length}개</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="키워드/카테고리 검색..."
+            className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500 w-44" />
+          <Button variant="ghost" size="sm" onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending} className="whitespace-nowrap text-xs">
+            {seedMutation.isPending ? "추가 중..." : "기본 규칙 불러오기"}
+          </Button>
+        </div>
       </div>
+      <p className="text-xs text-cream-400 px-1">
+        체크박스를 해제하면 해당 규칙이 비활성화되어 통계에서 제외됩니다. 규칙 추가 시 기존 내역에 즉시 반영됩니다.
+      </p>
+
+      {isLoading ? (
+        <div className="animate-pulse h-32 bg-cream-100 rounded-xl" />
+      ) : (
+        <div className="space-y-3">
+          <RulesSection title="수입" ruleType="income"     rules={byType.income} />
+          <RulesSection title="저축" ruleType="savings"    rules={byType.savings} />
+          <RulesSection title="투자" ruleType="investment" rules={byType.investment} />
+          <RulesSection title="지출" ruleType="expense"    rules={byType.expense} />
+        </div>
+      )}
     </div>
   );
 }

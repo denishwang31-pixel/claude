@@ -178,6 +178,7 @@ function buildEffectiveCategoryExpr(userId: number): string {
     t."customCategory",
     (SELECT cr.category FROM category_rules cr
      WHERE cr."userId" = ${userId}
+       AND cr."isActive" = 1
        AND (cr."isExact" = 1 AND t.content = cr.keyword
             OR cr."isExact" = 0 AND t.content LIKE '%' || cr.keyword || '%')
      ORDER BY cr."isExact" DESC, cr.id ASC
@@ -577,7 +578,7 @@ export async function getCategoryRules(userId: number) {
   if (!db) return [];
 
   const rows = await db.execute(
-    sql`SELECT id, keyword, category, "isExact", "createdAt" FROM category_rules WHERE "userId" = ${userId} ORDER BY "createdAt" DESC`
+    sql`SELECT id, keyword, category, "isExact", "ruleType", "isActive", "createdAt" FROM category_rules WHERE "userId" = ${userId} ORDER BY "createdAt" DESC`
   );
 
   return (rows as any[]).map((r) => ({
@@ -585,6 +586,8 @@ export async function getCategoryRules(userId: number) {
     keyword: String(r.keyword),
     category: String(r.category),
     isExact: r.isExact === true || r.isExact === 1,
+    ruleType: String(r.ruleType ?? "expense"),
+    isActive: r.isActive === true || r.isActive === 1 || r.isActive === "1",
     createdAt: r.createdAt,
   }));
 }
@@ -593,15 +596,16 @@ export async function upsertCategoryRule(
   userId: number,
   keyword: string,
   category: string,
-  isExact = false
+  isExact = false,
+  ruleType = "expense"
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
 
   await db.execute(
-    sql`INSERT INTO category_rules ("userId", keyword, category, "isExact")
-        VALUES (${userId}, ${keyword}, ${category}, ${isExact})
-        ON CONFLICT ("userId", keyword) DO UPDATE SET category = ${category}, "isExact" = ${isExact}, "updatedAt" = NOW()`
+    sql`INSERT INTO category_rules ("userId", keyword, category, "isExact", "ruleType")
+        VALUES (${userId}, ${keyword}, ${category}, ${isExact}, ${ruleType})
+        ON CONFLICT ("userId", keyword) DO UPDATE SET category = ${category}, "isExact" = ${isExact}, "ruleType" = ${ruleType}, "updatedAt" = NOW()`
   );
 
   // 기존 거래에 즉시 반영 (customCategory가 없는 항목만)
@@ -624,6 +628,136 @@ export async function deleteCategoryRule(userId: number, ruleId: number): Promis
   await db.execute(
     sql`DELETE FROM category_rules WHERE id = ${ruleId} AND "userId" = ${userId}`
   );
+}
+
+export async function updateCategoryRuleActive(
+  userId: number,
+  ruleId: number,
+  isActive: boolean
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.execute(
+    sql`UPDATE category_rules SET "isActive" = ${isActive ? 1 : 0}, "updatedAt" = NOW()
+        WHERE id = ${ruleId} AND "userId" = ${userId}`
+  );
+}
+
+export async function seedDefaultRules(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const defaultRules: { keyword: string; category: string; isExact: boolean; ruleType: string }[] = [
+    // Income rules
+    { keyword: "급여", category: "급여", isExact: false, ruleType: "income" },
+    { keyword: "월급", category: "급여", isExact: false, ruleType: "income" },
+    { keyword: "상여", category: "상여금", isExact: false, ruleType: "income" },
+    { keyword: "보너스", category: "상여금", isExact: false, ruleType: "income" },
+    { keyword: "이자", category: "이자수입", isExact: false, ruleType: "income" },
+    // Savings rules
+    { keyword: "청약", category: "청약", isExact: false, ruleType: "savings" },
+    { keyword: "적금", category: "적금", isExact: false, ruleType: "savings" },
+    { keyword: "저축은행", category: "저축", isExact: false, ruleType: "savings" },
+    // Investment rules
+    { keyword: "ETF", category: "ETF", isExact: false, ruleType: "investment" },
+    { keyword: "주식", category: "주식", isExact: false, ruleType: "investment" },
+    { keyword: "펀드", category: "펀드", isExact: false, ruleType: "investment" },
+    { keyword: "CMA", category: "CMA", isExact: false, ruleType: "investment" },
+    { keyword: "ISA", category: "ISA", isExact: false, ruleType: "investment" },
+    { keyword: "IRP", category: "IRP", isExact: false, ruleType: "investment" },
+    // Expense rules
+    { keyword: "스타벅스", category: "카페", isExact: false, ruleType: "expense" },
+    { keyword: "이디야", category: "카페", isExact: false, ruleType: "expense" },
+    { keyword: "커피빈", category: "카페", isExact: false, ruleType: "expense" },
+    { keyword: "투썸플레이스", category: "카페", isExact: false, ruleType: "expense" },
+    { keyword: "메가커피", category: "카페", isExact: false, ruleType: "expense" },
+    { keyword: "빽다방", category: "카페", isExact: false, ruleType: "expense" },
+    { keyword: "맥도날드", category: "식비", isExact: false, ruleType: "expense" },
+    { keyword: "버거킹", category: "식비", isExact: false, ruleType: "expense" },
+    { keyword: "롯데리아", category: "식비", isExact: false, ruleType: "expense" },
+    { keyword: "KFC", category: "식비", isExact: false, ruleType: "expense" },
+    { keyword: "배달의민족", category: "식비", isExact: false, ruleType: "expense" },
+    { keyword: "쿠팡이츠", category: "식비", isExact: false, ruleType: "expense" },
+    { keyword: "요기요", category: "식비", isExact: false, ruleType: "expense" },
+    { keyword: "카카오택시", category: "교통", isExact: false, ruleType: "expense" },
+    { keyword: "주유", category: "교통", isExact: false, ruleType: "expense" },
+    { keyword: "쿠팡", category: "쇼핑", isExact: false, ruleType: "expense" },
+    { keyword: "이마트", category: "쇼핑", isExact: false, ruleType: "expense" },
+    { keyword: "홈플러스", category: "쇼핑", isExact: false, ruleType: "expense" },
+    { keyword: "CGV", category: "문화", isExact: false, ruleType: "expense" },
+    { keyword: "메가박스", category: "문화", isExact: false, ruleType: "expense" },
+    { keyword: "넷플릭스", category: "구독", isExact: false, ruleType: "expense" },
+    { keyword: "유튜브프리미엄", category: "구독", isExact: false, ruleType: "expense" },
+    { keyword: "멜론", category: "구독", isExact: false, ruleType: "expense" },
+    { keyword: "SKT", category: "통신", isExact: false, ruleType: "expense" },
+    { keyword: "LG유플러스", category: "통신", isExact: false, ruleType: "expense" },
+  ];
+
+  let inserted = 0;
+  for (const rule of defaultRules) {
+    try {
+      await db.execute(
+        sql`INSERT INTO category_rules ("userId", keyword, category, "isExact", "ruleType")
+            VALUES (${userId}, ${rule.keyword}, ${rule.category}, ${rule.isExact ? 1 : 0}, ${rule.ruleType})
+            ON CONFLICT ("userId", keyword) DO NOTHING`
+      );
+      inserted++;
+    } catch {
+      // skip on error
+    }
+  }
+  return inserted;
+}
+
+export async function getIncomeDistribution(userId: number): Promise<{
+  income: { category: string; total: number; count: number }[];
+  expenses: { category: string; total: number; count: number }[];
+  savings: { category: string; total: number; count: number }[];
+  investments: { category: string; total: number; count: number }[];
+}> {
+  const db = await getDb();
+  if (!db) return { income: [], expenses: [], savings: [], investments: [] };
+
+  const rules = await getCategoryRules(userId);
+  const incomeCats = new Set(rules.filter((r) => r.ruleType === "income").map((r) => r.category));
+  const savingsCats = new Set(rules.filter((r) => r.ruleType === "savings").map((r) => r.category));
+  const investmentCats = new Set(rules.filter((r) => r.ruleType === "investment").map((r) => r.category));
+
+  const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
+  const notExcludedSQL = `NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
+
+  const rows = await db.execute(sql.raw(
+    `SELECT (${effectiveCatExpr}) as "effectiveCategory", t."txType", SUM(ABS(t.amount::numeric)) as total, COUNT(*) as cnt
+     FROM transactions t
+     WHERE t."userId" = ${userId}
+       AND ${notExcludedSQL}
+     GROUP BY (${effectiveCatExpr}), t."txType"
+     ORDER BY total DESC`
+  ));
+
+  const income: { category: string; total: number; count: number }[] = [];
+  const expenses: { category: string; total: number; count: number }[] = [];
+  const savings: { category: string; total: number; count: number }[] = [];
+  const investments: { category: string; total: number; count: number }[] = [];
+
+  for (const r of rows as any[]) {
+    const category = String(r.effectiveCategory);
+    const total = Number(r.total);
+    const count = Number(r.cnt);
+    const txType = String(r.txType);
+
+    if (txType === "수입" || incomeCats.has(category)) {
+      income.push({ category, total, count });
+    } else if (savingsCats.has(category)) {
+      savings.push({ category, total, count });
+    } else if (investmentCats.has(category)) {
+      investments.push({ category, total, count });
+    } else if (txType === "지출") {
+      expenses.push({ category, total, count });
+    }
+  }
+
+  return { income, expenses, savings, investments };
 }
 
 export async function applyMappingRulesToNewTransactions(

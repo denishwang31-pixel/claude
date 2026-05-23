@@ -8,6 +8,7 @@ import { CategoryTab } from "../components/tabs/CategoryTab";
 import { MonthlySummaryTab } from "../components/tabs/MonthlySummaryTab";
 import { MappingRulesTab } from "../components/tabs/MappingRulesTab";
 import { TransactionsTab } from "../components/tabs/TransactionsTab";
+import { IncomeDistributionPanel } from "../components/IncomeDistributionPanel";
 import { useTheme } from "../contexts/ThemeContext";
 
 type Tab = "dashboard" | "monthly" | "category" | "transactions" | "mapping";
@@ -60,6 +61,7 @@ export default function Home() {
     utils.budget.getPivotData.invalidate();
     utils.budget.getSavingsStats.invalidate();
     utils.budget.getTransactions.invalidate();
+    utils.budget.getIncomeDistribution.invalidate();
   }
 
   const avgMonthly =
@@ -148,6 +150,11 @@ export default function Home() {
               icon="📈"
             />
           </div>
+        )}
+
+        {/* Dashboard: Income Distribution Panel */}
+        {activeTab === "dashboard" && (
+          <IncomeDistributionPanel />
         )}
 
         {/* Tab content */}
