@@ -229,10 +229,6 @@ export async function getMonthlyStats(
     ? `AND t.category NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
     : "";
 
-  const paymentExcludeSQL = !includeTransfer
-    ? `AND NOT (t."paymentMethod" IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t."paymentMethod" LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t."customCategory", t.category) NOT IN ('저축','투자'))`
-    : "";
-
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const [incomeRows, expenseRows] = await Promise.all([
@@ -252,7 +248,6 @@ export async function getMonthlyStats(
        WHERE t."userId" = ${userId}
          AND t."txType" = '지출'
          ${catExcludeSQL}
-         ${paymentExcludeSQL}
          ${notExcludedSQL}
        GROUP BY TO_CHAR(t."txDate", 'YYYY-MM')
        ORDER BY TO_CHAR(t."txDate", 'YYYY-MM')`
@@ -288,10 +283,6 @@ export async function getCategoryStats(
     ? `AND t.category NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
     : "";
 
-  const paymentExcludeSQL = !includeTransfer
-    ? `AND NOT (t."paymentMethod" IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t."paymentMethod" LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t."customCategory", t.category) NOT IN ('저축','투자'))`
-    : "";
-
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
   const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
 
@@ -306,7 +297,6 @@ export async function getCategoryStats(
          AND (
            (t."txType" = '지출'
             ${catExcludeSQL}
-            ${paymentExcludeSQL}
             ${notExcludedSQL}
            )
            OR
@@ -343,14 +333,10 @@ export async function getPivotData(
     ? `AND t.category NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
     : "";
 
-  const paymentExcludeSQL = !includeTransfer
-    ? `AND NOT (t."paymentMethod" IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t."paymentMethod" LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t."customCategory", t.category) NOT IN ('저축','투자'))`
-    : "";
-
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const rows = await db.execute(sql.raw(
-    `SELECT sub."yearMonth", sub."effectiveCategory" as category, SUM(ABS(sub.amount::numeric)) as total
+    `SELECT sub."yearMonth", sub."effectiveCategory" as category, SUM(ABS(sub.amount::numeric)) as total, COUNT(*) as cnt
      FROM (
        SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth",
               t.amount,
@@ -360,7 +346,6 @@ export async function getPivotData(
          AND (
            (t."txType" = '지출'
             ${catExcludeSQL}
-            ${paymentExcludeSQL}
             ${notExcludedSQL}
            )
            OR
@@ -373,7 +358,7 @@ export async function getPivotData(
      ORDER BY sub."yearMonth"`
   ));
 
-  return (rows as any[]).map((r) => ({ yearMonth: r.yearMonth, category: r.category, total: Number(r.total) }));
+  return (rows as any[]).map((r) => ({ yearMonth: r.yearMonth, category: r.category, total: Number(r.total), count: Number(r.cnt) }));
 }
 
 /** KPI 요약 */
@@ -395,10 +380,6 @@ export async function getKpiSummary(
     ? `AND t.category NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
     : "";
 
-  const paymentExcludeSQL = !includeTransfer
-    ? `AND NOT (t."paymentMethod" IS NOT NULL AND (${TRANSFER_PAYMENT_KEYWORDS.filter((k) => k !== "저축").map((k) => `t."paymentMethod" LIKE '%${k}%'`).join(" OR ")}) AND COALESCE(t."customCategory", t.category) NOT IN ('저축','투자'))`
-    : "";
-
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const [incomeRows, expenseRows, monthRows] = await Promise.all([
@@ -410,7 +391,7 @@ export async function getKpiSummary(
       `SELECT SUM(ABS(t.amount::numeric)) as total FROM transactions t
        WHERE t."userId" = ${userId}
          AND (
-           (t."txType" = '지출' ${catExcludeSQL} ${paymentExcludeSQL} ${notExcludedSQL})
+           (t."txType" = '지출' ${catExcludeSQL} ${notExcludedSQL})
            OR
            (COALESCE(t."customCategory", t.category) IN ('저축','투자') ${notExcludedSQL})
          )`

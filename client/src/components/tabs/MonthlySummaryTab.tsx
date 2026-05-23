@@ -25,11 +25,6 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
     excludedCategories,
   });
 
-  const { data: monthCatStats, isLoading: loadingCatStats } = trpc.budget.getCategoryStats.useQuery(
-    { includeTransfer, excludedCategories, yearMonth: selectedYearMonth! },
-    { enabled: !!selectedYearMonth }
-  );
-
   // Merge income/expense into bar chart data
   const barData = useMemo(() => {
     if (!monthly) return [];
@@ -71,6 +66,14 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
 
     return { trendData, topCats };
   }, [pivot]);
+
+  // Category breakdown for selected month — derived from pivot (no extra query)
+  const monthCatData = useMemo(() => {
+    if (!selectedYearMonth || !pivot) return [];
+    return pivot
+      .filter((r) => r.yearMonth === selectedYearMonth)
+      .sort((a, b) => b.total - a.total);
+  }, [selectedYearMonth, pivot]);
 
   if (isLoading) {
     return (
@@ -119,18 +122,11 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
                   onClick={() => setSelectedYearMonth(isSelected ? null : row.yearMonth)}
                   className={cn(
                     "border-b border-cream-100 cursor-pointer transition-colors",
-                    isSelected
-                      ? "bg-cream-100 hover:bg-cream-100"
-                      : "hover:bg-cream-50"
+                    isSelected ? "bg-cream-100" : "hover:bg-cream-50"
                   )}
                 >
-                  <td className="px-4 py-2.5 font-medium text-cream-700 flex items-center gap-1.5">
-                    <span
-                      className={cn(
-                        "text-xs transition-transform",
-                        isSelected ? "rotate-90" : ""
-                      )}
-                    >
+                  <td className="px-4 py-2.5 font-medium text-cream-700">
+                    <span className={cn("inline-block text-xs mr-1.5 transition-transform", isSelected && "rotate-90")}>
                       ▶
                     </span>
                     {formatYearMonth(row.yearMonth)}
@@ -141,12 +137,7 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
                   <td className="px-4 py-2.5 text-right tabular-nums text-red-500">
                     {row.expense ? formatKRW(row.expense) : "-"}
                   </td>
-                  <td
-                    className={cn(
-                      "px-4 py-2.5 text-right tabular-nums font-semibold",
-                      balance >= 0 ? "text-emerald-600" : "text-red-500"
-                    )}
-                  >
+                  <td className={cn("px-4 py-2.5 text-right tabular-nums font-semibold", balance >= 0 ? "text-emerald-600" : "text-red-500")}>
                     {formatKRW(balance)}
                   </td>
                 </tr>
@@ -156,7 +147,7 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
         </table>
       </div>
 
-      {/* Monthly category breakdown */}
+      {/* Monthly category breakdown (from pivot data) */}
       {selectedYearMonth && (
         <div className="bg-white rounded-xl border border-cream-200 shadow-sm p-5">
           <h3 className="font-serif text-base font-semibold text-cream-700 mb-1">
@@ -164,9 +155,7 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
           </h3>
           <p className="text-xs text-cream-400 mb-4">카테고리를 클릭하면 상세 내역을 볼 수 있습니다.</p>
 
-          {loadingCatStats ? (
-            <div className="flex items-center justify-center h-24 text-cream-400">불러오는 중...</div>
-          ) : !monthCatStats?.length ? (
+          {!monthCatData.length ? (
             <div className="flex items-center justify-center h-24 text-cream-400">내역이 없습니다.</div>
           ) : (
             <table className="w-full text-sm border-collapse">
@@ -179,7 +168,7 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
                 </tr>
               </thead>
               <tbody>
-                {monthCatStats.map((cat, i) => (
+                {monthCatData.map((cat, i) => (
                   <tr
                     key={cat.category}
                     onClick={() => setDetailCategory(cat.category)}
@@ -193,7 +182,7 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
                       <span className="text-cream-800">{cat.category}</span>
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-cream-500">
-                      {cat.count}건
+                      {"count" in cat ? `${cat.count}건` : "-"}
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-medium text-cream-800">
                       {formatKRW(cat.total)}

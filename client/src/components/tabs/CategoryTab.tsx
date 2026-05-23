@@ -15,7 +15,7 @@ interface Props {
 export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  const { data: catStats, isLoading } = trpc.budget.getCategoryStats.useQuery({
+  const { data: catStats, isLoading, error } = trpc.budget.getCategoryStats.useQuery({
     includeTransfer,
     excludedCategories,
   });
@@ -45,11 +45,22 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
     );
   }
 
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-red-400 gap-3">
+        <span className="text-4xl">⚠️</span>
+        <p className="font-medium">카테고리 데이터 오류</p>
+        <p className="text-sm text-red-300">{error.message}</p>
+      </div>
+    );
+  }
+
   if (!catStats?.length) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-cream-400 gap-3">
         <span className="text-4xl">📂</span>
         <p>카테고리 데이터가 없습니다.</p>
+        <p className="text-sm">엑셀 파일을 업로드하면 카테고리별 분석이 표시됩니다.</p>
       </div>
     );
   }
