@@ -15,8 +15,10 @@ interface Rule {
 }
 
 const EXPENSE_CATS = [
-  "식비", "카페", "교통", "쇼핑", "의료", "문화", "교육", "여행",
-  "구독", "통신", "주거", "금융", "생활", "편의점", "마트", "기타",
+  "식비", "카페", "쇼핑", "생활용품", "주거",
+  "교통", "통신", "구독",
+  "문화", "교육", "여행", "미용", "건강", "의료",
+  "금융", "세금", "기타",
 ];
 const INCOME_CATS = ["급여", "상여금", "이자수입", "부업수입", "기타수입"];
 const SAVINGS_CATS_LIST = ["청약", "적금", "저축", "예금", "CMA"];
@@ -183,6 +185,18 @@ export function MappingRulesTab() {
     onError: () => toast.error("규칙 자동 생성에 실패했습니다."),
   });
 
+  const applyAllMutation = trpc.budget.applyRulesToAll.useMutation({
+    onSuccess: (res) => {
+      utils.budget.getCategoryStats.invalidate();
+      utils.budget.getPivotData.invalidate();
+      utils.budget.getKpiSummary.invalidate();
+      utils.budget.getMonthlyStats.invalidate();
+      utils.budget.getTransactions.invalidate();
+      toast.success(`미분류 거래 ${res.count}건에 규칙을 적용했습니다.`);
+    },
+    onError: () => toast.error("재분류에 실패했습니다."),
+  });
+
   const typedRules = (rules ?? []) as Rule[];
   const filtered = search
     ? typedRules.filter((r) => r.keyword.toLowerCase().includes(search.toLowerCase()) || r.category.toLowerCase().includes(search.toLowerCase()))
@@ -206,6 +220,10 @@ export function MappingRulesTab() {
         <div className="flex items-center gap-2">
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="키워드/카테고리 검색..."
             className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500 w-44" />
+          <Button variant="ghost" size="sm" onClick={() => applyAllMutation.mutate()} disabled={applyAllMutation.isPending}
+            className="whitespace-nowrap text-xs text-emerald-600 hover:text-emerald-700 font-semibold">
+            {applyAllMutation.isPending ? "적용 중..." : "미분류 내역 전체 재분류"}
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending} className="whitespace-nowrap text-xs text-blue-600 hover:text-blue-700">
             {generateMutation.isPending ? "생성 중..." : "거래내역에서 자동 생성"}
           </Button>
@@ -215,7 +233,7 @@ export function MappingRulesTab() {
         </div>
       </div>
       <p className="text-xs text-cream-400 px-1">
-        체크박스를 해제하면 해당 규칙이 비활성화되어 통계에서 제외됩니다. 규칙 추가 시 기존 내역에 즉시 반영됩니다.
+        체크박스를 해제하면 해당 규칙이 비활성화됩니다. <strong className="text-cream-600">기본 규칙 불러오기</strong> → <strong className="text-emerald-600">미분류 내역 전체 재분류</strong> 순서로 실행하면 새 카테고리로 자동 분류됩니다.
       </p>
 
       {isLoading ? (

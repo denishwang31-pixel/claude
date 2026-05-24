@@ -22,6 +22,7 @@ import {
   getL3Stats,
   generateRulesFromTransactions,
   applyMappingRulesToNewTransactions,
+  applyRulesToAllTransactions,
   getExistingHashes,
   insertTransactions,
   setExcludedTransactions,
@@ -372,6 +373,12 @@ const budgetRouter = router({
   generateRulesFromTransactions: protectedProcedure
     .mutation(async ({ ctx }) => {
       const count = await generateRulesFromTransactions(ctx.user.id);
+      return { count };
+    }),
+
+  applyRulesToAll: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const count = await applyRulesToAllTransactions(ctx.user.id);
       return { count };
     }),
 
