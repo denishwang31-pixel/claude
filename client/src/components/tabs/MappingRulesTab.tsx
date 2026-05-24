@@ -222,7 +222,7 @@ export function MappingRulesTab() {
             className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500 w-44" />
           <Button variant="ghost" size="sm" onClick={() => applyAllMutation.mutate()} disabled={applyAllMutation.isPending}
             className="whitespace-nowrap text-xs text-emerald-600 hover:text-emerald-700 font-semibold">
-            {applyAllMutation.isPending ? "적용 중..." : "미분류 내역 전체 재분류"}
+            {applyAllMutation.isPending ? "적용 중..." : "전체 거래 규칙 재적용"}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending} className="whitespace-nowrap text-xs text-blue-600 hover:text-blue-700">
             {generateMutation.isPending ? "생성 중..." : "거래내역에서 자동 생성"}
@@ -233,7 +233,7 @@ export function MappingRulesTab() {
         </div>
       </div>
       <p className="text-xs text-cream-400 px-1">
-        체크박스를 해제하면 해당 규칙이 비활성화됩니다. <strong className="text-cream-600">기본 규칙 불러오기</strong> → <strong className="text-emerald-600">미분류 내역 전체 재분류</strong> 순서로 실행하면 새 카테고리로 자동 분류됩니다.
+        체크박스를 해제하면 해당 규칙이 비활성화됩니다. <strong className="text-cream-600">기본 규칙 불러오기</strong> → <strong className="text-emerald-600">전체 거래 규칙 재적용</strong> 순서로 실행하면 기존 분류를 포함한 모든 내역에 새 규칙이 적용됩니다.
       </p>
 
       {isLoading ? (

@@ -1004,18 +1004,23 @@ export async function getIncomeDistribution(userId: number): Promise<{
   return { income, expenses, savings, investments };
 }
 
-/** 활성 규칙을 미분류(customCategory=NULL) 거래 전체에 적용 */
+/** 활성 규칙을 모든 거래에 적용 (기존 customCategory도 덮어씀) */
 export async function applyRulesToAllTransactions(userId: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
   const rules = await getCategoryRules(userId);
-  const activeRules = rules.filter((r) => r.isActive);
+  // 완전일치 우선, 같은 방식이면 긴 키워드 우선 (더 구체적)
+  const activeRules = rules
+    .filter((r) => r.isActive)
+    .sort((a, b) => {
+      if (a.isExact !== b.isExact) return a.isExact ? -1 : 1;
+      return b.keyword.length - a.keyword.length;
+    });
   if (activeRules.length === 0) return 0;
 
   const txRows = await db.execute(sql.raw(
-    `SELECT id, content FROM transactions
-     WHERE "userId" = ${userId} AND "customCategory" IS NULL AND content IS NOT NULL`
+    `SELECT id, content FROM transactions WHERE "userId" = ${userId} AND content IS NOT NULL`
   ));
 
   let updated = 0;
@@ -1025,8 +1030,7 @@ export async function applyRulesToAllTransactions(userId: number): Promise<numbe
       const matches = rule.isExact ? content === rule.keyword : content.includes(rule.keyword);
       if (matches) {
         await db.execute(
-          sql`UPDATE transactions SET "customCategory" = ${rule.category}
-              WHERE id = ${tx.id} AND "customCategory" IS NULL`
+          sql`UPDATE transactions SET "customCategory" = ${rule.category} WHERE id = ${tx.id}`
         );
         updated++;
         break;
