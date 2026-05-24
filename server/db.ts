@@ -1004,40 +1004,43 @@ export async function getIncomeDistribution(userId: number): Promise<{
   return { income, expenses, savings, investments };
 }
 
-/** 활성 규칙을 모든 거래에 적용 (기존 customCategory도 덮어씀) */
+/** 활성 규칙을 모든 거래에 적용 (기존 customCategory도 덮어씀) — 단일 SQL CTE */
 export async function applyRulesToAllTransactions(userId: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
-  const rules = await getCategoryRules(userId);
   // 완전일치 우선, 같은 방식이면 긴 키워드 우선 (더 구체적)
-  const activeRules = rules
-    .filter((r) => r.isActive)
-    .sort((a, b) => {
-      if (a.isExact !== b.isExact) return a.isExact ? -1 : 1;
-      return b.keyword.length - a.keyword.length;
-    });
-  if (activeRules.length === 0) return 0;
-
-  const txRows = await db.execute(sql.raw(
-    `SELECT id, content FROM transactions WHERE "userId" = ${userId} AND content IS NOT NULL`
+  // DISTINCT ON (t.id) with ORDER BY picks the best rule per transaction
+  const result = await db.execute(sql.raw(
+    `WITH rule_matches AS (
+       SELECT DISTINCT ON (t.id)
+              t.id    AS "txId",
+              cr.category AS "newCategory"
+       FROM transactions t
+       JOIN category_rules cr
+            ON cr."userId" = ${userId}
+           AND cr."isActive" = 1
+           AND (
+             (cr."isExact" = 1 AND t.content = cr.keyword)
+             OR (cr."isExact" = 0 AND t.content LIKE '%' || cr.keyword || '%')
+           )
+       WHERE t."userId" = ${userId}
+         AND t.content IS NOT NULL
+       ORDER BY t.id,
+                cr."isExact" DESC,
+                LENGTH(cr.keyword) DESC,
+                cr.id ASC
+     )
+     UPDATE transactions t
+        SET "customCategory" = rm."newCategory",
+            "updatedAt"      = NOW()
+       FROM rule_matches rm
+      WHERE t.id = rm."txId"`
   ));
 
-  let updated = 0;
-  for (const tx of txRows as any[]) {
-    const content = String(tx.content);
-    for (const rule of activeRules) {
-      const matches = rule.isExact ? content === rule.keyword : content.includes(rule.keyword);
-      if (matches) {
-        await db.execute(
-          sql`UPDATE transactions SET "customCategory" = ${rule.category} WHERE id = ${tx.id}`
-        );
-        updated++;
-        break;
-      }
-    }
-  }
-  return updated;
+  // postgres-js returns the row count in .count or as affected rows
+  const affected = (result as any)?.count ?? (result as any)?.rowCount ?? 0;
+  return Number(affected);
 }
 
 export async function applyMappingRulesToNewTransactions(

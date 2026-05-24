@@ -192,7 +192,13 @@ export function MappingRulesTab() {
       utils.budget.getKpiSummary.invalidate();
       utils.budget.getMonthlyStats.invalidate();
       utils.budget.getTransactions.invalidate();
-      toast.success(`미분류 거래 ${res.count}건에 규칙을 적용했습니다.`);
+      utils.budget.getSavingsStats.invalidate();
+      utils.budget.getIncomeDistribution.invalidate();
+      if (res.count > 0) {
+        toast.success(`${res.count}건의 거래에 규칙을 적용했습니다.`);
+      } else {
+        toast.info("매칭되는 거래가 없습니다. 규칙 키워드를 확인하세요.");
+      }
     },
     onError: () => toast.error("재분류에 실패했습니다."),
   });
