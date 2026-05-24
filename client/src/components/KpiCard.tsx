@@ -8,9 +8,10 @@ interface KpiCardProps {
   trend?: { value: number; label: string };
   className?: string;
   icon?: React.ReactNode;
+  valueClass?: string;
 }
 
-export function KpiCard({ title, value, subtitle, trend, className, icon }: KpiCardProps) {
+export function KpiCard({ title, value, subtitle, trend, className, icon, valueClass }: KpiCardProps) {
   return (
     <div
       className={cn(
@@ -22,7 +23,7 @@ export function KpiCard({ title, value, subtitle, trend, className, icon }: KpiC
         <span className="text-sm text-cream-600 font-medium">{title}</span>
         {icon && <span className="text-cream-400">{icon}</span>}
       </div>
-      <div className="text-2xl font-bold text-cream-900 font-serif">{value}</div>
+      <div className={cn("text-2xl font-bold font-serif", valueClass ?? "text-cream-900")}>{value}</div>
       {subtitle && <div className="text-xs text-cream-500">{subtitle}</div>}
       {trend && (
         <div

@@ -4,27 +4,29 @@ import { formatKRW } from "../lib/format";
 import { KpiCard } from "../components/KpiCard";
 import { UploadZone } from "../components/UploadZone";
 import { FilterPanel } from "../components/FilterPanel";
+import { DashboardPieSection } from "../components/DashboardPieSection";
+import { DashboardPivot } from "../components/DashboardPivot";
 import { CategoryTab } from "../components/tabs/CategoryTab";
 import { MonthlySummaryTab } from "../components/tabs/MonthlySummaryTab";
 import { MappingRulesTab } from "../components/tabs/MappingRulesTab";
 import { TransactionsTab } from "../components/tabs/TransactionsTab";
-import { IncomeDistributionPanel } from "../components/IncomeDistributionPanel";
 import { useTheme } from "../contexts/ThemeContext";
 
 type Tab = "dashboard" | "monthly" | "category" | "transactions" | "mapping";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "dashboard", label: "대시보드" },
-  { id: "monthly", label: "월별 요약" },
-  { id: "category", label: "카테고리별" },
+  { id: "dashboard",    label: "대시보드" },
+  { id: "monthly",      label: "월별 요약" },
+  { id: "category",     label: "카테고리별" },
   { id: "transactions", label: "전체 내역" },
-  { id: "mapping", label: "매핑 규칙" },
+  { id: "mapping",      label: "매핑 규칙" },
 ];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [includeTransfer, setIncludeTransfer] = useState(false);
   const [excludedCategories, setExcludedCategories] = useState<string[]>([]);
+  const [showUpload, setShowUpload] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
   const utils = trpc.useUtils();
@@ -36,7 +38,16 @@ export default function Home() {
     excludedCategories,
   });
 
-  // Load saved settings on mount
+  const { data: catStats, isLoading: catLoading } = trpc.budget.getCategoryStats.useQuery({
+    includeTransfer,
+    excludedCategories,
+  });
+
+  const { data: pivotData } = trpc.budget.getPivotData.useQuery({
+    includeTransfer,
+    excludedCategories,
+  });
+
   useEffect(() => {
     if (settings) {
       setIncludeTransfer(settings.includeTransfer);
@@ -62,10 +73,10 @@ export default function Home() {
     utils.budget.getSavingsStats.invalidate();
     utils.budget.getTransactions.invalidate();
     utils.budget.getIncomeDistribution.invalidate();
+    setShowUpload(false);
   }
 
-  const avgMonthly =
-    kpi && kpi.monthCount > 0 ? kpi.totalExpense / kpi.monthCount : 0;
+  const netAsset = (kpi?.totalIncome ?? 0) - (kpi?.totalExpense ?? 0) - (kpi?.totalSavings ?? 0);
 
   return (
     <div className="min-h-screen bg-cream-50">
@@ -73,13 +84,24 @@ export default function Home() {
       <header className="bg-white border-b border-cream-200 shadow-sm sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 flex items-center justify-between h-14">
           <h1 className="font-serif text-xl font-bold text-cream-800">가계부 대시보드</h1>
-          <button
-            onClick={toggleTheme}
-            className="text-cream-500 hover:text-cream-700 text-lg transition-colors"
-            title="테마 전환"
-          >
-            {theme === "light" ? "🌙" : "☀️"}
-          </button>
+          <div className="flex items-center gap-3">
+            {activeTab === "dashboard" && (
+              <button
+                onClick={() => setShowUpload((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-cream-700 text-white hover:bg-cream-800 transition-colors"
+              >
+                <span>+</span>
+                <span>데이터 업로드</span>
+              </button>
+            )}
+            <button
+              onClick={toggleTheme}
+              className="text-cream-500 hover:text-cream-700 text-lg transition-colors"
+              title="테마 전환"
+            >
+              {theme === "light" ? "🌙" : "☀️"}
+            </button>
+          </div>
         </div>
 
         {/* Tab bar */}
@@ -103,13 +125,13 @@ export default function Home() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-        {/* Upload zone — always visible on dashboard */}
-        {activeTab === "dashboard" && (
+        {/* Upload zone — collapsible on dashboard */}
+        {activeTab === "dashboard" && showUpload && (
           <UploadZone onSuccess={onUploadSuccess} />
         )}
 
-        {/* Filter panel — visible on data tabs */}
-        {(activeTab === "dashboard" || activeTab === "monthly" || activeTab === "category") && (
+        {/* Filter panel — monthly & category tabs only */}
+        {(activeTab === "monthly" || activeTab === "category") && (
           <FilterPanel
             includeTransfer={includeTransfer}
             excludedCategories={excludedCategories}
@@ -118,52 +140,54 @@ export default function Home() {
           />
         )}
 
-        {/* Dashboard tab: KPI cards */}
+        {/* ── Dashboard ── */}
         {activeTab === "dashboard" && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard
-              title="총 지출"
-              value={kpiLoading ? "..." : formatKRW(kpi?.totalExpense ?? 0)}
-              subtitle={`${kpi?.monthCount ?? 0}개월 합산`}
-              icon="💸"
+          <>
+            {/* KPI cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <KpiCard
+                title="총 수입"
+                value={kpiLoading ? "..." : formatKRW(kpi?.totalIncome ?? 0)}
+                subtitle={`${kpi?.monthCount ?? 0}개월 합산`}
+                icon="💰"
+                valueClass="text-gray-900"
+              />
+              <KpiCard
+                title="총 저축/투자"
+                value={kpiLoading ? "..." : formatKRW(kpi?.totalSavings ?? 0)}
+                subtitle="저축·투자 합산"
+                icon="💙"
+                valueClass="text-blue-600"
+              />
+              <KpiCard
+                title="총 지출"
+                value={kpiLoading ? "..." : formatKRW(kpi?.totalExpense ?? 0)}
+                subtitle={`${kpi?.monthCount ?? 0}개월 합산`}
+                icon="💸"
+                valueClass="text-red-500"
+              />
+              <KpiCard
+                title="순자산 증감"
+                value={kpiLoading ? "..." : formatKRW(netAsset)}
+                subtitle="수입 - 지출 - 저축"
+                icon="📈"
+              />
+            </div>
+
+            {/* Dual pie charts */}
+            <DashboardPieSection
+              catStats={(catStats ?? []) as any}
+              isLoading={catLoading}
             />
-            <KpiCard
-              title="월 평균 지출"
-              value={kpiLoading ? "..." : formatKRW(avgMonthly)}
-              subtitle="지출 / 월 수"
-              icon="📅"
-            />
-            <KpiCard
-              title="총 수입"
-              value={kpiLoading ? "..." : formatKRW(kpi?.totalIncome ?? 0)}
-              subtitle={`${kpi?.monthCount ?? 0}개월 합산`}
-              icon="💰"
-            />
-            <KpiCard
-              title="순자산 증감"
-              value={
-                kpiLoading
-                  ? "..."
-                  : formatKRW((kpi?.totalIncome ?? 0) - (kpi?.totalExpense ?? 0))
-              }
-              subtitle="수입 - 지출"
-              icon="📈"
-            />
-          </div>
+
+            {/* Monthly pivot */}
+            {pivotData && pivotData.length > 0 && (
+              <DashboardPivot pivotData={pivotData as any} />
+            )}
+          </>
         )}
 
-        {/* Dashboard: Income Distribution Panel */}
-        {activeTab === "dashboard" && (
-          <IncomeDistributionPanel />
-        )}
-
-        {/* Tab content */}
-        {activeTab === "dashboard" && (
-          <CategoryTab
-            includeTransfer={includeTransfer}
-            excludedCategories={excludedCategories}
-          />
-        )}
+        {/* ── Other tabs ── */}
         {activeTab === "monthly" && (
           <MonthlySummaryTab
             includeTransfer={includeTransfer}

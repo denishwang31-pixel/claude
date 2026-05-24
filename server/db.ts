@@ -303,29 +303,37 @@ export async function getCategoryStats(
   const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
 
   const rows = await db.execute(sql.raw(
-    `SELECT sub."effectiveCategory" as category, SUM(ABS(sub.amount::numeric)) as total, COUNT(*) as cnt
+    `SELECT sub."effectiveCategory" as category, sub.l1,
+            SUM(ABS(sub.amount::numeric)) as total, COUNT(*) as cnt
      FROM (
        SELECT t.amount,
-              (${effectiveCatExpr}) as "effectiveCategory"
+              (${effectiveCatExpr}) as "effectiveCategory",
+              CASE
+                WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) THEN 'savings'
+                WHEN t."txType" = '수입' THEN 'income'
+                ELSE 'expense'
+              END as l1
        FROM transactions t
        WHERE t."userId" = ${userId}
          ${monthSQL}
          AND (
-           (t."txType" = '지출'
-            ${catExcludeSQL}
-            ${notExcludedSQL}
-           )
+           (t."txType" = '수입' ${notExcludedSQL})
            OR
-           ((${effectiveCatExpr}) IN (${savingsCatsSQL})
-            ${notExcludedSQL}
-           )
+           (t."txType" = '지출' ${catExcludeSQL} ${notExcludedSQL})
+           OR
+           ((${effectiveCatExpr}) IN (${savingsCatsSQL}) ${notExcludedSQL})
          )
      ) sub
-     GROUP BY sub."effectiveCategory"
-     ORDER BY SUM(ABS(sub.amount::numeric)) DESC`
+     GROUP BY sub."effectiveCategory", sub.l1
+     ORDER BY sub.l1, SUM(ABS(sub.amount::numeric)) DESC`
   ));
 
-  return (rows as any[]).map((r) => ({ category: r.category, total: Number(r.total), count: Number(r.cnt) }));
+  return (rows as any[]).map((r) => ({
+    category: r.category,
+    l1: String(r.l1) as "income" | "savings" | "expense",
+    total: Number(r.total),
+    count: Number(r.cnt),
+  }));
 }
 
 /** 월별 × 카테고리 피벗 */
@@ -353,29 +361,38 @@ export async function getPivotData(
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const rows = await db.execute(sql.raw(
-    `SELECT sub."yearMonth", sub."effectiveCategory" as category, SUM(ABS(sub.amount::numeric)) as total, COUNT(*) as cnt
+    `SELECT sub."yearMonth", sub."effectiveCategory" as category, sub.l1,
+            SUM(ABS(sub.amount::numeric)) as total, COUNT(*) as cnt
      FROM (
        SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth",
               t.amount,
-              (${effectiveCatExpr}) as "effectiveCategory"
+              (${effectiveCatExpr}) as "effectiveCategory",
+              CASE
+                WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) THEN 'savings'
+                WHEN t."txType" = '수입' THEN 'income'
+                ELSE 'expense'
+              END as l1
        FROM transactions t
        WHERE t."userId" = ${userId}
          AND (
-           (t."txType" = '지출'
-            ${catExcludeSQL}
-            ${notExcludedSQL}
-           )
+           (t."txType" = '수입' ${notExcludedSQL})
            OR
-           ((${effectiveCatExpr}) IN (${savingsCatsSQL})
-            ${notExcludedSQL}
-           )
+           (t."txType" = '지출' ${catExcludeSQL} ${notExcludedSQL})
+           OR
+           ((${effectiveCatExpr}) IN (${savingsCatsSQL}) ${notExcludedSQL})
          )
      ) sub
-     GROUP BY sub."yearMonth", sub."effectiveCategory"
+     GROUP BY sub."yearMonth", sub."effectiveCategory", sub.l1
      ORDER BY sub."yearMonth"`
   ));
 
-  return (rows as any[]).map((r) => ({ yearMonth: r.yearMonth, category: r.category, total: Number(r.total), count: Number(r.cnt) }));
+  return (rows as any[]).map((r) => ({
+    yearMonth: r.yearMonth,
+    category: r.category,
+    l1: String(r.l1) as "income" | "savings" | "expense",
+    total: Number(r.total),
+    count: Number(r.cnt),
+  }));
 }
 
 /** KPI 요약 */
@@ -386,7 +403,7 @@ export async function getKpiSummary(
   _excludedIds: number[]
 ) {
   const db = await getDb();
-  if (!db) return { totalIncome: 0, totalExpense: 0, monthCount: 0 };
+  if (!db) return { totalIncome: 0, totalSavings: 0, totalExpense: 0, monthCount: 0 };
 
   const catExclude = [
     ...(includeTransfer ? [] : TRANSFER_CATS),
@@ -394,37 +411,56 @@ export async function getKpiSummary(
   ].filter((c) => !SAVINGS_CATS.includes(c));
 
   const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
-  const catExcludeSQL = catExclude.length > 0
-    ? `AND (${effectiveCatExpr}) NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
-    : "";
-
   const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
-  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
+  const allExcludeSQL = [...SAVINGS_CATS, ...catExclude].map((c) => `'${c.replace(/'/g, "''")}'`).join(",");
+  const notExcl = `NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
-  const [incomeRows, expenseRows, monthRows] = await Promise.all([
-    db.execute(sql.raw(
-      `SELECT SUM(ABS(t.amount::numeric)) as total FROM transactions t
-       WHERE t."userId" = ${userId} AND t."txType" = '수입' ${catExcludeSQL} ${notExcludedSQL}`
-    )),
-    db.execute(sql.raw(
-      `SELECT SUM(ABS(t.amount::numeric)) as total FROM transactions t
-       WHERE t."userId" = ${userId}
-         AND (
-           (t."txType" = '지출' ${catExcludeSQL} ${notExcludedSQL})
-           OR
-           ((${effectiveCatExpr}) IN (${savingsCatsSQL}) ${notExcludedSQL})
-         )`
-    )),
-    db.execute(sql.raw(
-      `SELECT COUNT(DISTINCT TO_CHAR(t."txDate", 'YYYY-MM')) as cnt FROM transactions t WHERE t."userId" = ${userId}`
-    )),
-  ]);
+  const rows = await db.execute(sql.raw(
+    `SELECT
+       SUM(CASE WHEN t."txType" = '수입' AND ${notExcl} THEN ABS(t.amount::numeric) ELSE 0 END) as income,
+       SUM(CASE WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) AND ${notExcl} THEN ABS(t.amount::numeric) ELSE 0 END) as savings,
+       SUM(CASE WHEN t."txType" = '지출' AND (${effectiveCatExpr}) NOT IN (${allExcludeSQL}) AND ${notExcl} THEN ABS(t.amount::numeric) ELSE 0 END) as expense,
+       COUNT(DISTINCT TO_CHAR(t."txDate", 'YYYY-MM')) as months
+     FROM transactions t WHERE t."userId" = ${userId}`
+  ));
 
+  const r = (rows as any[])[0];
   return {
-    totalIncome: Number((incomeRows as any[])[0]?.total ?? 0),
-    totalExpense: Number((expenseRows as any[])[0]?.total ?? 0),
-    monthCount: Number((monthRows as any[])[0]?.cnt ?? 0),
+    totalIncome:  Number(r?.income  ?? 0),
+    totalSavings: Number(r?.savings ?? 0),
+    totalExpense: Number(r?.expense ?? 0),
+    monthCount:   Number(r?.months  ?? 0),
   };
+}
+
+/** L3(가맹점별) 집계 */
+export async function getL3Stats(
+  userId: number,
+  category: string,
+  yearMonth?: string
+): Promise<{ content: string; total: number; count: number }[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
+  const escapedCat = category.replace(/'/g, "''");
+  const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
+
+  const rows = await db.execute(sql.raw(
+    `SELECT t.content, SUM(ABS(t.amount::numeric)) as total, COUNT(*) as cnt
+     FROM transactions t
+     WHERE t."userId" = ${userId}
+       AND (${effectiveCatExpr}) = '${escapedCat}'
+       ${monthSQL}
+     GROUP BY t.content
+     ORDER BY total DESC`
+  ));
+
+  return (rows as any[]).map((r) => ({
+    content: String(r.content),
+    total: Number(r.total),
+    count: Number(r.cnt),
+  }));
 }
 
 /** 전체 거래 내역 */

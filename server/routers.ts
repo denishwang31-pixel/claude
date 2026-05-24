@@ -19,6 +19,7 @@ import {
   updateCategoryRuleActive,
   seedDefaultRules,
   getIncomeDistribution,
+  getL3Stats,
   generateRulesFromTransactions,
   applyMappingRulesToNewTransactions,
   getExistingHashes,
@@ -377,6 +378,12 @@ const budgetRouter = router({
   getIncomeDistribution: protectedProcedure.query(async ({ ctx }) => {
     return getIncomeDistribution(ctx.user.id);
   }),
+
+  getL3Stats: protectedProcedure
+    .input(z.object({ category: z.string(), yearMonth: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      return getL3Stats(ctx.user.id, input.category, input.yearMonth);
+    }),
 });
 
 export const appRouter = router({
