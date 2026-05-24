@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { formatKRW } from "../lib/format";
+import { getL2, L2_ORDER, L2_COLOR } from "../lib/categories";
 
 type CatRow = { category: string; l1: "income" | "savings" | "expense"; total: number; count: number };
 
@@ -9,39 +10,47 @@ interface Props {
   isLoading?: boolean;
 }
 
-const L1_ORDER = ["income", "savings", "expense"] as const;
-const L1_LABEL: Record<string, string> = { income: "수입", savings: "저축/투자", expense: "지출" };
-const L1_COLOR: Record<string, string> = { income: "#111827", savings: "#2563EB", expense: "#EF4444" };
-const L1_TEXT: Record<string, string> = {
-  income: "text-gray-900 font-semibold",
-  savings: "text-blue-600 font-semibold",
-  expense: "text-red-500 font-semibold",
-};
+const L1_SPLIT_COLOR = { savings: "#2563EB", expense: "#EF4444" };
 
-const L2_PALETTES: Record<string, string[]> = {
-  income:  ["#111827", "#374151", "#4B5563", "#6B7280", "#9CA3AF"],
-  savings: ["#1E40AF", "#2563EB", "#3B82F6", "#60A5FA", "#93C5FD"],
-  expense: ["#B91C1C", "#DC2626", "#EF4444", "#F87171", "#FCA5A5"],
-};
+function PieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) {
+  if (percent < 0.05) return null;
+  const RADIAN = Math.PI / 180;
+  const r = innerRadius + (outerRadius - innerRadius) * 0.5;
+  const x = cx + r * Math.cos(-midAngle * RADIAN);
+  const y = cy + r * Math.sin(-midAngle * RADIAN);
+  return (
+    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central"
+      fontSize={13} fontWeight="700">
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
+  );
+}
 
 export function DashboardPieSection({ catStats, isLoading }: Props) {
-  const { l1Data, l2Colors } = useMemo(() => {
-    const l1Map: Record<string, number> = {};
-    for (const r of catStats) l1Map[r.l1] = (l1Map[r.l1] ?? 0) + r.total;
+  const { splitData, l2Data } = useMemo(() => {
+    let savingsTotal = 0;
+    let expenseTotal = 0;
+    const l2Map: Record<string, number> = {};
 
-    const l1Data = L1_ORDER
-      .filter((l1) => (l1Map[l1] ?? 0) > 0)
-      .map((l1) => ({ name: L1_LABEL[l1], value: l1Map[l1], l1 }));
+    for (const r of catStats) {
+      if (r.l1 === "income") continue;
+      const l2 = getL2(r.category, r.l1);
+      l2Map[l2] = (l2Map[l2] ?? 0) + r.total;
+      if (r.l1 === "savings") savingsTotal += r.total;
+      else expenseTotal += r.total;
+    }
 
-    const counters: Record<string, number> = {};
-    const l2Colors = catStats.map((r) => {
-      const idx = counters[r.l1] ?? 0;
-      counters[r.l1] = idx + 1;
-      const pal = L2_PALETTES[r.l1];
-      return pal[idx % pal.length];
-    });
+    const splitData = [
+      { name: "저축/투자", value: savingsTotal, color: L1_SPLIT_COLOR.savings },
+      { name: "지출",     value: expenseTotal, color: L1_SPLIT_COLOR.expense },
+    ].filter(d => d.value > 0);
 
-    return { l1Data, l2Colors };
+    const allL2 = [...L2_ORDER.savings, ...L2_ORDER.expense];
+    const l2Data = allL2
+      .filter(l2 => l2Map[l2] > 0)
+      .map(l2 => ({ name: l2, value: l2Map[l2], color: L2_COLOR[l2] ?? "#BFBFBF" }));
+
+    return { splitData, l2Data };
   }, [catStats]);
 
   if (isLoading) {
@@ -53,43 +62,48 @@ export function DashboardPieSection({ catStats, isLoading }: Props) {
   }
   if (!catStats.length) return null;
 
-  const l1Total = l1Data.reduce((s, r) => s + r.value, 0);
-  const l2Total = catStats.reduce((s, r) => s + r.total, 0);
+  const splitTotal = splitData.reduce((s, r) => s + r.value, 0);
+  const l2Total = l2Data.reduce((s, r) => s + r.value, 0);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* L1 Pie */}
+      {/* 저축/투자 vs 지출 */}
       <div className="bg-white rounded-xl border border-cream-200 shadow-sm p-5">
-        <h3 className="font-serif text-base font-semibold text-cream-700 mb-4">수입 / 저축·투자 / 지출 비율</h3>
-        <div className="flex gap-5 items-center">
-          <div className="flex-shrink-0" style={{ width: 170, height: 190 }}>
+        <h3 className="font-serif text-base font-semibold text-cream-700 mb-4">저축·투자 vs 지출 비율</h3>
+        <div className="flex items-center gap-5">
+          <div style={{ width: 170, height: 190 }} className="flex-shrink-0">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={l1Data} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                  outerRadius={80} innerRadius={42} paddingAngle={3}>
-                  {l1Data.map((entry) => (
-                    <Cell key={entry.l1} fill={L1_COLOR[entry.l1]} />
+                <Pie data={splitData} dataKey="value" nameKey="name"
+                  cx="50%" cy="50%" outerRadius={82} innerRadius={44}
+                  paddingAngle={3} labelLine={false} label={PieLabel}>
+                  {splitData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(v: number) => formatKRW(v)} />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex-1 space-y-3">
-            {l1Data.map((entry) => {
-              const pct = l1Total > 0 ? (entry.value / l1Total) * 100 : 0;
+          <div className="flex-1 space-y-4">
+            {splitData.map((entry) => {
+              const pct = splitTotal > 0 ? (entry.value / splitTotal) * 100 : 0;
               return (
-                <div key={entry.l1}>
-                  <div className="flex items-center justify-between text-sm mb-1">
-                    <span className={L1_TEXT[entry.l1]}>{entry.name}</span>
-                    <span className="tabular-nums font-semibold text-cream-800">{formatKRW(entry.value)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 bg-cream-100 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all"
-                        style={{ width: `${pct}%`, backgroundColor: L1_COLOR[entry.l1] }} />
+                <div key={entry.name}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }} />
+                      <span className="font-semibold text-sm" style={{ color: entry.color }}>{entry.name}</span>
                     </div>
-                    <span className="text-xs text-cream-400 w-9 text-right">{pct.toFixed(0)}%</span>
+                    <span className="text-xl font-bold tabular-nums" style={{ color: entry.color }}>
+                      {pct.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="text-sm tabular-nums text-cream-600 text-right">
+                    {formatKRW(entry.value)}
+                  </div>
+                  <div className="mt-1 h-2 bg-cream-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: entry.color }} />
                   </div>
                 </div>
               );
@@ -98,38 +112,44 @@ export function DashboardPieSection({ catStats, isLoading }: Props) {
         </div>
       </div>
 
-      {/* L2 Pie */}
+      {/* L2 카테고리 분류 */}
       <div className="bg-white rounded-xl border border-cream-200 shadow-sm p-5">
-        <h3 className="font-serif text-base font-semibold text-cream-700 mb-4">카테고리별 비율</h3>
-        <div className="flex gap-5 items-center">
-          <div className="flex-shrink-0" style={{ width: 170, height: 190 }}>
+        <h3 className="font-serif text-base font-semibold text-cream-700 mb-4">분류별 비율</h3>
+        <div className="flex items-center gap-5">
+          <div style={{ width: 170, height: 190 }} className="flex-shrink-0">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={catStats} dataKey="total" nameKey="category" cx="50%" cy="50%"
-                  outerRadius={80} innerRadius={42} paddingAngle={2}>
-                  {catStats.map((_, i) => (
-                    <Cell key={i} fill={l2Colors[i]} />
+                <Pie data={l2Data} dataKey="value" nameKey="name"
+                  cx="50%" cy="50%" outerRadius={82} innerRadius={44}
+                  paddingAngle={2} labelLine={false} label={PieLabel}>
+                  {l2Data.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(v: number) => formatKRW(v)} />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex-1 space-y-2 overflow-y-auto max-h-[190px] pr-1">
-            {catStats.map((row, i) => {
-              const pct = l2Total > 0 ? (row.total / l2Total) * 100 : 0;
-              if (pct < 0.5) return null;
+          <div className="flex-1 space-y-2 overflow-y-auto max-h-[200px] pr-1">
+            {l2Data.map((entry) => {
+              const pct = l2Total > 0 ? (entry.value / l2Total) * 100 : 0;
               return (
-                <div key={row.category}>
+                <div key={entry.name}>
                   <div className="flex items-center justify-between mb-0.5">
-                    <span className="text-xs font-medium text-cream-700">{row.category}</span>
-                    <span className="text-xs tabular-nums text-cream-600">{formatKRW(row.total)}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="flex-1 h-1 bg-cream-100 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: l2Colors[i] }} />
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                        style={{ backgroundColor: entry.color }} />
+                      <span className="text-xs font-medium text-cream-700">{entry.name}</span>
                     </div>
-                    <span className="text-xs text-cream-400 w-7 text-right">{pct.toFixed(0)}%</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold tabular-nums" style={{ color: entry.color }}>
+                        {pct.toFixed(0)}%
+                      </span>
+                      <span className="text-xs tabular-nums text-cream-500">{formatKRW(entry.value)}</span>
+                    </div>
+                  </div>
+                  <div className="h-1 bg-cream-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: entry.color }} />
                   </div>
                 </div>
               );
