@@ -252,7 +252,48 @@ export function mapBanksaladCategory(major: string, sub: string): string | "이�
 
 // ── effectiveCategory 표현식 ───────────────────────────────────
 
+/** 뱅크샐러드 대분류/소분류 → 앱 카테고리 매핑 (SQL CASE).
+ *  mapBanksaladCategory()의 SQL 버전. 이체성 대분류는 '이체'로 → 통계에서 자동 제외. */
+function bankSaladMapSQL(): string {
+  const sub = `COALESCE(t."subCategory",'')`;
+  return `CASE
+    WHEN t.category IN ('내계좌이체','이체','카드대금','현금','미분류') THEN '이체'
+    WHEN t.category = '생활' AND ${sub} IN ('마트','편의점') THEN '식비'
+    WHEN t.category = '생활' THEN '생활용품'
+    WHEN t.category = '온라인쇼핑' AND ${sub} IN ('서비스구독','앱스토어') THEN '구독'
+    WHEN t.category = '온라인쇼핑' THEN '쇼핑'
+    WHEN t.category = '식비' AND ${sub} = '배달' THEN '배달음식'
+    WHEN t.category = '식비' AND ${sub} = '식재료' THEN '식비'
+    WHEN t.category = '식비' THEN '외식'
+    WHEN t.category = '카페/간식' THEN '카페'
+    WHEN t.category = '저축' THEN '저축'
+    WHEN t.category = '투자' THEN '투자'
+    WHEN t.category = '금융' AND ${sub} = '세금/과태료' THEN '세금'
+    WHEN t.category = '금융' AND ${sub} = '증권/투자' THEN '투자'
+    WHEN t.category = '금융' THEN '금융'
+    WHEN t.category IN ('자동차','교통') THEN '교통'
+    WHEN t.category = '문화/여가' AND ${sub} = '도서' THEN '교육'
+    WHEN t.category = '문화/여가' AND ${sub} = '스포츠' THEN '건강'
+    WHEN t.category = '문화/여가' AND ${sub} = '마사지/스파' THEN '미용'
+    WHEN t.category = '문화/여가' THEN '문화'
+    WHEN t.category = '의료/건강' AND ${sub} = '건강용품' THEN '건강'
+    WHEN t.category = '의료/건강' THEN '의료'
+    WHEN t.category = '주거/통신' AND ${sub} = '휴대폰' THEN '통신'
+    WHEN t.category = '주거/통신' THEN '주거'
+    WHEN t.category = '여행/숙박' THEN '여행'
+    WHEN t.category = '패션/쇼핑' THEN '쇼핑'
+    WHEN t.category = '뷰티/미용' THEN '미용'
+    WHEN t.category = '교육/학습' THEN '교육'
+    WHEN t.category = '반려동물' THEN '생활용품'
+    WHEN t.category = '경조/선물' THEN '기타'
+    WHEN t.category = '술/유흥' THEN '외식'
+    WHEN t.category IN ('금융수입','급여','사업수입','기타수입') THEN '수입'
+    ELSE t.category
+  END`;
+}
+
 function buildEffectiveCategoryExpr(userId: number): string {
+  // 우선순위: 수동지정 > 활성 규칙 > 뱅크샐러드 대분류/소분류 매핑 > 원본 대분류
   // isExact/isActive are cast to int so the comparison works whether the
   // column is integer (current schema) or legacy boolean (old init_pg.sql).
   return `COALESCE(
@@ -264,6 +305,7 @@ function buildEffectiveCategoryExpr(userId: number): string {
             OR cr."isExact"::int = 0 AND t.content LIKE '%' || cr.keyword || '%')
      ORDER BY cr."isExact"::int DESC, cr.id ASC
      LIMIT 1),
+    ${bankSaladMapSQL()},
     t.category
   )`;
 }

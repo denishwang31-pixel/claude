@@ -32,6 +32,21 @@ export function getL2(category: string, l1: string): string {
   return EXPENSE_L2[category] ?? "기타";
 }
 
+/** 카테고리(L3)명으로 L1 추론 */
+export function getL1(category: string): "income" | "savings" | "expense" {
+  if (category === "수입") return "income";
+  if (category in SAVINGS_L2) return "savings";
+  return "expense";
+}
+
+const L1_LABEL: Record<string, string> = { income: "수입", savings: "저축/투자", expense: "지출" };
+/** "지출 › 생활 › 식비" 형태의 L1/L2/L3 경로 문자열 */
+export function categoryPath(category: string): { l1: string; l2: string; l3: string; label: string } {
+  const l1 = getL1(category);
+  const l2 = getL2(category, l1);
+  return { l1, l2, l3: category, label: `${L1_LABEL[l1]} › ${l2} › ${category}` };
+}
+
 export const L2_ORDER: Record<string, string[]> = {
   income:  ["수입"],
   savings: ["저축", "투자", "저축/투자"],

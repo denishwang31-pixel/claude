@@ -5,7 +5,7 @@ import { CategoryDropdown } from "../CategoryDropdown";
 import { Button } from "../ui/button";
 import { downloadTransactionsExcel } from "../../lib/downloadExcel";
 import { cn } from "../../lib/utils";
-import { L1_LIST, L2_BY_L1, l3ListForL2, resolveCategoryFilter } from "../../lib/categories";
+import { L1_LIST, L2_BY_L1, l3ListForL2, resolveCategoryFilter, getL1, getL2 } from "../../lib/categories";
 
 const PAGE_SIZE = 50;
 
@@ -223,15 +223,26 @@ export function TransactionsTab() {
                         )}
                       </td>
                       <td className="px-4 py-2.5">
-                        <CategoryDropdown
-                          transactionId={Number(row.id)}
-                          currentCategory={((row as any).effectiveCategory ?? row.customCategory ?? row.category) as string}
-                          content={row.content as string}
-                          onChanged={() => {
-                            utils.budget.getTransactions.invalidate();
-                            utils.budget.getCategoryStats.invalidate();
-                          }}
-                        />
+                        {(() => {
+                          const cat = ((row as any).effectiveCategory ?? row.customCategory ?? row.category) as string;
+                          const l1 = getL1(cat);
+                          const l2 = getL2(cat, l1);
+                          const l1Label = l1 === "income" ? "수입" : l1 === "savings" ? "저축/투자" : "지출";
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <CategoryDropdown
+                                transactionId={Number(row.id)}
+                                currentCategory={cat}
+                                content={row.content as string}
+                                onChanged={() => {
+                                  utils.budget.getTransactions.invalidate();
+                                  utils.budget.getCategoryStats.invalidate();
+                                }}
+                              />
+                              <span className="text-[10px] text-cream-400 whitespace-nowrap">{l1Label} › {l2}</span>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className={cn(
                         "px-4 py-2.5 text-right font-medium tabular-nums",
