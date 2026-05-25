@@ -1,6 +1,8 @@
 /** L3(현재 카테고리) → L2 그룹 매핑 */
 const EXPENSE_L2: Record<string, string> = {
   "식비": "생활",
+  "외식": "생활",
+  "배달음식": "생활",
   "카페": "생활",
   "쇼핑": "생활",
   "생활용품": "생활",
@@ -14,8 +16,8 @@ const EXPENSE_L2: Record<string, string> = {
   "미용": "여가/문화",
   "의료": "건강",
   "건강": "건강",
-  "금융": "금융",
-  "세금": "금융",
+  "금융": "기타",
+  "세금": "기타",
   "기타": "기타",
 };
 
@@ -33,7 +35,7 @@ export function getL2(category: string, l1: string): string {
 export const L2_ORDER: Record<string, string[]> = {
   income:  ["수입"],
   savings: ["저축", "투자", "저축/투자"],
-  expense: ["생활", "교통/통신", "여가/문화", "건강", "금융", "기타"],
+  expense: ["생활", "교통/통신", "여가/문화", "건강", "기타"],
 };
 
 /** L2 그룹별 색상 */
@@ -43,7 +45,6 @@ export const L2_COLOR: Record<string, string> = {
   "교통/통신":  "#F97316",
   "여가/문화":  "#EF4444",
   "건강":       "#FB923C",
-  "금융":       "#A855F7",
   "기타":       "#D1D5DB",
   // 저축 L2
   "저축":       "#2563EB",

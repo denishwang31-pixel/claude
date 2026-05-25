@@ -25,6 +25,8 @@ export function formatYearMonth(ym: string): string {
 
 export const CATEGORY_COLORS: Record<string, string> = {
   식비:    "#E07B54",
+  외식:    "#D9603B",
+  배달음식: "#C9472E",
   카페:    "#CDDDFD",
   쇼핑:    "#5AD8A6",
   생활용품: "#F9C74F",
