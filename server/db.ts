@@ -1032,8 +1032,7 @@ export async function applyRulesToAllTransactions(userId: number): Promise<numbe
                 cr.id ASC
      )
      UPDATE transactions t
-        SET "customCategory" = rm."newCategory",
-            "updatedAt"      = NOW()
+        SET "customCategory" = rm."newCategory"
        FROM rule_matches rm
       WHERE t.id = rm."txId"`
   ));
