@@ -206,14 +206,16 @@ export const TRANSFER_PAYMENT_KEYWORDS = ["통장", "예금", "저축", "청약"
 // ── effectiveCategory 표현식 ───────────────────────────────────
 
 function buildEffectiveCategoryExpr(userId: number): string {
+  // isExact/isActive are cast to int so the comparison works whether the
+  // column is integer (current schema) or legacy boolean (old init_pg.sql).
   return `COALESCE(
     t."customCategory",
     (SELECT cr.category FROM category_rules cr
      WHERE cr."userId" = ${userId}
-       AND cr."isActive" = 1
-       AND (cr."isExact" = 1 AND t.content = cr.keyword
-            OR cr."isExact" = 0 AND t.content LIKE '%' || cr.keyword || '%')
-     ORDER BY cr."isExact" DESC, cr.id ASC
+       AND cr."isActive"::int = 1
+       AND (cr."isExact"::int = 1 AND t.content = cr.keyword
+            OR cr."isExact"::int = 0 AND t.content LIKE '%' || cr.keyword || '%')
+     ORDER BY cr."isExact"::int DESC, cr.id ASC
      LIMIT 1),
     t.category
   )`;
@@ -1039,15 +1041,15 @@ export async function applyRulesToAllTransactions(userId: number): Promise<numbe
        FROM transactions t
        JOIN category_rules cr
             ON cr."userId" = ${userId}
-           AND cr."isActive" = 1
+           AND cr."isActive"::int = 1
            AND (
-             (cr."isExact" = 1 AND t.content = cr.keyword)
-             OR (cr."isExact" = 0 AND t.content LIKE '%' || cr.keyword || '%')
+             (cr."isExact"::int = 1 AND t.content = cr.keyword)
+             OR (cr."isExact"::int = 0 AND t.content LIKE '%' || cr.keyword || '%')
            )
        WHERE t."userId" = ${userId}
          AND t.content IS NOT NULL
        ORDER BY t.id,
-                cr."isExact" DESC,
+                cr."isExact"::int DESC,
                 LENGTH(cr.keyword) DESC,
                 cr.id ASC
      )

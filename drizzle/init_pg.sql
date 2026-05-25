@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS category_rules (
   "userId" integer NOT NULL,
   keyword varchar(255) NOT NULL,
   category varchar(50) NOT NULL,
-  "isExact" boolean NOT NULL DEFAULT false,
+  "isExact" integer NOT NULL DEFAULT 0,
+  "ruleType" varchar(20) NOT NULL DEFAULT 'expense',
+  "isActive" integer NOT NULL DEFAULT 1,
   "createdAt" timestamp NOT NULL DEFAULT NOW(),
   "updatedAt" timestamp NOT NULL DEFAULT NOW(),
   UNIQUE ("userId", keyword)
