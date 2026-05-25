@@ -30,6 +30,7 @@ import {
   saveUserSettings,
   getExcludedTransactionIds,
   deleteAllTransactions,
+  categoryToRuleType,
   SAVINGS_CATS,
   TRANSFER_CATS,
 } from "./db";
@@ -293,7 +294,8 @@ const budgetRouter = router({
 
       if (input.saveAsRule && input.keyword) {
         try {
-          await upsertCategoryRule(ctx.user.id, input.keyword, input.newCategory, input.isExact);
+          const ruleType = categoryToRuleType(input.newCategory);
+          await upsertCategoryRule(ctx.user.id, input.keyword, input.newCategory, input.isExact, ruleType);
         } catch (e) {
           console.warn("[updateCategory] Rule upsert failed:", e);
         }

@@ -199,6 +199,17 @@ export async function setExcludedTransactions(
 // ── 필터 상수 ──────────────────────────────────────────────────
 
 export const SAVINGS_CATS = ["저축", "투자", "청약", "적금", "예금", "CMA", "ETF", "주식", "펀드", "ISA", "IRP"];
+const SAVINGS_ONLY_CATS = ["저축", "청약", "적금", "예금", "CMA"];
+const INVEST_ONLY_CATS = ["투자", "ETF", "주식", "펀드", "ISA", "IRP"];
+
+/** 카테고리명으로 규칙 타입(income/savings/investment/expense) 추론 */
+export function categoryToRuleType(category: string): string {
+  if (category === "수입") return "income";
+  if (SAVINGS_ONLY_CATS.includes(category)) return "savings";
+  if (INVEST_ONLY_CATS.includes(category)) return "investment";
+  return "expense";
+}
+
 export const TRANSFER_TX_TYPES = ["이체"];
 export const TRANSFER_CATS = ["내계좌이체", "이체", "카드대금"];
 export const TRANSFER_PAYMENT_KEYWORDS = ["통장", "예금", "저축", "청약"];
@@ -509,6 +520,14 @@ function buildTxSearchSQL(userId: number, field: string, query: string): string 
     case "paymentMethod": return `t."paymentMethod" ILIKE '%${escLike(query)}%'`;
     case "txType":        return `t."txType" = '${esc(query)}'`;
     case "date":          return `TO_CHAR(t."txDate", 'YYYY-MM') = '${esc(query)}'`;
+    case "categories": {
+      // query = L3 카테고리 콤마 구분 목록 → effectiveCategory IN (...)
+      const cats = query.split(",").map((c) => c.trim()).filter(Boolean);
+      if (cats.length === 0) return "TRUE";
+      const expr = buildEffectiveCategoryExpr(userId);
+      const inList = cats.map((c) => `'${esc(c)}'`).join(",");
+      return `(${expr}) IN (${inList})`;
+    }
     default:              return "TRUE";
   }
 }
@@ -523,31 +542,23 @@ export async function getAllTransactions(
   if (!db) return { rows: [], total: 0, excludedIds: new Set<number>() };
 
   const offset = (page - 1) * pageSize;
+  const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
+  const hasFilter = !!filter?.query?.trim();
+  const filterSQL = hasFilter ? `AND ${buildTxSearchSQL(userId, filter!.field, filter!.query.trim())}` : "";
 
-  if (!filter?.query?.trim()) {
-    const [rows, countRows, excludedIds] = await Promise.all([
-      db.select().from(transactions).where(eq(transactions.userId, userId))
-        .orderBy(desc(transactions.txDate), desc(transactions.txTime))
-        .limit(pageSize).offset(offset),
-      db.select({ total: sql<number>`COUNT(*)` }).from(transactions).where(eq(transactions.userId, userId)),
-      getExcludedTransactionIds(userId),
-    ]);
-    return { rows, total: Number(countRows[0]?.total ?? 0), excludedIds };
-  }
-
-  const filterSQL = buildTxSearchSQL(userId, filter.field, filter.query.trim());
   const [rows, countRows, excludedIds] = await Promise.all([
     db.execute(sql.raw(
       `SELECT id, "txDate"::text as "txDate", "txTime", "txType", category, "customCategory",
+              (${effectiveCatExpr}) as "effectiveCategory",
               content, amount::text as amount, currency, "paymentMethod", memo
        FROM transactions t
-       WHERE t."userId" = ${userId} AND ${filterSQL}
+       WHERE t."userId" = ${userId} ${filterSQL}
        ORDER BY t."txDate" DESC, t."txTime" DESC
        LIMIT ${pageSize} OFFSET ${offset}`
     )),
     db.execute(sql.raw(
       `SELECT COUNT(*) as total FROM transactions t
-       WHERE t."userId" = ${userId} AND ${filterSQL}`
+       WHERE t."userId" = ${userId} ${filterSQL}`
     )),
     getExcludedTransactionIds(userId),
   ]);
@@ -558,6 +569,7 @@ export async function getAllTransactions(
     txDate: String(r.txDate),
     amount: String(r.amount),
     customCategory: r.customCategory ?? null,
+    effectiveCategory: r.effectiveCategory ?? r.category,
     paymentMethod: r.paymentMethod ?? null,
     memo: r.memo ?? null,
   }));

@@ -5,12 +5,13 @@ import { CategoryDropdown } from "../CategoryDropdown";
 import { Button } from "../ui/button";
 import { downloadTransactionsExcel } from "../../lib/downloadExcel";
 import { cn } from "../../lib/utils";
+import { L1_LIST, L2_BY_L1, l3ListForL2, resolveCategoryFilter } from "../../lib/categories";
 
 const PAGE_SIZE = 50;
 
 const SEARCH_FIELDS = [
   { id: "content",      label: "내용" },
-  { id: "category",     label: "카테고리" },
+  { id: "category",     label: "카테고리(L1/L2/L3)" },
   { id: "amount_gte",   label: "금액 이상" },
   { id: "paymentMethod",label: "결제수단" },
   { id: "txType",       label: "타입" },
@@ -23,11 +24,22 @@ export function TransactionsTab() {
   const [page, setPage] = useState(1);
   const [searchField, setSearchField] = useState<SearchField>("content");
   const [searchQuery, setSearchQuery] = useState("");
+  // 카테고리 계단식 필터
+  const [catL1, setCatL1] = useState("");
+  const [catL2, setCatL2] = useState("");
+  const [catL3, setCatL3] = useState("");
 
-  useEffect(() => { setPage(1); }, [searchField, searchQuery]);
+  useEffect(() => { setPage(1); }, [searchField, searchQuery, catL1, catL2, catL3]);
 
   const utils = trpc.useUtils();
-  const filter = searchQuery.trim() ? { field: searchField, query: searchQuery.trim() } : undefined;
+
+  let filter: { field: string; query: string } | undefined;
+  if (searchField === "category") {
+    const cats = resolveCategoryFilter(catL1, catL2, catL3);
+    filter = cats.length ? { field: "categories", query: cats.join(",") } : undefined;
+  } else if (searchQuery.trim()) {
+    filter = { field: searchField, query: searchQuery.trim() };
+  }
 
   const { data, isLoading } = trpc.budget.getTransactions.useQuery({ page, pageSize: PAGE_SIZE, filter });
 
@@ -61,7 +73,7 @@ export function TransactionsTab() {
       <div className="bg-white rounded-xl border border-cream-200 shadow-sm px-4 py-3 flex items-center gap-2 flex-wrap">
         <select
           value={searchField}
-          onChange={(e) => { setSearchField(e.target.value as SearchField); setSearchQuery(""); }}
+          onChange={(e) => { setSearchField(e.target.value as SearchField); setSearchQuery(""); setCatL1(""); setCatL2(""); setCatL3(""); }}
           className="border border-cream-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-cream-500"
         >
           {SEARCH_FIELDS.map((f) => (
@@ -69,7 +81,47 @@ export function TransactionsTab() {
           ))}
         </select>
 
-        {searchField === "txType" ? (
+        {searchField === "category" ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* L1 */}
+            <select
+              value={catL1}
+              onChange={(e) => { setCatL1(e.target.value); setCatL2(""); setCatL3(""); }}
+              className="border border-cream-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-cream-500"
+            >
+              <option value="">L1 전체</option>
+              {L1_LIST.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+            </select>
+            {/* L2 */}
+            <select
+              value={catL2}
+              onChange={(e) => { setCatL2(e.target.value); setCatL3(""); }}
+              disabled={!catL1}
+              className="border border-cream-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-cream-500 disabled:opacity-40"
+            >
+              <option value="">L2 전체</option>
+              {(L2_BY_L1[catL1] ?? []).map((l2) => <option key={l2} value={l2}>{l2}</option>)}
+            </select>
+            {/* L3 */}
+            <select
+              value={catL3}
+              onChange={(e) => setCatL3(e.target.value)}
+              disabled={!catL2}
+              className="border border-cream-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-cream-500 disabled:opacity-40"
+            >
+              <option value="">L3 전체</option>
+              {(catL1 && catL2 ? l3ListForL2(catL1, catL2) : []).map((l3) => <option key={l3} value={l3}>{l3}</option>)}
+            </select>
+            {(catL1 || catL2 || catL3) && (
+              <button
+                onClick={() => { setCatL1(""); setCatL2(""); setCatL3(""); }}
+                className="text-cream-400 hover:text-cream-600 text-base leading-none px-0.5"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        ) : searchField === "txType" ? (
           <select
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -173,7 +225,7 @@ export function TransactionsTab() {
                       <td className="px-4 py-2.5">
                         <CategoryDropdown
                           transactionId={Number(row.id)}
-                          currentCategory={(row.customCategory ?? row.category) as string}
+                          currentCategory={((row as any).effectiveCategory ?? row.customCategory ?? row.category) as string}
                           content={row.content as string}
                           onChanged={() => {
                             utils.budget.getTransactions.invalidate();
