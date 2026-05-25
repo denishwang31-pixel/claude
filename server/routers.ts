@@ -398,9 +398,9 @@ const budgetRouter = router({
   }),
 
   getL3Stats: protectedProcedure
-    .input(z.object({ category: z.string(), yearMonth: z.string().optional() }))
+    .input(z.object({ category: z.string(), yearMonth: z.string().optional(), direction: z.enum(["income", "expense"]).optional() }))
     .query(async ({ ctx, input }) => {
-      return getL3Stats(ctx.user.id, input.category, input.yearMonth);
+      return getL3Stats(ctx.user.id, input.category, input.yearMonth, input.direction);
     }),
 });
 

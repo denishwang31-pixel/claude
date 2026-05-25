@@ -30,15 +30,17 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
   const [l1Filter, setL1Filter] = useState<L1Filter>("expense");
   const [expandedL2, setExpandedL2] = useState<string | null>(null);
   const [selectedL3, setSelectedL3] = useState<string | null>(null);
+  const [selectedL3L1, setSelectedL3L1] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
 
   const { data: catStats, isLoading, error } = trpc.budget.getCategoryStats.useQuery({
     includeTransfer, excludedCategories,
   });
 
-  // L3 merchant data for selectedL3
+  // L3 merchant data for selectedL3 — 방향(수입/지출)을 넘겨 환불이 섞이지 않게
+  const l3Direction = selectedL3L1 === "income" ? "income" : selectedL3L1 === "expense" ? "expense" : undefined;
   const { data: l3Data, isLoading: l3Loading } = trpc.budget.getL3Stats.useQuery(
-    { category: selectedL3! },
+    { category: selectedL3!, direction: l3Direction },
     { enabled: !!selectedL3 && !showModal }
   );
 
@@ -123,8 +125,9 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
     }
   }
 
-  function selectL3(cat: string) {
-    setSelectedL3(selectedL3 === cat ? null : cat);
+  function selectL3(cat: string, l1: string) {
+    if (selectedL3 === cat) { setSelectedL3(null); setSelectedL3L1(null); }
+    else { setSelectedL3(cat); setSelectedL3L1(l1); }
   }
 
   // Pie data: L2 groups (0원 그룹은 차트에서 제외)
@@ -222,7 +225,7 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
                         return (
                           <div key={l3row.category}>
                             <button
-                              onClick={() => selectL3(l3row.category)}
+                              onClick={() => selectL3(l3row.category, l3row.l1)}
                               className={cn(
                                 "w-full text-left rounded px-2 py-1 text-xs transition-colors",
                                 isL3Sel ? "bg-cream-100" : "hover:bg-cream-50"

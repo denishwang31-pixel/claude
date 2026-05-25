@@ -363,8 +363,9 @@ export async function getMonthlyStats(
       `SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth", ABS(SUM(t.amount::numeric)) as total
        FROM transactions t
        WHERE t."userId" = ${userId}
-         AND (t."txType" = '수입' OR (${effectiveCatExpr}) = '수입')
+         AND t.amount::numeric > 0
          AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL})
+         ${catExcludeSQL}
          ${notExcludedSQL}
        GROUP BY TO_CHAR(t."txDate", 'YYYY-MM')
        ORDER BY TO_CHAR(t."txDate", 'YYYY-MM')`
@@ -373,8 +374,7 @@ export async function getMonthlyStats(
       `SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth", ABS(SUM(t.amount::numeric)) as total
        FROM transactions t
        WHERE t."userId" = ${userId}
-         AND t."txType" = '지출'
-         AND (${effectiveCatExpr}) != '수입'
+         AND t.amount::numeric < 0
          AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL})
          ${catExcludeSQL}
          ${notExcludedSQL}
@@ -424,18 +424,16 @@ export async function getCategoryStats(
               (${effectiveCatExpr}) as "effectiveCategory",
               CASE
                 WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) THEN 'savings'
-                WHEN t."txType" = '수입' OR (${effectiveCatExpr}) = '수입' THEN 'income'
+                WHEN t.amount::numeric > 0 THEN 'income'
                 ELSE 'expense'
               END as l1
        FROM transactions t
        WHERE t."userId" = ${userId}
          ${monthSQL}
          AND (
-           ((t."txType" = '수입' OR (${effectiveCatExpr}) = '수입') AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) ${notExcludedSQL})
-           OR
-           (t."txType" = '지출' AND (${effectiveCatExpr}) != '수입' ${catExcludeSQL} ${notExcludedSQL})
-           OR
            ((${effectiveCatExpr}) IN (${savingsCatsSQL}) ${notExcludedSQL})
+           OR
+           ((${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) ${catExcludeSQL} ${notExcludedSQL})
          )
      ) sub
      GROUP BY sub."effectiveCategory", sub.l1
@@ -483,17 +481,15 @@ export async function getPivotData(
               (${effectiveCatExpr}) as "effectiveCategory",
               CASE
                 WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) THEN 'savings'
-                WHEN t."txType" = '수입' OR (${effectiveCatExpr}) = '수입' THEN 'income'
+                WHEN t.amount::numeric > 0 THEN 'income'
                 ELSE 'expense'
               END as l1
        FROM transactions t
        WHERE t."userId" = ${userId}
          AND (
-           ((t."txType" = '수입' OR (${effectiveCatExpr}) = '수입') AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) ${notExcludedSQL})
-           OR
-           (t."txType" = '지출' AND (${effectiveCatExpr}) != '수입' ${catExcludeSQL} ${notExcludedSQL})
-           OR
            ((${effectiveCatExpr}) IN (${savingsCatsSQL}) ${notExcludedSQL})
+           OR
+           ((${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) ${catExcludeSQL} ${notExcludedSQL})
          )
      ) sub
      GROUP BY sub."yearMonth", sub."effectiveCategory", sub.l1
@@ -531,12 +527,12 @@ export async function getKpiSummary(
 
   const rows = await db.execute(sql.raw(
     `SELECT
-       SUM(CASE WHEN (t."txType" = '수입' OR (${effectiveCatExpr}) = '수입')
-                     AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) AND ${notExcl}
+       SUM(CASE WHEN t.amount::numeric > 0
+                     AND (${effectiveCatExpr}) NOT IN (${allExcludeSQL}) AND ${notExcl}
                 THEN t.amount::numeric ELSE 0 END) as income,
        SUM(CASE WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) AND ${notExcl}
                 THEN t.amount::numeric ELSE 0 END) as savings,
-       SUM(CASE WHEN t."txType" = '지출' AND (${effectiveCatExpr}) != '수입'
+       SUM(CASE WHEN t.amount::numeric < 0
                      AND (${effectiveCatExpr}) NOT IN (${allExcludeSQL}) AND ${notExcl}
                 THEN -t.amount::numeric ELSE 0 END) as expense,
        COUNT(DISTINCT TO_CHAR(t."txDate", 'YYYY-MM')) as months
@@ -556,7 +552,8 @@ export async function getKpiSummary(
 export async function getL3Stats(
   userId: number,
   category: string,
-  yearMonth?: string
+  yearMonth?: string,
+  direction?: "income" | "expense"
 ): Promise<{ content: string; total: number; count: number }[]> {
   const db = await getDb();
   if (!db) return [];
@@ -564,12 +561,17 @@ export async function getL3Stats(
   const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
   const escapedCat = category.replace(/'/g, "''");
   const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
+  // 부호로 방향 일치 (지출=출금/음수, 수입=입금/양수) → 환불이 지출에 섞이지 않음
+  const signSQL = direction === "expense" ? "AND t.amount::numeric < 0"
+                : direction === "income"  ? "AND t.amount::numeric > 0"
+                : "";
 
   const rows = await db.execute(sql.raw(
     `SELECT t.content, ABS(SUM(t.amount::numeric)) as total, COUNT(*) as cnt
      FROM transactions t
      WHERE t."userId" = ${userId}
        AND (${effectiveCatExpr}) = '${escapedCat}'
+       ${signSQL}
        ${monthSQL}
      GROUP BY t.content
      ORDER BY total DESC`
