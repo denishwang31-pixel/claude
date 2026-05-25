@@ -31,7 +31,6 @@ import {
   getExcludedTransactionIds,
   deleteAllTransactions,
   categoryToRuleType,
-  recategorizeFromSource,
   SAVINGS_CATS,
   TRANSFER_CATS,
 } from "./db";
@@ -88,9 +87,6 @@ const budgetRouter = router({
 
       // Apply mapping rules to newly inserted transactions
       await applyMappingRulesToNewTransactions(userId, newRows.map((r) => r.dedupHash));
-
-      // 뱅크샐러드 대분류/소분류 → 앱 카테고리 자동 매핑 (규칙 미적용 건)
-      await recategorizeFromSource(userId);
 
       // Auto-exclude transfer items — but NOT savings/investment items
       const db = await getDb();
@@ -386,11 +382,6 @@ const budgetRouter = router({
     .mutation(async ({ ctx }) => {
       const count = await applyRulesToAllTransactions(ctx.user.id);
       return { count };
-    }),
-
-  recategorizeFromSource: protectedProcedure
-    .mutation(async ({ ctx }) => {
-      return recategorizeFromSource(ctx.user.id);
     }),
 
   getIncomeDistribution: protectedProcedure.query(async ({ ctx }) => {

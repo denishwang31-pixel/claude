@@ -203,20 +203,6 @@ export function MappingRulesTab() {
     onError: () => toast.error("재분류에 실패했습니다."),
   });
 
-  const recategorizeMutation = trpc.budget.recategorizeFromSource.useMutation({
-    onSuccess: (res) => {
-      utils.budget.getCategoryStats.invalidate();
-      utils.budget.getPivotData.invalidate();
-      utils.budget.getKpiSummary.invalidate();
-      utils.budget.getMonthlyStats.invalidate();
-      utils.budget.getTransactions.invalidate();
-      utils.budget.getSavingsStats.invalidate();
-      utils.budget.getIncomeDistribution.invalidate();
-      toast.success(`뱅크샐러드 분류 ${res.categorized}건 반영, 이체 ${res.excluded}건 제외`);
-    },
-    onError: () => toast.error("뱅크샐러드 분류 반영에 실패했습니다."),
-  });
-
   const typedRules = (rules ?? []) as Rule[];
   const filtered = search
     ? typedRules.filter((r) => r.keyword.toLowerCase().includes(search.toLowerCase()) || r.category.toLowerCase().includes(search.toLowerCase()))
@@ -240,10 +226,6 @@ export function MappingRulesTab() {
         <div className="flex items-center gap-2">
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="키워드/카테고리 검색..."
             className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500 w-44" />
-          <Button variant="ghost" size="sm" onClick={() => recategorizeMutation.mutate()} disabled={recategorizeMutation.isPending}
-            className="whitespace-nowrap text-xs text-amber-600 hover:text-amber-700 font-semibold">
-            {recategorizeMutation.isPending ? "반영 중..." : "뱅크샐러드 분류 반영"}
-          </Button>
           <Button variant="ghost" size="sm" onClick={() => applyAllMutation.mutate()} disabled={applyAllMutation.isPending}
             className="whitespace-nowrap text-xs text-emerald-600 hover:text-emerald-700 font-semibold">
             {applyAllMutation.isPending ? "적용 중..." : "전체 거래 규칙 재적용"}

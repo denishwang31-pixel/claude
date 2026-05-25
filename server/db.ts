@@ -214,42 +214,6 @@ export const TRANSFER_TX_TYPES = ["이체"];
 export const TRANSFER_CATS = ["내계좌이체", "이체", "카드대금"];
 export const TRANSFER_PAYMENT_KEYWORDS = ["통장", "예금", "저축", "청약"];
 
-/** 뱅크샐러드 대분류(+소분류)를 앱 L3 카테고리로 매핑.
- *  반환값이 "이체"면 계좌간 이동(통계 제외), null이면 미지정. */
-const BANKSALAD_TRANSFER_MAJORS = new Set(["내계좌이체", "이체", "카드대금", "현금", "미분류"]);
-export function mapBanksaladCategory(major: string, sub: string): string | "이체" | null {
-  major = (major ?? "").trim();
-  sub = (sub ?? "").trim();
-  if (!major) return null;
-  if (BANKSALAD_TRANSFER_MAJORS.has(major)) return "이체";
-  switch (major) {
-    case "생활":        return (sub === "마트" || sub === "편의점") ? "식비" : "생활용품";
-    case "온라인쇼핑":  return (sub === "서비스구독" || sub === "앱스토어") ? "구독" : "쇼핑";
-    case "식비":        return sub === "배달" ? "배달음식" : sub === "식재료" ? "식비" : "외식";
-    case "카페/간식":   return "카페";
-    case "저축":        return "저축";
-    case "투자":        return "투자";
-    case "금융":        return sub === "세금/과태료" ? "세금" : sub === "증권/투자" ? "투자" : "금융";
-    case "자동차":      return "교통";
-    case "교통":        return "교통";
-    case "문화/여가":   return sub === "도서" ? "교육" : sub === "스포츠" ? "건강" : sub === "마사지/스파" ? "미용" : "문화";
-    case "의료/건강":   return sub === "건강용품" ? "건강" : "의료";
-    case "주거/통신":   return sub === "휴대폰" ? "통신" : "주거";
-    case "여행/숙박":   return "여행";
-    case "패션/쇼핑":   return "쇼핑";
-    case "뷰티/미용":   return "미용";
-    case "교육/학습":   return "교육";
-    case "반려동물":    return "생활용품";
-    case "경조/선물":   return "기타";
-    case "술/유흥":     return "외식";
-    case "금융수입":    return "수입";
-    case "급여":        return "수입";
-    case "사업수입":    return "수입";
-    case "기타수입":    return "수입";
-    default:            return null;
-  }
-}
-
 // ── effectiveCategory 표현식 ───────────────────────────────────
 
 /** 뱅크샐러드 대분류/소분류 → 앱 카테고리 매핑 (SQL CASE).
@@ -266,10 +230,10 @@ function bankSaladMapSQL(): string {
     WHEN t.category = '식비' AND ${sub} = '식재료' THEN '식비'
     WHEN t.category = '식비' THEN '외식'
     WHEN t.category = '카페/간식' THEN '카페'
-    WHEN t.category = '저축' THEN '저축'
-    WHEN t.category = '투자' THEN '투자'
+    WHEN t.category = '저축' THEN CASE WHEN t.amount::numeric > 0 THEN '수입' ELSE '저축' END
+    WHEN t.category = '투자' THEN CASE WHEN t.amount::numeric > 0 THEN '수입' ELSE '투자' END
     WHEN t.category = '금융' AND ${sub} = '세금/과태료' THEN '세금'
-    WHEN t.category = '금융' AND ${sub} = '증권/투자' THEN '투자'
+    WHEN t.category = '금융' AND ${sub} = '증권/투자' THEN CASE WHEN t.amount::numeric > 0 THEN '수입' ELSE '투자' END
     WHEN t.category = '금융' THEN '금융'
     WHEN t.category IN ('자동차','교통') THEN '교통'
     WHEN t.category = '문화/여가' AND ${sub} = '도서' THEN '교육'
@@ -423,8 +387,8 @@ export async function getCategoryStats(
        SELECT t.amount,
               (${effectiveCatExpr}) as "effectiveCategory",
               CASE
-                WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) THEN 'savings'
                 WHEN t.amount::numeric > 0 THEN 'income'
+                WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) THEN 'savings'
                 ELSE 'expense'
               END as l1
        FROM transactions t
@@ -480,8 +444,8 @@ export async function getPivotData(
               t.amount,
               (${effectiveCatExpr}) as "effectiveCategory",
               CASE
-                WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) THEN 'savings'
                 WHEN t.amount::numeric > 0 THEN 'income'
+                WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) THEN 'savings'
                 ELSE 'expense'
               END as l1
        FROM transactions t
@@ -522,18 +486,24 @@ export async function getKpiSummary(
 
   const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
   const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
-  const allExcludeSQL = [...SAVINGS_CATS, ...catExclude].map((c) => `'${c.replace(/'/g, "''")}'`).join(",");
+  // 이체/사용자 제외 카테고리 (저축은 제외하지 않음 — 저축은 별도 집계)
+  const transferExcludeSQL = catExclude.length > 0
+    ? catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")
+    : "''";
   const notExcl = `NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
+  // 입금(양수)=수입, 저축 카테고리로 나가는 출금(음수)=저축, 그 외 출금=지출
   const rows = await db.execute(sql.raw(
     `SELECT
        SUM(CASE WHEN t.amount::numeric > 0
-                     AND (${effectiveCatExpr}) NOT IN (${allExcludeSQL}) AND ${notExcl}
+                     AND (${effectiveCatExpr}) NOT IN (${transferExcludeSQL}) AND ${notExcl}
                 THEN t.amount::numeric ELSE 0 END) as income,
-       SUM(CASE WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) AND ${notExcl}
-                THEN t.amount::numeric ELSE 0 END) as savings,
        SUM(CASE WHEN t.amount::numeric < 0
-                     AND (${effectiveCatExpr}) NOT IN (${allExcludeSQL}) AND ${notExcl}
+                     AND (${effectiveCatExpr}) IN (${savingsCatsSQL}) AND ${notExcl}
+                THEN -t.amount::numeric ELSE 0 END) as savings,
+       SUM(CASE WHEN t.amount::numeric < 0
+                     AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL})
+                     AND (${effectiveCatExpr}) NOT IN (${transferExcludeSQL}) AND ${notExcl}
                 THEN -t.amount::numeric ELSE 0 END) as expense,
        COUNT(DISTINCT TO_CHAR(t."txDate", 'YYYY-MM')) as months
      FROM transactions t WHERE t."userId" = ${userId}`
@@ -1197,51 +1167,6 @@ export async function applyRulesToAllTransactions(userId: number): Promise<numbe
   // postgres-js returns the row count in .count or as affected rows
   const affected = (result as any)?.count ?? (result as any)?.rowCount ?? 0;
   return Number(affected);
-}
-
-/** 뱅크샐러드 대분류/소분류를 앱 카테고리로 재분류.
- *  customCategory가 비어있는 거래만 대상(수동/규칙 분류 보존).
- *  이체성 거래는 통계에서 제외 처리. */
-export async function recategorizeFromSource(
-  userId: number
-): Promise<{ categorized: number; excluded: number }> {
-  const db = await getDb();
-  if (!db) return { categorized: 0, excluded: 0 };
-
-  const combos = await db.execute(sql.raw(
-    `SELECT DISTINCT category, "subCategory" FROM transactions
-     WHERE "userId" = ${userId} AND "customCategory" IS NULL`
-  ));
-
-  let categorized = 0;
-  let excluded = 0;
-  const esc = (s: string) => s.replace(/'/g, "''");
-
-  for (const row of combos as any[]) {
-    const major = String(row.category ?? "");
-    const sub = String(row.subCategory ?? "");
-    const mapped = mapBanksaladCategory(major, sub);
-    if (!mapped) continue;
-
-    const match = `t.category = '${esc(major)}' AND COALESCE(t."subCategory",'') = '${esc(sub)}' AND t."customCategory" IS NULL`;
-
-    if (mapped === "이체") {
-      const res = await db.execute(sql.raw(
-        `INSERT INTO excluded_transactions ("userId","transactionId")
-         SELECT ${userId}, t.id FROM transactions t
-         WHERE t."userId" = ${userId} AND ${match}
-           AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`
-      ));
-      excluded += Number((res as any)?.count ?? 0);
-    } else {
-      const res = await db.execute(sql.raw(
-        `UPDATE transactions t SET "customCategory" = '${esc(mapped)}'
-         WHERE t."userId" = ${userId} AND ${match}`
-      ));
-      categorized += Number((res as any)?.count ?? 0);
-    }
-  }
-  return { categorized, excluded };
 }
 
 export async function applyMappingRulesToNewTransactions(
