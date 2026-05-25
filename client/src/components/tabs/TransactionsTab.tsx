@@ -233,8 +233,11 @@ export function TransactionsTab() {
                           }}
                         />
                       </td>
-                      <td className="px-4 py-2.5 text-right font-medium tabular-nums text-cream-800">
-                        {formatKRW(Math.abs(Number(row.amount)))}
+                      <td className={cn(
+                        "px-4 py-2.5 text-right font-medium tabular-nums",
+                        Number(row.amount) > 0 ? "text-emerald-600" : "text-cream-800"
+                      )}>
+                        {Number(row.amount) > 0 ? "+" : "−"}{formatKRW(Math.abs(Number(row.amount)))}
                       </td>
                       <td className="px-4 py-2.5 text-center text-cream-500 text-xs whitespace-nowrap">
                         {(row.paymentMethod as string) ?? ""}

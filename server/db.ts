@@ -214,6 +214,42 @@ export const TRANSFER_TX_TYPES = ["이체"];
 export const TRANSFER_CATS = ["내계좌이체", "이체", "카드대금"];
 export const TRANSFER_PAYMENT_KEYWORDS = ["통장", "예금", "저축", "청약"];
 
+/** 뱅크샐러드 대분류(+소분류)를 앱 L3 카테고리로 매핑.
+ *  반환값이 "이체"면 계좌간 이동(통계 제외), null이면 미지정. */
+const BANKSALAD_TRANSFER_MAJORS = new Set(["내계좌이체", "이체", "카드대금", "현금", "미분류"]);
+export function mapBanksaladCategory(major: string, sub: string): string | "이체" | null {
+  major = (major ?? "").trim();
+  sub = (sub ?? "").trim();
+  if (!major) return null;
+  if (BANKSALAD_TRANSFER_MAJORS.has(major)) return "이체";
+  switch (major) {
+    case "생활":        return (sub === "마트" || sub === "편의점") ? "식비" : "생활용품";
+    case "온라인쇼핑":  return (sub === "서비스구독" || sub === "앱스토어") ? "구독" : "쇼핑";
+    case "식비":        return sub === "배달" ? "배달음식" : sub === "식재료" ? "식비" : "외식";
+    case "카페/간식":   return "카페";
+    case "저축":        return "저축";
+    case "투자":        return "투자";
+    case "금융":        return sub === "세금/과태료" ? "세금" : sub === "증권/투자" ? "투자" : "금융";
+    case "자동차":      return "교통";
+    case "교통":        return "교통";
+    case "문화/여가":   return sub === "도서" ? "교육" : sub === "스포츠" ? "건강" : sub === "마사지/스파" ? "미용" : "문화";
+    case "의료/건강":   return sub === "건강용품" ? "건강" : "의료";
+    case "주거/통신":   return sub === "휴대폰" ? "통신" : "주거";
+    case "여행/숙박":   return "여행";
+    case "패션/쇼핑":   return "쇼핑";
+    case "뷰티/미용":   return "미용";
+    case "교육/학습":   return "교육";
+    case "반려동물":    return "생활용품";
+    case "경조/선물":   return "기타";
+    case "술/유흥":     return "외식";
+    case "금융수입":    return "수입";
+    case "급여":        return "수입";
+    case "사업수입":    return "수입";
+    case "기타수입":    return "수입";
+    default:            return null;
+  }
+}
+
 // ── effectiveCategory 표현식 ───────────────────────────────────
 
 function buildEffectiveCategoryExpr(userId: number): string {
@@ -282,7 +318,7 @@ export async function getMonthlyStats(
   const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
   const [incomeRows, expenseRows] = await Promise.all([
     db.execute(sql.raw(
-      `SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth", SUM(ABS(t.amount::numeric)) as total
+      `SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth", ABS(SUM(t.amount::numeric)) as total
        FROM transactions t
        WHERE t."userId" = ${userId}
          AND (t."txType" = '수입' OR (${effectiveCatExpr}) = '수입')
@@ -292,11 +328,12 @@ export async function getMonthlyStats(
        ORDER BY TO_CHAR(t."txDate", 'YYYY-MM')`
     )),
     db.execute(sql.raw(
-      `SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth", SUM(ABS(t.amount::numeric)) as total
+      `SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth", ABS(SUM(t.amount::numeric)) as total
        FROM transactions t
        WHERE t."userId" = ${userId}
          AND t."txType" = '지출'
          AND (${effectiveCatExpr}) != '수입'
+         AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL})
          ${catExcludeSQL}
          ${notExcludedSQL}
        GROUP BY TO_CHAR(t."txDate", 'YYYY-MM')
@@ -339,7 +376,7 @@ export async function getCategoryStats(
 
   const rows = await db.execute(sql.raw(
     `SELECT sub."effectiveCategory" as category, sub.l1,
-            SUM(ABS(sub.amount::numeric)) as total, COUNT(*) as cnt
+            ABS(SUM(sub.amount::numeric)) as total, COUNT(*) as cnt
      FROM (
        SELECT t.amount,
               (${effectiveCatExpr}) as "effectiveCategory",
@@ -360,7 +397,7 @@ export async function getCategoryStats(
          )
      ) sub
      GROUP BY sub."effectiveCategory", sub.l1
-     ORDER BY sub.l1, SUM(ABS(sub.amount::numeric)) DESC`
+     ORDER BY sub.l1, ABS(SUM(sub.amount::numeric)) DESC`
   ));
 
   return (rows as any[]).map((r) => ({
@@ -397,7 +434,7 @@ export async function getPivotData(
 
   const rows = await db.execute(sql.raw(
     `SELECT sub."yearMonth", sub."effectiveCategory" as category, sub.l1,
-            SUM(ABS(sub.amount::numeric)) as total, COUNT(*) as cnt
+            ABS(SUM(sub.amount::numeric)) as total, COUNT(*) as cnt
      FROM (
        SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth",
               t.amount,
@@ -454,12 +491,12 @@ export async function getKpiSummary(
     `SELECT
        SUM(CASE WHEN (t."txType" = '수입' OR (${effectiveCatExpr}) = '수입')
                      AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) AND ${notExcl}
-                THEN ABS(t.amount::numeric) ELSE 0 END) as income,
+                THEN t.amount::numeric ELSE 0 END) as income,
        SUM(CASE WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) AND ${notExcl}
-                THEN ABS(t.amount::numeric) ELSE 0 END) as savings,
+                THEN t.amount::numeric ELSE 0 END) as savings,
        SUM(CASE WHEN t."txType" = '지출' AND (${effectiveCatExpr}) != '수입'
                      AND (${effectiveCatExpr}) NOT IN (${allExcludeSQL}) AND ${notExcl}
-                THEN ABS(t.amount::numeric) ELSE 0 END) as expense,
+                THEN -t.amount::numeric ELSE 0 END) as expense,
        COUNT(DISTINCT TO_CHAR(t."txDate", 'YYYY-MM')) as months
      FROM transactions t WHERE t."userId" = ${userId}`
   ));
@@ -487,7 +524,7 @@ export async function getL3Stats(
   const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
 
   const rows = await db.execute(sql.raw(
-    `SELECT t.content, SUM(ABS(t.amount::numeric)) as total, COUNT(*) as cnt
+    `SELECT t.content, ABS(SUM(t.amount::numeric)) as total, COUNT(*) as cnt
      FROM transactions t
      WHERE t."userId" = ${userId}
        AND (${effectiveCatExpr}) = '${escapedCat}'
@@ -697,7 +734,7 @@ export async function getSavingsStats(userId: number): Promise<{
     `SELECT
        t.content,
        (${effectiveCatExpr}) as "effectiveCategory",
-       SUM(ABS(t.amount::numeric)) as total,
+       ABS(SUM(t.amount::numeric)) as total,
        COUNT(*) as cnt,
        MAX(TO_CHAR(t."txDate", 'YYYY-MM-DD')) as "lastDate"
      FROM transactions t
@@ -1047,7 +1084,7 @@ export async function getIncomeDistribution(userId: number): Promise<{
   const notExcludedSQL = `NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const rows = await db.execute(sql.raw(
-    `SELECT (${effectiveCatExpr}) as "effectiveCategory", t."txType", SUM(ABS(t.amount::numeric)) as total, COUNT(*) as cnt
+    `SELECT (${effectiveCatExpr}) as "effectiveCategory", t."txType", ABS(SUM(t.amount::numeric)) as total, COUNT(*) as cnt
      FROM transactions t
      WHERE t."userId" = ${userId}
        AND ${notExcludedSQL}
@@ -1116,6 +1153,51 @@ export async function applyRulesToAllTransactions(userId: number): Promise<numbe
   // postgres-js returns the row count in .count or as affected rows
   const affected = (result as any)?.count ?? (result as any)?.rowCount ?? 0;
   return Number(affected);
+}
+
+/** 뱅크샐러드 대분류/소분류를 앱 카테고리로 재분류.
+ *  customCategory가 비어있는 거래만 대상(수동/규칙 분류 보존).
+ *  이체성 거래는 통계에서 제외 처리. */
+export async function recategorizeFromSource(
+  userId: number
+): Promise<{ categorized: number; excluded: number }> {
+  const db = await getDb();
+  if (!db) return { categorized: 0, excluded: 0 };
+
+  const combos = await db.execute(sql.raw(
+    `SELECT DISTINCT category, "subCategory" FROM transactions
+     WHERE "userId" = ${userId} AND "customCategory" IS NULL`
+  ));
+
+  let categorized = 0;
+  let excluded = 0;
+  const esc = (s: string) => s.replace(/'/g, "''");
+
+  for (const row of combos as any[]) {
+    const major = String(row.category ?? "");
+    const sub = String(row.subCategory ?? "");
+    const mapped = mapBanksaladCategory(major, sub);
+    if (!mapped) continue;
+
+    const match = `t.category = '${esc(major)}' AND COALESCE(t."subCategory",'') = '${esc(sub)}' AND t."customCategory" IS NULL`;
+
+    if (mapped === "이체") {
+      const res = await db.execute(sql.raw(
+        `INSERT INTO excluded_transactions ("userId","transactionId")
+         SELECT ${userId}, t.id FROM transactions t
+         WHERE t."userId" = ${userId} AND ${match}
+           AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`
+      ));
+      excluded += Number((res as any)?.count ?? 0);
+    } else {
+      const res = await db.execute(sql.raw(
+        `UPDATE transactions t SET "customCategory" = '${esc(mapped)}'
+         WHERE t."userId" = ${userId} AND ${match}`
+      ));
+      categorized += Number((res as any)?.count ?? 0);
+    }
+  }
+  return { categorized, excluded };
 }
 
 export async function applyMappingRulesToNewTransactions(
