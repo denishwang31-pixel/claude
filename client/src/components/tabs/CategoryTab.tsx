@@ -50,6 +50,19 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
     const l2Map: Record<string, { l1: string; total: number; count: number }> = {};
     const l3Map: Record<string, { category: string; l1: string; total: number; count: number }[]> = {};
 
+    // 정의된 L2 그룹은 데이터가 없어도 0원으로 항상 노출 (분류 체계 전체를 보여줌)
+    const BASE_L2: { expense: string[]; savings: string[]; income: string[] } = {
+      expense: ["생활", "교통/통신", "여가/문화", "건강", "기타"],
+      savings: ["저축", "투자"],
+      income:  ["수입"],
+    };
+    const seedZero = (groups: string[], l1: string) => {
+      for (const l2 of groups) if (!l2Map[l2]) l2Map[l2] = { l1, total: 0, count: 0 };
+    };
+    if (l1Filter === "all" || l1Filter === "expense") seedZero(BASE_L2.expense, "expense");
+    if (l1Filter === "all" || l1Filter === "savings") seedZero(BASE_L2.savings, "savings");
+    if (l1Filter === "all" || l1Filter === "income")  seedZero(BASE_L2.income, "income");
+
     for (const r of filtered) {
       const l2 = getL2(r.category, r.l1);
       if (!l2Map[l2]) l2Map[l2] = { l1: r.l1, total: 0, count: 0 };
@@ -114,8 +127,8 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
     setSelectedL3(selectedL3 === cat ? null : cat);
   }
 
-  // Pie data: L2 groups
-  const pieData = l2Groups.map((g) => ({
+  // Pie data: L2 groups (0원 그룹은 차트에서 제외)
+  const pieData = l2Groups.filter((g) => g.total > 0).map((g) => ({
     name: g.l2,
     value: g.total,
     color: L2_COLOR[g.l2] ?? "#BFBFBF",
