@@ -20,9 +20,29 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
     `ALTER TABLE category_rules ADD COLUMN IF NOT EXISTS "ruleType" varchar(20) NOT NULL DEFAULT 'expense'`,
     `ALTER TABLE category_rules ADD COLUMN IF NOT EXISTS "isActive" integer NOT NULL DEFAULT 1`,
     `CREATE UNIQUE INDEX IF NOT EXISTS "category_rules_userId_keyword_idx" ON category_rules ("userId", keyword)`,
+    // Legacy schema drift: isExact was once boolean, the app code compares it
+    // with integers (= 1 / = 0) and inserts integers. Normalize to integer so
+    // every read/write path works. Idempotent — only runs while still boolean.
+    `DO $$
+     BEGIN
+       IF EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'category_rules'
+           AND column_name = 'isExact'
+           AND data_type = 'boolean'
+       ) THEN
+         ALTER TABLE category_rules ALTER COLUMN "isExact" DROP DEFAULT;
+         ALTER TABLE category_rules ALTER COLUMN "isExact" TYPE integer USING ("isExact"::integer);
+         ALTER TABLE category_rules ALTER COLUMN "isExact" SET DEFAULT 0;
+       END IF;
+     END $$`,
   ];
   for (const step of steps) {
-    try { await db.execute(sql.raw(step)); } catch {}
+    try {
+      await db.execute(sql.raw(step));
+    } catch (e) {
+      console.warn("[Database] migration step failed:", e instanceof Error ? e.message : e);
+    }
   }
 }
 
