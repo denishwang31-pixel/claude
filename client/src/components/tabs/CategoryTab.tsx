@@ -54,7 +54,7 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
 
     // 정의된 L2 그룹은 데이터가 없어도 0원으로 항상 노출 (분류 체계 전체를 보여줌)
     const BASE_L2: { expense: string[]; savings: string[]; income: string[] } = {
-      expense: ["생활", "교통/통신", "여가/문화", "건강", "기타"],
+      expense: ["생활", "교통/통신", "여가/문화", "건강", "금융", "기타"],
       savings: ["저축", "투자"],
       income:  ["수입"],
     };

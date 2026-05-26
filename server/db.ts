@@ -16,6 +16,7 @@ const DB_URL = process.env.DATABASE_URL ?? "postgres://budget:budget123@localhos
 let _db: ReturnType<typeof drizzle> | null = null;
 
 async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
+  const APP_L3_VALUES_SQL = APP_L3_CATEGORIES.map((c) => `'${c.replace(/'/g, "''")}'`).join(",");
   const steps = [
     `ALTER TABLE category_rules ADD COLUMN IF NOT EXISTS "ruleType" varchar(20) NOT NULL DEFAULT 'expense'`,
     `ALTER TABLE category_rules ADD COLUMN IF NOT EXISTS "isActive" integer NOT NULL DEFAULT 1`,
@@ -36,6 +37,14 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
          ALTER TABLE category_rules ALTER COLUMN "isExact" SET DEFAULT 0;
        END IF;
      END $$`,
+    // 데이터 정리: customCategory / 규칙에 박힌 뱅크샐러드 대분류 원본(앱 L3가 아닌 값)을 제거.
+    // 이런 값은 과거 "거래내역에서 자동 생성"이 content→대분류원본을 저장하면서 생긴 것으로,
+    // bankSaladMapSQL 매핑을 덮어써 '기타'로 떨어지게 만든다. 제거하면 매핑이 정상 동작한다.
+    `UPDATE transactions SET "customCategory" = NULL
+       WHERE "customCategory" IS NOT NULL
+         AND "customCategory" NOT IN (${APP_L3_VALUES_SQL})`,
+    `DELETE FROM category_rules
+       WHERE category NOT IN (${APP_L3_VALUES_SQL})`,
   ];
   for (const step of steps) {
     try {
@@ -211,6 +220,19 @@ export async function clearAllExclusions(userId: number): Promise<number> {
 export const SAVINGS_CATS = ["저축", "투자", "청약", "적금", "예금", "CMA", "ETF", "주식", "펀드", "ISA", "IRP"];
 const SAVINGS_ONLY_CATS = ["저축", "청약", "적금", "예금", "CMA"];
 const INVEST_ONLY_CATS = ["투자", "ETF", "주식", "펀드", "ISA", "IRP"];
+
+/** 앱이 최종 사용하는 유효 L3 카테고리 — 이 목록에 없는 값(뱅크샐러드 대분류 원본 등)은
+ *  customCategory/규칙에 들어가면 안 된다(자동 정리 대상). */
+export const APP_L3_CATEGORIES = [
+  // 지출
+  "식비", "외식", "배달음식", "카페", "쇼핑", "생활용품", "주거",
+  "교통", "통신", "구독", "문화", "교육", "여행", "미용", "의료", "건강",
+  "금융", "세금", "기타",
+  // 저축/투자
+  "저축", "투자", "청약", "적금", "예금", "CMA", "ETF", "주식", "펀드", "ISA", "IRP",
+  // 수입 / 이체
+  "수입", "이체",
+];
 
 /** 카테고리명으로 규칙 타입(income/savings/investment/expense) 추론 */
 export function categoryToRuleType(category: string): string {
@@ -1062,12 +1084,15 @@ export async function generateRulesFromTransactions(userId: number): Promise<num
   const SAVINGS_KEYWORDS = ["청약", "적금", "저축", "예금", "CMA"];
   const INVEST_KEYWORDS = ["ETF", "주식", "펀드", "ISA", "IRP", "투자"];
 
+  // 뱅크샐러드 대분류 원본이 아니라 앱 L3로 매핑된 카테고리를 규칙에 저장한다.
+  // (과거엔 t.category 원본을 저장해 '온라인쇼핑'·'생활' 같은 값이 규칙에 박혀 '기타'로 떨어졌다)
+  const mappedCat = `COALESCE(t."customCategory", ${bankSaladMapSQL()})`;
   const rows = await db.execute(sql.raw(
-    `SELECT t.content, COALESCE(t."customCategory", t.category) as category, t."txType", COUNT(*) as cnt
+    `SELECT t.content, ${mappedCat} as category, t."txType", COUNT(*) as cnt
      FROM transactions t
      WHERE t."userId" = ${userId}
        AND t.content IS NOT NULL AND t.content != '' AND t.content != '-'
-     GROUP BY t.content, COALESCE(t."customCategory", t.category), t."txType"
+     GROUP BY t.content, ${mappedCat}, t."txType"
      ORDER BY cnt DESC`
   ));
 
