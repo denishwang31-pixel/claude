@@ -26,13 +26,12 @@ import {
   getExistingHashes,
   insertTransactions,
   setExcludedTransactions,
+  clearAllExclusions,
   getUserSettings,
   saveUserSettings,
   getExcludedTransactionIds,
   deleteAllTransactions,
   categoryToRuleType,
-  SAVINGS_CATS,
-  TRANSFER_CATS,
 } from "./db";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
@@ -88,52 +87,8 @@ const budgetRouter = router({
       // Apply mapping rules to newly inserted transactions
       await applyMappingRulesToNewTransactions(userId, newRows.map((r) => r.dedupHash));
 
-      // Auto-exclude transfer items — but NOT savings/investment items
-      const db = await getDb();
-      if (db) {
-        const hashList = newRows.map((r) => `'${r.dedupHash.replace(/'/g, "''")}'`).join(", ");
-
-        // Get IDs of inserted transactions
-        const insertedRows = await db.execute(sql.raw(
-          `SELECT id, category, "customCategory", "txType", "paymentMethod" FROM transactions
-           WHERE "userId" = ${userId} AND "dedupHash" IN (${hashList})`
-        ));
-        const insertedArr = insertedRows as any[];
-
-        // Auto-exclude: transfers and card payments, but skip savings/investment
-        const toExclude: number[] = [];
-        for (const row of insertedArr) {
-          const effectiveCat = row.customCategory ?? row.category;
-          if (SAVINGS_CATS.includes(effectiveCat)) continue; // never auto-exclude savings
-
-          const isTransferType = row.txType === "이체";
-          const isTransferCat = TRANSFER_CATS.includes(effectiveCat);
-          if (isTransferType || isTransferCat) {
-            toExclude.push(Number(row.id));
-          }
-        }
-
-        if (toExclude.length > 0) {
-          await setExcludedTransactions(userId, toExclude, true);
-        }
-
-        // Also remove from excluded any items that mapped to savings/investment
-        await db.execute(sql.raw(
-          `DELETE FROM excluded_transactions et
-           USING transactions t
-           WHERE et."transactionId" = t.id
-             AND et."userId" = ${userId}
-             AND COALESCE(t."customCategory", t.category) IN ('저축', '투자')
-             AND t."dedupHash" IN (${hashList})`
-        ));
-
-        return {
-          inserted: newRows.length,
-          skipped: input.rows.length - newRows.length,
-          autoExcluded: toExclude.length,
-        };
-      }
-
+      // 이체 일괄 제외 안 함 — 부호(입출금)와 뱅크샐러드 대분류 매핑으로 분류.
+      // 내계좌이체/카드대금은 매핑상 '이체'로 통계에서 자동 제외됨.
       return { inserted: newRows.length, skipped: input.rows.length - newRows.length, autoExcluded: 0 };
     }),
 
@@ -301,9 +256,10 @@ const budgetRouter = router({
         }
       }
 
-      // If new category is savings/investment, remove from excluded_transactions
+      // 사용자가 직접 카테고리를 지정하면 "집계 대상"으로 보고 제외를 해제
+      // (이체로 자동 제외됐던 거래를 수입/지출 등으로 끌어올 수 있게)
       const db = await getDb();
-      if (db && SAVINGS_CATS.includes(input.newCategory)) {
+      if (db) {
         await db.execute(sql.raw(
           `DELETE FROM excluded_transactions WHERE "userId" = ${ctx.user.id} AND "transactionId" = ${input.transactionId}`
         ));
@@ -332,6 +288,12 @@ const budgetRouter = router({
       await setExcludedTransactions(ctx.user.id, input.transactionIds, input.excluded);
       return { success: true };
     }),
+
+  // ── 제외 전체 해제 ───────────────────────────────────────────
+  clearAllExclusions: protectedProcedure.mutation(async ({ ctx }) => {
+    const cleared = await clearAllExclusions(ctx.user.id);
+    return { cleared };
+  }),
 
   // ── 카테고리 매핑 규칙 ───────────────────────────────────────
   getCategoryRules: protectedProcedure.query(async ({ ctx }) => {

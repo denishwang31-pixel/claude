@@ -3,6 +3,47 @@ import { trpc } from "../../lib/trpc";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { toast } from "sonner";
+import { L2_BY_L1, l3ListForL2, L2_COLOR } from "../../lib/categories";
+
+const HIERARCHY: { l1: string; color: string }[] = [
+  { l1: "income", color: "text-gray-800" },
+  { l1: "savings", color: "text-blue-600" },
+  { l1: "expense", color: "text-red-500" },
+];
+const L1_NAME: Record<string, string> = { income: "수입", savings: "저축/투자", expense: "지출" };
+
+function HierarchyOverview() {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="bg-white rounded-xl border border-cream-200 shadow-sm overflow-hidden">
+      <button onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-3 text-left text-sm font-semibold text-cream-700">
+        <span>분류 체계 <span className="font-normal text-cream-400 text-xs ml-1">L1 › L2 › L3</span></span>
+        <span className="text-xs opacity-50">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="px-5 pb-4 space-y-3">
+          {HIERARCHY.map(({ l1, color }) => (
+            <div key={l1}>
+              <div className={cn("text-sm font-bold mb-1", color)}>{L1_NAME[l1]}</div>
+              <div className="space-y-1 pl-3 border-l-2 border-cream-100">
+                {(L2_BY_L1[l1] ?? []).map((l2) => (
+                  <div key={l2} className="flex items-start gap-2 text-xs">
+                    <span className="font-medium text-cream-600 min-w-[64px] inline-flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: L2_COLOR[l2] ?? "#ccc" }} />
+                      {l2}
+                    </span>
+                    <span className="text-cream-400">{l3ListForL2(l1, l2).join(", ")}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface Rule {
   id: number;
@@ -217,6 +258,9 @@ export function MappingRulesTab() {
 
   return (
     <div className="space-y-4">
+      {/* 전체 분류 체계 */}
+      <HierarchyOverview />
+
       {/* Toolbar */}
       <div className="bg-white rounded-xl border border-cream-200 shadow-sm px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">

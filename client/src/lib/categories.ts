@@ -47,6 +47,18 @@ export function categoryPath(category: string): { l1: string; l2: string; l3: st
   return { l1, l2, l3: category, label: `${L1_LABEL[l1]} › ${l2} › ${category}` };
 }
 
+export function isSavingsCategory(category: string): boolean {
+  return category in SAVINGS_L2;
+}
+
+/** 금액 부호 기반 L1/L2 경로 (양수=수입, 저축카테고리 출금=저축, 그 외 출금=지출, 이체=제외) */
+export function signedPath(category: string, amount: number): { l1Label: string; l2: string } {
+  if (category === "이체") return { l1Label: "이체", l2: "제외" };
+  if (amount > 0) return { l1Label: "수입", l2: "수입" };
+  if (isSavingsCategory(category)) return { l1Label: "저축/투자", l2: getL2(category, "savings") };
+  return { l1Label: "지출", l2: getL2(category, "expense") };
+}
+
 export const L2_ORDER: Record<string, string[]> = {
   income:  ["수입"],
   savings: ["저축", "투자", "저축/투자"],

@@ -5,7 +5,8 @@ import { CategoryDropdown } from "../CategoryDropdown";
 import { Button } from "../ui/button";
 import { downloadTransactionsExcel } from "../../lib/downloadExcel";
 import { cn } from "../../lib/utils";
-import { L1_LIST, L2_BY_L1, l3ListForL2, resolveCategoryFilter, getL1, getL2 } from "../../lib/categories";
+import { toast } from "sonner";
+import { L1_LIST, L2_BY_L1, l3ListForL2, resolveCategoryFilter, signedPath } from "../../lib/categories";
 
 const PAGE_SIZE = 50;
 
@@ -53,6 +54,20 @@ export function TransactionsTab() {
       utils.budget.getSavingsStats.invalidate();
       utils.budget.getIncomeDistribution.invalidate();
     },
+  });
+
+  const clearExclMutation = trpc.budget.clearAllExclusions.useMutation({
+    onSuccess: (res) => {
+      utils.budget.getTransactions.invalidate();
+      utils.budget.getCategoryStats.invalidate();
+      utils.budget.getMonthlyStats.invalidate();
+      utils.budget.getPivotData.invalidate();
+      utils.budget.getKpiSummary.invalidate();
+      utils.budget.getSavingsStats.invalidate();
+      utils.budget.getIncomeDistribution.invalidate();
+      toast.success(`제외 ${res.cleared}건을 모두 해제했습니다.`);
+    },
+    onError: () => toast.error("제외 해제에 실패했습니다."),
   });
 
   const exportQuery = trpc.budget.getAllTransactionsForExport.useQuery(undefined, { enabled: false });
@@ -175,6 +190,10 @@ export function TransactionsTab() {
               <>전체 <span className="font-semibold text-cream-800">{data?.total ?? 0}</span>건</>
             )}
           </span>
+          <Button variant="ghost" size="sm" onClick={() => clearExclMutation.mutate()} disabled={clearExclMutation.isPending}
+            className="text-xs text-cream-500 hover:text-cream-700 whitespace-nowrap">
+            {clearExclMutation.isPending ? "해제 중..." : "제외 전체 해제"}
+          </Button>
           <Button variant="secondary" size="sm" onClick={handleExport}>
             엑셀 다운로드
           </Button>
@@ -225,9 +244,7 @@ export function TransactionsTab() {
                       <td className="px-4 py-2.5">
                         {(() => {
                           const cat = ((row as any).effectiveCategory ?? row.customCategory ?? row.category) as string;
-                          const l1 = getL1(cat);
-                          const l2 = getL2(cat, l1);
-                          const l1Label = l1 === "income" ? "수입" : l1 === "savings" ? "저축/투자" : "지출";
+                          const { l1Label, l2 } = signedPath(cat, Number(row.amount));
                           return (
                             <div className="flex flex-col gap-0.5">
                               <CategoryDropdown

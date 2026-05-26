@@ -196,6 +196,16 @@ export async function setExcludedTransactions(
   }
 }
 
+/** 사용자의 모든 거래 제외 설정 초기화 */
+export async function clearAllExclusions(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const res = await db.execute(
+    sql`DELETE FROM excluded_transactions WHERE "userId" = ${userId}`
+  );
+  return Number((res as any)?.count ?? 0);
+}
+
 // ── 필터 상수 ──────────────────────────────────────────────────
 
 export const SAVINGS_CATS = ["저축", "투자", "청약", "적금", "예금", "CMA", "ETF", "주식", "펀드", "ISA", "IRP"];
