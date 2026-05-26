@@ -582,11 +582,16 @@ function buildTxSearchSQL(userId: number, field: string, query: string): string 
     case "txType":        return `t."txType" = '${esc(query)}'`;
     case "date":          return `TO_CHAR(t."txDate", 'YYYY-MM') = '${esc(query)}'`;
     case "categories": {
-      // query = L3 카테고리 콤마 구분 목록 → effectiveCategory IN (...)
-      const cats = query.split(",").map((c) => c.trim()).filter(Boolean);
-      if (cats.length === 0) return "TRUE";
+      // query = "{l1}|{콤마구분 L3목록}" — 부호로 입출금 방향까지 맞춰 화면 표기와 일치
+      const [l1Part, catsPart] = query.includes("|") ? query.split("|") : ["", query];
+      const cats = (catsPart ?? "").split(",").map((c) => c.trim()).filter(Boolean);
       const expr = buildEffectiveCategoryExpr(userId);
-      const inList = cats.map((c) => `'${esc(c)}'`).join(",");
+      const inList = cats.length ? cats.map((c) => `'${esc(c)}'`).join(",") : "''";
+      const savings = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
+      if (l1Part === "income")  return `t.amount::numeric > 0 AND (${expr}) <> '이체'`;
+      if (l1Part === "savings") return `t.amount::numeric < 0 AND (${expr}) IN (${inList})`;
+      if (l1Part === "expense") return `t.amount::numeric < 0 AND (${expr}) IN (${inList}) AND (${expr}) NOT IN (${savings}) AND (${expr}) <> '이체'`;
+      if (cats.length === 0) return "TRUE";
       return `(${expr}) IN (${inList})`;
     }
     default:              return "TRUE";

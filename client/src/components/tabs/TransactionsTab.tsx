@@ -36,8 +36,13 @@ export function TransactionsTab() {
 
   let filter: { field: string; query: string } | undefined;
   if (searchField === "category") {
-    const cats = resolveCategoryFilter(catL1, catL2, catL3);
-    filter = cats.length ? { field: "categories", query: cats.join(",") } : undefined;
+    if (catL1 === "income") {
+      // 수입은 부호 기반(양수 전체) — 카테고리 집합 불필요
+      filter = { field: "categories", query: "income|" };
+    } else {
+      const cats = resolveCategoryFilter(catL1, catL2, catL3);
+      filter = cats.length ? { field: "categories", query: `${catL1}|${cats.join(",")}` } : undefined;
+    }
   } else if (searchQuery.trim()) {
     filter = { field: searchField, query: searchQuery.trim() };
   }
