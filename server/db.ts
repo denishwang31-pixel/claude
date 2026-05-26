@@ -413,8 +413,10 @@ export async function getCategoryStats(
   const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
 
   const rows = await db.execute(sql.raw(
-    `SELECT sub."effectiveCategory" as category, sub.l1,
-            ABS(SUM(sub.amount::numeric)) as total, COUNT(*) as cnt
+    `SELECT
+       CASE WHEN sub.l1 = 'income' THEN '수입' ELSE sub."effectiveCategory" END as category,
+       sub.l1,
+       ABS(SUM(sub.amount::numeric)) as total, COUNT(*) as cnt
      FROM (
        SELECT t.amount,
               (${effectiveCatExpr}) as "effectiveCategory",
@@ -432,7 +434,7 @@ export async function getCategoryStats(
            ((${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) ${catExcludeSQL} ${notExcludedSQL})
          )
      ) sub
-     GROUP BY sub."effectiveCategory", sub.l1
+     GROUP BY (CASE WHEN sub.l1 = 'income' THEN '수입' ELSE sub."effectiveCategory" END), sub.l1
      ORDER BY sub.l1, ABS(SUM(sub.amount::numeric)) DESC`
   ));
 
@@ -469,7 +471,9 @@ export async function getPivotData(
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const rows = await db.execute(sql.raw(
-    `SELECT sub."yearMonth", sub."effectiveCategory" as category, sub.l1,
+    `SELECT sub."yearMonth",
+            CASE WHEN sub.l1 = 'income' THEN '수입' ELSE sub."effectiveCategory" END as category,
+            sub.l1,
             ABS(SUM(sub.amount::numeric)) as total, COUNT(*) as cnt
      FROM (
        SELECT TO_CHAR(t."txDate", 'YYYY-MM') as "yearMonth",
@@ -488,7 +492,7 @@ export async function getPivotData(
            ((${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) ${catExcludeSQL} ${notExcludedSQL})
          )
      ) sub
-     GROUP BY sub."yearMonth", sub."effectiveCategory", sub.l1
+     GROUP BY sub."yearMonth", (CASE WHEN sub.l1 = 'income' THEN '수입' ELSE sub."effectiveCategory" END), sub.l1
      ORDER BY sub."yearMonth"`
   ));
 
@@ -563,18 +567,25 @@ export async function getL3Stats(
   const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
   const escapedCat = category.replace(/'/g, "''");
   const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
+  const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
   // 부호로 방향 일치 (지출=출금/음수, 수입=입금/양수) → 환불이 지출에 섞이지 않음
   const signSQL = direction === "expense" ? "AND t.amount::numeric < 0"
                 : direction === "income"  ? "AND t.amount::numeric > 0"
                 : "";
+  // '수입'은 단일 카테고리로 통합 — 양수·비저축·비이체 전체가 수입
+  const catFilter = category === "수입"
+    ? `t.amount::numeric > 0 AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) AND (${effectiveCatExpr}) <> '이체'`
+    : `(${effectiveCatExpr}) = '${escapedCat}'`;
+  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
   const rows = await db.execute(sql.raw(
     `SELECT t.content, ABS(SUM(t.amount::numeric)) as total, COUNT(*) as cnt
      FROM transactions t
      WHERE t."userId" = ${userId}
-       AND (${effectiveCatExpr}) = '${escapedCat}'
+       AND ${catFilter}
        ${signSQL}
        ${monthSQL}
+       ${notExcludedSQL}
      GROUP BY t.content
      ORDER BY total DESC`
   ));
@@ -687,6 +698,7 @@ export async function getCategoryTransactions(
   const offset = (page - 1) * pageSize;
   const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
   const escapedCategory = category.replace(/'/g, "''");
+  const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
 
   const isSavingsCat = SAVINGS_CATS.includes(category);
   const excludeFilter = isSavingsCat
@@ -696,6 +708,10 @@ export async function getCategoryTransactions(
          WHERE et."userId" = ${userId} AND et."transactionId" = t.id
        )`;
   const monthFilter = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
+  // '수입'은 단일 카테고리로 통합 — 양수·비저축·비이체 전체가 수입
+  const catMatch = category === "수입"
+    ? `sub.amount::numeric > 0 AND sub."effectiveCategory" NOT IN (${savingsCatsSQL}) AND sub."effectiveCategory" <> '이체'`
+    : `sub."effectiveCategory" = '${escapedCategory}'`;
 
   const [rows, countRows] = await Promise.all([
     db.execute(sql.raw(
@@ -707,20 +723,20 @@ export async function getCategoryTransactions(
            ${excludeFilter}
            ${monthFilter}
        ) sub
-       WHERE sub."effectiveCategory" = '${escapedCategory}'
+       WHERE ${catMatch}
        ORDER BY sub."txDate" DESC, sub."txTime" DESC
        LIMIT ${pageSize} OFFSET ${offset}`
     )),
     db.execute(sql.raw(
       `SELECT COUNT(*) as total
        FROM (
-         SELECT t.id, t."txType", (${effectiveCatExpr}) as "effectiveCategory"
+         SELECT t.id, t.amount, t."txType", (${effectiveCatExpr}) as "effectiveCategory"
          FROM transactions t
          WHERE t."userId" = ${userId}
            ${excludeFilter}
            ${monthFilter}
        ) sub
-       WHERE sub."effectiveCategory" = '${escapedCategory}'`
+       WHERE ${catMatch}`
     )),
   ]);
 
