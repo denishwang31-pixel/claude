@@ -419,8 +419,8 @@ export async function getCategoryStats(
        SELECT t.amount,
               (${effectiveCatExpr}) as "effectiveCategory",
               CASE
-                WHEN t.amount::numeric > 0 THEN 'income'
                 WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) THEN 'savings'
+                WHEN t.amount::numeric > 0 THEN 'income'
                 ELSE 'expense'
               END as l1
        FROM transactions t
@@ -476,8 +476,8 @@ export async function getPivotData(
               t.amount,
               (${effectiveCatExpr}) as "effectiveCategory",
               CASE
-                WHEN t.amount::numeric > 0 THEN 'income'
                 WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) THEN 'savings'
+                WHEN t.amount::numeric > 0 THEN 'income'
                 ELSE 'expense'
               END as l1
        FROM transactions t
@@ -524,14 +524,14 @@ export async function getKpiSummary(
     : "''";
   const notExcl = `NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
-  // 입금(양수)=수입, 저축 카테고리로 나가는 출금(음수)=저축, 그 외 출금=지출
+  // 입금(양수)=수입(단, 저축 카테고리 제외), 저축 카테고리는 입출금 net=저축, 그 외 출금=지출
   const rows = await db.execute(sql.raw(
     `SELECT
        SUM(CASE WHEN t.amount::numeric > 0
+                     AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL})
                      AND (${effectiveCatExpr}) NOT IN (${transferExcludeSQL}) AND ${notExcl}
                 THEN t.amount::numeric ELSE 0 END) as income,
-       SUM(CASE WHEN t.amount::numeric < 0
-                     AND (${effectiveCatExpr}) IN (${savingsCatsSQL}) AND ${notExcl}
+       SUM(CASE WHEN (${effectiveCatExpr}) IN (${savingsCatsSQL}) AND ${notExcl}
                 THEN -t.amount::numeric ELSE 0 END) as savings,
        SUM(CASE WHEN t.amount::numeric < 0
                      AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL})
@@ -610,8 +610,8 @@ function buildTxSearchSQL(userId: number, field: string, query: string): string 
       const expr = buildEffectiveCategoryExpr(userId);
       const inList = cats.length ? cats.map((c) => `'${esc(c)}'`).join(",") : "''";
       const savings = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
-      if (l1Part === "income")  return `t.amount::numeric > 0 AND (${expr}) <> '이체'`;
-      if (l1Part === "savings") return `t.amount::numeric < 0 AND (${expr}) IN (${inList})`;
+      if (l1Part === "income")  return `t.amount::numeric > 0 AND (${expr}) <> '이체' AND (${expr}) NOT IN (${savings})`;
+      if (l1Part === "savings") return `(${expr}) IN (${inList})`;
       if (l1Part === "expense") return `t.amount::numeric < 0 AND (${expr}) IN (${inList}) AND (${expr}) NOT IN (${savings}) AND (${expr}) <> '이체'`;
       if (cats.length === 0) return "TRUE";
       return `(${expr}) IN (${inList})`;
@@ -791,6 +791,7 @@ export async function getSavingsStats(userId: number): Promise<{
      FROM transactions t
      WHERE t."userId" = ${userId}
        AND (${effectiveCatExpr}) IN ('저축', '투자')
+       AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)
      GROUP BY t.content, (${effectiveCatExpr})
      ORDER BY total DESC`
   ));
