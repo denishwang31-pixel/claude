@@ -51,12 +51,17 @@ export function isSavingsCategory(category: string): boolean {
   return category in SAVINGS_L2;
 }
 
-/** 금액 부호 기반 L1/L2 경로 (양수=수입, 저축카테고리 출금=저축, 그 외 출금=지출, 이체=제외) */
-export function signedPath(category: string, amount: number): { l1Label: string; l2: string } {
-  if (category === "이체") return { l1Label: "이체", l2: "제외" };
-  if (amount > 0) return { l1Label: "수입", l2: "수입" };
-  if (isSavingsCategory(category)) return { l1Label: "저축/투자", l2: getL2(category, "savings") };
-  return { l1Label: "지출", l2: getL2(category, "expense") };
+/** 금액 부호 기반 L1/L2/L3 전체 경로 (양수=수입, 저축카테고리 출금=저축, 그 외 출금=지출, 이체=제외) */
+export function signedPath(category: string, amount: number): { l1Label: string; l2: string; l3: string; path: string } {
+  let l1Label: string, l2: string;
+  if (category === "이체") { l1Label = "이체"; l2 = "제외"; }
+  else if (amount > 0) { l1Label = "수입"; l2 = "수입"; }
+  else if (isSavingsCategory(category)) { l1Label = "저축/투자"; l2 = getL2(category, "savings"); }
+  else { l1Label = "지출"; l2 = getL2(category, "expense"); }
+  // L1 › L2 › L3 경로 — 연속 중복은 제거 (예: 수입›수입›수입 → 수입)
+  const parts = category === "이체" ? [l1Label, l2] : [l1Label, l2, category];
+  const path = parts.filter((p, i) => i === 0 || p !== parts[i - 1]).join(" › ");
+  return { l1Label, l2, l3: category, path };
 }
 
 export const L2_ORDER: Record<string, string[]> = {
