@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { cn } from "../lib/utils";
 
 interface KpiCardProps {
@@ -9,9 +9,20 @@ interface KpiCardProps {
   className?: string;
   icon?: React.ReactNode;
   valueClass?: string;
+  memo?: string;
+  onMemoCommit?: (value: string) => void;
 }
 
-export function KpiCard({ title, value, subtitle, trend, className, icon, valueClass }: KpiCardProps) {
+export function KpiCard({ title, value, subtitle, trend, className, icon, valueClass, memo, onMemoCommit }: KpiCardProps) {
+  const [draft, setDraft] = useState(memo ?? "");
+
+  useEffect(() => { setDraft(memo ?? ""); }, [memo]);
+
+  function commit() {
+    const v = draft.trim();
+    if (v !== (memo ?? "") && onMemoCommit) onMemoCommit(v);
+  }
+
   return (
     <div
       className={cn(
@@ -34,6 +45,16 @@ export function KpiCard({ title, value, subtitle, trend, className, icon, valueC
         >
           {trend.value >= 0 ? "▲" : "▼"} {Math.abs(trend.value).toFixed(1)}% {trend.label}
         </div>
+      )}
+      {onMemoCommit && (
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          rows={2}
+          placeholder="메모..."
+          className="mt-1 w-full resize-none rounded-lg border border-cream-100 bg-cream-50/50 px-2 py-1.5 text-xs text-cream-700 placeholder:text-cream-300 focus:outline-none focus:border-cream-300 focus:bg-white transition-colors"
+        />
       )}
     </div>
   );

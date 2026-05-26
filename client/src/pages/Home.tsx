@@ -26,12 +26,14 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [includeTransfer, setIncludeTransfer] = useState(false);
   const [excludedCategories, setExcludedCategories] = useState<string[]>([]);
+  const [dashboardMemos, setDashboardMemos] = useState<Record<string, string>>({});
   const [showUpload, setShowUpload] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
   const utils = trpc.useUtils();
   const { data: settings } = trpc.budget.getSettings.useQuery();
   const saveSettingsMutation = trpc.budget.saveSettings.useMutation();
+  const saveMemosMutation = trpc.budget.saveDashboardMemos.useMutation();
 
   const { data: kpi, isLoading: kpiLoading } = trpc.budget.getKpiSummary.useQuery({
     includeTransfer,
@@ -52,8 +54,15 @@ export default function Home() {
     if (settings) {
       setIncludeTransfer(settings.includeTransfer);
       setExcludedCategories(settings.excludedCategories);
+      setDashboardMemos(settings.dashboardMemos ?? {});
     }
   }, [settings]);
+
+  function handleMemoCommit(key: string, value: string) {
+    const next = { ...dashboardMemos, [key]: value };
+    setDashboardMemos(next);
+    saveMemosMutation.mutate({ memos: next });
+  }
 
   function handleIncludeTransferChange(v: boolean) {
     setIncludeTransfer(v);
@@ -151,6 +160,8 @@ export default function Home() {
                 subtitle={`${kpi?.monthCount ?? 0}개월 합산`}
                 icon="💰"
                 valueClass="text-gray-900"
+                memo={dashboardMemos.income}
+                onMemoCommit={(v) => handleMemoCommit("income", v)}
               />
               <KpiCard
                 title="총 저축/투자"
@@ -158,6 +169,8 @@ export default function Home() {
                 subtitle="저축·투자 합산"
                 icon="💙"
                 valueClass="text-blue-600"
+                memo={dashboardMemos.savings}
+                onMemoCommit={(v) => handleMemoCommit("savings", v)}
               />
               <KpiCard
                 title="총 지출"
@@ -165,12 +178,16 @@ export default function Home() {
                 subtitle={`${kpi?.monthCount ?? 0}개월 합산`}
                 icon="💸"
                 valueClass="text-red-500"
+                memo={dashboardMemos.expense}
+                onMemoCommit={(v) => handleMemoCommit("expense", v)}
               />
               <KpiCard
                 title="순자산 증감"
                 value={kpiLoading ? "..." : formatKRW(netAsset)}
                 subtitle="수입 - 지출 - 저축"
                 icon="📈"
+                memo={dashboardMemos.netAsset}
+                onMemoCommit={(v) => handleMemoCommit("netAsset", v)}
               />
             </div>
 

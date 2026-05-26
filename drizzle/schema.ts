@@ -56,6 +56,7 @@ export const userSettings = pgTable("user_settings", {
   userId: integer("userId").notNull().unique(),
   excludedCategories: text("excludedCategories").default("[]"),
   includeTransfer: smallint("includeTransfer").default(0).notNull(),
+  dashboardMemos: text("dashboardMemos").default("{}"),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 

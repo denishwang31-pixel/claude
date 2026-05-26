@@ -45,6 +45,7 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
          AND "customCategory" NOT IN (${APP_L3_VALUES_SQL})`,
     `DELETE FROM category_rules
        WHERE category NOT IN (${APP_L3_VALUES_SQL})`,
+    `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS "dashboardMemos" text DEFAULT '{}'`,
   ];
   for (const step of steps) {
     try {
@@ -120,17 +121,22 @@ export async function getUserByOpenId(openId: string) {
 
 export async function getUserSettings(userId: number) {
   const db = await getDb();
-  if (!db) return { excludedCategories: [] as string[], includeTransfer: false };
+  if (!db) return { excludedCategories: [] as string[], includeTransfer: false, dashboardMemos: {} as Record<string, string> };
 
   const rows = await db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1);
-  if (rows.length === 0) return { excludedCategories: [] as string[], includeTransfer: false };
+  if (rows.length === 0) return { excludedCategories: [] as string[], includeTransfer: false, dashboardMemos: {} as Record<string, string> };
 
   let excludedCategories: string[] = [];
   try {
     excludedCategories = JSON.parse(rows[0].excludedCategories ?? "[]");
   } catch {}
 
-  return { excludedCategories, includeTransfer: rows[0].includeTransfer === 1 };
+  let dashboardMemos: Record<string, string> = {};
+  try {
+    dashboardMemos = JSON.parse((rows[0] as any).dashboardMemos ?? "{}");
+  } catch {}
+
+  return { excludedCategories, includeTransfer: rows[0].includeTransfer === 1, dashboardMemos };
 }
 
 export async function saveUserSettings(
@@ -154,6 +160,27 @@ export async function saveUserSettings(
       includeTransfer: includeTransfer ? 1 : 0,
     },
   });
+}
+
+/** 대시보드 KPI별 메모 저장 (key: income/savings/expense/netAsset) */
+export async function saveDashboardMemos(userId: number, memos: Record<string, string>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const json = JSON.stringify(memos);
+  await db.insert(userSettings).values({ userId, dashboardMemos: json } as InsertUserSettings).onConflictDoUpdate({
+    target: userSettings.userId,
+    set: { dashboardMemos: json },
+  });
+}
+
+/** 거래 메모 수정 */
+export async function updateTransactionMemo(userId: number, transactionId: number, memo: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.execute(
+    sql`UPDATE transactions SET memo = ${memo} WHERE id = ${transactionId} AND "userId" = ${userId}`
+  );
 }
 
 // ── 항목별 제외 관리 ───────────────────────────────────────────

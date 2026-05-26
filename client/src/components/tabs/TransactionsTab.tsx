@@ -49,6 +49,11 @@ export function TransactionsTab() {
 
   const { data, isLoading } = trpc.budget.getTransactions.useQuery({ page, pageSize: PAGE_SIZE, filter });
 
+  const memoMutation = trpc.budget.updateMemo.useMutation({
+    onSuccess: () => utils.budget.getTransactions.invalidate(),
+    onError: () => toast.error("메모 저장에 실패했습니다."),
+  });
+
   const toggleMutation = trpc.budget.toggleExcluded.useMutation({
     onSuccess: () => {
       utils.budget.getTransactions.invalidate();
@@ -224,6 +229,7 @@ export function TransactionsTab() {
                   <th className="text-center px-4 py-3 text-cream-600 font-medium">결제수단</th>
                   <th className="text-center px-4 py-3 text-cream-600 font-medium">타입</th>
                   <th className="text-center px-4 py-3 text-cream-600 font-medium">제외</th>
+                  <th className="text-left px-4 py-3 text-cream-600 font-medium">메모</th>
                 </tr>
               </thead>
               <tbody>
@@ -242,9 +248,6 @@ export function TransactionsTab() {
                       </td>
                       <td className="px-4 py-2.5 text-cream-800 max-w-[200px] truncate">
                         {row.content}
-                        {row.memo && (
-                          <span className="text-cream-400 text-xs ml-1">({row.memo})</span>
-                        )}
                       </td>
                       <td className="px-4 py-2.5">
                         {(() => {
@@ -302,6 +305,12 @@ export function TransactionsTab() {
                           }
                         />
                       </td>
+                      <td className="px-4 py-2.5">
+                        <MemoCell
+                          initial={(row.memo as string) ?? ""}
+                          onCommit={(memo) => memoMutation.mutate({ transactionId: Number(row.id), memo })}
+                        />
+                      </td>
                     </tr>
                   );
                 })}
@@ -330,5 +339,27 @@ export function TransactionsTab() {
         </div>
       )}
     </div>
+  );
+}
+
+function MemoCell({ initial, onCommit }: { initial: string; onCommit: (memo: string) => void }) {
+  const [value, setValue] = useState(initial);
+  useEffect(() => { setValue(initial); }, [initial]);
+
+  function commit() {
+    const v = value.trim();
+    if (v !== initial) onCommit(v);
+  }
+
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+      placeholder="메모..."
+      className="w-36 rounded-md border border-cream-100 bg-cream-50/50 px-2 py-1 text-xs text-cream-700 placeholder:text-cream-300 focus:outline-none focus:border-cream-300 focus:bg-white transition-colors"
+    />
   );
 }

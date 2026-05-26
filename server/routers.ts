@@ -29,6 +29,8 @@ import {
   clearAllExclusions,
   getUserSettings,
   saveUserSettings,
+  saveDashboardMemos,
+  updateTransactionMemo,
   getExcludedTransactionIds,
   deleteAllTransactions,
   categoryToRuleType,
@@ -107,6 +109,20 @@ const budgetRouter = router({
   getSettings: protectedProcedure.query(async ({ ctx }) => {
     return getUserSettings(ctx.user.id);
   }),
+
+  saveDashboardMemos: protectedProcedure
+    .input(z.object({ memos: z.record(z.string(), z.string()) }))
+    .mutation(async ({ ctx, input }) => {
+      await saveDashboardMemos(ctx.user.id, input.memos);
+      return { success: true };
+    }),
+
+  updateMemo: protectedProcedure
+    .input(z.object({ transactionId: z.number().int(), memo: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await updateTransactionMemo(ctx.user.id, input.transactionId, input.memo);
+      return { success: true };
+    }),
 
   saveSettings: protectedProcedure
     .input(
