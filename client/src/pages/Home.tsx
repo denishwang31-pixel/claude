@@ -11,6 +11,7 @@ import { MonthlySummaryTab } from "../components/tabs/MonthlySummaryTab";
 import { MappingRulesTab } from "../components/tabs/MappingRulesTab";
 import { TransactionsTab } from "../components/tabs/TransactionsTab";
 import { useTheme } from "../contexts/ThemeContext";
+import { UsageGuide } from "../components/UsageGuide";
 
 type Tab = "dashboard" | "monthly" | "category" | "transactions" | "mapping";
 
@@ -201,6 +202,9 @@ export default function Home() {
             {pivotData && pivotData.length > 0 && (
               <DashboardPivot pivotData={pivotData as any} />
             )}
+
+            {/* Usage guide */}
+            <UsageGuide />
           </>
         )}
 
