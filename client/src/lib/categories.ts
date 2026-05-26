@@ -16,7 +16,7 @@ const EXPENSE_L2: Record<string, string> = {
   "미용": "여가/문화",
   "의료": "건강",
   "건강": "건강",
-  "금융": "기타",
+  "금융": "금융",
   "세금": "기타",
   "기타": "기타",
 };
@@ -67,7 +67,7 @@ export function signedPath(category: string, amount: number): { l1Label: string;
 export const L2_ORDER: Record<string, string[]> = {
   income:  ["수입"],
   savings: ["저축", "투자", "저축/투자"],
-  expense: ["생활", "교통/통신", "여가/문화", "건강", "기타"],
+  expense: ["생활", "교통/통신", "여가/문화", "건강", "금융", "기타"],
 };
 
 /** 거래 필터용 L1 목록 */
@@ -79,7 +79,7 @@ export const L1_LIST: { id: string; label: string }[] = [
 
 /** L1 → L2 그룹 (필터 드롭다운용, fallback 버킷 제외) */
 export const L2_BY_L1: Record<string, string[]> = {
-  expense: ["생활", "교통/통신", "여가/문화", "건강", "기타"],
+  expense: ["생활", "교통/통신", "여가/문화", "건강", "금융", "기타"],
   savings: ["저축", "투자"],
   income:  ["수입"],
 };
@@ -113,6 +113,7 @@ export const L2_COLOR: Record<string, string> = {
   "교통/통신":  "#F97316",
   "여가/문화":  "#EF4444",
   "건강":       "#FB923C",
+  "금융":       "#A855F7",
   "기타":       "#D1D5DB",
   // 저축 L2
   "저축":       "#2563EB",

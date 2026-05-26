@@ -245,9 +245,19 @@ const budgetRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await updateTransactionCategory(ctx.user.id, input.transactionId, input.newCategory);
+      const db = await getDb();
 
-      if (input.saveAsRule && input.keyword) {
+      // 같은 내역(content)을 가진 모든 거래의 카테고리를 한 번에 변경
+      if (input.keyword && db) {
+        await db.execute(
+          sql`UPDATE transactions SET "customCategory" = ${input.newCategory} WHERE "userId" = ${ctx.user.id} AND content = ${input.keyword}`
+        );
+      } else {
+        await updateTransactionCategory(ctx.user.id, input.transactionId, input.newCategory);
+      }
+
+      // 매핑 규칙 생성/업데이트 (실시간 반영)
+      if (input.keyword) {
         try {
           const ruleType = categoryToRuleType(input.newCategory);
           await upsertCategoryRule(ctx.user.id, input.keyword, input.newCategory, input.isExact, ruleType);
@@ -257,8 +267,6 @@ const budgetRouter = router({
       }
 
       // 사용자가 직접 카테고리를 지정하면 "집계 대상"으로 보고 제외를 해제
-      // (이체로 자동 제외됐던 거래를 수입/지출 등으로 끌어올 수 있게)
-      const db = await getDb();
       if (db) {
         await db.execute(sql.raw(
           `DELETE FROM excluded_transactions WHERE "userId" = ${ctx.user.id} AND "transactionId" = ${input.transactionId}`
