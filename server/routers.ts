@@ -256,6 +256,7 @@ const budgetRouter = router({
         transactionId: z.number().int(),
         newCategory: z.string().min(1),
         saveAsRule: z.boolean().default(false),
+        applyToSame: z.boolean().default(true),
         keyword: z.string().optional(),
         isExact: z.boolean().default(false),
       })
@@ -264,7 +265,7 @@ const budgetRouter = router({
       const db = await getDb();
 
       // 같은 내역(content)을 가진 모든 거래의 카테고리를 한 번에 변경
-      if (input.keyword && db) {
+      if (input.keyword && input.applyToSame && db) {
         await db.execute(
           sql`UPDATE transactions SET "customCategory" = ${input.newCategory} WHERE "userId" = ${ctx.user.id} AND content = ${input.keyword}`
         );
@@ -272,8 +273,8 @@ const budgetRouter = router({
         await updateTransactionCategory(ctx.user.id, input.transactionId, input.newCategory);
       }
 
-      // 매핑 규칙 생성/업데이트 (실시간 반영)
-      if (input.keyword) {
+      // 매핑 규칙 생성/업데이트 (실시간 반영) — 사용자가 체크한 경우에만
+      if (input.keyword && input.saveAsRule) {
         try {
           const ruleType = categoryToRuleType(input.newCategory);
           await upsertCategoryRule(ctx.user.id, input.keyword, input.newCategory, input.isExact, ruleType);

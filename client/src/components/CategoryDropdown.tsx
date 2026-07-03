@@ -32,6 +32,7 @@ export function CategoryDropdown({
 }: CategoryDropdownProps) {
   const [open, setOpen] = useState(false);
   const [saveAsRule, setSaveAsRule] = useState(true);
+  const [applyToSame, setApplyToSame] = useState(true);
   const ref = useRef<HTMLDivElement>(null);
 
   const utils = trpc.useUtils();
@@ -68,6 +69,7 @@ export function CategoryDropdown({
       transactionId,
       newCategory: cat,
       saveAsRule,
+      applyToSame,
       keyword: content,
       isExact: true,
     });
@@ -90,15 +92,31 @@ export function CategoryDropdown({
 
       {open && (
         <div className="absolute z-50 left-0 top-full mt-1 w-52 bg-white border border-cream-200 rounded-lg shadow-lg">
-          <div className="p-2 border-b border-cream-100">
-            <label className="flex items-center gap-2 text-xs text-cream-600 cursor-pointer">
+          <div className="p-2 border-b border-cream-100 space-y-1.5">
+            <div className="px-1 text-[10px] font-medium text-cream-400 uppercase tracking-wide">적용 범위</div>
+            <label className="flex items-start gap-2 text-xs text-cream-600 cursor-pointer px-1">
+              <input
+                type="checkbox"
+                checked={applyToSame}
+                onChange={(e) => setApplyToSame(e.target.checked)}
+                className="accent-cream-700 mt-0.5"
+              />
+              <span>
+                같은 내역 전체 변경
+                <span className="block text-[10px] text-cream-400">「{content.length > 14 ? content.slice(0, 14) + "…" : content}」 거래 모두</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-xs text-cream-600 cursor-pointer px-1">
               <input
                 type="checkbox"
                 checked={saveAsRule}
                 onChange={(e) => setSaveAsRule(e.target.checked)}
-                className="accent-cream-700"
+                className="accent-cream-700 mt-0.5"
               />
-              매핑 규칙에 저장
+              <span>
+                매핑 규칙에 저장
+                <span className="block text-[10px] text-cream-400">앞으로 업로드되는 거래에도 자동 적용</span>
+              </span>
             </label>
           </div>
           <div className="max-h-60 overflow-y-auto p-1">

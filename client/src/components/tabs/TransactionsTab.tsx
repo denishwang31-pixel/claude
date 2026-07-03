@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { trpc } from "../../lib/trpc";
 import { formatKRW, formatDate } from "../../lib/format";
 import { CategoryDropdown } from "../CategoryDropdown";
@@ -344,9 +344,11 @@ export function TransactionsTab() {
 
 function MemoCell({ initial, onCommit }: { initial: string; onCommit: (memo: string) => void }) {
   const [value, setValue] = useState(initial);
+  const escaped = useRef(false);
   useEffect(() => { setValue(initial); }, [initial]);
 
   function commit() {
+    if (escaped.current) { escaped.current = false; return; }
     const v = value.trim();
     if (v !== initial) onCommit(v);
   }
@@ -357,7 +359,11 @@ function MemoCell({ initial, onCommit }: { initial: string; onCommit: (memo: str
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onBlur={commit}
-      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") { escaped.current = true; setValue(initial); (e.target as HTMLInputElement).blur(); }
+      }}
+      title="Enter: 저장 · Esc: 취소"
       placeholder="메모..."
       className="w-36 rounded-md border border-cream-100 bg-cream-50/50 px-2 py-1 text-xs text-cream-700 placeholder:text-cream-300 focus:outline-none focus:border-cream-300 focus:bg-white transition-colors"
     />

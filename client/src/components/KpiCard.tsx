@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { cn } from "../lib/utils";
 
 interface KpiCardProps {
@@ -15,10 +15,12 @@ interface KpiCardProps {
 
 export function KpiCard({ title, value, subtitle, trend, className, icon, valueClass, memo, onMemoCommit }: KpiCardProps) {
   const [draft, setDraft] = useState(memo ?? "");
+  const escaped = useRef(false);
 
   useEffect(() => { setDraft(memo ?? ""); }, [memo]);
 
   function commit() {
+    if (escaped.current) { escaped.current = false; return; }
     const v = draft.trim();
     if (v !== (memo ?? "") && onMemoCommit) onMemoCommit(v);
   }
@@ -51,8 +53,12 @@ export function KpiCard({ title, value, subtitle, trend, className, icon, valueC
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { escaped.current = true; setDraft(memo ?? ""); (e.target as HTMLTextAreaElement).blur(); }
+          }}
           rows={2}
           placeholder="메모..."
+          title="입력 후 바깥 클릭 시 저장 · Esc: 취소"
           className="mt-1 w-full resize-none rounded-lg border border-cream-100 bg-cream-50/50 px-2 py-1.5 text-xs text-cream-700 placeholder:text-cream-300 focus:outline-none focus:border-cream-300 focus:bg-white transition-colors"
         />
       )}

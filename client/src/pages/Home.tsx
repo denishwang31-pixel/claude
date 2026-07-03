@@ -12,6 +12,7 @@ import { MappingRulesTab } from "../components/tabs/MappingRulesTab";
 import { TransactionsTab } from "../components/tabs/TransactionsTab";
 import { useTheme } from "../contexts/ThemeContext";
 import { UsageGuide } from "../components/UsageGuide";
+import { toast } from "sonner";
 
 type Tab = "dashboard" | "monthly" | "category" | "transactions" | "mapping";
 
@@ -34,7 +35,9 @@ export default function Home() {
   const utils = trpc.useUtils();
   const { data: settings } = trpc.budget.getSettings.useQuery();
   const saveSettingsMutation = trpc.budget.saveSettings.useMutation();
-  const saveMemosMutation = trpc.budget.saveDashboardMemos.useMutation();
+  const saveMemosMutation = trpc.budget.saveDashboardMemos.useMutation({
+    onError: () => toast.error("메모 저장에 실패했습니다. 다시 시도해주세요."),
+  });
 
   const { data: kpi, isLoading: kpiLoading } = trpc.budget.getKpiSummary.useQuery({
     includeTransfer,
