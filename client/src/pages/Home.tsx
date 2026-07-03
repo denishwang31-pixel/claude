@@ -109,10 +109,12 @@ export default function Home() {
             )}
             <button
               onClick={toggleTheme}
-              className="text-cream-500 hover:text-cream-700 text-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-cream-200 text-cream-600 hover:bg-cream-100 transition-colors"
               title="테마 전환"
+              aria-label={theme === "light" ? "다크 모드로 전환" : "라이트 모드로 전환"}
             >
-              {theme === "light" ? "🌙" : "☀️"}
+              <span>{theme === "light" ? "🌙" : "☀️"}</span>
+              <span>{theme === "light" ? "다크 모드" : "라이트 모드"}</span>
             </button>
           </div>
         </div>
