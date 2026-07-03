@@ -1,19 +1,22 @@
 @import "tailwindcss";
 
+/* ── 모던 뉴트럴 팔레트 ─────────────────────────────
+   기존 컴포넌트가 쓰는 cream-* 이름을 유지한 채
+   값만 쿨 그레이 계열로 교체. cream-700이 프라이머리(거의 검정). */
 @theme {
-  --color-cream-50: oklch(0.99 0.01 85);
-  --color-cream-100: oklch(0.97 0.02 85);
-  --color-cream-200: oklch(0.94 0.03 85);
-  --color-cream-300: oklch(0.90 0.04 85);
-  --color-cream-400: oklch(0.84 0.06 85);
-  --color-cream-500: oklch(0.76 0.08 85);
-  --color-cream-600: oklch(0.62 0.10 75);
-  --color-cream-700: oklch(0.50 0.09 70);
-  --color-cream-800: oklch(0.38 0.07 65);
-  --color-cream-900: oklch(0.26 0.05 60);
+  --color-cream-50: oklch(0.985 0.002 250);
+  --color-cream-100: oklch(0.962 0.003 250);
+  --color-cream-200: oklch(0.92 0.005 250);
+  --color-cream-300: oklch(0.865 0.007 250);
+  --color-cream-400: oklch(0.69 0.012 252);
+  --color-cream-500: oklch(0.55 0.016 255);
+  --color-cream-600: oklch(0.44 0.018 258);
+  --color-cream-700: oklch(0.25 0.015 260);
+  --color-cream-800: oklch(0.19 0.012 260);
+  --color-cream-900: oklch(0.13 0.01 260);
 
-  --font-serif: "Playfair Display", Georgia, serif;
-  --font-sans: "Noto Sans KR", system-ui, sans-serif;
+  --font-serif: "Inter", "Noto Sans KR", system-ui, sans-serif;
+  --font-sans: "Inter", "Noto Sans KR", system-ui, sans-serif;
 
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
@@ -32,13 +35,85 @@ html {
 
 body {
   margin: 0;
-  background-color: oklch(0.97 0.01 85);
-  color: oklch(0.20 0.02 80);
+  background-color: oklch(0.975 0.003 250);
+  color: oklch(0.18 0.012 260);
   min-height: 100vh;
+}
+
+/* 숫자·타이틀(font-serif 자리)은 살짝 조밀하게 + 고정폭 숫자 */
+.font-serif {
+  letter-spacing: -0.02em;
+  font-feature-settings: "tnum" 1;
 }
 
 :root {
   --toaster-zindex: 9999;
+}
+
+/* ── 다크 모드 ──────────────────────────────────────
+   헤더의 🌙 토글이 documentElement에 data-theme="dark"를 설정.
+   Tailwind v4는 색상이 전부 CSS 변수라 여기서 재정의하면
+   컴포넌트 수정 없이 전체가 다크로 전환된다. */
+:root[data-theme="dark"] {
+  /* 카드/서피스: bg-white가 어두운 서피스가 되고,
+     bg-cream-700(프라이머리) 위의 text-white는 어두운 글자로 반전됨 */
+  --color-white: oklch(0.205 0.012 260);
+
+  --color-cream-50: oklch(0.16 0.01 260);
+  --color-cream-100: oklch(0.245 0.012 260);
+  --color-cream-200: oklch(0.30 0.014 260);
+  --color-cream-300: oklch(0.36 0.015 260);
+  --color-cream-400: oklch(0.56 0.014 255);
+  --color-cream-500: oklch(0.66 0.012 252);
+  --color-cream-600: oklch(0.76 0.009 250);
+  --color-cream-700: oklch(0.90 0.005 250);
+  --color-cream-800: oklch(0.94 0.004 250);
+  --color-cream-900: oklch(0.975 0.002 250);
+
+  /* KPI·표에 쓰인 gray 배경/텍스트 반전 */
+  --color-gray-50: oklch(0.26 0.008 260);
+  --color-gray-100: oklch(0.30 0.01 260);
+  --color-gray-200: oklch(0.36 0.012 260);
+  --color-gray-500: oklch(0.65 0.01 250);
+  --color-gray-700: oklch(0.87 0.006 250);
+  --color-gray-800: oklch(0.92 0.004 250);
+  --color-gray-900: oklch(0.96 0.003 250);
+
+  /* 액센트: 어두운 배경에서 잘 보이도록 살짝 밝게 */
+  --color-blue-600: oklch(0.70 0.14 252);
+  --color-blue-700: oklch(0.78 0.11 252);
+  --color-blue-800: oklch(0.85 0.08 252);
+  --color-red-400: oklch(0.62 0.16 25);
+  --color-red-500: oklch(0.70 0.18 25);
+  --color-red-600: oklch(0.74 0.16 25);
+  --color-red-700: oklch(0.80 0.12 25);
+  --color-emerald-600: oklch(0.74 0.13 160);
+  --color-emerald-700: oklch(0.80 0.11 160);
+  --color-emerald-800: oklch(0.86 0.08 160);
+  --color-amber-600: oklch(0.80 0.13 80);
+  --color-violet-700: oklch(0.78 0.12 295);
+  --color-violet-800: oklch(0.85 0.09 295);
+
+  /* 연한 배경 칩/콜아웃(*-50, *-100)은 어두운 틴트로 */
+  --color-blue-50: oklch(0.24 0.04 252);
+  --color-blue-100: oklch(0.30 0.06 252);
+  --color-red-50: oklch(0.24 0.05 25);
+  --color-red-100: oklch(0.30 0.07 25);
+  --color-emerald-50: oklch(0.24 0.04 160);
+  --color-emerald-100: oklch(0.30 0.06 160);
+  --color-amber-50: oklch(0.25 0.04 80);
+  --color-amber-100: oklch(0.32 0.06 80);
+  --color-violet-50: oklch(0.25 0.04 295);
+  --color-violet-100: oklch(0.31 0.06 295);
+
+  --color-emerald-200: oklch(0.38 0.06 160);
+  --color-blue-200: oklch(0.38 0.06 252);
+  --color-violet-200: oklch(0.38 0.06 295);
+}
+
+:root[data-theme="dark"] body {
+  background-color: oklch(0.14 0.01 260);
+  color: oklch(0.93 0.004 250);
 }
 
 /* Scrollbar */
@@ -50,9 +125,15 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.80 0.03 85);
+  background: oklch(0.82 0.008 250);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.70 0.05 80);
+  background: oklch(0.70 0.012 252);
+}
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: oklch(0.35 0.014 260);
+}
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.45 0.015 258);
 }
