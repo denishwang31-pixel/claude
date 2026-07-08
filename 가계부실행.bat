@@ -28,45 +28,6 @@ for %%v in (17 16 15 14 13) do (
   sc query "postgresql-x64-%%v" >nul 2>&1 && net start "postgresql-x64-%%v" >nul 2>&1
 )
 
-set "PSQL="
-for %%V in (17 16 15 14 13) do if exist "C:\Program Files\PostgreSQL\%%V\bin\psql.exe" set "PSQL=C:\Program Files\PostgreSQL\%%V\bin\psql.exe"
-if "%PSQL%"=="" goto skipdb
-
-set "PGPASSWORD=budget123"
-"%PSQL%" -U budget -h localhost -d household_budget -c "SELECT 1" >nul 2>&1
-if not errorlevel 1 goto dbready
-
-echo.
-echo ------------------------------------------------
-echo   [최초 설정] 가계부용 DB 계정을 만들어야 합니다.
-echo   PostgreSQL 설치할 때 정한 postgres 관리자 비밀번호를 입력하세요.
-echo ------------------------------------------------
-set "PGADMINPW="
-set /p PGADMINPW=postgres 비밀번호:
-set "PGPASSWORD=%PGADMINPW%"
-"%PSQL%" -U postgres -h localhost -c "ALTER ROLE budget WITH LOGIN PASSWORD 'budget123';" >nul 2>&1
-"%PSQL%" -U postgres -h localhost -c "CREATE ROLE budget WITH LOGIN PASSWORD 'budget123';" >nul 2>&1
-"%PSQL%" -U postgres -h localhost -c "CREATE DATABASE household_budget OWNER budget;" >nul 2>&1
-"%PSQL%" -U postgres -h localhost -c "GRANT ALL PRIVILEGES ON DATABASE household_budget TO budget;" >nul 2>&1
-set "PGPASSWORD=budget123"
-"%PSQL%" -U budget -h localhost -d household_budget -c "SELECT 1" >nul 2>&1
-if errorlevel 1 (
-  echo.
-  echo   [오류] DB 계정 설정 실패 - postgres 비밀번호가 맞는지 확인하세요.
-  echo   비밀번호가 기억나지 않으면 문의해주세요.
-  echo.
-  pause
-) else (
-  echo   [완료] 가계부용 DB 계정 설정 완료.
-)
-
-:dbready
-set "PGPASSWORD=budget123"
-if exist "%~dp0drizzle\init_pg.sql" "%PSQL%" -U budget -h localhost -d household_budget -f "%~dp0drizzle\init_pg.sql" >nul 2>&1
-set "PGPASSWORD="
-echo [확인] 데이터베이스 준비 완료
-:skipdb
-
 if not exist .env (
   echo DEV_AUTO_LOGIN=true> .env
   echo DATABASE_URL=postgres://budget:budget123@localhost:5432/household_budget>> .env
@@ -81,6 +42,15 @@ if not exist node_modules\vite (
     pause
     exit /b 1
   )
+)
+
+echo [DB] 데이터베이스 계정 확인/설정...
+node scripts\setup-db.mjs
+if errorlevel 1 (
+  echo.
+  echo [경고] 데이터베이스 설정이 완료되지 않았습니다. 위 메시지를 확인하세요.
+  echo 계속 진행하지만 정상 동작하지 않을 수 있습니다.
+  pause
 )
 
 start "" /min cmd /c "timeout /t 10 /nobreak >nul & start http://localhost:5173"
