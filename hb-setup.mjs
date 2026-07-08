@@ -8,13 +8,19 @@ CREATE TABLE IF NOT EXISTS user_settings (id serial PRIMARY KEY, "userId" intege
 CREATE TABLE IF NOT EXISTS excluded_transactions ("userId" integer NOT NULL, "transactionId" bigint NOT NULL, "createdAt" timestamp NOT NULL DEFAULT NOW(), PRIMARY KEY ("userId","transactionId"));
 CREATE TABLE IF NOT EXISTS category_rules (id serial PRIMARY KEY, "userId" integer NOT NULL, keyword varchar(255) NOT NULL, category varchar(50) NOT NULL, "isExact" integer NOT NULL DEFAULT 0, "ruleType" varchar(20) NOT NULL DEFAULT 'expense', "isActive" integer NOT NULL DEFAULT 1, "createdAt" timestamp NOT NULL DEFAULT NOW(), "updatedAt" timestamp NOT NULL DEFAULT NOW(), UNIQUE ("userId", keyword));
 `;
+
+// budget 계정으로 접속해 스키마(테이블)를 만들 수 있으면 준비 완료.
+// 실패 이유를 알 수 있도록 마지막 에러를 저장한다.
+let lastError = null;
 async function ready() {
   const a = postgres({ host:'localhost', port:5432, user:'budget', password:'budget123', database:'household_budget', connect_timeout:8, onnotice:()=>{} });
   try { await a.unsafe(SCHEMA); await a`SELECT 1`; await a.end(); return true; }
-  catch { try { await a.end(); } catch {} return false; }
+  catch (e) { lastError = e; try { await a.end(); } catch {} return false; }
 }
+
 if (await ready()) { console.log('[OK] Database is already set up. Nothing to do.'); process.exit(0); }
 if (!pw) { console.log('[SETUP] Need the postgres admin password to create the account.'); process.exit(2); }
+
 const admin = postgres({ host:'localhost', port:5432, user:'postgres', password:pw, database:'postgres', connect_timeout:8, onnotice:()=>{} });
 try {
   const [{ exists }] = await admin`SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='budget') AS exists`;
@@ -30,5 +36,23 @@ try {
   try { await admin.end(); } catch {}
   process.exit(1);
 }
-if (await ready()) console.log('[DONE] Setup complete! Now run the launcher.');
-else { console.error('[FAILED] Created account but cannot connect.'); process.exit(1); }
+
+// PostgreSQL 15+ 에서는 DB를 새로 만들어도 public 스키마에 테이블 생성
+// 권한이 자동으로 주어지지 않는다. budget에게 public 스키마 소유/권한을 부여.
+const adminDb = postgres({ host:'localhost', port:5432, user:'postgres', password:pw, database:'household_budget', connect_timeout:8, onnotice:()=>{} });
+try {
+  await adminDb.unsafe("ALTER SCHEMA public OWNER TO budget");
+  await adminDb.unsafe("GRANT ALL ON SCHEMA public TO budget");
+  await adminDb.end();
+} catch (e) {
+  // 소유권 변경이 안 되면 최소한 CREATE 권한이라도 시도
+  try { await adminDb.unsafe("GRANT CREATE ON SCHEMA public TO budget"); await adminDb.end(); } catch { try { await adminDb.end(); } catch {} }
+}
+
+if (await ready()) {
+  console.log('[DONE] Setup complete! Now run the launcher.');
+} else {
+  console.error('[FAILED] Created account but cannot connect.');
+  console.error('Reason: ' + (lastError && lastError.message ? lastError.message : 'unknown'));
+  process.exit(1);
+}
