@@ -20,6 +20,17 @@ if errorlevel 1 (
 )
 for /f "delims=" %%v in ('node -v') do echo [확인] Node.js %%v 감지됨
 
+REM ── 이전에 켜둔 가계부 서버 정리 (가장 흔한 문제 원인) ────────
+REM   앱을 껐다 켜지 않고 여러 번 실행하면 예전 서버가 포트 3001/5173을
+REM   계속 잡고 있어서, 새로(수정된) 서버가 뜨지 못하고 화면은 옛날 코드에
+REM   연결된 채로 남는다. 그래서 시작 전에 해당 포트를 쓰는 프로세스를 정리.
+echo [정리] 이전 서버 인스턴스 종료 중...
+for %%P in (3001 5173 5174 5175 5176 5177 5178 5179) do (
+  for /f "tokens=5" %%a in ('netstat -ano ^| findstr :%%P ^| findstr LISTENING') do (
+    taskkill /F /PID %%a >nul 2>&1
+  )
+)
+
 REM ── PostgreSQL 서비스 시작 시도 (이미 실행 중이면 무시) ──
 for %%v in (17 16 15 14) do (
   sc query "postgresql-x64-%%v" >nul 2>&1 && net start "postgresql-x64-%%v" >nul 2>&1

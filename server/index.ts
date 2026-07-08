@@ -15,7 +15,14 @@ import { fileURLToPath } from "url";
 process.on("unhandledRejection", (reason) => {
   console.error("[Server] Unhandled rejection (server continues running):", reason);
 });
-process.on("uncaughtException", (err) => {
+process.on("uncaughtException", (err: NodeJS.ErrnoException) => {
+  // 포트 충돌은 치명적 — 좀비로 남지 말고 명확히 알리고 종료한다.
+  // (이전 서버 인스턴스가 안 꺼지고 포트 3001을 잡고 있으면 발생)
+  if (err?.code === "EADDRINUSE") {
+    console.error(`\n[Server] 포트 ${ENV.port}이(가) 이미 사용 중입니다 — 이전에 켜둔 가계부 서버가 아직 살아있습니다.`);
+    console.error("[Server] 실행 창을 모두 닫거나 PC를 재부팅한 뒤 다시 실행해주세요. (가계부실행.bat 최신본은 자동으로 정리합니다.)\n");
+    process.exit(1);
+  }
   console.error("[Server] Uncaught exception (server continues running):", err);
 });
 

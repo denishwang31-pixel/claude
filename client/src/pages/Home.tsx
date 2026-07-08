@@ -30,6 +30,7 @@ export default function Home() {
   const [excludedCategories, setExcludedCategories] = useState<string[]>([]);
   const [dashboardMemos, setDashboardMemos] = useState<Record<string, string>>({});
   const [showUpload, setShowUpload] = useState(false);
+  const [diag, setDiag] = useState<null | { loading: boolean; result?: any; error?: string; elapsed?: number }>(null);
   const { theme, toggleTheme } = useTheme();
 
   const utils = trpc.useUtils();
@@ -61,6 +62,17 @@ export default function Home() {
       setDashboardMemos(settings.dashboardMemos ?? {});
     }
   }, [settings]);
+
+  async function runDiagnostics() {
+    setDiag({ loading: true });
+    const start = Date.now();
+    try {
+      const result = await utils.budget.diagnostics.fetch();
+      setDiag({ loading: false, result, elapsed: Date.now() - start });
+    } catch (e: any) {
+      setDiag({ loading: false, error: e?.message ?? "진단 실패", elapsed: Date.now() - start });
+    }
+  }
 
   function handleMemoCommit(key: string, value: string) {
     const next = { ...dashboardMemos, [key]: value };
@@ -107,6 +119,14 @@ export default function Home() {
                 <span>데이터 업로드</span>
               </button>
             )}
+            <button
+              onClick={runDiagnostics}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-cream-200 text-cream-600 hover:bg-cream-100 transition-colors"
+              title="시스템 진단 (속도/규칙 수 확인)"
+            >
+              <span>🔧</span>
+              <span>진단</span>
+            </button>
             <button
               onClick={toggleTheme}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-cream-200 text-cream-600 hover:bg-cream-100 transition-colors"
@@ -229,6 +249,79 @@ export default function Home() {
         {activeTab === "transactions" && <TransactionsTab />}
         {activeTab === "mapping" && <MappingRulesTab />}
       </main>
+
+      {/* 진단 결과 모달 */}
+      {diag && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => !diag.loading && setDiag(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl border border-cream-200 w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-serif text-lg font-bold text-cream-800">🔧 시스템 진단</h2>
+              {!diag.loading && (
+                <button onClick={() => setDiag(null)} className="text-cream-400 hover:text-cream-700 text-xl">×</button>
+              )}
+            </div>
+
+            {diag.loading && (
+              <p className="text-cream-600 text-sm py-6 text-center">측정 중... (최대 60초)</p>
+            )}
+
+            {diag.error && (
+              <div className="text-sm space-y-2">
+                <p className="text-red-600 font-medium">❌ 서버 응답 실패 ({((diag.elapsed ?? 0) / 1000).toFixed(1)}초 후)</p>
+                <p className="text-cream-600 break-words">{diag.error}</p>
+                <p className="text-cream-500 text-xs">
+                  → 요청이 서버까지 도달하지 못했거나 서버가 멈춘 상태입니다. PostgreSQL 서비스가 켜져 있는지 확인해주세요.
+                </p>
+              </div>
+            )}
+
+            {diag.result && (
+              <div className="text-sm space-y-3">
+                <div className="flex justify-between border-b border-cream-100 pb-1.5">
+                  <span className="text-cream-500">코드 버전</span>
+                  <span className="font-mono font-medium text-cream-800">{diag.result.version}</span>
+                </div>
+                <div className="flex justify-between border-b border-cream-100 pb-1.5">
+                  <span className="text-cream-500">DB 연결</span>
+                  <span className={diag.result.dbConnected ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
+                    {diag.result.dbConnected ? "정상" : "실패"}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-cream-100 pb-1.5">
+                  <span className="text-cream-500">저장된 거래 수</span>
+                  <span className="font-medium text-cream-800">{diag.result.txCount.toLocaleString()}건</span>
+                </div>
+                <div className="flex justify-between border-b border-cream-100 pb-1.5">
+                  <span className="text-cream-500">매핑 규칙 수</span>
+                  <span className={`font-medium ${diag.result.ruleCount > 2000 ? "text-red-600" : "text-cream-800"}`}>
+                    {diag.result.ruleCount.toLocaleString()}개{diag.result.ruleCount > 2000 ? " ⚠️ 많음" : ""}
+                  </span>
+                </div>
+                <div className="pt-1">
+                  <p className="text-cream-500 mb-1.5">기능별 응답 속도</p>
+                  {Object.entries(diag.result.timings as Record<string, number>).map(([k, ms]) => (
+                    <div key={k} className="flex justify-between py-0.5">
+                      <span className="font-mono text-xs text-cream-600">{k}</span>
+                      <span className={`font-mono text-xs font-medium ${ms >= 3000 ? "text-red-600" : ms >= 1000 ? "text-amber-600" : "text-emerald-600"}`}>
+                        {(ms / 1000).toFixed(2)}초{ms >= 3000 ? " 느림!" : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-cream-400 text-xs pt-2 border-t border-cream-100">
+                  이 화면을 캡처해서 보내주시면 원인을 바로 확인할 수 있습니다.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

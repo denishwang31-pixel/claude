@@ -54,6 +54,34 @@ const TransactionRowSchema = z.object({
 });
 
 const budgetRouter = router({
+  // ── 진단 (화면에서 원인 확인용) ──────────────────────────────
+  diagnostics: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    const version = "rulecat-v2";
+    if (!db) {
+      return { version, dbConnected: false, txCount: 0, ruleCount: 0, timings: {} as Record<string, number> };
+    }
+    const time = async (fn: () => Promise<unknown>) => {
+      const s = Date.now();
+      try { await fn(); } catch { /* 측정만 */ }
+      return Date.now() - s;
+    };
+    const txRow = (await db.execute(sql`SELECT COUNT(*)::int AS c FROM transactions WHERE "userId" = ${ctx.user.id}`)) as any[];
+    const ruleRow = (await db.execute(sql`SELECT COUNT(*)::int AS c FROM category_rules WHERE "userId" = ${ctx.user.id}`)) as any[];
+    const timings = {
+      getKpiSummary: await time(() => getKpiSummary(ctx.user.id, false, [], [])),
+      getCategoryStats: await time(() => getCategoryStats(ctx.user.id, false, [], [])),
+      getPivotData: await time(() => getPivotData(ctx.user.id, false, [], [])),
+    };
+    return {
+      version,
+      dbConnected: true,
+      txCount: Number(txRow[0]?.c ?? 0),
+      ruleCount: Number(ruleRow[0]?.c ?? 0),
+      timings,
+    };
+  }),
+
   // ── 업로드 ──────────────────────────────────────────────────
   uploadTransactions: protectedProcedure
     .input(
