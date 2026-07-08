@@ -58,6 +58,56 @@ if "%PG_OK%"=="0" (
   echo [확인] PostgreSQL 응답 정상
 )
 
+REM ── 가계부용 DB 계정(budget)/데이터베이스 자동 설정 ──────────
+REM   .env가 새로 만들어진 경우 budget 계정이 아직 없어 인증 실패
+REM   ("password 인증에 실패")가 난다. psql로 접속 테스트 후, 없으면
+REM   postgres 관리자 계정으로 budget 계정과 household_budget DB를 생성.
+set "PSQL="
+if exist "C:\Program Files\PostgreSQL\17\bin\psql.exe" set "PSQL=C:\Program Files\PostgreSQL\17\bin\psql.exe"
+if exist "C:\Program Files\PostgreSQL\16\bin\psql.exe" set "PSQL=C:\Program Files\PostgreSQL\16\bin\psql.exe"
+if exist "C:\Program Files\PostgreSQL\15\bin\psql.exe" set "PSQL=C:\Program Files\PostgreSQL\15\bin\psql.exe"
+if exist "C:\Program Files\PostgreSQL\14\bin\psql.exe" set "PSQL=C:\Program Files\PostgreSQL\14\bin\psql.exe"
+if exist "C:\Program Files\PostgreSQL\13\bin\psql.exe" set "PSQL=C:\Program Files\PostgreSQL\13\bin\psql.exe"
+if "%PSQL%"=="" goto skipdb
+
+set "PGPASSWORD=budget123"
+"%PSQL%" -U budget -h localhost -d household_budget -c "SELECT 1" >nul 2>&1
+if not errorlevel 1 goto dbok
+
+echo.
+echo ================================================
+echo   [최초 설정] 가계부용 DB 계정을 만들어야 합니다.
+echo   PostgreSQL 설치 시 정한 관리자^(postgres^) 비밀번호를 입력하세요.
+echo   ^(입력해도 화면에 표시되지 않을 수 있습니다^)
+echo ================================================
+set "PGADMINPW="
+set /p PGADMINPW=postgres 비밀번호:
+set "PGPASSWORD=%PGADMINPW%"
+"%PSQL%" -U postgres -h localhost -c "ALTER ROLE budget WITH LOGIN PASSWORD 'budget123';" >nul 2>&1
+"%PSQL%" -U postgres -h localhost -c "CREATE ROLE budget WITH LOGIN PASSWORD 'budget123';" >nul 2>&1
+"%PSQL%" -U postgres -h localhost -c "CREATE DATABASE household_budget OWNER budget;" >nul 2>&1
+"%PSQL%" -U postgres -h localhost -c "GRANT ALL PRIVILEGES ON DATABASE household_budget TO budget;" >nul 2>&1
+set "PGPASSWORD=budget123"
+"%PSQL%" -U budget -h localhost -d household_budget -c "SELECT 1" >nul 2>&1
+if errorlevel 1 goto dbfail
+echo [완료] 가계부용 DB 계정 설정이 끝났습니다.
+goto dbok
+:dbfail
+echo.
+echo   [오류] DB 계정 설정에 실패했습니다.
+echo   - postgres 관리자 비밀번호가 맞는지 확인하세요.
+echo   - 비밀번호가 기억나지 않으면 알려주세요 (재설정 방법 안내).
+echo.
+:dbok
+REM ── 테이블 생성 (없으면 만들고, 있으면 그대로 — 멱등적) ──
+set "PGPASSWORD=budget123"
+if exist "%~dp0drizzle\init_pg.sql" (
+  "%PSQL%" -U budget -h localhost -d household_budget -f "%~dp0drizzle\init_pg.sql" >nul 2>&1
+  if not errorlevel 1 echo [확인] 데이터베이스 테이블 준비 완료
+)
+set "PGPASSWORD="
+:skipdb
+
 REM ── .env 파일이 없으면 생성 ────────────────────
 if not exist .env (
   echo DEV_AUTO_LOGIN=true> .env
