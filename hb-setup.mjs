@@ -38,15 +38,31 @@ try {
 }
 
 // PostgreSQL 15+ 에서는 DB를 새로 만들어도 public 스키마에 테이블 생성
-// 권한이 자동으로 주어지지 않는다. budget에게 public 스키마 소유/권한을 부여.
+// 권한이 자동으로 주어지지 않는다. 또한 예전 시도에서 postgres 소유로
+// 만들어진 기존 테이블이 있으면 budget이 접근/수정할 수 없다.
+// -> public 스키마 + 그 안의 모든 테이블/시퀀스/타입 소유권을 budget에게 이전.
 const adminDb = postgres({ host:'localhost', port:5432, user:'postgres', password:pw, database:'household_budget', connect_timeout:8, onnotice:()=>{} });
 try {
-  await adminDb.unsafe("ALTER SCHEMA public OWNER TO budget");
-  await adminDb.unsafe("GRANT ALL ON SCHEMA public TO budget");
+  await adminDb.unsafe("ALTER SCHEMA public OWNER TO budget").catch(() => {});
+  await adminDb.unsafe("GRANT ALL ON SCHEMA public TO budget").catch(() => {});
+  await adminDb.unsafe(`
+    DO $$
+    DECLARE r record;
+    BEGIN
+      FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='public' LOOP
+        EXECUTE 'ALTER TABLE public.' || quote_ident(r.tablename) || ' OWNER TO budget';
+      END LOOP;
+      FOR r IN SELECT sequencename FROM pg_sequences WHERE schemaname='public' LOOP
+        EXECUTE 'ALTER SEQUENCE public.' || quote_ident(r.sequencename) || ' OWNER TO budget';
+      END LOOP;
+      BEGIN EXECUTE 'ALTER TYPE public.role OWNER TO budget'; EXCEPTION WHEN undefined_object THEN NULL; END;
+    END $$;
+  `);
   await adminDb.end();
 } catch (e) {
-  // 소유권 변경이 안 되면 최소한 CREATE 권한이라도 시도
-  try { await adminDb.unsafe("GRANT CREATE ON SCHEMA public TO budget"); await adminDb.end(); } catch { try { await adminDb.end(); } catch {} }
+  console.error('[warn] schema/ownership adjust: ' + (e && e.message ? e.message : e));
+  try { await adminDb.unsafe("GRANT CREATE ON SCHEMA public TO budget"); } catch {}
+  try { await adminDb.end(); } catch {}
 }
 
 if (await ready()) {
