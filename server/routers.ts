@@ -23,6 +23,7 @@ import {
   generateRulesFromTransactions,
   applyMappingRulesToNewTransactions,
   applyRulesToAllTransactions,
+  bakeRuleCategories,
   getExistingHashes,
   insertTransactions,
   setExcludedTransactions,
@@ -286,6 +287,8 @@ const budgetRouter = router({
         try {
           const ruleType = categoryToRuleType(input.newCategory);
           await upsertCategoryRule(ctx.user.id, input.keyword, input.newCategory, input.isExact, ruleType);
+          // 새 규칙을 다른 기존 거래에도 반영
+          await bakeRuleCategories(ctx.user.id);
         } catch (e) {
           console.warn("[updateCategory] Rule upsert failed:", e);
         }
@@ -344,6 +347,8 @@ const budgetRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       await upsertCategoryRule(ctx.user.id, input.keyword, input.category, input.isExact, input.ruleType);
+      // 규칙 변경 결과를 기존 거래의 ruleCategory에 즉시 반영
+      await bakeRuleCategories(ctx.user.id);
       return { success: true };
     }),
 
@@ -351,6 +356,7 @@ const budgetRouter = router({
     .input(z.object({ ruleId: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
       await deleteCategoryRule(ctx.user.id, input.ruleId);
+      await bakeRuleCategories(ctx.user.id);
       return { success: true };
     }),
 
@@ -358,18 +364,21 @@ const budgetRouter = router({
     .input(z.object({ ruleId: z.number().int(), isActive: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       await updateCategoryRuleActive(ctx.user.id, input.ruleId, input.isActive);
+      await bakeRuleCategories(ctx.user.id);
       return { success: true };
     }),
 
   seedDefaultRules: protectedProcedure
     .mutation(async ({ ctx }) => {
       const count = await seedDefaultRules(ctx.user.id);
+      await bakeRuleCategories(ctx.user.id);
       return { count };
     }),
 
   generateRulesFromTransactions: protectedProcedure
     .mutation(async ({ ctx }) => {
       const count = await generateRulesFromTransactions(ctx.user.id);
+      await bakeRuleCategories(ctx.user.id);
       return { count };
     }),
 

@@ -46,6 +46,8 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
     `DELETE FROM category_rules
        WHERE category NOT IN (${APP_L3_VALUES_SQL})`,
     `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS "dashboardMemos" text DEFAULT '{}'`,
+    // 규칙 매칭 결과를 굳혀두는 컬럼 (읽기 시점 상관 서브쿼리 제거용)
+    `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS "ruleCategory" varchar(64)`,
   ];
   for (const step of steps) {
     try {
@@ -53,6 +55,23 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
     } catch (e) {
       console.warn("[Database] migration step failed:", e instanceof Error ? e.message : e);
     }
+  }
+
+  // ruleCategory 컬럼이 방금 추가됐고 아직 채워지지 않았다면, 예전에 읽기
+  // 시점 규칙 서브쿼리에만 의존하던 사용자의 화면이 그대로 유지되도록
+  // 최초 1회 전체 bake를 수행한다. (이미 값이 있으면 건너뜀 — 저렴한 판정)
+  try {
+    const needBake = (await db.execute(sql.raw(
+      `SELECT DISTINCT t."userId" AS uid
+         FROM transactions t
+        WHERE t."ruleCategory" IS NULL
+        LIMIT 50`
+    ))) as any[];
+    for (const row of needBake) {
+      await bakeRuleCategories(Number(row.uid));
+    }
+  } catch (e) {
+    console.warn("[Database] initial ruleCategory bake skipped:", e instanceof Error ? e.message : e);
   }
 }
 
@@ -318,22 +337,67 @@ function bankSaladMapSQL(): string {
   END`;
 }
 
-function buildEffectiveCategoryExpr(userId: number): string {
-  // 우선순위: 수동지정 > 활성 규칙 > 뱅크샐러드 대분류/소분류 매핑 > 원본 대분류
-  // isExact/isActive are cast to int so the comparison works whether the
-  // column is integer (current schema) or legacy boolean (old init_pg.sql).
+function buildEffectiveCategoryExpr(_userId: number): string {
+  // 우선순위: 수동지정 > 규칙매칭(사전 계산된 ruleCategory) > 뱅크샐러드 매핑 > 원본
+  //
+  // 예전에는 여기서 category_rules를 행마다 훑는 상관 서브쿼리를 돌렸는데,
+  // 이 표현식이 집계 쿼리 하나에 5~6번씩 인라인되어 O(거래수 × 규칙수 × N)
+  // 이 되었고, 규칙이 수천 개 쌓이면(자동 생성 반복) 대시보드 쿼리가 수십
+  // 초로 늘어나 클라이언트 타임아웃을 유발했다. 이제 규칙 매칭 결과는
+  // bakeRuleCategories로 ruleCategory 컬럼에 미리 굳혀두고, 읽기 시점에는
+  // 컬럼만 참조하므로 규칙 수와 무관하게 O(거래수)로 일정하다.
   return `COALESCE(
     t."customCategory",
-    (SELECT cr.category FROM category_rules cr
-     WHERE cr."userId" = ${userId}
-       AND cr."isActive"::int = 1
-       AND (cr."isExact"::int = 1 AND t.content = cr.keyword
-            OR cr."isExact"::int = 0 AND t.content LIKE '%' || cr.keyword || '%')
-     ORDER BY cr."isExact"::int DESC, cr.id ASC
-     LIMIT 1),
+    t."ruleCategory",
     ${bankSaladMapSQL()},
     t.category
   )`;
+}
+
+/**
+ * 활성 매핑 규칙을 거래에 매칭해 그 결과를 ruleCategory 컬럼에 굳힌다.
+ * 규칙이 추가/삭제/토글되거나 새 거래가 업로드될 때 호출한다.
+ * 우선순위(원래 읽기 서브쿼리와 동일): 완전일치 > 포함, 같은 종류면 낮은 id.
+ * 완전일치는 content = keyword 등가조인이라 해시조인으로 O(거래+규칙),
+ * 포함(LIKE)은 사용자가 만든 소수의 규칙만 해당되어 부담이 작다.
+ */
+export async function bakeRuleCategories(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // 1) 초기화
+  await db.execute(sql`UPDATE transactions SET "ruleCategory" = NULL WHERE "userId" = ${userId}`);
+
+  // 2) 포함(LIKE) 규칙 먼저 반영 (낮은 우선순위) — 같은 거래에 여러 규칙이
+  //    걸리면 낮은 id 우선
+  await db.execute(sql.raw(
+    `WITH cm AS (
+       SELECT DISTINCT ON (t.id) t.id, cr.category
+       FROM transactions t
+       JOIN category_rules cr
+            ON cr."userId" = ${userId} AND cr."isActive"::int = 1 AND cr."isExact"::int = 0
+           AND t.content LIKE '%' || cr.keyword || '%'
+       WHERE t."userId" = ${userId} AND t.content IS NOT NULL
+       ORDER BY t.id, cr.id ASC
+     )
+     UPDATE transactions t SET "ruleCategory" = cm.category
+       FROM cm WHERE t.id = cm.id`
+  ));
+
+  // 3) 완전일치 규칙으로 덮어씀 (높은 우선순위)
+  await db.execute(sql.raw(
+    `WITH em AS (
+       SELECT DISTINCT ON (t.id) t.id, cr.category
+       FROM transactions t
+       JOIN category_rules cr
+            ON cr."userId" = ${userId} AND cr."isActive"::int = 1 AND cr."isExact"::int = 1
+           AND t.content = cr.keyword
+       WHERE t."userId" = ${userId} AND t.content IS NOT NULL
+       ORDER BY t.id, cr.id ASC
+     )
+     UPDATE transactions t SET "ruleCategory" = em.category
+       FROM em WHERE t.id = em.id`
+  ));
 }
 
 // ── 집계 함수 ──────────────────────────────────────────────────
@@ -1222,42 +1286,23 @@ export async function getIncomeDistribution(userId: number): Promise<{
   return { income, expenses, savings, investments };
 }
 
-/** 활성 규칙을 모든 거래에 적용 (기존 customCategory도 덮어씀) — 단일 SQL CTE */
+/**
+ * 활성 규칙을 모든 거래에 적용해 ruleCategory를 다시 굳힌다.
+ * (예전에는 customCategory를 덮어써 수동 지정을 파괴했지만, 이제는
+ *  규칙 결과를 별도 컬럼 ruleCategory에만 반영하므로 수동 지정이 보존된다.)
+ */
 export async function applyRulesToAllTransactions(userId: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
-  // 완전일치 우선, 같은 방식이면 긴 키워드 우선 (더 구체적)
-  // DISTINCT ON (t.id) with ORDER BY picks the best rule per transaction
-  const result = await db.execute(sql.raw(
-    `WITH rule_matches AS (
-       SELECT DISTINCT ON (t.id)
-              t.id    AS "txId",
-              cr.category AS "newCategory"
-       FROM transactions t
-       JOIN category_rules cr
-            ON cr."userId" = ${userId}
-           AND cr."isActive"::int = 1
-           AND (
-             (cr."isExact"::int = 1 AND t.content = cr.keyword)
-             OR (cr."isExact"::int = 0 AND t.content LIKE '%' || cr.keyword || '%')
-           )
-       WHERE t."userId" = ${userId}
-         AND t.content IS NOT NULL
-       ORDER BY t.id,
-                cr."isExact"::int DESC,
-                LENGTH(cr.keyword) DESC,
-                cr.id ASC
-     )
-     UPDATE transactions t
-        SET "customCategory" = rm."newCategory"
-       FROM rule_matches rm
-      WHERE t.id = rm."txId"`
-  ));
+  await bakeRuleCategories(userId);
 
-  // postgres-js returns the row count in .count or as affected rows
-  const affected = (result as any)?.count ?? (result as any)?.rowCount ?? 0;
-  return Number(affected);
+  // 규칙이 실제로 매칭된 거래 수 반환
+  const result = (await db.execute(sql`
+    SELECT COUNT(*) AS cnt FROM transactions
+     WHERE "userId" = ${userId} AND "ruleCategory" IS NOT NULL
+  `)) as any[];
+  return Number(result[0]?.cnt ?? 0);
 }
 
 export async function applyMappingRulesToNewTransactions(
@@ -1267,37 +1312,37 @@ export async function applyMappingRulesToNewTransactions(
   const db = await getDb();
   if (!db || dedupHashes.length === 0) return;
 
-  // 이전에는 신규 거래 × 규칙 전체를 JS에서 이중 반복하며 매칭될 때마다
-  // 개별 UPDATE를 날렸다 (최대 거래수×규칙수 만큼의 순차 왕복). 규칙이
-  // 수백 개로 늘어나면(예: "거래내역에서 자동 생성" 사용 후) 업로드가
-  // 급격히 느려져 클라이언트 타임아웃(30초)에 걸렸다. 단일 SQL로 대체.
+  // 새로 들어온 거래에만 규칙 매칭 결과(ruleCategory)를 반영한다.
+  // 범위를 dedupHash 목록으로 한정해 청크 크기(≈200)에 비례하는 비용만 든다.
   const hashList = sql.join(dedupHashes.map((h) => sql`${h}`), sql`, `);
 
+  // 포함(LIKE) 규칙 → 낮은 우선순위
   await db.execute(sql`
-    WITH rule_matches AS (
-      SELECT DISTINCT ON (t.id)
-             t.id AS "txId",
-             cr.category AS "newCategory"
+    WITH cm AS (
+      SELECT DISTINCT ON (t.id) t.id, cr.category
       FROM transactions t
       JOIN category_rules cr
-           ON cr."userId" = ${userId}
-          AND cr."isActive"::int = 1
-          AND (
-            (cr."isExact"::int = 1 AND t.content = cr.keyword)
-            OR (cr."isExact"::int = 0 AND t.content LIKE '%' || cr.keyword || '%')
-          )
-      WHERE t."userId" = ${userId}
-        AND t."dedupHash" IN (${hashList})
-        AND t.content IS NOT NULL
-        AND t."customCategory" IS NULL
-      ORDER BY t.id,
-               cr."isExact"::int DESC,
-               LENGTH(cr.keyword) DESC,
-               cr.id ASC
+           ON cr."userId" = ${userId} AND cr."isActive"::int = 1 AND cr."isExact"::int = 0
+          AND t.content LIKE '%' || cr.keyword || '%'
+      WHERE t."userId" = ${userId} AND t."dedupHash" IN (${hashList}) AND t.content IS NOT NULL
+      ORDER BY t.id, cr.id ASC
     )
-    UPDATE transactions t
-       SET "customCategory" = rm."newCategory"
-      FROM rule_matches rm
-     WHERE t.id = rm."txId"
+    UPDATE transactions t SET "ruleCategory" = cm.category
+      FROM cm WHERE t.id = cm.id
+  `);
+
+  // 완전일치 규칙 → 높은 우선순위(덮어씀)
+  await db.execute(sql`
+    WITH em AS (
+      SELECT DISTINCT ON (t.id) t.id, cr.category
+      FROM transactions t
+      JOIN category_rules cr
+           ON cr."userId" = ${userId} AND cr."isActive"::int = 1 AND cr."isExact"::int = 1
+          AND t.content = cr.keyword
+      WHERE t."userId" = ${userId} AND t."dedupHash" IN (${hashList}) AND t.content IS NOT NULL
+      ORDER BY t.id, cr.id ASC
+    )
+    UPDATE transactions t SET "ruleCategory" = em.category
+      FROM em WHERE t.id = em.id
   `);
 }

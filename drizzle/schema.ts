@@ -38,6 +38,11 @@ export const transactions = pgTable("transactions", {
   txType: varchar("txType", { length: 16 }).notNull(),
   category: varchar("category", { length: 64 }).notNull(),
   customCategory: varchar("customCategory", { length: 64 }),
+  // 매핑 규칙 매칭 결과를 저장(materialize)하는 컬럼. 읽기 시점에 규칙
+  // 테이블을 행마다 훑는 상관 서브쿼리를 없애기 위한 것 — 규칙이 바뀔
+  // 때만 bakeRuleCategories로 갱신한다. 우선순위: customCategory(수동) >
+  // ruleCategory(규칙) > 뱅크샐러드 매핑 > 원본.
+  ruleCategory: varchar("ruleCategory", { length: 64 }),
   subCategory: varchar("subCategory", { length: 64 }),
   content: varchar("content", { length: 255 }).notNull(),
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
