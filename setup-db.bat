@@ -1,10 +1,11 @@
 @echo off
 chcp 65001 >nul
-title Household Budget - DB Setup
+title DB SETUP - run me first
 cd /d "%~dp0"
 
 echo ================================================
-echo   Household Budget - Database account setup
+echo   STEP 1 of 2 : Database account setup
+echo   (Run this FIRST, before the launcher)
 echo ================================================
 echo.
 
@@ -22,8 +23,8 @@ if not exist "node_modules\postgres" (
 )
 
 if not exist "hb-setup.mjs" (
-  echo [ERROR] hb-setup.mjs not found in this folder.
-  echo Put both setup-db.bat and hb-setup.mjs in the household budget folder.
+  echo [ERROR] hb-setup.mjs is missing from this folder.
+  echo Copy BOTH setup-db.bat and hb-setup.mjs into the household budget folder.
   pause
   exit /b 1
 )
@@ -33,5 +34,15 @@ set "HB_PGPW="
 set /p HB_PGPW=postgres password: 
 
 node hb-setup.mjs
+set "RC=%errorlevel%"
 echo.
+if "%RC%"=="0" (
+  echo ================================================
+  echo   DONE. Now close this window and run the launcher.
+  echo ================================================
+) else (
+  echo ================================================
+  echo   Setup did NOT finish. See the message above.
+  echo ================================================
+)
 pause
