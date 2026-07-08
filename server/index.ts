@@ -9,12 +9,22 @@ import { upsertUser, getUserByOpenId } from "./db";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// DB 연결이 요청 처리 도중 끊기는 등의 비동기 예외가 프로세스 전체를
+// 죽이지 않도록 방지 — 그렇지 않으면 진행 중이던 응답이 중간에 끊겨
+// 클라이언트에서 "Unexpected end of JSON input" 같은 에러로 나타난다.
+process.on("unhandledRejection", (reason) => {
+  console.error("[Server] Unhandled rejection (server continues running):", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[Server] Uncaught exception (server continues running):", err);
+});
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 app.use(
   session({
