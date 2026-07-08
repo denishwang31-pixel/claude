@@ -353,8 +353,12 @@ export async function getExistingHashes(userId: number, hashes: string[]): Promi
 export async function insertTransactions(rows: InsertTransaction[]): Promise<number> {
   const db = await getDb();
   if (!db || rows.length === 0) return 0;
-  await db.insert(transactions).values(rows);
-  return rows.length;
+  const inserted = await db
+    .insert(transactions)
+    .values(rows)
+    .onConflictDoNothing()
+    .returning({ id: transactions.id });
+  return inserted.length;
 }
 
 /** 월별 수입/지출 집계 */

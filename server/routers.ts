@@ -84,14 +84,14 @@ const budgetRouter = router({
         dedupHash: r.dedupHash,
       }));
 
-      await insertTransactions(dbRows);
+      const insertedCount = await insertTransactions(dbRows);
 
       // Apply mapping rules to newly inserted transactions
       await applyMappingRulesToNewTransactions(userId, newRows.map((r) => r.dedupHash));
 
       // 이체 일괄 제외 안 함 — 부호(입출금)와 뱅크샐러드 대분류 매핑으로 분류.
       // 내계좌이체/카드대금은 매핑상 '이체'로 통계에서 자동 제외됨.
-      return { inserted: newRows.length, skipped: input.rows.length - newRows.length, autoExcluded: 0 };
+      return { inserted: insertedCount, skipped: input.rows.length - insertedCount, autoExcluded: 0 };
     }),
 
   // ── 데이터 전체 삭제 ─────────────────────────────────────────
