@@ -38,7 +38,7 @@ set "PGPASSWORD="
 
 echo.
 if "%RESULT%"=="0" (
-  echo [DONE] Setup complete. You can now run 가계부실행.bat
+  echo [DONE] Setup complete. Setup OK. Now run the launcher bat file.
 ) else (
   echo [FAILED] Could not connect as budget. The postgres password was likely wrong.
 )
