@@ -12,8 +12,8 @@ export function createTRPCClient() {
         fetch(url, options) {
           // 서버/DB가 응답 없이 멈추는 경우(예: DB가 꺼져있고 방화벽이
           // 연결 시도를 그냥 흘려버리는 경우) 화면이 "처리 중..."에서
-          // 영원히 멈추지 않도록 30초 후 자동으로 요청을 중단한다.
-          const timeoutSignal = AbortSignal.timeout(30_000);
+          // 영원히 멈추지 않도록 60초 후 자동으로 요청을 중단한다.
+          const timeoutSignal = AbortSignal.timeout(60_000);
           const signal = options?.signal
             ? AbortSignal.any([options.signal, timeoutSignal])
             : timeoutSignal;

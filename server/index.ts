@@ -121,6 +121,18 @@ app.post("/auth/logout", (req, res) => {
 });
 
 // ── tRPC ──────────────────────────────────────────────────────
+// 진단용: 모든 tRPC 요청의 소요 시간을 콘솔(검은 실행 창)에 남긴다.
+// 어떤 요청이 느린지/멈추는지 실행 창만 봐도 바로 알 수 있게 한다.
+app.use("/trpc", (req, res, next) => {
+  const start = Date.now();
+  const op = decodeURIComponent(req.path.replace(/^\//, "")).slice(0, 120);
+  res.on("finish", () => {
+    const ms = Date.now() - start;
+    const tag = ms >= 3000 ? "[느림!]" : "[trpc]";
+    console.log(`${tag} ${String(ms).padStart(6)}ms  ${op}`);
+  });
+  next();
+});
 app.use(
   "/trpc",
   createExpressMiddleware({
@@ -139,6 +151,7 @@ if (ENV.isProd) {
 }
 
 app.listen(ENV.port, () => {
+  console.log(`[Server] ===== 코드 버전: rulecat-v2 (materialized ruleCategory) =====`);
   console.log(`[Server] Running on port ${ENV.port} (${ENV.nodeEnv})`);
   if (!ENV.isProd && ENV.devAutoLogin) {
     console.log("[Server] DEV_AUTO_LOGIN enabled — skipping OAuth");

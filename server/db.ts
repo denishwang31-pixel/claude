@@ -57,18 +57,26 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
     }
   }
 
-  // ruleCategory 컬럼이 방금 추가됐고 아직 채워지지 않았다면, 예전에 읽기
-  // 시점 규칙 서브쿼리에만 의존하던 사용자의 화면이 그대로 유지되도록
-  // 최초 1회 전체 bake를 수행한다. (이미 값이 있으면 건너뜀 — 저렴한 판정)
+  // 업그레이드 직후, 규칙은 있는데 ruleCategory가 아직 한 번도 채워지지 않은
+  // 사용자만 최초 1회 bake한다. (규칙 매칭된 행이 하나라도 생기면 다음
+  // 시작부터는 이 조건이 거짓이 되어 재실행되지 않음 — 매 시작마다 도는
+  // 무거운 작업이 되지 않도록.) 첫 요청을 지연시키지 않게 비동기로 던진다.
   try {
     const needBake = (await db.execute(sql.raw(
-      `SELECT DISTINCT t."userId" AS uid
-         FROM transactions t
-        WHERE t."ruleCategory" IS NULL
+      `SELECT DISTINCT cr."userId" AS uid
+         FROM category_rules cr
+        WHERE cr."isActive"::int = 1
+          AND NOT EXISTS (
+            SELECT 1 FROM transactions t
+             WHERE t."userId" = cr."userId" AND t."ruleCategory" IS NOT NULL
+          )
         LIMIT 50`
     ))) as any[];
     for (const row of needBake) {
-      await bakeRuleCategories(Number(row.uid));
+      // 블로킹하지 않도록 백그라운드로 — 실패해도 서버 시작에는 영향 없음
+      bakeRuleCategories(Number(row.uid)).catch((e) =>
+        console.warn("[Database] bake failed:", e instanceof Error ? e.message : e)
+      );
     }
   } catch (e) {
     console.warn("[Database] initial ruleCategory bake skipped:", e instanceof Error ? e.message : e);
