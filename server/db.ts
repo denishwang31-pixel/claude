@@ -1267,27 +1267,37 @@ export async function applyMappingRulesToNewTransactions(
   const db = await getDb();
   if (!db || dedupHashes.length === 0) return;
 
-  const newTxRows = await db.execute(
-    sql`SELECT id, content FROM transactions WHERE "userId" = ${userId} AND "dedupHash" IN (${sql.join(dedupHashes.map((h) => sql`${h}`), sql`, `)})`
-  );
+  // 이전에는 신규 거래 × 규칙 전체를 JS에서 이중 반복하며 매칭될 때마다
+  // 개별 UPDATE를 날렸다 (최대 거래수×규칙수 만큼의 순차 왕복). 규칙이
+  // 수백 개로 늘어나면(예: "거래내역에서 자동 생성" 사용 후) 업로드가
+  // 급격히 느려져 클라이언트 타임아웃(30초)에 걸렸다. 단일 SQL로 대체.
+  const hashList = sql.join(dedupHashes.map((h) => sql`${h}`), sql`, `);
 
-  const newTxArr = newTxRows as any[];
-  if (newTxArr.length === 0) return;
-
-  const rules = await getCategoryRules(userId);
-  if (rules.length === 0) return;
-
-  for (const tx of newTxArr) {
-    const content = String(tx.content);
-    for (const rule of rules) {
-      const matches = rule.isExact ? content === rule.keyword : content.includes(rule.keyword);
-      if (matches) {
-        await db.execute(
-          sql`UPDATE transactions SET "customCategory" = ${rule.category}
-              WHERE id = ${tx.id} AND "customCategory" IS NULL`
-        );
-        break;
-      }
-    }
-  }
+  await db.execute(sql`
+    WITH rule_matches AS (
+      SELECT DISTINCT ON (t.id)
+             t.id AS "txId",
+             cr.category AS "newCategory"
+      FROM transactions t
+      JOIN category_rules cr
+           ON cr."userId" = ${userId}
+          AND cr."isActive"::int = 1
+          AND (
+            (cr."isExact"::int = 1 AND t.content = cr.keyword)
+            OR (cr."isExact"::int = 0 AND t.content LIKE '%' || cr.keyword || '%')
+          )
+      WHERE t."userId" = ${userId}
+        AND t."dedupHash" IN (${hashList})
+        AND t.content IS NOT NULL
+        AND t."customCategory" IS NULL
+      ORDER BY t.id,
+               cr."isExact"::int DESC,
+               LENGTH(cr.keyword) DESC,
+               cr.id ASC
+    )
+    UPDATE transactions t
+       SET "customCategory" = rm."newCategory"
+      FROM rule_matches rm
+     WHERE t.id = rm."txId"
+  `);
 }
