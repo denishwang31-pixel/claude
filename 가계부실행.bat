@@ -44,13 +44,20 @@ if not exist node_modules\vite (
   )
 )
 
-echo [DB] 데이터베이스 계정 확인/설정...
-node scripts\setup-db.mjs
+echo [DB] 데이터베이스 계정 확인...
+node hb-setup.mjs
 if errorlevel 1 (
   echo.
-  echo [경고] 데이터베이스 설정이 완료되지 않았습니다. 위 메시지를 확인하세요.
-  echo 계속 진행하지만 정상 동작하지 않을 수 있습니다.
-  pause
+  echo 가계부용 DB 계정을 만들어야 합니다.
+  echo PostgreSQL 설치할 때 정한 postgres 관리자 비밀번호를 입력하세요.
+  set "HB_PGPW="
+  set /p HB_PGPW=postgres 비밀번호: 
+  node hb-setup.mjs
+  if errorlevel 1 (
+    echo.
+    echo [경고] DB 계정 설정이 완료되지 않았습니다. 비밀번호를 확인하세요.
+    pause
+  )
 )
 
 start "" /min cmd /c "timeout /t 10 /nobreak >nul & start http://localhost:5173"
