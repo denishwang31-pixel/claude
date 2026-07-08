@@ -59,7 +59,10 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
 export async function getDb() {
   if (!_db) {
     try {
-      const client = postgres(DB_URL);
+      // connect_timeout/idle_timeout이 없으면 DB가 꺼져있거나 방화벽에
+      // 막힌 경우 OS 수준 TCP 재시도로 수십 초~수 분간 무한정 멈출 수
+      // 있다 — 최대 8초 안에 확실히 실패하도록 명시.
+      const client = postgres(DB_URL, { connect_timeout: 8, idle_timeout: 20 });
       _db = drizzle(client);
       await runAutoMigrations(_db);
     } catch (error) {

@@ -63,6 +63,14 @@ const budgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.user.id;
 
+      // DB가 꺼져있으면 이후 함수들이 조용히 0건/빈 값을 반환해
+      // "업로드 성공"처럼 보이는 거짓 성공 응답이 나간다 — 명확한
+      // 에러로 실패시켜 사용자가 원인(DB 미실행)을 바로 알 수 있게 한다.
+      const dbCheck = await getDb();
+      if (!dbCheck) {
+        throw new Error("데이터베이스에 연결할 수 없습니다. PostgreSQL이 실행 중인지 확인해주세요.");
+      }
+
       const hashes = input.rows.map((r) => r.dedupHash);
       const existingHashes = await getExistingHashes(userId, hashes);
       const newRows = input.rows.filter((r) => !existingHashes.has(r.dedupHash));

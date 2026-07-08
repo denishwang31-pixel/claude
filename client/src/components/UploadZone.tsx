@@ -57,7 +57,12 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
       onSuccess?.();
     } catch (err: any) {
       console.error(err);
-      toast.error(err?.message ?? "업로드 중 오류가 발생했습니다.");
+      const isTimeout = err?.name === "AbortError" || err?.name === "TimeoutError";
+      toast.error(
+        isTimeout
+          ? "서버 응답이 없어 업로드를 중단했습니다. PostgreSQL 서비스가 켜져 있는지 확인 후 다시 시도해주세요."
+          : err?.message ?? "업로드 중 오류가 발생했습니다."
+      );
     } finally {
       setLoading(false);
     }

@@ -25,6 +25,28 @@ for %%v in (17 16 15 14) do (
   sc query "postgresql-x64-%%v" >nul 2>&1 && net start "postgresql-x64-%%v" >nul 2>&1
 )
 
+REM ── PostgreSQL이 실제로 포트에 응답하는지 확인 (최대 10초) ──
+set PG_OK=0
+for /l %%i in (1,1,10) do (
+  powershell -NoProfile -Command "try { $c = New-Object Net.Sockets.TcpClient; $c.Connect('localhost',5432); $c.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
+  if not errorlevel 1 (set PG_OK=1 & goto pgdone)
+  timeout /t 1 /nobreak >nul
+)
+:pgdone
+if "%PG_OK%"=="0" (
+  echo.
+  echo ================================================
+  echo   [경고] PostgreSQL^(포트 5432^)이 응답하지 않습니다.
+  echo   서비스가 설치되어 있는지, 켜져 있는지 확인해주세요:
+  echo   1^) Win+R -^> services.msc 실행
+  echo   2^) 이름에 postgresql이 들어간 서비스를 찾아 "시작"
+  echo   이 상태로 계속 진행하면 업로드 등에서 응답 없이 멈출 수 있습니다.
+  echo ================================================
+  echo.
+) else (
+  echo [확인] PostgreSQL 응답 정상
+)
+
 REM ── .env 파일이 없으면 생성 ────────────────────
 if not exist .env (
   echo DEV_AUTO_LOGIN=true> .env
