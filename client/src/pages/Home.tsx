@@ -114,7 +114,10 @@ export default function Home() {
     setShowUpload(false);
   }
 
-  const netAsset = (kpi?.totalIncome ?? 0) - (kpi?.totalExpense ?? 0) - (kpi?.totalSavings ?? 0);
+  // 순자산 증감 = 수입 − 지출 (저축·투자는 소비가 아니라 자산 이동이므로 빼지 않음).
+  // 잔여 현금 = 그 중 저축/투자로 넣지 않고 통장에 남은 여윳돈 (= 수입 − 지출 − 저축).
+  const netWorth = (kpi?.totalIncome ?? 0) - (kpi?.totalExpense ?? 0);
+  const leftoverCash = netWorth - (kpi?.totalSavings ?? 0);
 
   return (
     <div className="min-h-screen bg-cream-50">
@@ -233,8 +236,8 @@ export default function Home() {
               />
               <KpiCard
                 title="순자산 증감"
-                value={kpiLoading ? "..." : formatKRW(netAsset)}
-                subtitle="수입 - 지출 - 저축"
+                value={kpiLoading ? "..." : formatKRW(netWorth)}
+                subtitle={kpiLoading ? "수입 − 지출" : `수입−지출 (저축 포함) · 잔여현금 ${formatKRW(leftoverCash)}`}
                 icon="📈"
                 memo={dashboardMemos.netAsset}
                 onMemoCommit={(v) => handleMemoCommit("netAsset", v)}
