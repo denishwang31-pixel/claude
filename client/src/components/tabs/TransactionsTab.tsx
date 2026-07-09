@@ -252,7 +252,7 @@ export function TransactionsTab() {
                       <td className="px-4 py-2.5">
                         {(() => {
                           const cat = ((row as any).effectiveCategory ?? row.customCategory ?? row.category) as string;
-                          const { path } = signedPath(cat, Number(row.amount));
+                          const { path, excluded } = signedPath(cat, Number(row.amount));
                           return (
                             <div className="flex flex-col gap-0.5">
                               <CategoryDropdown
@@ -264,7 +264,10 @@ export function TransactionsTab() {
                                   utils.budget.getCategoryStats.invalidate();
                                 }}
                               />
-                              <span className="text-[10px] text-cream-400 whitespace-nowrap">{path}</span>
+                              <span className={cn(
+                                "text-[10px] whitespace-nowrap",
+                                excluded ? "text-blue-400 italic" : "text-cream-400"
+                              )}>{path}</span>
                             </div>
                           );
                         })()}

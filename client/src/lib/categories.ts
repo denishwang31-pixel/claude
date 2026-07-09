@@ -51,17 +51,27 @@ export function isSavingsCategory(category: string): boolean {
   return category in SAVINGS_L2;
 }
 
-/** 금액 부호 기반 L1/L2/L3 전체 경로 (양수=수입, 저축카테고리 출금=저축, 그 외 출금=지출, 이체=제외) */
-export function signedPath(category: string, amount: number): { l1Label: string; l2: string; l3: string; path: string } {
+/** 이체성 카테고리(집계 제외 대상) — 서버 bankSaladMapSQL/TRANSFER_CATS와 일치 */
+const TRANSFER_CATEGORIES = ["이체", "내계좌이체", "카드대금", "현금", "미분류"];
+export function isTransferCategory(category: string): boolean {
+  return TRANSFER_CATEGORIES.includes(category);
+}
+
+/** L1/L2/L3 전체 경로.
+ *  L1은 정의된 3개(수입/저축·투자/지출)만 사용한다. 이체성 거래(내계좌이체·
+ *  카드대금·현금 등)는 카테고리 분류가 아니라 '집계제외' 버킷으로 별도 표기한다.
+ *  (이체는 타입이지 카테고리 L1이 아님 — 통계에서도 자동 제외됨.) */
+export function signedPath(category: string, amount: number): { l1Label: string; l2: string; l3: string; path: string; excluded: boolean } {
   let l1Label: string, l2: string;
-  if (category === "이체") { l1Label = "이체"; l2 = "제외"; }
-  else if (amount > 0) { l1Label = "수입"; l2 = "수입"; }
+  const isTransfer = isTransferCategory(category);
+  if (isTransfer) { l1Label = "집계제외"; l2 = "이체"; }
   else if (isSavingsCategory(category)) { l1Label = "저축/투자"; l2 = getL2(category, "savings"); }
+  else if (category === "수입" || amount > 0) { l1Label = "수입"; l2 = "수입"; }
   else { l1Label = "지출"; l2 = getL2(category, "expense"); }
   // L1 › L2 › L3 경로 — 연속 중복은 제거 (예: 수입›수입›수입 → 수입)
-  const parts = category === "이체" ? [l1Label, l2] : [l1Label, l2, category];
+  const parts = isTransfer ? [l1Label, l2] : [l1Label, l2, category];
   const path = parts.filter((p, i) => i === 0 || p !== parts[i - 1]).join(" › ");
-  return { l1Label, l2, l3: category, path };
+  return { l1Label, l2, l3: category, path, excluded: isTransfer };
 }
 
 export const L2_ORDER: Record<string, string[]> = {
