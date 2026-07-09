@@ -498,7 +498,9 @@ export async function getCategoryStats(
   includeTransfer: boolean,
   extraExcluded: string[],
   _excludedIds: number[],
-  yearMonth?: string
+  yearMonth?: string,
+  dateStart?: string,
+  dateEnd?: string
 ) {
   const db = await getDb();
   if (!db) return [];
@@ -534,6 +536,7 @@ export async function getCategoryStats(
        FROM transactions t
        WHERE t."userId" = ${userId}
          ${monthSQL}
+         ${dateRangeSQL(dateStart, dateEnd)}
          AND (
            ((${effectiveCatExpr}) IN (${savingsCatsSQL}) ${notExcludedSQL})
            OR
@@ -557,7 +560,9 @@ export async function getPivotData(
   userId: number,
   includeTransfer: boolean,
   extraExcluded: string[],
-  _excludedIds: number[]
+  _excludedIds: number[],
+  dateStart?: string,
+  dateEnd?: string
 ) {
   const db = await getDb();
   if (!db) return [];
@@ -592,6 +597,7 @@ export async function getPivotData(
               END as l1
        FROM transactions t
        WHERE t."userId" = ${userId}
+         ${dateRangeSQL(dateStart, dateEnd)}
          AND (
            ((${effectiveCatExpr}) IN (${savingsCatsSQL}) ${notExcludedSQL})
            OR
@@ -616,7 +622,9 @@ export async function getKpiSummary(
   userId: number,
   includeTransfer: boolean,
   extraExcluded: string[],
-  _excludedIds: number[]
+  _excludedIds: number[],
+  dateStart?: string,
+  dateEnd?: string
 ) {
   const db = await getDb();
   if (!db) return { totalIncome: 0, totalSavings: 0, totalExpense: 0, monthCount: 0 };
@@ -648,7 +656,7 @@ export async function getKpiSummary(
                      AND (${effectiveCatExpr}) NOT IN (${transferExcludeSQL}) AND ${notExcl}
                 THEN -t.amount::numeric ELSE 0 END) as expense,
        COUNT(DISTINCT TO_CHAR(t."txDate", 'YYYY-MM')) as months
-     FROM transactions t WHERE t."userId" = ${userId}`
+     FROM transactions t WHERE t."userId" = ${userId} ${dateRangeSQL(dateStart, dateEnd)}`
   ));
 
   const r = (rows as any[])[0];
@@ -665,7 +673,9 @@ export async function getL3Stats(
   userId: number,
   category: string,
   yearMonth?: string,
-  direction?: "income" | "expense"
+  direction?: "income" | "expense",
+  dateStart?: string,
+  dateEnd?: string
 ): Promise<{ content: string; total: number; count: number }[]> {
   const db = await getDb();
   if (!db) return [];
@@ -691,6 +701,7 @@ export async function getL3Stats(
        AND ${catFilter}
        ${signSQL}
        ${monthSQL}
+       ${dateRangeSQL(dateStart, dateEnd)}
        ${notExcludedSQL}
      GROUP BY t.content
      ORDER BY total DESC`
@@ -701,6 +712,15 @@ export async function getL3Stats(
     total: Number(r.total),
     count: Number(r.cnt),
   }));
+}
+
+/** 기간(날짜) 필터 SQL 조건 — 'AND ...' 형태로 반환, 값이 없으면 빈 문자열.
+ *  대시보드/카테고리별 화면에서 기간별 집계를 위해 각 WHERE에 주입한다. */
+function dateRangeSQL(dateStart?: string, dateEnd?: string): string {
+  const parts: string[] = [];
+  if (dateStart && /^\d{4}-\d{2}-\d{2}$/.test(dateStart)) parts.push(`t."txDate" >= '${dateStart}'`);
+  if (dateEnd && /^\d{4}-\d{2}-\d{2}$/.test(dateEnd)) parts.push(`t."txDate" <= '${dateEnd}'`);
+  return parts.length ? "AND " + parts.join(" AND ") : "";
 }
 
 /** 전체 거래 내역 */
@@ -815,7 +835,9 @@ export async function getCategoryTransactions(
   category: string,
   page = 1,
   pageSize = 50,
-  yearMonth?: string
+  yearMonth?: string,
+  dateStart?: string,
+  dateEnd?: string
 ) {
   const db = await getDb();
   if (!db) return { rows: [], total: 0 };
@@ -832,7 +854,8 @@ export async function getCategoryTransactions(
          SELECT 1 FROM excluded_transactions et
          WHERE et."userId" = ${userId} AND et."transactionId" = t.id
        )`;
-  const monthFilter = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
+  const monthFilter = (yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "")
+    + " " + dateRangeSQL(dateStart, dateEnd);
   // '수입'은 단일 카테고리로 통합 — 양수·비저축·비이체 전체가 수입
   const catMatch = category === "수입"
     ? `sub.amount::numeric > 0 AND sub."effectiveCategory" NOT IN (${savingsCatsSQL}) AND sub."effectiveCategory" <> '이체'`

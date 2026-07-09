@@ -12,7 +12,11 @@ import { MappingRulesTab } from "../components/tabs/MappingRulesTab";
 import { TransactionsTab } from "../components/tabs/TransactionsTab";
 import { useTheme } from "../contexts/ThemeContext";
 import { UsageGuide } from "../components/UsageGuide";
+import { DateRangeFilter } from "../components/DateRangeFilter";
+import { DateParts, buildDateRange } from "../lib/dateRange";
 import { toast } from "sonner";
+
+const EMPTY_DATE: DateParts = { y: "", m: "", d: "" };
 
 type Tab = "dashboard" | "monthly" | "category" | "transactions" | "mapping";
 
@@ -31,7 +35,13 @@ export default function Home() {
   const [dashboardMemos, setDashboardMemos] = useState<Record<string, string>>({});
   const [showUpload, setShowUpload] = useState(false);
   const [diag, setDiag] = useState<null | { loading: boolean; result?: any; error?: string; elapsed?: number }>(null);
+  // 대시보드 기간 필터 (월별 요약에는 적용 안 함)
+  const [dashStart, setDashStart] = useState<DateParts>(EMPTY_DATE);
+  const [dashEnd, setDashEnd] = useState<DateParts>(EMPTY_DATE);
   const { theme, toggleTheme } = useTheme();
+
+  const dashRange = buildDateRange(dashStart, dashEnd);
+  const dateParams = dashRange ? { dateStart: dashRange.start, dateEnd: dashRange.end } : {};
 
   const utils = trpc.useUtils();
   const { data: settings } = trpc.budget.getSettings.useQuery();
@@ -43,16 +53,19 @@ export default function Home() {
   const { data: kpi, isLoading: kpiLoading } = trpc.budget.getKpiSummary.useQuery({
     includeTransfer,
     excludedCategories,
+    ...dateParams,
   });
 
   const { data: catStats, isLoading: catLoading } = trpc.budget.getCategoryStats.useQuery({
     includeTransfer,
     excludedCategories,
+    ...dateParams,
   });
 
   const { data: pivotData } = trpc.budget.getPivotData.useQuery({
     includeTransfer,
     excludedCategories,
+    ...dateParams,
   });
 
   useEffect(() => {
@@ -178,6 +191,17 @@ export default function Home() {
         {/* ── Dashboard ── */}
         {activeTab === "dashboard" && (
           <>
+            {/* 기간 필터 */}
+            <div className="bg-white rounded-xl border border-cream-200 shadow-sm px-4 py-3 flex items-center gap-3 flex-wrap">
+              <span className="text-sm font-medium text-cream-600">기간</span>
+              <DateRangeFilter
+                start={dashStart}
+                end={dashEnd}
+                onChange={(s, e) => { setDashStart(s); setDashEnd(e); }}
+              />
+              {!dashRange && <span className="text-xs text-cream-400">전체 기간 (년만 입력하면 그 해 전체)</span>}
+            </div>
+
             {/* KPI cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard

@@ -4,12 +4,16 @@ import { formatKRW } from "../../lib/format";
 import { CategoryDetailModal } from "../CategoryDetailModal";
 import { cn } from "../../lib/utils";
 import { getL2, L2_ORDER, L2_COLOR } from "../../lib/categories";
+import { DateRangeFilter } from "../DateRangeFilter";
+import { DateParts, buildDateRange } from "../../lib/dateRange";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 interface Props {
   includeTransfer: boolean;
   excludedCategories: string[];
 }
+
+const EMPTY_DATE: DateParts = { y: "", m: "", d: "" };
 
 type L1Filter = "all" | "income" | "savings" | "expense";
 
@@ -32,15 +36,20 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
   const [selectedL3, setSelectedL3] = useState<string | null>(null);
   const [selectedL3L1, setSelectedL3L1] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [dateStart, setDateStart] = useState<DateParts>(EMPTY_DATE);
+  const [dateEnd, setDateEnd] = useState<DateParts>(EMPTY_DATE);
+
+  const range = buildDateRange(dateStart, dateEnd);
+  const dateParams = range ? { dateStart: range.start, dateEnd: range.end } : {};
 
   const { data: catStats, isLoading, error } = trpc.budget.getCategoryStats.useQuery({
-    includeTransfer, excludedCategories,
+    includeTransfer, excludedCategories, ...dateParams,
   });
 
   // L3 merchant data for selectedL3 — 방향(수입/지출)을 넘겨 환불이 섞이지 않게
   const l3Direction = selectedL3L1 === "income" ? "income" : selectedL3L1 === "expense" ? "expense" : undefined;
   const { data: l3Data, isLoading: l3Loading } = trpc.budget.getL3Stats.useQuery(
-    { category: selectedL3!, direction: l3Direction },
+    { category: selectedL3!, direction: l3Direction, ...dateParams },
     { enabled: !!selectedL3 && !showModal }
   );
 
@@ -90,27 +99,43 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
 
   const grandTotal = useMemo(() => l2Groups.reduce((s, r) => s + r.total, 0), [l2Groups]);
 
+  // 기간 필터 바 — 로딩/빈 화면에서도 항상 보이도록 공통 렌더
+  const filterBar = (
+    <div className="bg-white rounded-xl border border-cream-200 shadow-sm px-4 py-3 flex items-center gap-3 flex-wrap">
+      <span className="text-sm font-medium text-cream-600">기간</span>
+      <DateRangeFilter start={dateStart} end={dateEnd} onChange={(s, e) => { setDateStart(s); setDateEnd(e); }} />
+      {!range && <span className="text-xs text-cream-400">전체 기간 (년만 입력하면 그 해 전체)</span>}
+    </div>
+  );
+
   if (isLoading) {
     return (
       <div className="space-y-4">
+        {filterBar}
         {[1, 2, 3].map((i) => <div key={i} className="animate-pulse h-20 bg-cream-100 rounded-xl" />)}
       </div>
     );
   }
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-red-400 gap-3">
-        <span className="text-4xl">⚠️</span>
-        <p className="font-medium">카테고리 데이터 오류</p>
-        <p className="text-sm text-red-300">{error.message}</p>
+      <div className="space-y-4">
+        {filterBar}
+        <div className="flex flex-col items-center justify-center py-20 text-red-400 gap-3">
+          <span className="text-4xl">⚠️</span>
+          <p className="font-medium">카테고리 데이터 오류</p>
+          <p className="text-sm text-red-300">{error.message}</p>
+        </div>
       </div>
     );
   }
   if (!catStats?.length) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-cream-400 gap-3">
-        <span className="text-4xl">📂</span>
-        <p>카테고리 데이터가 없습니다.</p>
+      <div className="space-y-4">
+        {filterBar}
+        <div className="flex flex-col items-center justify-center py-20 text-cream-400 gap-3">
+          <span className="text-4xl">📂</span>
+          <p>이 기간에 해당하는 카테고리 데이터가 없습니다.</p>
+        </div>
       </div>
     );
   }
@@ -139,6 +164,8 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
 
   return (
     <div className="space-y-6">
+      {filterBar}
+
       {/* L1 Filter tabs */}
       <div className="bg-white rounded-xl border border-cream-200 shadow-sm px-4 py-2 flex gap-1">
         {L1_TABS.map((tab) => (
@@ -296,6 +323,8 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
       {selectedL3 && showModal && (
         <CategoryDetailModal
           category={selectedL3}
+          dateStart={range?.start}
+          dateEnd={range?.end}
           onClose={() => { setShowModal(false); }}
         />
       )}

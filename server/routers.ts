@@ -179,10 +179,12 @@ const budgetRouter = router({
       z.object({
         includeTransfer: z.boolean().default(false),
         excludedCategories: z.array(z.string()).default([]),
+        dateStart: z.string().optional(),
+        dateEnd: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      return getKpiSummary(ctx.user.id, input.includeTransfer, input.excludedCategories, []);
+      return getKpiSummary(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.dateStart, input.dateEnd);
     }),
 
   // ── 월별 통계 ────────────────────────────────────────────────
@@ -204,10 +206,12 @@ const budgetRouter = router({
         includeTransfer: z.boolean().default(false),
         excludedCategories: z.array(z.string()).default([]),
         yearMonth: z.string().optional(),
+        dateStart: z.string().optional(),
+        dateEnd: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      return getCategoryStats(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.yearMonth);
+      return getCategoryStats(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.yearMonth, input.dateStart, input.dateEnd);
     }),
 
   // ── 피벗 데이터 ──────────────────────────────────────────────
@@ -216,10 +220,12 @@ const budgetRouter = router({
       z.object({
         includeTransfer: z.boolean().default(false),
         excludedCategories: z.array(z.string()).default([]),
+        dateStart: z.string().optional(),
+        dateEnd: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      return getPivotData(ctx.user.id, input.includeTransfer, input.excludedCategories, []);
+      return getPivotData(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.dateStart, input.dateEnd);
     }),
 
   // ── 저축/투자 통계 ───────────────────────────────────────────
@@ -260,6 +266,8 @@ const budgetRouter = router({
         page: z.number().int().positive().default(1),
         pageSize: z.number().int().positive().max(200).default(50),
         yearMonth: z.string().optional(),
+        dateStart: z.string().optional(),
+        dateEnd: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -268,7 +276,9 @@ const budgetRouter = router({
         input.category,
         input.page,
         input.pageSize,
-        input.yearMonth
+        input.yearMonth,
+        input.dateStart,
+        input.dateEnd
       );
     }),
 
@@ -421,9 +431,9 @@ const budgetRouter = router({
   }),
 
   getL3Stats: protectedProcedure
-    .input(z.object({ category: z.string(), yearMonth: z.string().optional(), direction: z.enum(["income", "expense"]).optional() }))
+    .input(z.object({ category: z.string(), yearMonth: z.string().optional(), direction: z.enum(["income", "expense"]).optional(), dateStart: z.string().optional(), dateEnd: z.string().optional() }))
     .query(async ({ ctx, input }) => {
-      return getL3Stats(ctx.user.id, input.category, input.yearMonth, input.direction);
+      return getL3Stats(ctx.user.id, input.category, input.yearMonth, input.direction, input.dateStart, input.dateEnd);
     }),
 });
 

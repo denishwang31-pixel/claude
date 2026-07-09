@@ -8,12 +8,14 @@ import { cn } from "../lib/utils";
 interface Props {
   category: string;
   yearMonth?: string;
+  dateStart?: string;
+  dateEnd?: string;
   onClose: () => void;
 }
 
 const PAGE_SIZE = 30;
 
-export function CategoryDetailModal({ category, yearMonth, onClose }: Props) {
+export function CategoryDetailModal({ category, yearMonth, dateStart, dateEnd, onClose }: Props) {
   const [page, setPage] = useState(1);
 
   const { data, isLoading, refetch } = trpc.budget.getCategoryTransactions.useQuery({
@@ -21,6 +23,8 @@ export function CategoryDetailModal({ category, yearMonth, onClose }: Props) {
     page,
     pageSize: PAGE_SIZE,
     yearMonth,
+    dateStart,
+    dateEnd,
   });
 
   const toggleMutation = trpc.budget.toggleExcluded.useMutation({
