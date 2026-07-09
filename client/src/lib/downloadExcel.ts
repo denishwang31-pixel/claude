@@ -23,7 +23,8 @@ export function downloadTransactionsExcel(
   excludedIds: number[],
   filename = "가계부_내역.xlsx"
 ) {
-  const excludedSet = new Set(excludedIds);
+  // excludedIds는 숫자, row.id는 문자열로 올 수 있어 숫자로 통일해 비교한다.
+  const excludedSet = new Set(excludedIds.map((n) => Number(n)));
 
   const data = rows.map((r) => {
     // 대시보드와 동일한 유효 카테고리
@@ -45,7 +46,7 @@ export function downloadTransactionsExcel(
       화폐: r.currency,
       결제수단: r.paymentMethod ?? "",
       메모: r.memo ?? "",
-      제외여부: excludedSet.has(r.id) ? "제외" : "",
+      제외여부: excludedSet.has(Number(r.id)) ? "제외" : "",
     };
   });
 
