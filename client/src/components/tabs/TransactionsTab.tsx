@@ -7,17 +7,22 @@ import { downloadTransactionsExcel } from "../../lib/downloadExcel";
 import { cn } from "../../lib/utils";
 import { toast } from "sonner";
 import { L1_LIST, L2_BY_L1, l3ListForL2, resolveCategoryFilter, signedPath } from "../../lib/categories";
+import { DateRangeFilter } from "../DateRangeFilter";
+import { DateParts, buildDateRange } from "../../lib/dateRange";
 
 const PAGE_SIZE = 50;
 
 const SEARCH_FIELDS = [
   { id: "content",      label: "내용" },
   { id: "category",     label: "카테고리(L1/L2/L3)" },
+  { id: "dateRange",    label: "기간(날짜)" },
   { id: "amount_gte",   label: "금액 이상" },
   { id: "paymentMethod",label: "결제수단" },
   { id: "txType",       label: "타입" },
   { id: "date",         label: "월" },
 ] as const;
+
+const EMPTY_DATE: DateParts = { y: "", m: "", d: "" };
 
 type SearchField = typeof SEARCH_FIELDS[number]["id"];
 
@@ -29,8 +34,11 @@ export function TransactionsTab() {
   const [catL1, setCatL1] = useState("");
   const [catL2, setCatL2] = useState("");
   const [catL3, setCatL3] = useState("");
+  // 기간 필터
+  const [dateStart, setDateStart] = useState<DateParts>(EMPTY_DATE);
+  const [dateEnd, setDateEnd] = useState<DateParts>(EMPTY_DATE);
 
-  useEffect(() => { setPage(1); }, [searchField, searchQuery, catL1, catL2, catL3]);
+  useEffect(() => { setPage(1); }, [searchField, searchQuery, catL1, catL2, catL3, dateStart, dateEnd]);
 
   const utils = trpc.useUtils();
 
@@ -43,6 +51,9 @@ export function TransactionsTab() {
       const cats = resolveCategoryFilter(catL1, catL2, catL3);
       filter = cats.length ? { field: "categories", query: `${catL1}|${cats.join(",")}` } : undefined;
     }
+  } else if (searchField === "dateRange") {
+    const range = buildDateRange(dateStart, dateEnd);
+    filter = range ? { field: "dateRange", query: `${range.start}|${range.end}` } : undefined;
   } else if (searchQuery.trim()) {
     filter = { field: searchField, query: searchQuery.trim() };
   }
@@ -98,7 +109,7 @@ export function TransactionsTab() {
       <div className="bg-white rounded-xl border border-cream-200 shadow-sm px-4 py-3 flex items-center gap-2 flex-wrap">
         <select
           value={searchField}
-          onChange={(e) => { setSearchField(e.target.value as SearchField); setSearchQuery(""); setCatL1(""); setCatL2(""); setCatL3(""); }}
+          onChange={(e) => { setSearchField(e.target.value as SearchField); setSearchQuery(""); setCatL1(""); setCatL2(""); setCatL3(""); setDateStart(EMPTY_DATE); setDateEnd(EMPTY_DATE); }}
           className="border border-cream-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-cream-500"
         >
           {SEARCH_FIELDS.map((f) => (
@@ -146,6 +157,12 @@ export function TransactionsTab() {
               </button>
             )}
           </div>
+        ) : searchField === "dateRange" ? (
+          <DateRangeFilter
+            start={dateStart}
+            end={dateEnd}
+            onChange={(s, e) => { setDateStart(s); setDateEnd(e); }}
+          />
         ) : searchField === "txType" ? (
           <select
             value={searchQuery}

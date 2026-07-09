@@ -720,6 +720,14 @@ function buildTxSearchSQL(userId: number, field: string, query: string): string 
     case "paymentMethod": return `t."paymentMethod" ILIKE '%${escLike(query)}%'`;
     case "txType":        return `t."txType" = '${esc(query)}'`;
     case "date":          return `TO_CHAR(t."txDate", 'YYYY-MM') = '${esc(query)}'`;
+    case "dateRange": {
+      // query = "YYYY-MM-DD|YYYY-MM-DD" (시작|종료, 둘 다 포함)
+      const [s, e] = query.split("|");
+      const conds: string[] = [];
+      if (s && /^\d{4}-\d{2}-\d{2}$/.test(s)) conds.push(`t."txDate" >= '${esc(s)}'`);
+      if (e && /^\d{4}-\d{2}-\d{2}$/.test(e)) conds.push(`t."txDate" <= '${esc(e)}'`);
+      return conds.length ? conds.join(" AND ") : "TRUE";
+    }
     case "categories": {
       // query = "{l1}|{콤마구분 L3목록}" — 부호로 입출금 방향까지 맞춰 화면 표기와 일치
       const [l1Part, catsPart] = query.includes("|") ? query.split("|") : ["", query];
