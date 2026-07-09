@@ -786,8 +786,19 @@ export async function getAllTransactions(
 export async function getAllTransactionsForExport(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(transactions).where(eq(transactions.userId, userId))
-    .orderBy(desc(transactions.txDate), desc(transactions.txTime));
+  // 대시보드와 동일한 effectiveCategory(수동지정 > 규칙 > 뱅크샐러드 매핑 > 원본)를
+  // 함께 반환해 엑셀의 분류가 화면과 일치하도록 한다.
+  const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
+  const rows = await db.execute(sql.raw(
+    `SELECT id, "txDate"::text as "txDate", "txTime", "txType",
+            category, "subCategory", "customCategory",
+            (${effectiveCatExpr}) as "effectiveCategory",
+            content, amount::text as amount, currency, "paymentMethod", memo, "dedupHash"
+     FROM transactions t
+     WHERE t."userId" = ${userId}
+     ORDER BY t."txDate" DESC, t."txTime" DESC`
+  ));
+  return rows as any[];
 }
 
 /** 특정 카테고리 거래 내역 (드릴다운) */
