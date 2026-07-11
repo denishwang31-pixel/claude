@@ -3,7 +3,7 @@ import { trpc } from "../../lib/trpc";
 import { formatKRW } from "../../lib/format";
 import { CategoryDetailModal } from "../CategoryDetailModal";
 import { cn } from "../../lib/utils";
-import { getL2, L2_ORDER, L2_COLOR } from "../../lib/categories";
+import { getL2, L2_ORDER, L2_COLOR, categoryDisplay } from "../../lib/categories";
 import { DateRangeFilter } from "../DateRangeFilter";
 import { DateParts, buildDateRange } from "../../lib/dateRange";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
@@ -262,7 +262,7 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
                                 <div className="flex items-center gap-1.5">
                                   <span className="opacity-40">{isL3Sel ? "▼" : "▶"}</span>
                                   <span className={cn("font-medium", L1_TEXT[l3row.l1] ?? "text-cream-700")}>
-                                    {l3row.category}
+                                    {categoryDisplay(l3row.category)}
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2">

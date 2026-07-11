@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { trpc } from "../lib/trpc";
 import { formatKRW, formatDate, formatYearMonth } from "../lib/format";
+import { categoryFull } from "../lib/categories";
 import { CategoryDropdown } from "./CategoryDropdown";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
@@ -42,7 +43,7 @@ export function CategoryDetailModal({ category, yearMonth, dateStart, dateEnd, o
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-cream-200">
           <h2 className="font-serif text-xl font-semibold text-cream-800">
-            {category}
+            {categoryFull(category)}
             {yearMonth && (
               <span className="text-sm font-sans font-normal text-cream-500 ml-2">
                 · {formatYearMonth(yearMonth)}

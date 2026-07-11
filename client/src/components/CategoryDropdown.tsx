@@ -2,20 +2,15 @@ import React, { useState, useRef, useEffect } from "react";
 import { trpc } from "../lib/trpc";
 import { toast } from "sonner";
 import { cn } from "../lib/utils";
+import { EXPENSE_TREE, categoryDisplay, categoryFull } from "../lib/categories";
 
-// L1 › L2 별로 묶은 카테고리(L3) — 드롭다운에 계층이 보이도록
-const CATEGORY_GROUPS: { l1: string; l2: string; cats: string[] }[] = [
-  { l1: "지출", l2: "생활",      cats: ["식비", "외식", "배달음식", "카페", "쇼핑", "생활용품", "주거"] },
-  { l1: "지출", l2: "교통/통신", cats: ["교통", "통신", "구독"] },
-  { l1: "지출", l2: "여가/문화", cats: ["문화", "교육", "여행", "미용"] },
-  { l1: "지출", l2: "건강",      cats: ["의료", "건강"] },
-  { l1: "지출", l2: "금융",      cats: ["금융"] },
-  { l1: "지출", l2: "기타",      cats: ["세금", "기타"] },
-  { l1: "저축/투자", l2: "저축", cats: ["저축"] },
-  { l1: "저축/투자", l2: "투자", cats: ["투자"] },
-  { l1: "수입", l2: "수입",      cats: ["수입"] },
+// L1 › L2 별로 묶은 카테고리(L3 키+표시명) — 드롭다운에 계층이 보이도록
+const CATEGORY_GROUPS: { l1: string; l2: string; items: { key: string; label: string }[] }[] = [
+  ...EXPENSE_TREE.map((g) => ({ l1: "지출", l2: g.l2, items: g.items })),
+  { l1: "저축/투자", l2: "저축", items: [{ key: "저축", label: "저축" }] },
+  { l1: "저축/투자", l2: "투자", items: [{ key: "투자", label: "투자" }] },
+  { l1: "수입", l2: "수입", items: [{ key: "수입", label: "수입" }] },
 ];
-const CATEGORIES = CATEGORY_GROUPS.flatMap((g) => g.cats);
 
 interface CategoryDropdownProps {
   transactionId: number;
@@ -86,7 +81,7 @@ export function CategoryDropdown({
         )}
         disabled={updateMutation.isPending}
       >
-        {currentCategory}
+        {categoryFull(currentCategory)}
         <span className="text-cream-400">▾</span>
       </button>
 
@@ -125,18 +120,18 @@ export function CategoryDropdown({
                 <div className="px-2 pt-1 pb-0.5 text-[10px] font-medium text-cream-400 uppercase tracking-wide">
                   {g.l1} › {g.l2}
                 </div>
-                {g.cats.map((cat) => (
+                {g.items.map((it) => (
                   <button
-                    key={cat}
-                    onClick={() => select(cat)}
+                    key={it.key}
+                    onClick={() => select(it.key)}
                     className={cn(
                       "w-full text-left px-3 py-1.5 text-sm rounded-md transition-colors",
-                      cat === currentCategory
+                      it.key === currentCategory
                         ? "bg-cream-200 text-cream-900 font-medium"
                         : "hover:bg-cream-50 text-cream-700"
                     )}
                   >
-                    {cat}
+                    {it.label}
                   </button>
                 ))}
               </div>

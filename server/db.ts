@@ -17,6 +17,17 @@ let _db: ReturnType<typeof drizzle> | null = null;
 
 async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
   const APP_L3_VALUES_SQL = APP_L3_CATEGORIES.map((c) => `'${c.replace(/'/g, "''")}'`).join(",");
+
+  // 옛 카테고리(구 체계) → 새 카테고리 키 매핑. customCategory / ruleCategory /
+  // category_rules.category 에 남아있는 구 값들을 새 값으로 옮긴다. 자기 자신으로
+  // 매핑되는 값(식비/카페/쇼핑/미용/세금)은 대상에서 제외해 매번 쓰지 않게 한다.
+  const remapKeys = Object.keys(OLD_CATEGORY_REMAP);
+  const remapInList = remapKeys.map((k) => `'${k}'`).join(",");
+  const remapCase = (col: string) =>
+    `CASE ${col} ` + remapKeys.map((k) => `WHEN '${k}' THEN '${OLD_CATEGORY_REMAP[k]}'`).join(" ") + ` ELSE ${col} END`;
+  const remapStep = (table: string, col: string) =>
+    `UPDATE ${table} SET "${col}" = ${remapCase(`"${col}"`)} WHERE "${col}" IN (${remapInList})`;
+
   const steps = [
     `ALTER TABLE category_rules ADD COLUMN IF NOT EXISTS "ruleType" varchar(20) NOT NULL DEFAULT 'expense'`,
     `ALTER TABLE category_rules ADD COLUMN IF NOT EXISTS "isActive" integer NOT NULL DEFAULT 1`,
@@ -37,17 +48,22 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
          ALTER TABLE category_rules ALTER COLUMN "isExact" SET DEFAULT 0;
        END IF;
      END $$`,
-    // 데이터 정리: customCategory / 규칙에 박힌 뱅크샐러드 대분류 원본(앱 L3가 아닌 값)을 제거.
-    // 이런 값은 과거 "거래내역에서 자동 생성"이 content→대분류원본을 저장하면서 생긴 것으로,
-    // bankSaladMapSQL 매핑을 덮어써 '기타'로 떨어지게 만든다. 제거하면 매핑이 정상 동작한다.
-    `UPDATE transactions SET "customCategory" = NULL
-       WHERE "customCategory" IS NOT NULL
-         AND "customCategory" NOT IN (${APP_L3_VALUES_SQL})`,
-    `DELETE FROM category_rules
-       WHERE category NOT IN (${APP_L3_VALUES_SQL})`,
     `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS "dashboardMemos" text DEFAULT '{}'`,
     // 규칙 매칭 결과를 굳혀두는 컬럼 (읽기 시점 상관 서브쿼리 제거용)
     `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS "ruleCategory" varchar(64)`,
+    // 구 카테고리 → 새 카테고리 키로 이관 (아래 '정리' 단계보다 먼저 실행되어야 함)
+    remapStep("transactions", "customCategory"),
+    remapStep("transactions", "ruleCategory"),
+    remapStep("category_rules", "category"),
+    // 데이터 정리: 앱 L3가 아닌 값(뱅크샐러드 대분류 원본 등)을 제거해 매핑이 정상 동작하게.
+    `UPDATE transactions SET "customCategory" = NULL
+       WHERE "customCategory" IS NOT NULL
+         AND "customCategory" NOT IN (${APP_L3_VALUES_SQL})`,
+    `UPDATE transactions SET "ruleCategory" = NULL
+       WHERE "ruleCategory" IS NOT NULL
+         AND "ruleCategory" NOT IN (${APP_L3_VALUES_SQL})`,
+    `DELETE FROM category_rules
+       WHERE category NOT IN (${APP_L3_VALUES_SQL})`,
   ];
   for (const step of steps) {
     try {
@@ -281,15 +297,35 @@ const INVEST_ONLY_CATS = ["투자", "ETF", "주식", "펀드", "ISA", "IRP"];
 /** 앱이 최종 사용하는 유효 L3 카테고리 — 이 목록에 없는 값(뱅크샐러드 대분류 원본 등)은
  *  customCategory/규칙에 들어가면 안 된다(자동 정리 대상). */
 export const APP_L3_CATEGORIES = [
-  // 지출
-  "식비", "외식", "배달음식", "카페", "쇼핑", "생활용품", "주거",
-  "교통", "통신", "구독", "문화", "교육", "여행", "미용", "의료", "건강",
-  "금융", "세금", "기타",
+  // 지출 — 생활비
+  "식비", "쇼핑", "외식&배달", "카페", "생활비_기타",
+  // 교통/통신
+  "통신비", "구독비", "교통비", "차량유지비",
+  // 교육 (사람별)
+  "교육_서준", "교육_재이", "교육_동현", "교육_혜진", "교육_미지정",
+  // 여가/문화
+  "여행&문화생활", "미용", "운동", "여가_기타",
+  // 병원 (사람별)
+  "병원_서준", "병원_재이", "병원_동현", "병원_혜진", "병원_미지정",
+  // 보험 (사람별, 보장성)
+  "보험_동현", "보험_혜진", "보험_서준", "보험_재이", "보험_미지정",
+  // 경조사 / 주거 / 기타
+  "경조사", "월세", "공과금", "대출이자", "세금", "기타_기타",
   // 저축/투자
   "저축", "투자", "청약", "적금", "예금", "CMA", "ETF", "주식", "펀드", "ISA", "IRP",
   // 수입 / 이체
   "수입", "이체",
 ];
+
+/** 구 카테고리 → 새 카테고리 키 매핑 (자기 자신으로 가는 것은 생략).
+ *  마이그레이션·기본규칙 시드에서 공용으로 사용. */
+export const OLD_CATEGORY_REMAP: Record<string, string> = {
+  "외식": "외식&배달", "배달음식": "외식&배달", "생활용품": "생활비_기타",
+  "주거": "공과금", "교통": "교통비", "통신": "통신비", "구독": "구독비",
+  "문화": "여행&문화생활", "교육": "교육_미지정", "여행": "여행&문화생활",
+  "의료": "병원_미지정", "건강": "운동", "금융": "기타_기타", "기타": "기타_기타",
+};
+export function remapOldCategory(cat: string): string { return OLD_CATEGORY_REMAP[cat] ?? cat; }
 
 /** 카테고리명으로 규칙 타입(income/savings/investment/expense) 추론 */
 export function categoryToRuleType(category: string): string {
@@ -311,37 +347,46 @@ function bankSaladMapSQL(): string {
   const sub = `COALESCE(t."subCategory",'')`;
   return `CASE
     WHEN t.category IN ('내계좌이체','이체','카드대금','현금','미분류') THEN '이체'
+    -- 생활비
     WHEN t.category = '생활' AND ${sub} IN ('마트','편의점') THEN '식비'
-    WHEN t.category = '생활' THEN '생활용품'
-    WHEN t.category = '온라인쇼핑' AND ${sub} IN ('서비스구독','앱스토어') THEN '구독'
-    WHEN t.category = '온라인쇼핑' THEN '쇼핑'
-    WHEN t.category = '식비' AND ${sub} = '배달' THEN '배달음식'
+    WHEN t.category = '생활' THEN '생활비_기타'
+    WHEN t.category = '반려동물' THEN '생활비_기타'
+    WHEN t.category = '식비' AND ${sub} = '배달' THEN '외식&배달'
     WHEN t.category = '식비' AND ${sub} = '식재료' THEN '식비'
-    WHEN t.category = '식비' THEN '외식'
+    WHEN t.category = '식비' THEN '외식&배달'
     WHEN t.category = '카페/간식' THEN '카페'
+    WHEN t.category = '술/유흥' THEN '외식&배달'
+    WHEN t.category = '온라인쇼핑' AND ${sub} IN ('서비스구독','앱스토어') THEN '구독비'
+    WHEN t.category = '온라인쇼핑' THEN '쇼핑'
+    WHEN t.category = '패션/쇼핑' THEN '쇼핑'
+    -- 저축/투자/수입
     WHEN t.category = '저축' THEN CASE WHEN t.amount::numeric > 0 THEN '수입' ELSE '저축' END
     WHEN t.category = '투자' THEN CASE WHEN t.amount::numeric > 0 THEN '수입' ELSE '투자' END
     WHEN t.category = '금융' AND ${sub} = '세금/과태료' THEN '세금'
     WHEN t.category = '금융' AND ${sub} = '증권/투자' THEN CASE WHEN t.amount::numeric > 0 THEN '수입' ELSE '투자' END
-    WHEN t.category = '금융' THEN '금융'
-    WHEN t.category IN ('자동차','교통') THEN '교통'
-    WHEN t.category = '문화/여가' AND ${sub} = '도서' THEN '교육'
-    WHEN t.category = '문화/여가' AND ${sub} = '스포츠' THEN '건강'
+    WHEN t.category = '금융' THEN '기타_기타'
+    -- 교통/차량
+    WHEN t.category = '자동차' THEN '차량유지비'
+    WHEN t.category = '교통' THEN '교통비'
+    -- 여가/문화/교육/운동/미용
+    WHEN t.category = '문화/여가' AND ${sub} = '도서' THEN '교육_미지정'
+    WHEN t.category = '문화/여가' AND ${sub} = '스포츠' THEN '운동'
     WHEN t.category = '문화/여가' AND ${sub} = '마사지/스파' THEN '미용'
-    WHEN t.category = '문화/여가' THEN '문화'
-    WHEN t.category = '의료/건강' AND ${sub} = '건강용품' THEN '건강'
-    WHEN t.category = '의료/건강' THEN '의료'
-    WHEN t.category = '주거/통신' AND ${sub} = '휴대폰' THEN '통신'
-    WHEN t.category = '주거/통신' THEN '주거'
-    WHEN t.category = '여행/숙박' THEN '여행'
-    WHEN t.category = '패션/쇼핑' THEN '쇼핑'
+    WHEN t.category = '문화/여가' THEN '여행&문화생활'
+    WHEN t.category = '여행/숙박' THEN '여행&문화생활'
     WHEN t.category = '뷰티/미용' THEN '미용'
-    WHEN t.category = '교육/학습' THEN '교육'
-    WHEN t.category = '반려동물' THEN '생활용품'
-    WHEN t.category = '경조/선물' THEN '기타'
-    WHEN t.category = '술/유흥' THEN '외식'
+    WHEN t.category = '교육/학습' THEN '교육_미지정'
+    -- 병원
+    WHEN t.category = '의료/건강' AND ${sub} = '건강용품' THEN '생활비_기타'
+    WHEN t.category = '의료/건강' THEN '병원_미지정'
+    -- 주거/통신
+    WHEN t.category = '주거/통신' AND ${sub} = '휴대폰' THEN '통신비'
+    WHEN t.category = '주거/통신' THEN '공과금'
+    -- 경조사 / 세금 / 수입
+    WHEN t.category = '경조/선물' THEN '경조사'
+    WHEN t.category = '세금' THEN '세금'
     WHEN t.category IN ('금융수입','급여','사업수입','기타수입') THEN '수입'
-    ELSE t.category
+    ELSE '기타_기타'
   END`;
 }
 
@@ -1231,7 +1276,7 @@ export async function seedDefaultRules(userId: number): Promise<number> {
     try {
       await db.execute(
         sql`INSERT INTO category_rules ("userId", keyword, category, "isExact", "ruleType")
-            VALUES (${userId}, ${rule.keyword}, ${rule.category}, ${rule.isExact ? 1 : 0}, ${rule.ruleType})
+            VALUES (${userId}, ${rule.keyword}, ${remapOldCategory(rule.category)}, ${rule.isExact ? 1 : 0}, ${rule.ruleType})
             ON CONFLICT ("userId", keyword) DO NOTHING`
       );
       inserted++;

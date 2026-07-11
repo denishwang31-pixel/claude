@@ -3,7 +3,7 @@ import { trpc } from "../../lib/trpc";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { toast } from "sonner";
-import { L2_BY_L1, l3ListForL2, L2_COLOR } from "../../lib/categories";
+import { L2_BY_L1, l3ListForL2, L2_COLOR, l3ListForL1, categoryDisplay, categoryFull } from "../../lib/categories";
 
 const HIERARCHY: { l1: string; color: string }[] = [
   { l1: "income", color: "text-gray-800" },
@@ -33,7 +33,7 @@ function HierarchyOverview() {
                       <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: L2_COLOR[l2] ?? "#ccc" }} />
                       {l2}
                     </span>
-                    <span className="text-cream-400">{l3ListForL2(l1, l2).join(", ")}</span>
+                    <span className="text-cream-400">{l3ListForL2(l1, l2).map(categoryDisplay).join(", ")}</span>
                   </div>
                 ))}
               </div>
@@ -55,12 +55,7 @@ interface Rule {
   createdAt: unknown;
 }
 
-const EXPENSE_CATS = [
-  "식비", "외식", "배달음식", "카페", "쇼핑", "생활용품", "주거",
-  "교통", "통신", "구독",
-  "문화", "교육", "여행", "미용", "건강", "의료",
-  "금융", "세금", "기타",
-];
+const EXPENSE_CATS = l3ListForL1("expense");
 const INCOME_CATS = ["급여", "상여금", "이자수입", "부업수입", "기타수입"];
 const SAVINGS_CATS_LIST = ["청약", "적금", "저축", "예금", "CMA"];
 const INVEST_CATS_LIST = ["ETF", "주식", "펀드", "ISA", "IRP", "투자"];
@@ -105,7 +100,7 @@ function AddRuleForm({ ruleType, categories }: { ruleType: string; categories: s
         <label className="text-xs text-cream-500">카테고리</label>
         <select value={category} onChange={(e) => setCategory(e.target.value)}
           className="border border-cream-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-cream-500">
-          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          {categories.map((c) => <option key={c} value={c}>{categoryFull(c)}</option>)}
         </select>
       </div>
       <div className="flex flex-col gap-1">
@@ -178,7 +173,7 @@ function RulesSection({ title, ruleType, rules }: { title: string; ruleType: str
                     </td>
                     <td className="py-2 pl-1 font-medium text-cream-800">{rule.keyword}</td>
                     <td className="py-2">
-                      <span className={cn("px-2 py-0.5 rounded-full text-xs", style.badge)}>{rule.category}</span>
+                      <span className={cn("px-2 py-0.5 rounded-full text-xs", style.badge)}>{categoryFull(rule.category)}</span>
                     </td>
                     <td className="py-2 text-center">
                       <span className={cn("px-2 py-0.5 rounded-full text-xs", rule.isExact ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-600")}>

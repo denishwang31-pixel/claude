@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { signedPath } from "./categories";
+import { signedPath, categoryFull } from "./categories";
 
 interface TransactionRow {
   id: number;
@@ -35,7 +35,7 @@ export function downloadTransactionsExcel(
       날짜: r.txDate,
       시간: r.txTime,
       타입: r.txType,
-      대분류: eff,               // 앱 카테고리(대시보드와 일치)
+      대분류: categoryFull(eff),  // 앱 카테고리(대시보드와 일치, 예: "교육 · 서준")
       원래분류: r.category,      // 뱅크샐러드 원본 대분류
       소분류: r.subCategory ?? "",
       L1: l1Label,               // 수입 / 저축·투자 / 지출 / 집계제외
