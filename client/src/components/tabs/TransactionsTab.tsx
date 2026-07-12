@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { trpc } from "../../lib/trpc";
 import { formatKRW, formatDate } from "../../lib/format";
 import { CategoryDropdown } from "../CategoryDropdown";
+import { ColumnFilter, FilterOption } from "../ColumnFilter";
+import { ManualEntryModal } from "../ManualEntryModal";
 import { Button } from "../ui/button";
 import { downloadTransactionsExcel } from "../../lib/downloadExcel";
 import { cn } from "../../lib/utils";
 import { toast } from "sonner";
-import { L1_LIST, L2_BY_L1, l3ListForL2, resolveCategoryFilter, signedPath } from "../../lib/categories";
+import { L1_LIST, L2_BY_L1, l3ListForL2, resolveCategoryFilter, signedPath, EXPENSE_TREE } from "../../lib/categories";
 import { DateRangeFilter } from "../DateRangeFilter";
 import { DateParts, buildDateRange } from "../../lib/dateRange";
 
@@ -26,39 +28,87 @@ const EMPTY_DATE: DateParts = { y: "", m: "", d: "" };
 
 type SearchField = typeof SEARCH_FIELDS[number]["id"];
 
-export function TransactionsTab() {
+// 카테고리 컬럼 필터 선택지 — L1 › L2 그룹으로 L3 나열 + 집계제외(이체)
+const CATEGORY_FILTER_OPTIONS: FilterOption[] = [
+  ...EXPENSE_TREE.flatMap((g) =>
+    g.items.map((it) => ({ value: it.key, label: it.label, group: `지출 › ${g.l2}` }))),
+  { value: "저축", label: "저축", group: "저축/투자" },
+  { value: "투자", label: "투자", group: "저축/투자" },
+  { value: "수입", label: "수입", group: "수입" },
+  { value: "이체", label: "이체(집계제외)", group: "집계제외" },
+];
+
+interface Props {
+  owner?: string; // ''(전체) | 동현 | 혜진 — 전역 소유자 필터
+}
+
+export function TransactionsTab({ owner }: Props) {
   const [page, setPage] = useState(1);
   const [searchField, setSearchField] = useState<SearchField>("content");
   const [searchQuery, setSearchQuery] = useState("");
-  // 카테고리 계단식 필터
+  // 상단 검색: 카테고리 계단식 필터
   const [catL1, setCatL1] = useState("");
   const [catL2, setCatL2] = useState("");
   const [catL3, setCatL3] = useState("");
-  // 기간 필터
+  // 상단 검색: 기간 필터
   const [dateStart, setDateStart] = useState<DateParts>(EMPTY_DATE);
   const [dateEnd, setDateEnd] = useState<DateParts>(EMPTY_DATE);
+  // 컬럼(엑셀식) 필터
+  const [colContent, setColContent] = useState("");
+  const [colCats, setColCats] = useState<string[]>([]);
+  const [colPMs, setColPMs] = useState<string[]>([]);
+  const [colTypes, setColTypes] = useState<string[]>([]);
+  // 수기 입력 모달
+  const [showManual, setShowManual] = useState(false);
 
-  useEffect(() => { setPage(1); }, [searchField, searchQuery, catL1, catL2, catL3, dateStart, dateEnd]);
+  useEffect(() => { setPage(1); }, [searchField, searchQuery, catL1, catL2, catL3, dateStart, dateEnd, colContent, colCats, colPMs, colTypes, owner]);
 
   const utils = trpc.useUtils();
 
-  let filter: { field: string; query: string } | undefined;
+  // ── 상단 검색 필터 ──
+  let topFilter: { field: string; query: string } | undefined;
   if (searchField === "category") {
     if (catL1 === "income") {
-      // 수입은 부호 기반(양수 전체) — 카테고리 집합 불필요
-      filter = { field: "categories", query: "income|" };
+      topFilter = { field: "categories", query: "income|" };
     } else {
       const cats = resolveCategoryFilter(catL1, catL2, catL3);
-      filter = cats.length ? { field: "categories", query: `${catL1}|${cats.join(",")}` } : undefined;
+      topFilter = cats.length ? { field: "categories", query: `${catL1}|${cats.join(",")}` } : undefined;
     }
   } else if (searchField === "dateRange") {
     const range = buildDateRange(dateStart, dateEnd);
-    filter = range ? { field: "dateRange", query: `${range.start}|${range.end}` } : undefined;
+    topFilter = range ? { field: "dateRange", query: `${range.start}|${range.end}` } : undefined;
   } else if (searchQuery.trim()) {
-    filter = { field: searchField, query: searchQuery.trim() };
+    topFilter = { field: searchField, query: searchQuery.trim() };
   }
 
-  const { data, isLoading } = trpc.budget.getTransactions.useQuery({ page, pageSize: PAGE_SIZE, filter });
+  // ── 컬럼 필터 → filters 배열 (상단 검색과 AND 결합) ──
+  const filters = useMemo(() => {
+    const arr: { field: string; query: string }[] = [];
+    if (topFilter) arr.push(topFilter);
+    if (colContent.trim()) arr.push({ field: "content", query: colContent.trim() });
+    if (colCats.length) arr.push({ field: "catIn", query: JSON.stringify(colCats) });
+    if (colPMs.length) arr.push({ field: "pmIn", query: JSON.stringify(colPMs) });
+    if (colTypes.length) arr.push({ field: "typeIn", query: JSON.stringify(colTypes) });
+    return arr;
+  }, [topFilter?.field, topFilter?.query, colContent, colCats, colPMs, colTypes]);
+
+  const hasAnyFilter = filters.length > 0 || !!owner;
+
+  const { data, isLoading } = trpc.budget.getTransactions.useQuery({
+    page, pageSize: PAGE_SIZE, filters, owner: owner || undefined,
+  });
+
+  const { data: filterOptions } = trpc.budget.getFilterOptions.useQuery();
+
+  function invalidateAll() {
+    utils.budget.getTransactions.invalidate();
+    utils.budget.getCategoryStats.invalidate();
+    utils.budget.getMonthlyStats.invalidate();
+    utils.budget.getPivotData.invalidate();
+    utils.budget.getKpiSummary.invalidate();
+    utils.budget.getSavingsStats.invalidate();
+    utils.budget.getIncomeDistribution.invalidate();
+  }
 
   const memoMutation = trpc.budget.updateMemo.useMutation({
     onSuccess: () => utils.budget.getTransactions.invalidate(),
@@ -66,28 +116,26 @@ export function TransactionsTab() {
   });
 
   const toggleMutation = trpc.budget.toggleExcluded.useMutation({
-    onSuccess: () => {
-      utils.budget.getTransactions.invalidate();
-      utils.budget.getCategoryStats.invalidate();
-      utils.budget.getMonthlyStats.invalidate();
-      utils.budget.getPivotData.invalidate();
-      utils.budget.getKpiSummary.invalidate();
-      utils.budget.getSavingsStats.invalidate();
-      utils.budget.getIncomeDistribution.invalidate();
+    onSuccess: invalidateAll,
+  });
+
+  const bulkExcludeMutation = trpc.budget.setExcludedByFilters.useMutation({
+    onSuccess: (res, vars) => {
+      invalidateAll();
+      toast.success(vars.excluded
+        ? `${res.count}건을 집계에서 제외했습니다.`
+        : `${res.count}건의 제외를 해제했습니다.`);
     },
+    onError: () => toast.error("일괄 처리에 실패했습니다."),
+  });
+
+  const deleteMutation = trpc.budget.deleteTransaction.useMutation({
+    onSuccess: () => { invalidateAll(); toast.success("삭제되었습니다."); },
+    onError: () => toast.error("삭제에 실패했습니다."),
   });
 
   const clearExclMutation = trpc.budget.clearAllExclusions.useMutation({
-    onSuccess: (res) => {
-      utils.budget.getTransactions.invalidate();
-      utils.budget.getCategoryStats.invalidate();
-      utils.budget.getMonthlyStats.invalidate();
-      utils.budget.getPivotData.invalidate();
-      utils.budget.getKpiSummary.invalidate();
-      utils.budget.getSavingsStats.invalidate();
-      utils.budget.getIncomeDistribution.invalidate();
-      toast.success(`제외 ${res.cleared}건을 모두 해제했습니다.`);
-    },
+    onSuccess: (res) => { invalidateAll(); toast.success(`제외 ${res.cleared}건을 모두 해제했습니다.`); },
     onError: () => toast.error("제외 해제에 실패했습니다."),
   });
 
@@ -100,8 +148,34 @@ export function TransactionsTab() {
     }
   }
 
+  function handleDelete(id: number, content: string) {
+    if (window.confirm(`「${content}」 거래를 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`)) {
+      deleteMutation.mutate({ transactionId: id });
+    }
+  }
+
   const excludedSet = new Set(data?.excludedIds ?? []);
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 1;
+  const pageRows = data?.rows ?? [];
+  const allPageExcluded = pageRows.length > 0 && pageRows.every((r) => excludedSet.has(Number(r.id)));
+
+  // 제외 헤더 체크박스: 현재 필터(검색결과 전체, 페이지 무관)에 일괄 적용
+  function handleBulkExclude() {
+    const total = data?.total ?? 0;
+    if (total === 0) return;
+    const excluded = !allPageExcluded;
+    const msg = excluded
+      ? `현재 검색된 ${total}건 전체를 집계에서 제외할까요?`
+      : `현재 검색된 ${total}건 전체의 제외를 해제할까요?`;
+    if (window.confirm(msg)) {
+      bulkExcludeMutation.mutate({ filters, owner: owner || undefined, excluded });
+    }
+  }
+
+  // 결제수단 필터 옵션 (실데이터 고유값)
+  const pmOptions: FilterOption[] = (filterOptions?.paymentMethods ?? []).map((v) => ({ value: v, label: v }));
+  const typeOptions: FilterOption[] = (filterOptions?.txTypes?.length
+    ? filterOptions.txTypes : ["수입", "지출", "이체"]).map((v) => ({ value: v, label: v }));
 
   return (
     <div className="space-y-4">
@@ -119,7 +193,6 @@ export function TransactionsTab() {
 
         {searchField === "category" ? (
           <div className="flex items-center gap-2 flex-wrap">
-            {/* L1 */}
             <select
               value={catL1}
               onChange={(e) => { setCatL1(e.target.value); setCatL2(""); setCatL3(""); }}
@@ -128,7 +201,6 @@ export function TransactionsTab() {
               <option value="">L1 전체</option>
               {L1_LIST.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
-            {/* L2 */}
             <select
               value={catL2}
               onChange={(e) => { setCatL2(e.target.value); setCatL3(""); }}
@@ -138,7 +210,6 @@ export function TransactionsTab() {
               <option value="">L2 전체</option>
               {(L2_BY_L1[catL1] ?? []).map((l2) => <option key={l2} value={l2}>{l2}</option>)}
             </select>
-            {/* L3 */}
             <select
               value={catL3}
               onChange={(e) => setCatL3(e.target.value)}
@@ -209,14 +280,17 @@ export function TransactionsTab() {
           </button>
         )}
 
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
           <span className="text-sm text-cream-500">
-            {filter ? (
+            {hasAnyFilter ? (
               <><span className="font-semibold text-cream-800">{data?.total ?? 0}</span>건 검색됨</>
             ) : (
               <>전체 <span className="font-semibold text-cream-800">{data?.total ?? 0}</span>건</>
             )}
           </span>
+          <Button size="sm" onClick={() => setShowManual(true)} className="whitespace-nowrap">
+            ✏️ 수기 입력
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => clearExclMutation.mutate()} disabled={clearExclMutation.isPending}
             className="text-xs text-cream-500 hover:text-cream-700 whitespace-nowrap">
             {clearExclMutation.isPending ? "해제 중..." : "제외 전체 해제"}
@@ -227,30 +301,91 @@ export function TransactionsTab() {
         </div>
       </div>
 
+      {/* 활성 컬럼 필터 요약 */}
+      {(colContent || colCats.length > 0 || colPMs.length > 0 || colTypes.length > 0) && (
+        <div className="flex items-center gap-2 flex-wrap text-xs px-1">
+          <span className="text-cream-400">컬럼 필터:</span>
+          {colContent && <span className="px-2 py-0.5 rounded-full bg-cream-100 text-cream-700">내용 "{colContent}"</span>}
+          {colCats.length > 0 && <span className="px-2 py-0.5 rounded-full bg-cream-100 text-cream-700">카테고리 {colCats.length}개</span>}
+          {colPMs.length > 0 && <span className="px-2 py-0.5 rounded-full bg-cream-100 text-cream-700">결제수단 {colPMs.length}개</span>}
+          {colTypes.length > 0 && <span className="px-2 py-0.5 rounded-full bg-cream-100 text-cream-700">타입 {colTypes.length}개</span>}
+          <button
+            onClick={() => { setColContent(""); setColCats([]); setColPMs([]); setColTypes([]); }}
+            className="text-red-400 hover:text-red-600 underline">모든 컬럼 필터 해제</button>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-cream-200 shadow-sm overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center h-40 text-cream-400">불러오는 중...</div>
-        ) : !data?.rows.length ? (
-          <div className="flex items-center justify-center h-40 text-cream-400">
-            {filter ? "검색 결과가 없습니다." : "거래 내역이 없습니다."}
-          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-cream-50">
                 <tr>
                   <th className="text-left px-4 py-3 text-cream-600 font-medium">날짜</th>
-                  <th className="text-left px-4 py-3 text-cream-600 font-medium">내용</th>
-                  <th className="text-left px-4 py-3 text-cream-600 font-medium">카테고리</th>
+                  <th className="text-left px-4 py-3 text-cream-600 font-medium">
+                    <div className="flex items-center gap-1">내용</div>
+                  </th>
+                  <th className="text-left px-4 py-3 text-cream-600 font-medium">
+                    <div className="flex items-center gap-1">
+                      카테고리
+                      <ColumnFilter title="카테고리" options={CATEGORY_FILTER_OPTIONS} selected={colCats} onChange={setColCats} />
+                    </div>
+                  </th>
                   <th className="text-right px-4 py-3 text-cream-600 font-medium">금액</th>
-                  <th className="text-center px-4 py-3 text-cream-600 font-medium">결제수단</th>
-                  <th className="text-center px-4 py-3 text-cream-600 font-medium">타입</th>
-                  <th className="text-center px-4 py-3 text-cream-600 font-medium">제외</th>
+                  <th className="text-center px-4 py-3 text-cream-600 font-medium">
+                    <div className="flex items-center justify-center gap-1">
+                      결제수단
+                      <ColumnFilter title="결제수단" options={pmOptions} selected={colPMs} onChange={setColPMs} />
+                    </div>
+                  </th>
+                  <th className="text-center px-4 py-3 text-cream-600 font-medium">
+                    <div className="flex items-center justify-center gap-1">
+                      타입
+                      <ColumnFilter title="타입" options={typeOptions} selected={colTypes} onChange={setColTypes} />
+                    </div>
+                  </th>
+                  <th className="text-center px-4 py-3 text-cream-600 font-medium">소유자</th>
+                  <th className="text-center px-4 py-3 text-cream-600 font-medium">
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span>제외</span>
+                      <input
+                        type="checkbox"
+                        checked={allPageExcluded}
+                        onChange={handleBulkExclude}
+                        disabled={bulkExcludeMutation.isPending || (data?.total ?? 0) === 0}
+                        className="accent-cream-700 cursor-pointer"
+                        title="검색결과 전체 제외/해제"
+                      />
+                    </div>
+                  </th>
                   <th className="text-left px-4 py-3 text-cream-600 font-medium">메모</th>
+                  <th className="text-center px-4 py-3 text-cream-600 font-medium">삭제</th>
+                </tr>
+                {/* 컬럼 필터 행 — 내용 텍스트 필터 */}
+                <tr className="border-t border-cream-100">
+                  <td className="px-4 py-1.5"></td>
+                  <td className="px-4 py-1.5">
+                    <input
+                      type="text"
+                      value={colContent}
+                      onChange={(e) => setColContent(e.target.value)}
+                      placeholder="내용 필터..."
+                      className="w-full max-w-[180px] border border-cream-200 rounded-md px-2 py-1 text-xs focus:outline-none focus:border-cream-400 bg-white"
+                    />
+                  </td>
+                  <td colSpan={8}></td>
                 </tr>
               </thead>
               <tbody>
-                {data.rows.map((row) => {
+                {pageRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="text-center py-10 text-cream-400">
+                      {hasAnyFilter ? "검색 결과가 없습니다." : "거래 내역이 없습니다."}
+                    </td>
+                  </tr>
+                ) : pageRows.map((row) => {
                   const isExcluded = excludedSet.has(Number(row.id));
                   return (
                     <tr
@@ -312,6 +447,9 @@ export function TransactionsTab() {
                           {row.txType as string}
                         </span>
                       </td>
+                      <td className="px-4 py-2.5 text-center text-xs text-cream-600 whitespace-nowrap">
+                        {((row as any).owner as string) ?? ""}
+                      </td>
                       <td className="px-4 py-2.5 text-center">
                         <input
                           type="checkbox"
@@ -330,6 +468,16 @@ export function TransactionsTab() {
                           initial={(row.memo as string) ?? ""}
                           onCommit={(memo) => memoMutation.mutate({ transactionId: Number(row.id), memo })}
                         />
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <button
+                          onClick={() => handleDelete(Number(row.id), row.content as string)}
+                          disabled={deleteMutation.isPending}
+                          className="text-cream-300 hover:text-red-500 transition-colors text-base leading-none disabled:opacity-50"
+                          title="이 거래 삭제"
+                        >
+                          🗑️
+                        </button>
                       </td>
                     </tr>
                   );
@@ -357,6 +505,10 @@ export function TransactionsTab() {
             다음 →
           </Button>
         </div>
+      )}
+
+      {showManual && (
+        <ManualEntryModal onClose={() => setShowManual(false)} onSaved={invalidateAll} />
       )}
     </div>
   );

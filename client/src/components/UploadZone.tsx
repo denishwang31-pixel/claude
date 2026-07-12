@@ -12,12 +12,16 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [owner, setOwner] = useState<"동현" | "혜진" | "">("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const utils = trpc.useUtils();
   const uploadMutation = trpc.budget.uploadTransactions.useMutation();
+
   const deleteMutation = trpc.budget.deleteAllTransactions.useMutation({
     onSuccess: (res) => {
-      toast.success(`${res.deleted}건의 데이터가 삭제되었습니다.`);
+      toast.success(`${res.deleted}건의 거래가 삭제되었습니다.`);
       setConfirmDelete(false);
       onSuccess?.();
     },
@@ -26,10 +30,27 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
     },
   });
 
+  const resetMutation = trpc.budget.resetAllData.useMutation({
+    onSuccess: (res) => {
+      toast.success(`전체 리셋 완료 — 거래 ${res.transactions}건, 매핑규칙 ${res.rules}개 삭제`);
+      setConfirmReset(false);
+      utils.budget.getCategoryRules.invalidate();
+      utils.budget.getSettings.invalidate();
+      onSuccess?.();
+    },
+    onError: (err: any) => {
+      toast.error(err?.message ?? "리셋 중 오류가 발생했습니다.");
+    },
+  });
+
   const { data: txData } = trpc.budget.getTransactions.useQuery({ page: 1, pageSize: 1 });
   const totalCount = txData?.total ?? 0;
 
   async function handleFile(file: File) {
+    if (!owner) {
+      toast.error("먼저 소유자(동현/혜진)를 선택해주세요.");
+      return;
+    }
     if (!file.name.match(/\.(xlsx|xls)$/i)) {
       toast.error("엑셀 파일(.xlsx, .xls)만 업로드 가능합니다.");
       return;
@@ -48,12 +69,12 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
       let totalSkipped = 0;
       for (let i = 0; i < rows.length; i += CHUNK) {
         const chunk = rows.slice(i, i + CHUNK);
-        const result = await uploadMutation.mutateAsync({ rows: chunk });
+        const result = await uploadMutation.mutateAsync({ rows: chunk, owner });
         totalInserted += result.inserted;
         totalSkipped += result.skipped;
       }
 
-      toast.success(`${totalInserted}건 업로드 완료 (중복 ${totalSkipped}건 제외)`);
+      toast.success(`${owner} 데이터 ${totalInserted}건 업로드 완료 (중복 ${totalSkipped}건 제외)`);
       onSuccess?.();
     } catch (err: any) {
       console.error(err);
@@ -83,19 +104,43 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
 
   return (
     <div className="space-y-3">
+      {/* 소유자 선택 */}
+      <div className="flex items-center gap-3 px-4 py-2.5 bg-white border border-cream-200 rounded-xl">
+        <span className="text-sm font-medium text-cream-700">이 파일의 소유자</span>
+        <div className="flex gap-1">
+          {(["동현", "혜진"] as const).map((o) => (
+            <button
+              key={o}
+              onClick={() => setOwner(o)}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                owner === o
+                  ? "bg-cream-700 text-white"
+                  : "bg-cream-50 text-cream-500 hover:bg-cream-100 border border-cream-200"
+              )}
+            >
+              {o}
+            </button>
+          ))}
+        </div>
+        {!owner && <span className="text-xs text-red-400">← 선택해야 업로드할 수 있어요</span>}
+      </div>
+
       {/* Upload drop zone */}
       <div
         className={cn(
-          "border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all",
-          dragging
-            ? "border-cream-600 bg-cream-100"
-            : "border-cream-300 hover:border-cream-500 hover:bg-cream-50",
+          "border-2 border-dashed rounded-xl p-10 text-center transition-all",
+          !owner
+            ? "border-cream-200 opacity-50 cursor-not-allowed"
+            : dragging
+            ? "border-cream-600 bg-cream-100 cursor-pointer"
+            : "border-cream-300 hover:border-cream-500 hover:bg-cream-50 cursor-pointer",
           loading && "opacity-60 pointer-events-none"
         )}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragOver={(e) => { e.preventDefault(); if (owner) setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        onClick={() => inputRef.current?.click()}
+        onClick={() => owner && inputRef.current?.click()}
       >
         <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onFileChange} />
         <div className="flex flex-col items-center gap-3">
@@ -105,7 +150,9 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
           ) : (
             <>
               <p className="text-cream-700 font-medium">
-                뱅크샐러드 엑셀 파일을 드래그하거나 클릭하여 업로드
+                {owner
+                  ? `${owner}의 뱅크샐러드 엑셀 파일을 드래그하거나 클릭하여 업로드`
+                  : "위에서 소유자를 먼저 선택하세요"}
               </p>
               <p className="text-cream-500 text-sm">.xlsx / .xls 파일 지원</p>
             </>
@@ -115,36 +162,68 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
 
       {/* Data management bar */}
       {totalCount > 0 && (
-        <div className="flex items-center justify-between px-4 py-2.5 bg-cream-50 border border-cream-200 rounded-xl text-sm">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-cream-50 border border-cream-200 rounded-xl text-sm flex-wrap gap-2">
           <span className="text-cream-600">
             현재 저장된 내역: <span className="font-semibold text-cream-800">{totalCount.toLocaleString()}건</span>
           </span>
 
-          {confirmDelete ? (
-            <div className="flex items-center gap-2">
-              <span className="text-red-600 font-medium text-xs">전체 삭제할까요?</span>
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* 거래 전체 삭제 (규칙·설정은 유지) */}
+            {confirmDelete ? (
+              <div className="flex items-center gap-2">
+                <span className="text-red-600 font-medium text-xs">거래만 전체 삭제할까요?</span>
+                <button
+                  onClick={() => deleteMutation.mutate()}
+                  disabled={deleteMutation.isPending}
+                  className="px-3 py-1 bg-red-500 text-white rounded-md text-xs hover:bg-red-600 disabled:opacity-50 transition-colors"
+                >
+                  {deleteMutation.isPending ? "삭제 중..." : "삭제"}
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="px-3 py-1 bg-cream-200 text-cream-700 rounded-md text-xs hover:bg-cream-300 transition-colors"
+                >
+                  취소
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={() => deleteMutation.mutate()}
-                disabled={deleteMutation.isPending}
-                className="px-3 py-1 bg-red-500 text-white rounded-md text-xs hover:bg-red-600 disabled:opacity-50 transition-colors"
+                onClick={() => { setConfirmDelete(true); setConfirmReset(false); }}
+                className="text-xs text-red-400 hover:text-red-600 hover:underline transition-colors"
               >
-                {deleteMutation.isPending ? "삭제 중..." : "삭제"}
+                거래 전체 삭제
               </button>
+            )}
+
+            {/* 전체 리셋 (거래+규칙+설정 모두) */}
+            {confirmReset ? (
+              <div className="flex items-center gap-2">
+                <span className="text-red-600 font-medium text-xs">
+                  거래·매핑규칙·설정을 모두 삭제합니다. 되돌릴 수 없어요!
+                </span>
+                <button
+                  onClick={() => resetMutation.mutate()}
+                  disabled={resetMutation.isPending}
+                  className="px-3 py-1 bg-red-600 text-white rounded-md text-xs hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  {resetMutation.isPending ? "리셋 중..." : "전체 리셋 실행"}
+                </button>
+                <button
+                  onClick={() => setConfirmReset(false)}
+                  className="px-3 py-1 bg-cream-200 text-cream-700 rounded-md text-xs hover:bg-cream-300 transition-colors"
+                >
+                  취소
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={() => setConfirmDelete(false)}
-                className="px-3 py-1 bg-cream-200 text-cream-700 rounded-md text-xs hover:bg-cream-300 transition-colors"
+                onClick={() => { setConfirmReset(true); setConfirmDelete(false); }}
+                className="px-3 py-1 rounded-md text-xs font-medium bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 transition-colors"
               >
-                취소
+                🔄 데이터 리셋
               </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="text-xs text-red-400 hover:text-red-600 hover:underline transition-colors"
-            >
-              전체 삭제
-            </button>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>

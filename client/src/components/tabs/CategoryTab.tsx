@@ -3,7 +3,7 @@ import { trpc } from "../../lib/trpc";
 import { formatKRW } from "../../lib/format";
 import { CategoryDetailModal } from "../CategoryDetailModal";
 import { cn } from "../../lib/utils";
-import { getL2, L2_ORDER, L2_COLOR, categoryDisplay } from "../../lib/categories";
+import { getL2, L2_ORDER, L2_COLOR, L2_BY_L1, categoryDisplay } from "../../lib/categories";
 import { DateRangeFilter } from "../DateRangeFilter";
 import { DateParts, buildDateRange } from "../../lib/dateRange";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
@@ -11,6 +11,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 interface Props {
   includeTransfer: boolean;
   excludedCategories: string[];
+  owner?: string;
 }
 
 const EMPTY_DATE: DateParts = { y: "", m: "", d: "" };
@@ -30,7 +31,7 @@ const L1_TEXT: Record<string, string> = {
   expense: "text-red-500",
 };
 
-export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
+export function CategoryTab({ includeTransfer, excludedCategories, owner }: Props) {
   const [l1Filter, setL1Filter] = useState<L1Filter>("expense");
   const [expandedL2, setExpandedL2] = useState<string | null>(null);
   const [selectedL3, setSelectedL3] = useState<string | null>(null);
@@ -41,15 +42,16 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
 
   const range = buildDateRange(dateStart, dateEnd);
   const dateParams = range ? { dateStart: range.start, dateEnd: range.end } : {};
+  const ownerParam = owner ? { owner } : {};
 
   const { data: catStats, isLoading, error } = trpc.budget.getCategoryStats.useQuery({
-    includeTransfer, excludedCategories, ...dateParams,
+    includeTransfer, excludedCategories, ...dateParams, ...ownerParam,
   });
 
   // L3 merchant data for selectedL3 — 방향(수입/지출)을 넘겨 환불이 섞이지 않게
   const l3Direction = selectedL3L1 === "income" ? "income" : selectedL3L1 === "expense" ? "expense" : undefined;
   const { data: l3Data, isLoading: l3Loading } = trpc.budget.getL3Stats.useQuery(
-    { category: selectedL3!, direction: l3Direction, ...dateParams },
+    { category: selectedL3!, direction: l3Direction, ...dateParams, ...ownerParam },
     { enabled: !!selectedL3 && !showModal }
   );
 
@@ -63,9 +65,9 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
 
     // 정의된 L2 그룹은 데이터가 없어도 0원으로 항상 노출 (분류 체계 전체를 보여줌)
     const BASE_L2: { expense: string[]; savings: string[]; income: string[] } = {
-      expense: ["생활", "교통/통신", "여가/문화", "건강", "금융", "기타"],
-      savings: ["저축", "투자"],
-      income:  ["수입"],
+      expense: L2_BY_L1.expense,
+      savings: L2_BY_L1.savings,
+      income:  L2_BY_L1.income,
     };
     const seedZero = (groups: string[], l1: string) => {
       for (const l2 of groups) if (!l2Map[l2]) l2Map[l2] = { l1, total: 0, count: 0 };
@@ -325,6 +327,7 @@ export function CategoryTab({ includeTransfer, excludedCategories }: Props) {
           category={selectedL3}
           dateStart={range?.start}
           dateEnd={range?.end}
+          owner={owner}
           onClose={() => { setShowModal(false); }}
         />
       )}

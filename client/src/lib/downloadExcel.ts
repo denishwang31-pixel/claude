@@ -14,6 +14,7 @@ interface TransactionRow {
   currency: string;
   paymentMethod?: string | null;
   memo?: string | null;
+  owner?: string | null;
   customCategory?: string | null;
   dedupHash?: string;
 }
@@ -45,6 +46,7 @@ export function downloadTransactionsExcel(
       금액: amt,                 // 숫자
       화폐: r.currency,
       결제수단: r.paymentMethod ?? "",
+      소유자: r.owner ?? "",
       메모: r.memo ?? "",
       제외여부: excludedSet.has(Number(r.id)) ? "제외" : "",
     };

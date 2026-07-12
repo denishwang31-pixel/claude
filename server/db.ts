@@ -51,6 +51,8 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
     `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS "dashboardMemos" text DEFAULT '{}'`,
     // 규칙 매칭 결과를 굳혀두는 컬럼 (읽기 시점 상관 서브쿼리 제거용)
     `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS "ruleCategory" varchar(64)`,
+    // 데이터 소유자 (동현/혜진) — 업로드/수기입력 시 지정
+    `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS "owner" varchar(16)`,
     // 구 카테고리 → 새 카테고리 키로 이관 (아래 '정리' 단계보다 먼저 실행되어야 함)
     remapStep("transactions", "customCategory"),
     remapStep("transactions", "ruleCategory"),
@@ -486,7 +488,8 @@ export async function getMonthlyStats(
   userId: number,
   includeTransfer: boolean,
   extraExcluded: string[],
-  _excludedIds: number[]
+  _excludedIds: number[],
+  owner?: string
 ) {
   const db = await getDb();
   if (!db) return [];
@@ -514,6 +517,7 @@ export async function getMonthlyStats(
          AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL})
          ${catExcludeSQL}
          ${notExcludedSQL}
+         ${ownerSQL(owner)}
        GROUP BY TO_CHAR(t."txDate", 'YYYY-MM')
        ORDER BY TO_CHAR(t."txDate", 'YYYY-MM')`
     )),
@@ -525,6 +529,7 @@ export async function getMonthlyStats(
          AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL})
          ${catExcludeSQL}
          ${notExcludedSQL}
+         ${ownerSQL(owner)}
        GROUP BY TO_CHAR(t."txDate", 'YYYY-MM')
        ORDER BY TO_CHAR(t."txDate", 'YYYY-MM')`
     )),
@@ -545,7 +550,8 @@ export async function getCategoryStats(
   _excludedIds: number[],
   yearMonth?: string,
   dateStart?: string,
-  dateEnd?: string
+  dateEnd?: string,
+  owner?: string
 ) {
   const db = await getDb();
   if (!db) return [];
@@ -582,6 +588,7 @@ export async function getCategoryStats(
        WHERE t."userId" = ${userId}
          ${monthSQL}
          ${dateRangeSQL(dateStart, dateEnd)}
+         ${ownerSQL(owner)}
          AND (
            ((${effectiveCatExpr}) IN (${savingsCatsSQL}) ${notExcludedSQL})
            OR
@@ -607,7 +614,8 @@ export async function getPivotData(
   extraExcluded: string[],
   _excludedIds: number[],
   dateStart?: string,
-  dateEnd?: string
+  dateEnd?: string,
+  owner?: string
 ) {
   const db = await getDb();
   if (!db) return [];
@@ -643,6 +651,7 @@ export async function getPivotData(
        FROM transactions t
        WHERE t."userId" = ${userId}
          ${dateRangeSQL(dateStart, dateEnd)}
+         ${ownerSQL(owner)}
          AND (
            ((${effectiveCatExpr}) IN (${savingsCatsSQL}) ${notExcludedSQL})
            OR
@@ -669,7 +678,8 @@ export async function getKpiSummary(
   extraExcluded: string[],
   _excludedIds: number[],
   dateStart?: string,
-  dateEnd?: string
+  dateEnd?: string,
+  owner?: string
 ) {
   const db = await getDb();
   if (!db) return { totalIncome: 0, totalSavings: 0, totalExpense: 0, monthCount: 0 };
@@ -701,7 +711,7 @@ export async function getKpiSummary(
                      AND (${effectiveCatExpr}) NOT IN (${transferExcludeSQL}) AND ${notExcl}
                 THEN -t.amount::numeric ELSE 0 END) as expense,
        COUNT(DISTINCT TO_CHAR(t."txDate", 'YYYY-MM')) as months
-     FROM transactions t WHERE t."userId" = ${userId} ${dateRangeSQL(dateStart, dateEnd)}`
+     FROM transactions t WHERE t."userId" = ${userId} ${dateRangeSQL(dateStart, dateEnd)} ${ownerSQL(owner)}`
   ));
 
   const r = (rows as any[])[0];
@@ -720,7 +730,8 @@ export async function getL3Stats(
   yearMonth?: string,
   direction?: "income" | "expense",
   dateStart?: string,
-  dateEnd?: string
+  dateEnd?: string,
+  owner?: string
 ): Promise<{ content: string; total: number; count: number }[]> {
   const db = await getDb();
   if (!db) return [];
@@ -747,6 +758,7 @@ export async function getL3Stats(
        ${signSQL}
        ${monthSQL}
        ${dateRangeSQL(dateStart, dateEnd)}
+       ${ownerSQL(owner)}
        ${notExcludedSQL}
      GROUP BY t.content
      ORDER BY total DESC`
@@ -759,6 +771,13 @@ export async function getL3Stats(
   }));
 }
 
+/** 소유자 필터 SQL — 'AND ...' 형태, 유효한 값(동현/혜진)일 때만 적용 */
+export const OWNERS = ["동현", "혜진"];
+function ownerSQL(owner?: string): string {
+  if (!owner || !OWNERS.includes(owner)) return "";
+  return `AND t."owner" = '${owner}'`;
+}
+
 /** 기간(날짜) 필터 SQL 조건 — 'AND ...' 형태로 반환, 값이 없으면 빈 문자열.
  *  대시보드/카테고리별 화면에서 기간별 집계를 위해 각 WHERE에 주입한다. */
 function dateRangeSQL(dateStart?: string, dateEnd?: string): string {
@@ -766,6 +785,14 @@ function dateRangeSQL(dateStart?: string, dateEnd?: string): string {
   if (dateStart && /^\d{4}-\d{2}-\d{2}$/.test(dateStart)) parts.push(`t."txDate" >= '${dateStart}'`);
   if (dateEnd && /^\d{4}-\d{2}-\d{2}$/.test(dateEnd)) parts.push(`t."txDate" <= '${dateEnd}'`);
   return parts.length ? "AND " + parts.join(" AND ") : "";
+}
+
+/** JSON 배열 문자열 → string[] (실패 시 빈 배열) */
+function parseJsonList(query: string): string[] {
+  try {
+    const v = JSON.parse(query);
+    return Array.isArray(v) ? v.map((x) => String(x)) : [];
+  } catch { return []; }
 }
 
 /** 전체 거래 내역 */
@@ -793,6 +820,23 @@ function buildTxSearchSQL(userId: number, field: string, query: string): string 
       if (e && /^\d{4}-\d{2}-\d{2}$/.test(e)) conds.push(`t."txDate" <= '${esc(e)}'`);
       return conds.length ? conds.join(" AND ") : "TRUE";
     }
+    // ── 엑셀식 컬럼 필터 (값은 JSON 배열 문자열) ──────────────
+    case "catIn": {   // 카테고리(L3 키) 다중 선택
+      const list = parseJsonList(query);
+      if (!list.length) return "TRUE";
+      const expr = buildEffectiveCategoryExpr(userId);
+      return `(${expr}) IN (${list.map((c) => `'${esc(c)}'`).join(",")})`;
+    }
+    case "pmIn": {    // 결제수단 다중 선택 ("(없음)" = 빈 값)
+      const list = parseJsonList(query);
+      if (!list.length) return "TRUE";
+      return `COALESCE(t."paymentMethod",'') IN (${list.map((c) => `'${esc(c === "(없음)" ? "" : c)}'`).join(",")})`;
+    }
+    case "typeIn": {  // 타입 다중 선택
+      const list = parseJsonList(query);
+      if (!list.length) return "TRUE";
+      return `t."txType" IN (${list.map((c) => `'${esc(c)}'`).join(",")})`;
+    }
     case "categories": {
       // query = "{l1}|{콤마구분 L3목록}" — 부호로 입출금 방향까지 맞춰 화면 표기와 일치
       const [l1Part, catsPart] = query.includes("|") ? query.split("|") : ["", query];
@@ -810,25 +854,36 @@ function buildTxSearchSQL(userId: number, field: string, query: string): string 
   }
 }
 
+/** 검색 필터 목록 → 'AND ...' SQL (모두 AND 결합) */
+function buildFiltersSQL(userId: number, filters?: { field: string; query: string }[], owner?: string): string {
+  const parts: string[] = [];
+  for (const f of filters ?? []) {
+    if (f?.query?.trim()) parts.push(`AND ${buildTxSearchSQL(userId, f.field, f.query.trim())}`);
+  }
+  const os = ownerSQL(owner);
+  if (os) parts.push(os);
+  return parts.join(" ");
+}
+
 export async function getAllTransactions(
   userId: number,
   page = 1,
   pageSize = 50,
-  filter?: { field: string; query: string }
+  filters?: { field: string; query: string }[],
+  owner?: string
 ) {
   const db = await getDb();
   if (!db) return { rows: [], total: 0, excludedIds: new Set<number>() };
 
   const offset = (page - 1) * pageSize;
   const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
-  const hasFilter = !!filter?.query?.trim();
-  const filterSQL = hasFilter ? `AND ${buildTxSearchSQL(userId, filter!.field, filter!.query.trim())}` : "";
+  const filterSQL = buildFiltersSQL(userId, filters, owner);
 
   const [rows, countRows, excludedIds] = await Promise.all([
     db.execute(sql.raw(
       `SELECT id, "txDate"::text as "txDate", "txTime", "txType", category, "customCategory",
               (${effectiveCatExpr}) as "effectiveCategory",
-              content, amount::text as amount, currency, "paymentMethod", memo
+              content, amount::text as amount, currency, "paymentMethod", memo, "owner"
        FROM transactions t
        WHERE t."userId" = ${userId} ${filterSQL}
        ORDER BY t."txDate" DESC, t."txTime" DESC
@@ -866,7 +921,7 @@ export async function getAllTransactionsForExport(userId: number) {
     `SELECT id, "txDate"::text as "txDate", "txTime", "txType",
             category, "subCategory", "customCategory",
             (${effectiveCatExpr}) as "effectiveCategory",
-            content, amount::text as amount, currency, "paymentMethod", memo, "dedupHash"
+            content, amount::text as amount, currency, "paymentMethod", memo, "owner", "dedupHash"
      FROM transactions t
      WHERE t."userId" = ${userId}
      ORDER BY t."txDate" DESC, t."txTime" DESC`
@@ -882,7 +937,8 @@ export async function getCategoryTransactions(
   pageSize = 50,
   yearMonth?: string,
   dateStart?: string,
-  dateEnd?: string
+  dateEnd?: string,
+  owner?: string
 ) {
   const db = await getDb();
   if (!db) return { rows: [], total: 0 };
@@ -900,7 +956,7 @@ export async function getCategoryTransactions(
          WHERE et."userId" = ${userId} AND et."transactionId" = t.id
        )`;
   const monthFilter = (yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "")
-    + " " + dateRangeSQL(dateStart, dateEnd);
+    + " " + dateRangeSQL(dateStart, dateEnd) + " " + ownerSQL(owner);
   // '수입'은 단일 카테고리로 통합 — 양수·비저축·비이체 전체가 수입
   const catMatch = category === "수입"
     ? `sub.amount::numeric > 0 AND sub."effectiveCategory" NOT IN (${savingsCatsSQL}) AND sub."effectiveCategory" <> '이체'`
@@ -953,6 +1009,98 @@ export async function deleteAllTransactions(userId: number): Promise<number> {
   await db.execute(sql`DELETE FROM excluded_transactions WHERE "userId" = ${userId}`);
   const result = await db.execute(sql`DELETE FROM transactions WHERE "userId" = ${userId} RETURNING id`);
   return (result as any[]).length;
+}
+
+/** 전체 리셋 — 거래·제외·매핑규칙·설정(메모/제외카테고리)까지 모두 삭제해 빈 상태로 되돌린다. */
+export async function resetAllData(userId: number): Promise<{ transactions: number; rules: number }> {
+  const db = await getDb();
+  if (!db) return { transactions: 0, rules: 0 };
+  await db.execute(sql`DELETE FROM excluded_transactions WHERE "userId" = ${userId}`);
+  const tx = await db.execute(sql`DELETE FROM transactions WHERE "userId" = ${userId} RETURNING id`);
+  const rules = await db.execute(sql`DELETE FROM category_rules WHERE "userId" = ${userId} RETURNING id`);
+  await db.execute(sql`DELETE FROM user_settings WHERE "userId" = ${userId}`);
+  return { transactions: (tx as any[]).length, rules: (rules as any[]).length };
+}
+
+/** 거래 1건 삭제 (제외 표시도 함께 정리) */
+export async function deleteTransaction(userId: number, transactionId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  await db.execute(sql`DELETE FROM excluded_transactions WHERE "userId" = ${userId} AND "transactionId" = ${transactionId}`);
+  const res = await db.execute(
+    sql`DELETE FROM transactions WHERE "userId" = ${userId} AND id = ${transactionId} RETURNING id`
+  );
+  return (res as any[]).length > 0;
+}
+
+/** 수기 입력 거래 추가. 선택한 카테고리는 customCategory로 저장되어
+ *  effectiveCategory 최우선으로 반영된다. dedupHash는 무작위 suffix로 충돌 방지. */
+export async function addManualTransaction(userId: number, input: {
+  txDate: string; txTime?: string; txType: string; category: string;
+  content: string; amount: number; paymentMethod: string; memo?: string; owner?: string;
+}): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const { createHash } = await import("node:crypto");
+  const dedupHash = createHash("sha256")
+    .update(`manual|${userId}|${input.txDate}|${input.content}|${input.amount}|${Date.now()}|${Math.random()}`)
+    .digest("hex");
+  const res = await db.execute(sql`
+    INSERT INTO transactions ("userId", "txDate", "txTime", "txType", category, "customCategory",
+                              content, amount, currency, "paymentMethod", memo, "owner", "dedupHash")
+    VALUES (${userId}, ${input.txDate}, ${input.txTime ?? ""}, ${input.txType}, ${"수기입력"}, ${input.category},
+            ${input.content}, ${String(input.amount)}, ${"KRW"}, ${input.paymentMethod}, ${input.memo ?? ""},
+            ${input.owner ?? null}, ${dedupHash})
+    RETURNING id
+  `);
+  return Number((res as any[])[0]?.id ?? null);
+}
+
+/** 현재 검색 필터에 매칭되는 모든 거래를 일괄 제외/제외해제 (페이지 무관, 전체 결과 대상) */
+export async function setExcludedByFilters(
+  userId: number,
+  filters: { field: string; query: string }[],
+  owner: string | undefined,
+  excluded: boolean
+): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const filterSQL = buildFiltersSQL(userId, filters, owner);
+  if (excluded) {
+    const res = await db.execute(sql.raw(
+      `INSERT INTO excluded_transactions ("userId", "transactionId")
+       SELECT ${userId}, t.id FROM transactions t
+       WHERE t."userId" = ${userId} ${filterSQL}
+       ON CONFLICT DO NOTHING
+       RETURNING "transactionId"`
+    ));
+    return (res as any[]).length;
+  } else {
+    const res = await db.execute(sql.raw(
+      `DELETE FROM excluded_transactions et
+       WHERE et."userId" = ${userId}
+         AND et."transactionId" IN (
+           SELECT t.id FROM transactions t WHERE t."userId" = ${userId} ${filterSQL}
+         )
+       RETURNING "transactionId"`
+    ));
+    return (res as any[]).length;
+  }
+}
+
+/** 컬럼 필터 드롭다운용 고유값 목록 (결제수단/타입/소유자) */
+export async function getFilterOptions(userId: number): Promise<{
+  paymentMethods: string[]; txTypes: string[]; owners: string[];
+}> {
+  const db = await getDb();
+  if (!db) return { paymentMethods: [], txTypes: [], owners: [] };
+  const [pms, types, owners] = await Promise.all([
+    db.execute(sql`SELECT DISTINCT COALESCE("paymentMethod",'') AS v FROM transactions WHERE "userId" = ${userId} ORDER BY v`),
+    db.execute(sql`SELECT DISTINCT "txType" AS v FROM transactions WHERE "userId" = ${userId} ORDER BY v`),
+    db.execute(sql`SELECT DISTINCT COALESCE("owner",'') AS v FROM transactions WHERE "userId" = ${userId} ORDER BY v`),
+  ]);
+  const norm = (rows: any) => (rows as any[]).map((r) => String(r.v) === "" ? "(없음)" : String(r.v));
+  return { paymentMethods: norm(pms), txTypes: (types as any[]).map((r) => String(r.v)), owners: norm(owners) };
 }
 
 /** 카테고리 수정 */

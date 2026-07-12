@@ -11,12 +11,13 @@ interface Props {
   yearMonth?: string;
   dateStart?: string;
   dateEnd?: string;
+  owner?: string;
   onClose: () => void;
 }
 
 const PAGE_SIZE = 30;
 
-export function CategoryDetailModal({ category, yearMonth, dateStart, dateEnd, onClose }: Props) {
+export function CategoryDetailModal({ category, yearMonth, dateStart, dateEnd, owner, onClose }: Props) {
   const [page, setPage] = useState(1);
 
   const { data, isLoading, refetch } = trpc.budget.getCategoryTransactions.useQuery({
@@ -26,6 +27,7 @@ export function CategoryDetailModal({ category, yearMonth, dateStart, dateEnd, o
     yearMonth,
     dateStart,
     dateEnd,
+    owner: owner || undefined,
   });
 
   const toggleMutation = trpc.budget.toggleExcluded.useMutation({

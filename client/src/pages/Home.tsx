@@ -38,10 +38,13 @@ export default function Home() {
   // 대시보드 기간 필터 (월별 요약에는 적용 안 함)
   const [dashStart, setDashStart] = useState<DateParts>(EMPTY_DATE);
   const [dashEnd, setDashEnd] = useState<DateParts>(EMPTY_DATE);
+  // 전역 소유자 필터 ('' = 전체) — 모든 화면의 데이터에 적용
+  const [ownerFilter, setOwnerFilter] = useState<"" | "동현" | "혜진">("");
   const { theme, toggleTheme } = useTheme();
 
   const dashRange = buildDateRange(dashStart, dashEnd);
   const dateParams = dashRange ? { dateStart: dashRange.start, dateEnd: dashRange.end } : {};
+  const ownerParam = ownerFilter ? { owner: ownerFilter } : {};
 
   const utils = trpc.useUtils();
   const { data: settings } = trpc.budget.getSettings.useQuery();
@@ -54,18 +57,21 @@ export default function Home() {
     includeTransfer,
     excludedCategories,
     ...dateParams,
+    ...ownerParam,
   });
 
   const { data: catStats, isLoading: catLoading } = trpc.budget.getCategoryStats.useQuery({
     includeTransfer,
     excludedCategories,
     ...dateParams,
+    ...ownerParam,
   });
 
   const { data: pivotData } = trpc.budget.getPivotData.useQuery({
     includeTransfer,
     excludedCategories,
     ...dateParams,
+    ...ownerParam,
   });
 
   useEffect(() => {
@@ -135,6 +141,22 @@ export default function Home() {
                 <span>데이터 업로드</span>
               </button>
             )}
+            {/* 소유자 필터 (모든 화면에 적용) */}
+            <div className="flex items-center rounded-lg border border-cream-200 overflow-hidden">
+              {([["", "전체"], ["동현", "동현"], ["혜진", "혜진"]] as const).map(([val, label]) => (
+                <button
+                  key={label}
+                  onClick={() => setOwnerFilter(val as "" | "동현" | "혜진")}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                    ownerFilter === val
+                      ? "bg-cream-700 text-white"
+                      : "text-cream-500 hover:bg-cream-100"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <button
               onClick={runDiagnostics}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-cream-200 text-cream-600 hover:bg-cream-100 transition-colors"
@@ -265,15 +287,17 @@ export default function Home() {
           <MonthlySummaryTab
             includeTransfer={includeTransfer}
             excludedCategories={excludedCategories}
+            owner={ownerFilter}
           />
         )}
         {activeTab === "category" && (
           <CategoryTab
             includeTransfer={includeTransfer}
             excludedCategories={excludedCategories}
+            owner={ownerFilter}
           />
         )}
-        {activeTab === "transactions" && <TransactionsTab />}
+        {activeTab === "transactions" && <TransactionsTab owner={ownerFilter} />}
         {activeTab === "mapping" && <MappingRulesTab />}
       </main>
 

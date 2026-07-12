@@ -9,21 +9,25 @@ import { cn } from "../../lib/utils";
 interface Props {
   includeTransfer: boolean;
   excludedCategories: string[];
+  owner?: string;
 }
 
-export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props) {
+export function MonthlySummaryTab({ includeTransfer, excludedCategories, owner }: Props) {
   const [selectedYearMonth, setSelectedYearMonth] = useState<string | null>(null);
   const [detailCategory, setDetailCategory] = useState<string | null>(null);
   const [yearFilter, setYearFilter] = useState("");
 
+  const ownerParam = owner ? { owner } : {};
   const { data: monthly, isLoading } = trpc.budget.getMonthlyStats.useQuery({
     includeTransfer,
     excludedCategories,
+    ...ownerParam,
   });
 
   const { data: pivot } = trpc.budget.getPivotData.useQuery({
     includeTransfer,
     excludedCategories,
+    ...ownerParam,
   });
 
   // Merge income/expense into bar chart data
@@ -233,6 +237,7 @@ export function MonthlySummaryTab({ includeTransfer, excludedCategories }: Props
         <CategoryDetailModal
           category={detailCategory}
           yearMonth={selectedYearMonth ?? undefined}
+          owner={owner}
           onClose={() => setDetailCategory(null)}
         />
       )}

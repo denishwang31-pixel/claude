@@ -34,6 +34,11 @@ import {
   updateTransactionMemo,
   getExcludedTransactionIds,
   deleteAllTransactions,
+  resetAllData,
+  deleteTransaction,
+  addManualTransaction,
+  setExcludedByFilters,
+  getFilterOptions,
   categoryToRuleType,
 } from "./db";
 import { getDb } from "./db";
@@ -87,6 +92,7 @@ const budgetRouter = router({
     .input(
       z.object({
         rows: z.array(TransactionRowSchema),
+        owner: z.enum(["동현", "혜진"]),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -118,6 +124,7 @@ const budgetRouter = router({
         currency: r.currency,
         paymentMethod: r.paymentMethod,
         memo: r.memo,
+        owner: input.owner,
         dedupHash: r.dedupHash,
       }));
 
@@ -135,6 +142,58 @@ const budgetRouter = router({
   deleteAllTransactions: protectedProcedure.mutation(async ({ ctx }) => {
     const deleted = await deleteAllTransactions(ctx.user.id);
     return { deleted };
+  }),
+
+  // ── 전체 리셋 (거래·규칙·제외·설정 모두 삭제) ───────────────
+  resetAllData: protectedProcedure.mutation(async ({ ctx }) => {
+    return resetAllData(ctx.user.id);
+  }),
+
+  // ── 거래 1건 삭제 ────────────────────────────────────────────
+  deleteTransaction: protectedProcedure
+    .input(z.object({ transactionId: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      const ok = await deleteTransaction(ctx.user.id, input.transactionId);
+      return { ok };
+    }),
+
+  // ── 수기 입력 추가 ───────────────────────────────────────────
+  addTransaction: protectedProcedure
+    .input(
+      z.object({
+        txDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        txTime: z.string().optional(),
+        txType: z.enum(["수입", "지출"]),
+        category: z.string().min(1),
+        content: z.string().min(1),
+        amount: z.number(),
+        paymentMethod: z.enum(["카드", "이체", "현금"]),
+        memo: z.string().optional(),
+        owner: z.enum(["동현", "혜진"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const id = await addManualTransaction(ctx.user.id, input);
+      return { id };
+    }),
+
+  // ── 검색결과 일괄 제외/해제 (페이지 무관 전체 매칭 대상) ─────
+  setExcludedByFilters: protectedProcedure
+    .input(
+      z.object({
+        filters: z.array(z.object({ field: z.string(), query: z.string() })).default([]),
+        owner: z.string().optional(),
+        excluded: z.boolean(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const count = await setExcludedByFilters(ctx.user.id, input.filters, input.owner, input.excluded);
+      return { count };
+    }),
+
+  // ── 컬럼 필터 옵션 (고유값 목록) ─────────────────────────────
+  getFilterOptions: protectedProcedure.query(async ({ ctx }) => {
+    return getFilterOptions(ctx.user.id);
   }),
 
   // ── 현재 사용자 ──────────────────────────────────────────────
@@ -181,10 +240,11 @@ const budgetRouter = router({
         excludedCategories: z.array(z.string()).default([]),
         dateStart: z.string().optional(),
         dateEnd: z.string().optional(),
+        owner: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      return getKpiSummary(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.dateStart, input.dateEnd);
+      return getKpiSummary(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.dateStart, input.dateEnd, input.owner);
     }),
 
   // ── 월별 통계 ────────────────────────────────────────────────
@@ -193,10 +253,11 @@ const budgetRouter = router({
       z.object({
         includeTransfer: z.boolean().default(false),
         excludedCategories: z.array(z.string()).default([]),
+        owner: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      return getMonthlyStats(ctx.user.id, input.includeTransfer, input.excludedCategories, []);
+      return getMonthlyStats(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.owner);
     }),
 
   // ── 카테고리별 통계 ──────────────────────────────────────────
@@ -208,10 +269,11 @@ const budgetRouter = router({
         yearMonth: z.string().optional(),
         dateStart: z.string().optional(),
         dateEnd: z.string().optional(),
+        owner: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      return getCategoryStats(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.yearMonth, input.dateStart, input.dateEnd);
+      return getCategoryStats(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.yearMonth, input.dateStart, input.dateEnd, input.owner);
     }),
 
   // ── 피벗 데이터 ──────────────────────────────────────────────
@@ -222,10 +284,11 @@ const budgetRouter = router({
         excludedCategories: z.array(z.string()).default([]),
         dateStart: z.string().optional(),
         dateEnd: z.string().optional(),
+        owner: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      return getPivotData(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.dateStart, input.dateEnd);
+      return getPivotData(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.dateStart, input.dateEnd, input.owner);
     }),
 
   // ── 저축/투자 통계 ───────────────────────────────────────────
@@ -240,14 +303,21 @@ const budgetRouter = router({
         page: z.number().int().positive().default(1),
         pageSize: z.number().int().positive().max(200).default(50),
         filter: z.object({ field: z.string(), query: z.string() }).optional(),
+        filters: z.array(z.object({ field: z.string(), query: z.string() })).optional(),
+        owner: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
+      const allFilters = [
+        ...(input.filter ? [input.filter] : []),
+        ...(input.filters ?? []),
+      ];
       const { rows, total, excludedIds } = await getAllTransactions(
         ctx.user.id,
         input.page,
         input.pageSize,
-        input.filter
+        allFilters,
+        input.owner
       );
       return {
         rows,
@@ -268,6 +338,7 @@ const budgetRouter = router({
         yearMonth: z.string().optional(),
         dateStart: z.string().optional(),
         dateEnd: z.string().optional(),
+        owner: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -278,7 +349,8 @@ const budgetRouter = router({
         input.pageSize,
         input.yearMonth,
         input.dateStart,
-        input.dateEnd
+        input.dateEnd,
+        input.owner
       );
     }),
 
@@ -431,9 +503,9 @@ const budgetRouter = router({
   }),
 
   getL3Stats: protectedProcedure
-    .input(z.object({ category: z.string(), yearMonth: z.string().optional(), direction: z.enum(["income", "expense"]).optional(), dateStart: z.string().optional(), dateEnd: z.string().optional() }))
+    .input(z.object({ category: z.string(), yearMonth: z.string().optional(), direction: z.enum(["income", "expense"]).optional(), dateStart: z.string().optional(), dateEnd: z.string().optional(), owner: z.string().optional() }))
     .query(async ({ ctx, input }) => {
-      return getL3Stats(ctx.user.id, input.category, input.yearMonth, input.direction, input.dateStart, input.dateEnd);
+      return getL3Stats(ctx.user.id, input.category, input.yearMonth, input.direction, input.dateStart, input.dateEnd, input.owner);
     }),
 });
 

@@ -49,6 +49,8 @@ export const transactions = pgTable("transactions", {
   currency: varchar("currency", { length: 8 }).default("KRW"),
   paymentMethod: varchar("paymentMethod", { length: 128 }),
   memo: text("memo"),
+  // 데이터 소유자 (동현/혜진) — 업로드/수기입력 시 지정, 화면 전체 필터에 사용
+  owner: varchar("owner", { length: 16 }),
   dedupHash: varchar("dedupHash", { length: 64 }).notNull().unique(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
