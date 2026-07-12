@@ -35,7 +35,6 @@ const CATEGORY_FILTER_OPTIONS: FilterOption[] = [
   { value: "저축", label: "저축", group: "저축/투자" },
   { value: "투자", label: "투자", group: "저축/투자" },
   { value: "수입", label: "수입", group: "수입" },
-  { value: "이체", label: "이체(집계제외)", group: "집계제외" },
 ];
 
 interface Props {
@@ -132,6 +131,14 @@ export function TransactionsTab({ owner }: Props) {
   const deleteMutation = trpc.budget.deleteTransaction.useMutation({
     onSuccess: () => { invalidateAll(); toast.success("삭제되었습니다."); },
     onError: () => toast.error("삭제에 실패했습니다."),
+  });
+
+  const autoExclMutation = trpc.budget.runAutoExclusions.useMutation({
+    onSuccess: (res) => {
+      invalidateAll();
+      toast.success(`자동 제외 검사 완료 — 상호이체 ${res.transferPairs}쌍, 카드취소 ${res.cardPairs}쌍 제외`);
+    },
+    onError: () => toast.error("자동 제외 검사에 실패했습니다."),
   });
 
   const clearExclMutation = trpc.budget.clearAllExclusions.useMutation({
@@ -290,6 +297,10 @@ export function TransactionsTab({ owner }: Props) {
           </span>
           <Button size="sm" onClick={() => setShowManual(true)} className="whitespace-nowrap">
             ✏️ 수기 입력
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => autoExclMutation.mutate()} disabled={autoExclMutation.isPending}
+            className="text-xs text-blue-500 hover:text-blue-700 whitespace-nowrap" title="상호이체 상쇄(±5분)·카드 취소 쌍을 찾아 자동으로 제외합니다">
+            {autoExclMutation.isPending ? "검사 중..." : "🔍 자동 제외 검사"}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => clearExclMutation.mutate()} disabled={clearExclMutation.isPending}
             className="text-xs text-cream-500 hover:text-cream-700 whitespace-nowrap">

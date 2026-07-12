@@ -66,6 +66,8 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
          AND "ruleCategory" NOT IN (${APP_L3_VALUES_SQL})`,
     `DELETE FROM category_rules
        WHERE category NOT IN (${APP_L3_VALUES_SQL})`,
+    // 1회성 마이그레이션 추적 테이블
+    `CREATE TABLE IF NOT EXISTS app_migrations (key varchar(64) PRIMARY KEY, "appliedAt" timestamp NOT NULL DEFAULT NOW())`,
   ];
   for (const step of steps) {
     try {
@@ -73,6 +75,28 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
     } catch (e) {
       console.warn("[Database] migration step failed:", e instanceof Error ? e.message : e);
     }
+  }
+
+  // [1회성] 기존 이체성 거래(내계좌이체·카드대금 등)를 제외 체크박스로 이관.
+  // '이체' 유사 카테고리 버킷을 없애고 제외 체계를 체크박스 하나로 통일 —
+  // 딱 한 번만 실행되므로, 이후 사용자가 체크를 해제한 건 다시 체크되지 않는다.
+  try {
+    const done = (await db.execute(sql.raw(
+      `SELECT 1 FROM app_migrations WHERE key = 'transfer-exclude-v1'`
+    ))) as any[];
+    if (done.length === 0) {
+      await db.execute(sql.raw(
+        `INSERT INTO excluded_transactions ("userId", "transactionId")
+         SELECT t."userId", t.id FROM transactions t
+         WHERE t.category IN ('내계좌이체','이체','카드대금','현금','미분류')
+         ON CONFLICT DO NOTHING`
+      ));
+      await db.execute(sql.raw(
+        `INSERT INTO app_migrations (key) VALUES ('transfer-exclude-v1') ON CONFLICT DO NOTHING`
+      ));
+    }
+  } catch (e) {
+    console.warn("[Database] transfer-exclude migration failed:", e instanceof Error ? e.message : e);
   }
 
   // 업그레이드 직후, 규칙은 있는데 ruleCategory가 아직 한 번도 채워지지 않은
@@ -315,8 +339,8 @@ export const APP_L3_CATEGORIES = [
   "경조사", "월세", "공과금", "대출이자", "세금", "기타_기타",
   // 저축/투자
   "저축", "투자", "청약", "적금", "예금", "CMA", "ETF", "주식", "펀드", "ISA", "IRP",
-  // 수입 / 이체
-  "수입", "이체",
+  // 수입
+  "수입",
 ];
 
 /** 구 카테고리 → 새 카테고리 키 매핑 (자기 자신으로 가는 것은 생략).
@@ -348,7 +372,9 @@ export const TRANSFER_PAYMENT_KEYWORDS = ["통장", "예금", "저축", "청약"
 function bankSaladMapSQL(): string {
   const sub = `COALESCE(t."subCategory",'')`;
   return `CASE
-    WHEN t.category IN ('내계좌이체','이체','카드대금','현금','미분류') THEN '이체'
+    -- 이체성 원본은 별도 '이체' 카테고리 없이 '기타_기타'로 두고,
+    -- 업로드 시 제외 체크박스에 자동 체크된다(단일 제외 체계).
+    WHEN t.category IN ('내계좌이체','이체','카드대금','현금','미분류') THEN '기타_기타'
     -- 생활비
     WHEN t.category = '생활' AND ${sub} IN ('마트','편의점') THEN '식비'
     WHEN t.category = '생활' THEN '생활비_기타'
@@ -1086,6 +1112,132 @@ export async function setExcludedByFilters(
     ));
     return (res as any[]).length;
   }
+}
+
+/** 이체성 원본(뱅크샐러드) 대분류 — 업로드 시 제외 체크박스 자동 체크 대상 */
+export const TRANSFER_RAW_CATS = ["내계좌이체", "이체", "카드대금", "현금", "미분류"];
+
+/** 방금 업로드된(dedupHash 목록) 거래 중 이체성 원본을 제외 체크박스에 자동 체크 */
+export async function autoExcludeTransfersForHashes(userId: number, dedupHashes: string[]): Promise<number> {
+  const db = await getDb();
+  if (!db || dedupHashes.length === 0) return 0;
+  const hashList = sql.join(dedupHashes.map((h) => sql`${h}`), sql`, `);
+  const catList = TRANSFER_RAW_CATS.map((c) => `'${c}'`).join(",");
+  const res = await db.execute(sql`
+    INSERT INTO excluded_transactions ("userId", "transactionId")
+    SELECT t."userId", t.id FROM transactions t
+    WHERE t."userId" = ${userId} AND t."dedupHash" IN (${hashList})
+      AND t.category IN (${sql.raw(catList)})
+    ON CONFLICT DO NOTHING
+    RETURNING "transactionId"
+  `);
+  return (res as any[]).length;
+}
+
+/** 자동 제외 검사 — 전체 데이터를 훑어 두 종류의 쌍을 찾아 둘 다 제외 처리한다.
+ *  1) 카드 취소: 결제수단에 '카드'가 포함된 양수 거래 ↔ 같은 결제수단·같은 금액의
+ *     음수 거래(±90일 내 가장 가까운 것). 메모에 '카드 취소' 기록.
+ *  2) 상호이체 상쇄: 금액 +X / −X 가 5분 이내에 발생한 쌍(소유자 무관 —
+ *     동현→혜진 교차 업로드 포함). 메모에 '상호이체 상쇄' 기록.
+ *  1:1 그리디 매칭(가장 가까운 시각 우선)이라 한 거래가 두 번 상쇄되지 않는다.
+ *  멱등: 이미 제외된 건 ON CONFLICT 무시, 메모 태그는 중복 기록하지 않음. */
+export async function runAutoExclusions(userId: number): Promise<{ cardPairs: number; transferPairs: number }> {
+  const db = await getDb();
+  if (!db) return { cardPairs: 0, transferPairs: 0 };
+
+  const rows = (await db.execute(sql`
+    SELECT t.id,
+           EXTRACT(EPOCH FROM (t."txDate"::timestamp + COALESCE(NULLIF(t."txTime",''),'00:00:00')::interval)) AS ts,
+           t.amount::numeric AS amount,
+           COALESCE(t."paymentMethod",'') AS pm,
+           COALESCE(t.memo,'') AS memo,
+           (et."transactionId" IS NOT NULL)::int AS excl
+    FROM transactions t
+    LEFT JOIN excluded_transactions et
+      ON et."userId" = t."userId" AND et."transactionId" = t.id
+    WHERE t."userId" = ${userId}
+    ORDER BY 2
+  `)) as any[];
+
+  type R = { id: number; ts: number; amount: number; pm: string; memo: string; excl: boolean };
+  const arr: R[] = rows.map((r) => ({
+    id: Number(r.id), ts: Number(r.ts) * 1000, amount: Number(r.amount), pm: String(r.pm), memo: String(r.memo),
+    excl: Number(r.excl) === 1,
+  }));
+
+  const matched = new Set<number>();
+  const toExclude: number[] = [];
+  const memoTags = new Map<number, string>();
+
+  // 같은 |금액| 그룹으로 후보를 좁혀 O(n²) 회피
+  const byAbs = new Map<string, R[]>();
+  for (const r of arr) {
+    const k = Math.abs(r.amount).toFixed(2);
+    if (!byAbs.has(k)) byAbs.set(k, []);
+    byAbs.get(k)!.push(r);
+  }
+
+  function pairUp(
+    isCandidate: (r: R) => boolean,
+    counterpartOk: (p: R, n: R) => boolean,
+    maxDtMs: number,
+    tag: string
+  ): number {
+    let pairs = 0;
+    for (const group of byAbs.values()) {
+      const positives = group.filter((r) => r.amount > 0 && !matched.has(r.id) && isCandidate(r));
+      for (const p of positives) {
+        if (matched.has(p.id)) continue;
+        let best: R | null = null, bestDt = Infinity;
+        for (const n of group) {
+          if (n.amount !== -p.amount || matched.has(n.id)) continue;
+          if (!counterpartOk(p, n)) continue;
+          const dt = Math.abs(n.ts - p.ts);
+          if (dt <= maxDtMs && dt < bestDt) { best = n; bestDt = dt; }
+        }
+        if (best) {
+          matched.add(p.id); matched.add(best.id);
+          toExclude.push(p.id, best.id);
+          memoTags.set(p.id, tag); memoTags.set(best.id, tag);
+          // 이미 둘 다 제외+태그된 쌍은 '신규'로 세지 않는다 (재실행 시 0 보고)
+          const alreadyDone = p.excl && best.excl && p.memo.includes(tag) && best.memo.includes(tag);
+          if (!alreadyDone) pairs++;
+        }
+      }
+    }
+    return pairs;
+  }
+
+  // 1) 카드 취소: 같은 카드(결제수단 동일) + 같은 금액, ±90일
+  const cardPairs = pairUp(
+    (r) => r.pm.includes("카드"),
+    (p, n) => n.pm === p.pm,
+    90 * 24 * 3600 * 1000,
+    "카드 취소"
+  );
+  // 2) 상호이체 상쇄: 아무 거래나 +X/−X 5분 이내 (소유자·결제수단 무관)
+  const transferPairs = pairUp(
+    () => true,
+    () => true,
+    5 * 60 * 1000,
+    "상호이체 상쇄"
+  );
+
+  if (toExclude.length > 0) {
+    const values = toExclude.map((id) => `(${userId}, ${id})`).join(",");
+    await db.execute(sql.raw(
+      `INSERT INTO excluded_transactions ("userId", "transactionId") VALUES ${values} ON CONFLICT DO NOTHING`
+    ));
+    // 메모 태그 기록 (이미 같은 태그가 있으면 중복 기록하지 않음)
+    for (const [id, tag] of memoTags) {
+      const row = arr.find((r) => r.id === id);
+      if (row && row.memo.includes(tag)) continue;
+      const newMemo = row && row.memo ? `${row.memo} / ${tag}` : tag;
+      await db.execute(sql`UPDATE transactions SET memo = ${newMemo} WHERE "userId" = ${userId} AND id = ${id}`);
+    }
+  }
+
+  return { cardPairs, transferPairs };
 }
 
 /** 컬럼 필터 드롭다운용 고유값 목록 (결제수단/타입/소유자) */

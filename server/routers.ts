@@ -39,6 +39,8 @@ import {
   addManualTransaction,
   setExcludedByFilters,
   getFilterOptions,
+  autoExcludeTransfersForHashes,
+  runAutoExclusions,
   categoryToRuleType,
 } from "./db";
 import { getDb } from "./db";
@@ -131,11 +133,22 @@ const budgetRouter = router({
       const insertedCount = await insertTransactions(dbRows);
 
       // Apply mapping rules to newly inserted transactions
-      await applyMappingRulesToNewTransactions(userId, newRows.map((r) => r.dedupHash));
+      const newHashes = newRows.map((r) => r.dedupHash);
+      await applyMappingRulesToNewTransactions(userId, newHashes);
 
-      // 이체 일괄 제외 안 함 — 부호(입출금)와 뱅크샐러드 대분류 매핑으로 분류.
-      // 내계좌이체/카드대금은 매핑상 '이체'로 통계에서 자동 제외됨.
-      return { inserted: insertedCount, skipped: input.rows.length - insertedCount, autoExcluded: 0 };
+      // 1) 이체성 원본(내계좌이체·카드대금 등)은 제외 체크박스 자동 체크
+      const autoExcluded = await autoExcludeTransfersForHashes(userId, newHashes);
+      // 2) 전체 데이터 재검사: 상호이체 상쇄(±5분)·카드 취소 쌍 자동 제외
+      //    — 동현 업로드 후 혜진 업로드처럼 파일을 나눠 올려도 교차 쌍이 잡힘
+      const pairs = await runAutoExclusions(userId);
+
+      return {
+        inserted: insertedCount,
+        skipped: input.rows.length - insertedCount,
+        autoExcluded,
+        transferPairs: pairs.transferPairs,
+        cardPairs: pairs.cardPairs,
+      };
     }),
 
   // ── 데이터 전체 삭제 ─────────────────────────────────────────
@@ -190,6 +203,11 @@ const budgetRouter = router({
       const count = await setExcludedByFilters(ctx.user.id, input.filters, input.owner, input.excluded);
       return { count };
     }),
+
+  // ── 자동 제외 검사 (상호이체 상쇄 ±5분 · 카드 취소 쌍) ───────
+  runAutoExclusions: protectedProcedure.mutation(async ({ ctx }) => {
+    return runAutoExclusions(ctx.user.id);
+  }),
 
   // ── 컬럼 필터 옵션 (고유값 목록) ─────────────────────────────
   getFilterOptions: protectedProcedure.query(async ({ ctx }) => {

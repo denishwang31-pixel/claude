@@ -67,14 +67,24 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
       const CHUNK = 200;
       let totalInserted = 0;
       let totalSkipped = 0;
+      let totalAutoExcluded = 0;
+      let lastPairs = { transferPairs: 0, cardPairs: 0 };
       for (let i = 0; i < rows.length; i += CHUNK) {
         const chunk = rows.slice(i, i + CHUNK);
         const result = await uploadMutation.mutateAsync({ rows: chunk, owner });
         totalInserted += result.inserted;
         totalSkipped += result.skipped;
+        totalAutoExcluded += (result as any).autoExcluded ?? 0;
+        lastPairs = {
+          transferPairs: (result as any).transferPairs ?? lastPairs.transferPairs,
+          cardPairs: (result as any).cardPairs ?? lastPairs.cardPairs,
+        };
       }
 
       toast.success(`${owner} 데이터 ${totalInserted}건 업로드 완료 (중복 ${totalSkipped}건 제외)`);
+      if (totalAutoExcluded > 0 || lastPairs.transferPairs > 0 || lastPairs.cardPairs > 0) {
+        toast.info(`자동 제외: 이체성 ${totalAutoExcluded}건 · 상호이체 ${lastPairs.transferPairs}쌍 · 카드취소 ${lastPairs.cardPairs}쌍`);
+      }
       onSuccess?.();
     } catch (err: any) {
       console.error(err);
