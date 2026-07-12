@@ -28,7 +28,7 @@ const EMPTY_DATE: DateParts = { y: "", m: "", d: "" };
 
 type SearchField = typeof SEARCH_FIELDS[number]["id"];
 
-// 카테고리 컬럼 필터 선택지 — L1 › L2 그룹으로 L3 나열 + 집계제외(이체)
+// 카테고리 컬럼 필터 선택지 — L1 › L2 그룹으로 L3 나열
 const CATEGORY_FILTER_OPTIONS: FilterOption[] = [
   ...EXPENSE_TREE.flatMap((g) =>
     g.items.map((it) => ({ value: it.key, label: it.label, group: `지출 › ${g.l2}` }))),
@@ -334,32 +334,30 @@ export function TransactionsTab({ owner }: Props) {
             <table className="w-full text-sm">
               <thead className="bg-cream-50">
                 <tr>
-                  <th className="text-left px-4 py-3 text-cream-600 font-medium">날짜</th>
-                  <th className="text-left px-4 py-3 text-cream-600 font-medium">
-                    <div className="flex items-center gap-1">내용</div>
-                  </th>
-                  <th className="text-left px-4 py-3 text-cream-600 font-medium">
+                  <th className="text-left px-4 py-3 text-cream-600 font-medium whitespace-nowrap">날짜</th>
+                  <th className="text-left px-4 py-3 text-cream-600 font-medium whitespace-nowrap">내용</th>
+                  <th className="text-left px-4 py-3 text-cream-600 font-medium whitespace-nowrap">
                     <div className="flex items-center gap-1">
                       카테고리
                       <ColumnFilter title="카테고리" options={CATEGORY_FILTER_OPTIONS} selected={colCats} onChange={setColCats} />
                     </div>
                   </th>
-                  <th className="text-right px-4 py-3 text-cream-600 font-medium">금액</th>
-                  <th className="text-center px-4 py-3 text-cream-600 font-medium">
+                  <th className="text-right px-4 py-3 text-cream-600 font-medium whitespace-nowrap">금액</th>
+                  <th className="text-center px-3 py-3 text-cream-600 font-medium whitespace-nowrap">
                     <div className="flex items-center justify-center gap-1">
                       결제수단
                       <ColumnFilter title="결제수단" options={pmOptions} selected={colPMs} onChange={setColPMs} />
                     </div>
                   </th>
-                  <th className="text-center px-4 py-3 text-cream-600 font-medium">
+                  <th className="text-center px-3 py-3 text-cream-600 font-medium whitespace-nowrap">
                     <div className="flex items-center justify-center gap-1">
                       타입
                       <ColumnFilter title="타입" options={typeOptions} selected={colTypes} onChange={setColTypes} />
                     </div>
                   </th>
-                  <th className="text-center px-4 py-3 text-cream-600 font-medium">소유자</th>
-                  <th className="text-center px-4 py-3 text-cream-600 font-medium">
-                    <div className="flex flex-col items-center gap-0.5">
+                  <th className="text-center px-3 py-3 text-cream-600 font-medium whitespace-nowrap">소유자</th>
+                  <th className="text-center px-3 py-3 text-cream-600 font-medium whitespace-nowrap">
+                    <div className="flex items-center justify-center gap-1.5">
                       <span>제외</span>
                       <input
                         type="checkbox"
@@ -371,8 +369,8 @@ export function TransactionsTab({ owner }: Props) {
                       />
                     </div>
                   </th>
-                  <th className="text-left px-4 py-3 text-cream-600 font-medium">메모</th>
-                  <th className="text-center px-4 py-3 text-cream-600 font-medium">삭제</th>
+                  <th className="text-left px-3 py-3 text-cream-600 font-medium whitespace-nowrap">메모</th>
+                  <th className="text-center px-3 py-3 text-cream-600 font-medium whitespace-nowrap">삭제</th>
                 </tr>
                 {/* 컬럼 필터 행 — 내용 텍스트 필터 */}
                 <tr className="border-t border-cream-100">

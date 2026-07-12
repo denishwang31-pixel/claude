@@ -99,6 +99,51 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
     console.warn("[Database] transfer-exclude migration failed:", e instanceof Error ? e.message : e);
   }
 
+  // [1회성 v2] v1이 이체 전체를 제외했던 것을 되돌린다 — 자동 제외는
+  // '카드대금'(카드 지출과 중복)만 유지하고, 그 외 이체성(내계좌이체·이체·
+  // 현금·미분류) 중 쌍 매칭 태그가 없는 건 제외 해제. (이체 지출이 많아
+  // 전부 제외하면 안 된다는 요구 반영 — 왕복 쌍은 상호이체 상쇄가 처리.)
+  try {
+    const done2 = (await db.execute(sql.raw(
+      `SELECT 1 FROM app_migrations WHERE key = 'transfer-exclude-v2'`
+    ))) as any[];
+    if (done2.length === 0) {
+      await db.execute(sql.raw(
+        `DELETE FROM excluded_transactions et
+         USING transactions t
+         WHERE et."transactionId" = t.id AND et."userId" = t."userId"
+           AND t.category IN ('내계좌이체','이체','현금','미분류')
+           AND COALESCE(t.memo,'') NOT LIKE '%상호이체 상쇄%'
+           AND COALESCE(t.memo,'') NOT LIKE '%카드 취소%'`
+      ));
+      await db.execute(sql.raw(
+        `INSERT INTO app_migrations (key) VALUES ('transfer-exclude-v2') ON CONFLICT DO NOTHING`
+      ));
+    }
+  } catch (e) {
+    console.warn("[Database] transfer-exclude-v2 migration failed:", e instanceof Error ? e.message : e);
+  }
+
+  // 서버 시작 시 자동 제외 배치(상호이체 상쇄·카드취소) 실행 — 업로드 없이
+  // 실행만 해도 배치가 돌도록. 멱등(처리된 쌍·해제한 쌍은 건드리지 않음)이라
+  // 매 시작마다 안전. 첫 요청을 지연시키지 않게 백그라운드로 던진다.
+  try {
+    const users = (await db.execute(sql.raw(
+      `SELECT DISTINCT "userId" AS uid FROM transactions LIMIT 50`
+    ))) as any[];
+    for (const row of users) {
+      runAutoExclusions(Number(row.uid))
+        .then((r) => {
+          if (r.cardPairs > 0 || r.transferPairs > 0) {
+            console.log(`[AutoExclusions] user ${row.uid}: 상호이체 ${r.transferPairs}쌍, 카드취소 ${r.cardPairs}쌍 자동 제외`);
+          }
+        })
+        .catch((e) => console.warn("[AutoExclusions] failed:", e instanceof Error ? e.message : e));
+    }
+  } catch (e) {
+    console.warn("[AutoExclusions] startup batch skipped:", e instanceof Error ? e.message : e);
+  }
+
   // 업그레이드 직후, 규칙은 있는데 ruleCategory가 아직 한 번도 채워지지 않은
   // 사용자만 최초 1회 bake한다. (규칙 매칭된 행이 하나라도 생기면 다음
   // 시작부터는 이 조건이 거짓이 되어 재실행되지 않음 — 매 시작마다 도는
@@ -1114,8 +1159,11 @@ export async function setExcludedByFilters(
   }
 }
 
-/** 이체성 원본(뱅크샐러드) 대분류 — 업로드 시 제외 체크박스 자동 체크 대상 */
-export const TRANSFER_RAW_CATS = ["내계좌이체", "이체", "카드대금", "현금", "미분류"];
+/** 업로드 시 제외 체크박스 자동 체크 대상 — '카드대금'만.
+ *  (카드사 출금은 개별 카드 지출이 이미 업로드되므로 중복 → 항상 제외.
+ *   그 외 이체는 실제 지출인 경우가 많아 자동 제외하지 않는다 —
+ *   계좌 간 왕복은 상호이체 상쇄(±5분) 규칙이 쌍으로만 제외.) */
+export const TRANSFER_RAW_CATS = ["카드대금"];
 
 /** 방금 업로드된(dedupHash 목록) 거래 중 이체성 원본을 제외 체크박스에 자동 체크 */
 export async function autoExcludeTransfersForHashes(userId: number, dedupHashes: string[]): Promise<number> {
@@ -1197,11 +1245,14 @@ export async function runAutoExclusions(userId: number): Promise<{ cardPairs: nu
         }
         if (best) {
           matched.add(p.id); matched.add(best.id);
-          toExclude.push(p.id, best.id);
-          memoTags.set(p.id, tag); memoTags.set(best.id, tag);
-          // 이미 둘 다 제외+태그된 쌍은 '신규'로 세지 않는다 (재실행 시 0 보고)
-          const alreadyDone = p.excl && best.excl && p.memo.includes(tag) && best.memo.includes(tag);
-          if (!alreadyDone) pairs++;
+          // 이미 양쪽 다 태그된 쌍은 과거에 처리된 것 — 다시 건드리지 않는다.
+          // (사용자가 체크를 해제했더라도 배치 재실행 시 재체크되지 않도록)
+          const alreadyTagged = p.memo.includes(tag) && best.memo.includes(tag);
+          if (!alreadyTagged) {
+            toExclude.push(p.id, best.id);
+            memoTags.set(p.id, tag); memoTags.set(best.id, tag);
+            pairs++;
+          }
         }
       }
     }
