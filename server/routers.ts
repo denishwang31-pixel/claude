@@ -401,11 +401,19 @@ const budgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
 
-      // 같은 내역(content)을 가진 모든 거래의 카테고리를 한 번에 변경
+      // 같은 내역(content)의 "이 거래와 그 이전(과거)" 건만 일괄 변경.
+      // 이후(더 최신) 건은 건드리지 않는다 — 같은 내역명이라도 시점에 따라
+      // 분류가 달라지는 경우(예: 회사 지급이 근로소득→부가소득으로 바뀜)를
+      // 지원: 최신 건부터 지정해 내려가면 구간별로 다른 카테고리가 유지된다.
       if (input.keyword && input.applyToSame && db) {
-        await db.execute(
-          sql`UPDATE transactions SET "customCategory" = ${input.newCategory} WHERE "userId" = ${ctx.user.id} AND content = ${input.keyword}`
-        );
+        await db.execute(sql`
+          UPDATE transactions t SET "customCategory" = ${input.newCategory}
+          FROM (SELECT "txDate", COALESCE("txTime",'') AS tt FROM transactions
+                WHERE id = ${input.transactionId} AND "userId" = ${ctx.user.id}) base
+          WHERE t."userId" = ${ctx.user.id} AND t.content = ${input.keyword}
+            AND (t."txDate" < base."txDate"
+                 OR (t."txDate" = base."txDate" AND COALESCE(t."txTime",'') <= base.tt))
+        `);
       } else {
         await updateTransactionCategory(ctx.user.id, input.transactionId, input.newCategory);
       }

@@ -54,15 +54,22 @@ export function TransactionsTab({ owner }: Props) {
   // 상단 검색: 기간 필터
   const [dateStart, setDateStart] = useState<DateParts>(EMPTY_DATE);
   const [dateEnd, setDateEnd] = useState<DateParts>(EMPTY_DATE);
-  // 컬럼(엑셀식) 필터
+  // 컬럼(엑셀식) 필터 — 내용은 입력값/쿼리값 분리 + 디바운스
+  // (글자마다 쿼리가 나가면 테이블이 로딩으로 교체되며 한글 조합이 끊기므로)
   const [colContent, setColContent] = useState("");
+  const [colContentQ, setColContentQ] = useState("");
   const [colCats, setColCats] = useState<string[]>([]);
   const [colPMs, setColPMs] = useState<string[]>([]);
   const [colTypes, setColTypes] = useState<string[]>([]);
   // 수기 입력 모달
   const [showManual, setShowManual] = useState(false);
 
-  useEffect(() => { setPage(1); }, [searchField, searchQuery, catL1, catL2, catL3, dateStart, dateEnd, colContent, colCats, colPMs, colTypes, owner]);
+  useEffect(() => {
+    const t = setTimeout(() => setColContentQ(colContent.trim()), 350);
+    return () => clearTimeout(t);
+  }, [colContent]);
+
+  useEffect(() => { setPage(1); }, [searchField, searchQuery, catL1, catL2, catL3, dateStart, dateEnd, colContentQ, colCats, colPMs, colTypes, owner]);
 
   const utils = trpc.useUtils();
 
@@ -88,18 +95,19 @@ export function TransactionsTab({ owner }: Props) {
   const filters = useMemo(() => {
     const arr: { field: string; query: string }[] = [];
     if (topFilter) arr.push(topFilter);
-    if (colContent.trim()) arr.push({ field: "content", query: colContent.trim() });
+    if (colContentQ) arr.push({ field: "content", query: colContentQ });
     if (colCats.length) arr.push({ field: "catIn", query: JSON.stringify(colCats) });
     if (colPMs.length) arr.push({ field: "pmIn", query: JSON.stringify(colPMs) });
     if (colTypes.length) arr.push({ field: "typeIn", query: JSON.stringify(colTypes) });
     return arr;
-  }, [topFilter?.field, topFilter?.query, colContent, colCats, colPMs, colTypes]);
+  }, [topFilter?.field, topFilter?.query, colContentQ, colCats, colPMs, colTypes]);
 
   const hasAnyFilter = filters.length > 0 || !!owner;
 
-  const { data, isLoading } = trpc.budget.getTransactions.useQuery({
-    page, pageSize: PAGE_SIZE, filters, owner: owner || undefined,
-  });
+  const { data, isLoading } = trpc.budget.getTransactions.useQuery(
+    { page, pageSize: PAGE_SIZE, filters, owner: owner || undefined },
+    { placeholderData: (prev) => prev }
+  );
 
   const { data: filterOptions } = trpc.budget.getFilterOptions.useQuery();
 

@@ -101,8 +101,8 @@ export function CategoryDropdown({
                 className="accent-cream-700 mt-0.5"
               />
               <span>
-                같은 내역 전체 변경
-                <span className="block text-[10px] text-cream-400">「{content.length > 14 ? content.slice(0, 14) + "…" : content}」 거래 모두</span>
+                같은 내역 과거 건 일괄 변경
+                <span className="block text-[10px] text-cream-400">이 거래와 그 이전 「{content.length > 12 ? content.slice(0, 12) + "…" : content}」 전부 — 이후(최신) 건은 유지</span>
               </span>
             </label>
             <label className="flex items-start gap-2 text-xs text-cream-600 cursor-pointer px-1">
@@ -114,7 +114,7 @@ export function CategoryDropdown({
               />
               <span>
                 매핑 규칙에 저장
-                <span className="block text-[10px] text-cream-400">앞으로 업로드되는 거래에도 자동 적용</span>
+                <span className="block text-[10px] text-cream-400">앞으로 업로드되는 거래에 자동 적용 — 시점별로 다르게 분류하려면 해제</span>
               </span>
             </label>
           </div>
