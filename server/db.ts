@@ -10,6 +10,7 @@ import {
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { buildKeywordCaseSQL } from "../shared/keywordCategories";
 
 const DB_URL = process.env.DATABASE_URL ?? "postgres://budget:budget123@localhost:5432/household_budget";
 
@@ -465,12 +466,24 @@ function bankSaladMapSQL(): string {
     WHEN t.category = '세금' THEN '세금'
     WHEN t.category = '급여' THEN '근로소득'
     WHEN t.category IN ('금융수입','사업수입','기타수입') THEN '수입'
-    ELSE '기타_기타'
+    ELSE NULL
   END`;
 }
 
+/** 내용(가맹점명) 키워드 기반 자동 분류 — 뱅크샐러드 대분류가 없는 일반
+ *  카드/은행 파일에서도 분류가 되도록 한다. 매칭 실패 시 NULL. */
+function keywordMapSQL(): string {
+  return buildKeywordCaseSQL(`LOWER(COALESCE(t.content,''))`);
+}
+
+/** 자동 분류 최종식(항상 non-null): 뱅크샐러드 대분류 매핑 → 내용 키워드 매핑 → 기타.
+ *  뱅크샐러드 파일은 대분류로, 일반 파일은 가맹점명 키워드로 분류된다. */
+function autoMapSQL(): string {
+  return `COALESCE(${bankSaladMapSQL()}, ${keywordMapSQL()}, '기타_기타')`;
+}
+
 function buildEffectiveCategoryExpr(_userId: number): string {
-  // 우선순위: 수동지정 > 규칙매칭(사전 계산된 ruleCategory) > 뱅크샐러드 매핑 > 원본
+  // 우선순위: 수동지정 > 규칙매칭(사전 계산된 ruleCategory) > 자동분류(대분류/키워드) > 원본
   //
   // 예전에는 여기서 category_rules를 행마다 훑는 상관 서브쿼리를 돌렸는데,
   // 이 표현식이 집계 쿼리 하나에 5~6번씩 인라인되어 O(거래수 × 규칙수 × N)
@@ -481,7 +494,7 @@ function buildEffectiveCategoryExpr(_userId: number): string {
   return `COALESCE(
     t."customCategory",
     t."ruleCategory",
-    ${bankSaladMapSQL()},
+    ${autoMapSQL()},
     t.category
   )`;
 }
@@ -1675,7 +1688,7 @@ export async function generateRulesFromTransactions(userId: number): Promise<num
 
   // 뱅크샐러드 대분류 원본이 아니라 앱 L3로 매핑된 카테고리를 규칙에 저장한다.
   // (과거엔 t.category 원본을 저장해 '온라인쇼핑'·'생활' 같은 값이 규칙에 박혀 '기타'로 떨어졌다)
-  const mappedCat = `COALESCE(t."customCategory", ${bankSaladMapSQL()})`;
+  const mappedCat = `COALESCE(t."customCategory", ${autoMapSQL()})`;
   const rows = await db.execute(sql.raw(
     `SELECT t.content, ${mappedCat} as category, t."txType", COUNT(*) as cnt
      FROM transactions t
