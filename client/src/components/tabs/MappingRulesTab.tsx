@@ -56,8 +56,8 @@ interface Rule {
 }
 
 const EXPENSE_CATS = l3ListForL1("expense");
-const INCOME_CATS = ["급여", "상여금", "이자수입", "부업수입", "기타수입"];
-const SAVINGS_CATS_LIST = ["청약", "적금", "저축", "예금", "CMA"];
+const INCOME_CATS = ["근로소득", "수당", "부가소득", "수입"];
+const SAVINGS_CATS_LIST = ["장기저축", "단기저축", "청약", "적금", "저축", "예금", "CMA"];
 const INVEST_CATS_LIST = ["ETF", "주식", "펀드", "ISA", "IRP", "투자"];
 
 const TYPE_STYLES: Record<string, { badge: string; header: string; border: string }> = {

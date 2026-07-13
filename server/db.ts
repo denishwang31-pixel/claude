@@ -361,8 +361,8 @@ export async function clearAllExclusions(userId: number): Promise<number> {
 
 // ── 필터 상수 ──────────────────────────────────────────────────
 
-export const SAVINGS_CATS = ["저축", "투자", "청약", "적금", "예금", "CMA", "ETF", "주식", "펀드", "ISA", "IRP"];
-const SAVINGS_ONLY_CATS = ["저축", "청약", "적금", "예금", "CMA"];
+export const SAVINGS_CATS = ["장기저축", "단기저축", "저축", "투자", "청약", "적금", "예금", "CMA", "ETF", "주식", "펀드", "ISA", "IRP"];
+const SAVINGS_ONLY_CATS = ["장기저축", "단기저축", "저축", "청약", "적금", "예금", "CMA"];
 const INVEST_ONLY_CATS = ["투자", "ETF", "주식", "펀드", "ISA", "IRP"];
 
 /** 앱이 최종 사용하는 유효 L3 카테고리 — 이 목록에 없는 값(뱅크샐러드 대분류 원본 등)은
@@ -380,13 +380,18 @@ export const APP_L3_CATEGORIES = [
   "병원_서준", "병원_재이", "병원_동현", "병원_혜진", "병원_미지정",
   // 보험 (사람별, 보장성)
   "보험_동현", "보험_혜진", "보험_서준", "보험_재이", "보험_미지정",
-  // 경조사 / 주거 / 기타
-  "경조사", "월세", "공과금", "대출이자", "세금", "기타_기타",
+  // 경조사 / 주거 / 개인 용돈 / 기타
+  "경조사", "월세", "공과금", "대출이자",
+  "용돈_동현", "용돈_혜진", "용돈_미지정",
+  "세금", "기타_기타",
   // 저축/투자
-  "저축", "투자", "청약", "적금", "예금", "CMA", "ETF", "주식", "펀드", "ISA", "IRP",
-  // 수입
-  "수입",
+  "장기저축", "단기저축", "저축", "투자", "청약", "적금", "예금", "CMA", "ETF", "주식", "펀드", "ISA", "IRP",
+  // 수입 (수입 = 미분류 겸용 fallback)
+  "근로소득", "수당", "부가소득", "수입",
 ];
+
+/** 수입 세분류(미분류 '수입' 제외) — 집계에서 '수입'으로 뭉치지 않고 분리 표시 */
+export const INCOME_DETAILED = ["근로소득", "수당", "부가소득"];
 
 /** 구 카테고리 → 새 카테고리 키 매핑 (자기 자신으로 가는 것은 생략).
  *  마이그레이션·기본규칙 시드에서 공용으로 사용. */
@@ -400,7 +405,7 @@ export function remapOldCategory(cat: string): string { return OLD_CATEGORY_REMA
 
 /** 카테고리명으로 규칙 타입(income/savings/investment/expense) 추론 */
 export function categoryToRuleType(category: string): string {
-  if (category === "수입") return "income";
+  if (category === "수입" || INCOME_DETAILED.includes(category)) return "income";
   if (SAVINGS_ONLY_CATS.includes(category)) return "savings";
   if (INVEST_ONLY_CATS.includes(category)) return "investment";
   return "expense";
@@ -458,7 +463,8 @@ function bankSaladMapSQL(): string {
     -- 경조사 / 세금 / 수입
     WHEN t.category = '경조/선물' THEN '경조사'
     WHEN t.category = '세금' THEN '세금'
-    WHEN t.category IN ('금융수입','급여','사업수입','기타수입') THEN '수입'
+    WHEN t.category = '급여' THEN '근로소득'
+    WHEN t.category IN ('금융수입','사업수입','기타수입') THEN '수입'
     ELSE '기타_기타'
   END`;
 }
@@ -644,7 +650,7 @@ export async function getCategoryStats(
 
   const rows = await db.execute(sql.raw(
     `SELECT
-       CASE WHEN sub.l1 = 'income' THEN '수입' ELSE sub."effectiveCategory" END as category,
+       CASE WHEN sub.l1 = 'income' AND sub."effectiveCategory" NOT IN ('근로소득','수당','부가소득') THEN '수입' ELSE sub."effectiveCategory" END as category,
        sub.l1,
        ABS(SUM(sub.amount::numeric)) as total, COUNT(*) as cnt
      FROM (
@@ -666,7 +672,7 @@ export async function getCategoryStats(
            ((${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) ${catExcludeSQL} ${notExcludedSQL})
          )
      ) sub
-     GROUP BY (CASE WHEN sub.l1 = 'income' THEN '수입' ELSE sub."effectiveCategory" END), sub.l1
+     GROUP BY (CASE WHEN sub.l1 = 'income' AND sub."effectiveCategory" NOT IN ('근로소득','수당','부가소득') THEN '수입' ELSE sub."effectiveCategory" END), sub.l1
      ORDER BY sub.l1, ABS(SUM(sub.amount::numeric)) DESC`
   ));
 
@@ -707,7 +713,7 @@ export async function getPivotData(
 
   const rows = await db.execute(sql.raw(
     `SELECT sub."yearMonth",
-            CASE WHEN sub.l1 = 'income' THEN '수입' ELSE sub."effectiveCategory" END as category,
+            CASE WHEN sub.l1 = 'income' AND sub."effectiveCategory" NOT IN ('근로소득','수당','부가소득') THEN '수입' ELSE sub."effectiveCategory" END as category,
             sub.l1,
             ABS(SUM(sub.amount::numeric)) as total, COUNT(*) as cnt
      FROM (
@@ -729,7 +735,7 @@ export async function getPivotData(
            ((${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) ${catExcludeSQL} ${notExcludedSQL})
          )
      ) sub
-     GROUP BY sub."yearMonth", (CASE WHEN sub.l1 = 'income' THEN '수입' ELSE sub."effectiveCategory" END), sub.l1
+     GROUP BY sub."yearMonth", (CASE WHEN sub.l1 = 'income' AND sub."effectiveCategory" NOT IN ('근로소득','수당','부가소득') THEN '수입' ELSE sub."effectiveCategory" END), sub.l1
      ORDER BY sub."yearMonth"`
   ));
 
@@ -817,7 +823,7 @@ export async function getL3Stats(
                 : "";
   // '수입'은 단일 카테고리로 통합 — 양수·비저축·비이체 전체가 수입
   const catFilter = category === "수입"
-    ? `t.amount::numeric > 0 AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) AND (${effectiveCatExpr}) <> '이체'`
+    ? `t.amount::numeric > 0 AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) AND (${effectiveCatExpr}) NOT IN ('근로소득','수당','부가소득') AND (${effectiveCatExpr}) <> '이체'`
     : `(${effectiveCatExpr}) = '${escapedCat}'`;
   const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
 
@@ -915,7 +921,16 @@ function buildTxSearchSQL(userId: number, field: string, query: string): string 
       const expr = buildEffectiveCategoryExpr(userId);
       const inList = cats.length ? cats.map((c) => `'${esc(c)}'`).join(",") : "''";
       const savings = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
-      if (l1Part === "income")  return `t.amount::numeric > 0 AND (${expr}) <> '이체' AND (${expr}) NOT IN (${savings})`;
+      if (l1Part === "income") {
+        const base = `t.amount::numeric > 0 AND (${expr}) NOT IN (${savings})`;
+        if (!cats.length) return base;
+        const detailedList = INCOME_DETAILED.map((c) => `'${c}'`).join(",");
+        const chosen = cats.filter((c) => INCOME_DETAILED.includes(c));
+        const parts: string[] = [];
+        if (chosen.length) parts.push(`(${expr}) IN (${chosen.map((c) => `'${esc(c)}'`).join(",")})`);
+        if (cats.includes("수입")) parts.push(`(${expr}) NOT IN (${detailedList})`);
+        return parts.length ? `${base} AND (${parts.join(" OR ")})` : base;
+      }
       if (l1Part === "savings") return `(${expr}) IN (${inList})`;
       if (l1Part === "expense") return `t.amount::numeric < 0 AND (${expr}) IN (${inList}) AND (${expr}) NOT IN (${savings}) AND (${expr}) <> '이체'`;
       if (cats.length === 0) return "TRUE";
@@ -1030,7 +1045,7 @@ export async function getCategoryTransactions(
     + " " + dateRangeSQL(dateStart, dateEnd) + " " + ownerSQL(owner);
   // '수입'은 단일 카테고리로 통합 — 양수·비저축·비이체 전체가 수입
   const catMatch = category === "수입"
-    ? `sub.amount::numeric > 0 AND sub."effectiveCategory" NOT IN (${savingsCatsSQL}) AND sub."effectiveCategory" <> '이체'`
+    ? `sub.amount::numeric > 0 AND sub."effectiveCategory" NOT IN (${savingsCatsSQL}) AND sub."effectiveCategory" NOT IN ('근로소득','수당','부가소득') AND sub."effectiveCategory" <> '이체'`
     : `sub."effectiveCategory" = '${escapedCategory}'`;
 
   const [rows, countRows] = await Promise.all([
@@ -1447,11 +1462,11 @@ export async function seedDefaultRules(userId: number): Promise<number> {
 
   const defaultRules: { keyword: string; category: string; isExact: boolean; ruleType: string }[] = [
     // ── 수입 ───────────────────────────────────────────────────
-    { keyword: "급여", category: "수입", isExact: false, ruleType: "income" },
-    { keyword: "월급", category: "수입", isExact: false, ruleType: "income" },
-    { keyword: "상여", category: "수입", isExact: false, ruleType: "income" },
-    { keyword: "보너스", category: "수입", isExact: false, ruleType: "income" },
-    { keyword: "이자", category: "수입", isExact: false, ruleType: "income" },
+    { keyword: "급여", category: "근로소득", isExact: false, ruleType: "income" },
+    { keyword: "월급", category: "근로소득", isExact: false, ruleType: "income" },
+    { keyword: "상여", category: "수당", isExact: false, ruleType: "income" },
+    { keyword: "보너스", category: "수당", isExact: false, ruleType: "income" },
+    { keyword: "이자", category: "부가소득", isExact: false, ruleType: "income" },
     { keyword: "환급", category: "수입", isExact: false, ruleType: "income" },
     // ── 저축 ───────────────────────────────────────────────────
     { keyword: "청약", category: "청약", isExact: false, ruleType: "savings" },

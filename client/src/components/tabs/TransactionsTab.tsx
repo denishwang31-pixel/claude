@@ -8,7 +8,7 @@ import { Button } from "../ui/button";
 import { downloadTransactionsExcel } from "../../lib/downloadExcel";
 import { cn } from "../../lib/utils";
 import { toast } from "sonner";
-import { L1_LIST, L2_BY_L1, l3ListForL2, resolveCategoryFilter, signedPath, EXPENSE_TREE } from "../../lib/categories";
+import { L1_LIST, L2_BY_L1, l3ListForL2, resolveCategoryFilter, signedPath, EXPENSE_TREE, INCOME_L3 } from "../../lib/categories";
 import { DateRangeFilter } from "../DateRangeFilter";
 import { DateParts, buildDateRange } from "../../lib/dateRange";
 
@@ -32,9 +32,11 @@ type SearchField = typeof SEARCH_FIELDS[number]["id"];
 const CATEGORY_FILTER_OPTIONS: FilterOption[] = [
   ...EXPENSE_TREE.flatMap((g) =>
     g.items.map((it) => ({ value: it.key, label: it.label, group: `지출 › ${g.l2}` }))),
-  { value: "저축", label: "저축", group: "저축/투자" },
+  { value: "장기저축", label: "장기 저축", group: "저축/투자" },
+  { value: "단기저축", label: "단기 저축", group: "저축/투자" },
+  { value: "저축", label: "저축(미분류)", group: "저축/투자" },
   { value: "투자", label: "투자", group: "저축/투자" },
-  { value: "수입", label: "수입", group: "수입" },
+  ...INCOME_L3.map((it) => ({ value: it.key, label: it.label, group: "수입" })),
 ];
 
 interface Props {
@@ -68,7 +70,9 @@ export function TransactionsTab({ owner }: Props) {
   let topFilter: { field: string; query: string } | undefined;
   if (searchField === "category") {
     if (catL1 === "income") {
-      topFilter = { field: "categories", query: "income|" };
+      // L3 미선택 시 양수 전체, 선택 시 해당 수입 세분류만
+      const cats = catL3 ? [catL3] : [];
+      topFilter = { field: "categories", query: `income|${cats.join(",")}` };
     } else {
       const cats = resolveCategoryFilter(catL1, catL2, catL3);
       topFilter = cats.length ? { field: "categories", query: `${catL1}|${cats.join(",")}` } : undefined;

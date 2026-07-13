@@ -2,14 +2,18 @@ import React, { useState, useRef, useEffect } from "react";
 import { trpc } from "../lib/trpc";
 import { toast } from "sonner";
 import { cn } from "../lib/utils";
-import { EXPENSE_TREE, categoryDisplay, categoryFull } from "../lib/categories";
+import { EXPENSE_TREE, INCOME_L3, categoryDisplay, categoryFull } from "../lib/categories";
 
 // L1 › L2 별로 묶은 카테고리(L3 키+표시명) — 드롭다운에 계층이 보이도록
 const CATEGORY_GROUPS: { l1: string; l2: string; items: { key: string; label: string }[] }[] = [
   ...EXPENSE_TREE.map((g) => ({ l1: "지출", l2: g.l2, items: g.items })),
-  { l1: "저축/투자", l2: "저축", items: [{ key: "저축", label: "저축" }] },
+  { l1: "저축/투자", l2: "저축", items: [
+    { key: "장기저축", label: "장기 저축" },
+    { key: "단기저축", label: "단기 저축" },
+    { key: "저축", label: "저축(미분류)" },
+  ]},
   { l1: "저축/투자", l2: "투자", items: [{ key: "투자", label: "투자" }] },
-  { l1: "수입", l2: "수입", items: [{ key: "수입", label: "수입" }] },
+  { l1: "수입", l2: "수입", items: INCOME_L3 },
 ];
 
 interface CategoryDropdownProps {

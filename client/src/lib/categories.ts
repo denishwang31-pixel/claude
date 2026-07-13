@@ -54,11 +54,26 @@ export const EXPENSE_TREE: { l2: string; items: L3Item[] }[] = [
     { key: "공과금", label: "공과금" },
     { key: "대출이자", label: "대출이자" },
   ]},
+  { l2: "개인 용돈", items: [
+    { key: "용돈_동현", label: "동현" },
+    { key: "용돈_혜진", label: "혜진" },
+    { key: "용돈_미지정", label: "미지정" },
+  ]},
   { l2: "기타",      items: [
     { key: "세금", label: "세금" },
     { key: "기타_기타", label: "기타" },
   ]},
 ];
+
+// ── 수입 소분류 (L2='수입' 고정) ── '수입'은 미분류 겸용 fallback
+export const INCOME_L3: L3Item[] = [
+  { key: "근로소득", label: "근로소득" },
+  { key: "수당", label: "수당" },
+  { key: "부가소득", label: "부가소득" },
+  { key: "수입", label: "수입(미분류)" },
+];
+const INCOME_SET = new Set(INCOME_L3.map((it) => it.key));
+const INCOME_LABEL: Record<string, string> = Object.fromEntries(INCOME_L3.map((it) => [it.key, it.label]));
 
 // 파생 맵
 const EXPENSE_L2: Record<string, string> = {};
@@ -70,9 +85,11 @@ for (const g of EXPENSE_TREE) {
 }
 
 const SAVINGS_L2: Record<string, string> = {
+  "장기저축": "저축", "단기저축": "저축",
   "저축": "저축", "청약": "저축", "적금": "저축", "예금": "저축", "CMA": "저축",
   "투자": "투자", "ETF": "투자", "주식": "투자", "펀드": "투자", "ISA": "투자", "IRP": "투자",
 };
+const SAVINGS_LABEL: Record<string, string> = { "장기저축": "장기 저축", "단기저축": "단기 저축" };
 
 export function getL2(category: string, l1: string): string {
   if (l1 === "income") return "수입";
@@ -82,7 +99,7 @@ export function getL2(category: string, l1: string): string {
 
 /** 카테고리(L3 키)명으로 L1 추론 */
 export function getL1(category: string): "income" | "savings" | "expense" {
-  if (category === "수입") return "income";
+  if (INCOME_SET.has(category)) return "income";
   if (category in SAVINGS_L2) return "savings";
   return "expense";
 }
@@ -90,6 +107,8 @@ export function getL1(category: string): "income" | "savings" | "expense" {
 /** 내부 키 → 짧은 표시명 (예: "교육_서준" → "서준") */
 export function categoryDisplay(key: string): string {
   if (key in EXPENSE_LABEL) return EXPENSE_LABEL[key];
+  if (key in INCOME_LABEL) return INCOME_LABEL[key];
+  if (key in SAVINGS_LABEL) return SAVINGS_LABEL[key];
   return key;
 }
 /** 내부 키 → 대분류 포함 표시명 (겹치는 소분류 구분용, 예: "교육_서준" → "교육 · 서준") */
@@ -154,7 +173,7 @@ export const L2_BY_L1: Record<string, string[]> = {
 
 /** 특정 L1 + L2 그룹에 속한 L3(카테고리 키) 목록 */
 export function l3ListForL2(l1: string, l2: string): string[] {
-  if (l1 === "income") return ["수입"];
+  if (l1 === "income") return INCOME_L3.map((it) => it.key);
   if (l1 === "savings") return Object.keys(SAVINGS_L2).filter((k) => SAVINGS_L2[k] === l2);
   const g = EXPENSE_TREE.find((x) => x.l2 === l2);
   return g ? g.items.map((it) => it.key) : [];
@@ -162,7 +181,7 @@ export function l3ListForL2(l1: string, l2: string): string[] {
 
 /** 특정 L1에 속한 모든 L3(카테고리 키) 목록 */
 export function l3ListForL1(l1: string): string[] {
-  if (l1 === "income") return ["수입"];
+  if (l1 === "income") return INCOME_L3.map((it) => it.key);
   if (l1 === "savings") return Object.keys(SAVINGS_L2);
   return EXPENSE_TREE.flatMap((g) => g.items.map((it) => it.key));
 }

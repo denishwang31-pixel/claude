@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { trpc } from "../lib/trpc";
 import { toast } from "sonner";
-import { EXPENSE_TREE } from "../lib/categories";
+import { EXPENSE_TREE, INCOME_L3 } from "../lib/categories";
 
 interface Props {
   onClose: () => void;
@@ -11,8 +11,13 @@ interface Props {
 // 카테고리 선택지 (optgroup): 지출 트리 + 저축/투자 + 수입
 const CATEGORY_OPTGROUPS: { group: string; items: { key: string; label: string }[] }[] = [
   ...EXPENSE_TREE.map((g) => ({ group: `지출 › ${g.l2}`, items: g.items })),
-  { group: "저축/투자", items: [{ key: "저축", label: "저축" }, { key: "투자", label: "투자" }] },
-  { group: "수입", items: [{ key: "수입", label: "수입" }] },
+  { group: "저축/투자", items: [
+    { key: "장기저축", label: "장기 저축" },
+    { key: "단기저축", label: "단기 저축" },
+    { key: "저축", label: "저축(미분류)" },
+    { key: "투자", label: "투자" },
+  ]},
+  { group: "수입", items: INCOME_L3 },
 ];
 
 /** 수기 입력 — 모든 항목을 직접 입력해 거래 1건을 추가한다. */
