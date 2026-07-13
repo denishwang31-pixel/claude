@@ -63,6 +63,9 @@ export function TransactionsTab({ owner }: Props) {
   const [colTypes, setColTypes] = useState<string[]>([]);
   // 수기 입력 모달
   const [showManual, setShowManual] = useState(false);
+  // 행 선택 (페이지 넘어가도 유지) + 선택 일괄 변경용 카테고리
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkCategory, setBulkCategory] = useState("");
 
   useEffect(() => {
     const t = setTimeout(() => setColContentQ(colContent.trim()), 350);
@@ -145,6 +148,16 @@ export function TransactionsTab({ owner }: Props) {
     onError: () => toast.error("삭제에 실패했습니다."),
   });
 
+  const bulkCategoryMutation = trpc.budget.updateCategoryBulk.useMutation({
+    onSuccess: (res) => {
+      invalidateAll();
+      setSelectedIds(new Set());
+      setBulkCategory("");
+      toast.success(`${res.count}건의 카테고리를 변경했습니다.`);
+    },
+    onError: () => toast.error("일괄 변경에 실패했습니다."),
+  });
+
   const autoExclMutation = trpc.budget.runAutoExclusions.useMutation({
     onSuccess: (res) => {
       invalidateAll();
@@ -171,6 +184,29 @@ export function TransactionsTab({ owner }: Props) {
     if (window.confirm(`「${content}」 거래를 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`)) {
       deleteMutation.mutate({ transactionId: id });
     }
+  }
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function togglePageSelect() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const ids = (data?.rows ?? []).map((r) => Number(r.id));
+      const allSelected = ids.length > 0 && ids.every((i) => next.has(i));
+      if (allSelected) ids.forEach((i) => next.delete(i));
+      else ids.forEach((i) => next.add(i));
+      return next;
+    });
+  }
+  function applyBulkCategory() {
+    if (!bulkCategory) { toast.error("변경할 카테고리를 선택하세요."); return; }
+    if (selectedIds.size === 0) return;
+    bulkCategoryMutation.mutate({ transactionIds: Array.from(selectedIds), newCategory: bulkCategory });
   }
 
   const excludedSet = new Set(data?.excludedIds ?? []);
@@ -324,6 +360,47 @@ export function TransactionsTab({ owner }: Props) {
         </div>
       </div>
 
+      {/* 선택 항목 일괄 변경 바 */}
+      {selectedIds.size > 0 && (
+        <div className="bg-cream-700 text-white rounded-xl px-4 py-2.5 flex items-center gap-3 flex-wrap shadow-sm">
+          <span className="text-sm font-medium">✓ {selectedIds.size}건 선택됨</span>
+          <select
+            value={bulkCategory}
+            onChange={(e) => setBulkCategory(e.target.value)}
+            className="rounded-lg px-2.5 py-1.5 text-sm text-cream-800 bg-white border-0 focus:outline-none"
+          >
+            <option value="">카테고리 선택...</option>
+            {EXPENSE_TREE.map((g) => (
+              <optgroup key={g.l2} label={`지출 › ${g.l2}`}>
+                {g.items.map((it) => <option key={it.key} value={it.key}>{it.label}</option>)}
+              </optgroup>
+            ))}
+            <optgroup label="저축/투자">
+              <option value="장기저축">장기 저축</option>
+              <option value="단기저축">단기 저축</option>
+              <option value="저축">저축(미분류)</option>
+              <option value="투자">투자</option>
+            </optgroup>
+            <optgroup label="수입">
+              {INCOME_L3.map((it) => <option key={it.key} value={it.key}>{it.label}</option>)}
+            </optgroup>
+          </select>
+          <button
+            onClick={applyBulkCategory}
+            disabled={bulkCategoryMutation.isPending || !bulkCategory}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-cream-800 hover:bg-cream-100 disabled:opacity-50 transition-colors"
+          >
+            {bulkCategoryMutation.isPending ? "변경 중..." : "선택 항목 변경"}
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="text-xs underline opacity-80 hover:opacity-100 ml-auto"
+          >
+            선택 해제
+          </button>
+        </div>
+      )}
+
       {/* 활성 컬럼 필터 요약 */}
       {(colContent || colCats.length > 0 || colPMs.length > 0 || colTypes.length > 0) && (
         <div className="flex items-center gap-2 flex-wrap text-xs px-1">
@@ -346,6 +423,15 @@ export function TransactionsTab({ owner }: Props) {
             <table className="w-full text-sm">
               <thead className="bg-cream-50">
                 <tr>
+                  <th className="text-center pl-3 pr-1 py-3 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={pageRows.length > 0 && pageRows.every((r) => selectedIds.has(Number(r.id)))}
+                      onChange={togglePageSelect}
+                      className="accent-cream-700 cursor-pointer"
+                      title="현재 페이지 전체 선택/해제"
+                    />
+                  </th>
                   <th className="text-left px-4 py-3 text-cream-600 font-medium whitespace-nowrap">날짜</th>
                   <th className="text-left px-4 py-3 text-cream-600 font-medium whitespace-nowrap">내용</th>
                   <th className="text-left px-4 py-3 text-cream-600 font-medium whitespace-nowrap">
@@ -386,6 +472,7 @@ export function TransactionsTab({ owner }: Props) {
                 </tr>
                 {/* 컬럼 필터 행 — 내용 텍스트 필터 */}
                 <tr className="border-t border-cream-100">
+                  <td></td>
                   <td className="px-4 py-1.5"></td>
                   <td className="px-4 py-1.5">
                     <input
@@ -402,7 +489,7 @@ export function TransactionsTab({ owner }: Props) {
               <tbody>
                 {pageRows.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="text-center py-10 text-cream-400">
+                    <td colSpan={11} className="text-center py-10 text-cream-400">
                       {hasAnyFilter ? "검색 결과가 없습니다." : "거래 내역이 없습니다."}
                     </td>
                   </tr>
@@ -416,6 +503,14 @@ export function TransactionsTab({ owner }: Props) {
                         isExcluded && "opacity-40"
                       )}
                     >
+                      <td className="text-center pl-3 pr-1 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(Number(row.id))}
+                          onChange={() => toggleSelect(Number(row.id))}
+                          className="accent-cream-700 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-4 py-2.5 text-cream-500 whitespace-nowrap">
                         {formatDate(row.txDate as string)}
                       </td>

@@ -1108,6 +1108,19 @@ export async function resetAllData(userId: number): Promise<{ transactions: numb
   return { transactions: (tx as any[]).length, rules: (rules as any[]).length };
 }
 
+/** 선택한 거래들의 카테고리를 일괄 변경 (체크박스 선택 기반) */
+export async function updateCategoryBulkByIds(userId: number, ids: number[], newCategory: string): Promise<number> {
+  const db = await getDb();
+  if (!db || ids.length === 0) return 0;
+  const idList = sql.join(ids.map((i) => sql`${i}`), sql`, `);
+  const res = await db.execute(sql`
+    UPDATE transactions SET "customCategory" = ${newCategory}
+    WHERE "userId" = ${userId} AND id IN (${idList})
+    RETURNING id
+  `);
+  return (res as any[]).length;
+}
+
 /** 거래 1건 삭제 (제외 표시도 함께 정리) */
 export async function deleteTransaction(userId: number, transactionId: number): Promise<boolean> {
   const db = await getDb();

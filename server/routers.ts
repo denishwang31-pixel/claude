@@ -36,6 +36,7 @@ import {
   deleteAllTransactions,
   resetAllData,
   deleteTransaction,
+  updateCategoryBulkByIds,
   addManualTransaction,
   setExcludedByFilters,
   getFilterOptions,
@@ -161,6 +162,17 @@ const budgetRouter = router({
   resetAllData: protectedProcedure.mutation(async ({ ctx }) => {
     return resetAllData(ctx.user.id);
   }),
+
+  // ── 선택 거래 카테고리 일괄 변경 ─────────────────────────────
+  updateCategoryBulk: protectedProcedure
+    .input(z.object({
+      transactionIds: z.array(z.number().int()).min(1),
+      newCategory: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const count = await updateCategoryBulkByIds(ctx.user.id, input.transactionIds, input.newCategory);
+      return { count };
+    }),
 
   // ── 거래 1건 삭제 ────────────────────────────────────────────
   deleteTransaction: protectedProcedure
