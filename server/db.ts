@@ -30,6 +30,9 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
     `UPDATE ${table} SET "${col}" = ${remapCase(`"${col}"`)} WHERE "${col}" IN (${remapInList})`;
 
   const steps = [
+    // 이메일 로그인용 비밀번호 해시 + openId 길이 확장(이메일 계정은 "email:<email>")
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS "passwordHash" varchar(255)`,
+    `ALTER TABLE users ALTER COLUMN "openId" TYPE varchar(255)`,
     `ALTER TABLE category_rules ADD COLUMN IF NOT EXISTS "ruleType" varchar(20) NOT NULL DEFAULT 'expense'`,
     `ALTER TABLE category_rules ADD COLUMN IF NOT EXISTS "isActive" integer NOT NULL DEFAULT 1`,
     `CREATE UNIQUE INDEX IF NOT EXISTS "category_rules_userId_keyword_idx" ON category_rules ("userId", keyword)`,
@@ -233,6 +236,41 @@ export async function getUserByOpenId(openId: string) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+/** 이메일로 사용자 조회 (passwordHash 포함 — 로그인 검증용). 없으면 undefined. */
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const normalized = email.trim().toLowerCase();
+  const result = await db.select().from(users).where(eq(users.email, normalized)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/** 이메일 회원가입 — 이미 존재하면 null 반환(중복). 성공 시 생성된 사용자 반환. */
+export async function createEmailUser(params: {
+  email: string;
+  passwordHash: string;
+  name: string;
+}): Promise<typeof users.$inferSelect | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const email = params.email.trim().toLowerCase();
+  const existing = await getUserByEmail(email);
+  if (existing) return null;
+
+  const openId = `email:${email}`;
+  const role = openId === ENV.ownerOpenId || email === ENV.ownerOpenId ? "admin" : "user";
+  await db.insert(users).values({
+    openId,
+    email,
+    name: params.name,
+    passwordHash: params.passwordHash,
+    loginMethod: "email",
+    role,
+    lastSignedIn: new Date(),
+  });
+  return (await getUserByOpenId(openId)) ?? null;
 }
 
 // ── 사용자 설정 ────────────────────────────────────────────────

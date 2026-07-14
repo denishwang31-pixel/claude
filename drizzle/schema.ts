@@ -17,9 +17,12 @@ export const roleEnum = pgEnum("role", ["user", "admin"]);
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  // 소셜: "kakao:<id>" / "google:<sub>" / "naver:<id>", 이메일: "email:<email>"
+  openId: varchar("openId", { length: 255 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
+  // 이메일 로그인 전용 — 소셜 로그인 계정은 NULL. scrypt$salt$hash 형식.
+  passwordHash: varchar("passwordHash", { length: 255 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: roleEnum("role").default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

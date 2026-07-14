@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { trpc, createTRPCClient } from "./lib/trpc";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import Home from "./pages/Home";
+import { AuthGate } from "./components/AuthGate";
 import { Toaster } from "sonner";
 
 export default function App() {
@@ -22,7 +22,7 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <ErrorBoundary>
-            <Home />
+            <AuthGate />
           </ErrorBoundary>
           <Toaster position="bottom-right" richColors />
         </ThemeProvider>

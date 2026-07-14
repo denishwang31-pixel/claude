@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { trpc } from "../lib/trpc";
+import { trpc, apiUrl } from "../lib/trpc";
 import { formatKRW } from "../lib/format";
 import { KpiCard } from "../components/KpiCard";
 import { UploadZone } from "../components/UploadZone";
@@ -173,6 +173,16 @@ export default function Home() {
             >
               <span>{theme === "light" ? "🌙" : "☀️"}</span>
               <span>{theme === "light" ? "다크 모드" : "라이트 모드"}</span>
+            </button>
+            <button
+              onClick={async () => {
+                await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include" });
+                await utils.budget.me.invalidate();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-cream-200 text-cream-600 hover:bg-cream-100 transition-colors"
+              title="로그아웃"
+            >
+              <span>로그아웃</span>
             </button>
           </div>
         </div>

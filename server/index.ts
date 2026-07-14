@@ -5,7 +5,9 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./routers";
 import { createContext } from "./_core/trpc";
 import { ENV } from "./_core/env";
-import { upsertUser, getUserByOpenId } from "./db";
+import { upsertUser, getUserByOpenId, getUserByEmail, createEmailUser } from "./db";
+import { hashPassword, verifyPassword, isValidEmail } from "./_core/password";
+import { randomBytes } from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -147,9 +149,153 @@ app.get("/auth/kakao/callback", async (req, res) => {
     const user = await getUserByOpenId(openId);
     if (user) req.session.user = user;
 
-    res.redirect("/");
+    res.redirect(ENV.authSuccessRedirect);
   } catch (err) {
     console.error("[Auth] Kakao callback error:", err);
+    res.redirect("/?error=auth_failed");
+  }
+});
+
+// ── 이메일/비밀번호 회원가입 ───────────────────────────────────
+app.post("/auth/register", async (req, res) => {
+  try {
+    const email = String(req.body?.email ?? "").trim().toLowerCase();
+    const password = String(req.body?.password ?? "");
+    const name = String(req.body?.name ?? "").trim() || email.split("@")[0];
+
+    if (!isValidEmail(email)) return res.status(400).json({ error: "이메일 형식이 올바르지 않습니다." });
+    if (password.length < 8) return res.status(400).json({ error: "비밀번호는 8자 이상이어야 합니다." });
+
+    const created = await createEmailUser({ email, passwordHash: hashPassword(password), name });
+    if (!created) return res.status(409).json({ error: "이미 가입된 이메일입니다." });
+
+    req.session.user = created;
+    res.json({ success: true, user: { id: created.id, name: created.name, email: created.email } });
+  } catch (err) {
+    console.error("[Auth] register error:", err);
+    res.status(500).json({ error: "회원가입에 실패했습니다." });
+  }
+});
+
+// ── 이메일/비밀번호 로그인 ─────────────────────────────────────
+app.post("/auth/login", async (req, res) => {
+  try {
+    const email = String(req.body?.email ?? "").trim().toLowerCase();
+    const password = String(req.body?.password ?? "");
+
+    const user = await getUserByEmail(email);
+    // 이메일 없음/소셜전용 계정/비번 불일치 모두 동일 메시지(계정 존재 여부 노출 방지)
+    if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+      return res.status(401).json({ error: "이메일 또는 비밀번호가 올바르지 않습니다." });
+    }
+
+    await upsertUser({ openId: user.openId, lastSignedIn: new Date() });
+    req.session.user = user;
+    res.json({ success: true, user: { id: user.id, name: user.name, email: user.email } });
+  } catch (err) {
+    console.error("[Auth] login error:", err);
+    res.status(500).json({ error: "로그인에 실패했습니다." });
+  }
+});
+
+// ── Google OAuth ───────────────────────────────────────────────
+app.get("/auth/google", (req, res) => {
+  if (!ENV.googleClientId) return res.status(400).json({ error: "GOOGLE_CLIENT_ID not configured" });
+  const state = randomBytes(16).toString("hex");
+  req.session.oauthState = state;
+  const url =
+    `https://accounts.google.com/o/oauth2/v2/auth` +
+    `?client_id=${encodeURIComponent(ENV.googleClientId)}` +
+    `&redirect_uri=${encodeURIComponent(ENV.googleRedirectUri)}` +
+    `&response_type=code&scope=${encodeURIComponent("openid email profile")}` +
+    `&state=${state}`;
+  res.redirect(url);
+});
+
+app.get("/auth/google/callback", async (req, res) => {
+  const code = req.query.code as string;
+  const state = req.query.state as string;
+  if (!code) return res.redirect("/?error=no_code");
+  if (!state || state !== req.session.oauthState) return res.redirect("/?error=bad_state");
+  req.session.oauthState = undefined;
+
+  try {
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: ENV.googleClientId,
+        client_secret: ENV.googleClientSecret,
+        redirect_uri: ENV.googleRedirectUri,
+        code,
+      }),
+    });
+    const tokenData = (await tokenRes.json()) as { access_token?: string; error?: string };
+    if (!tokenData.access_token) throw new Error("Token error: " + tokenData.error);
+
+    const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const g = (await userRes.json()) as { id: string; email?: string; name?: string };
+
+    const openId = `google:${g.id}`;
+    await upsertUser({ openId, name: g.name ?? null, email: g.email ?? null, loginMethod: "google", lastSignedIn: new Date() });
+    const user = await getUserByOpenId(openId);
+    if (user) req.session.user = user;
+
+    res.redirect(ENV.authSuccessRedirect);
+  } catch (err) {
+    console.error("[Auth] Google callback error:", err);
+    res.redirect("/?error=auth_failed");
+  }
+});
+
+// ── Naver OAuth ────────────────────────────────────────────────
+app.get("/auth/naver", (req, res) => {
+  if (!ENV.naverClientId) return res.status(400).json({ error: "NAVER_CLIENT_ID not configured" });
+  const state = randomBytes(16).toString("hex");
+  req.session.oauthState = state;
+  const url =
+    `https://nid.naver.com/oauth2.0/authorize` +
+    `?response_type=code&client_id=${encodeURIComponent(ENV.naverClientId)}` +
+    `&redirect_uri=${encodeURIComponent(ENV.naverRedirectUri)}` +
+    `&state=${state}`;
+  res.redirect(url);
+});
+
+app.get("/auth/naver/callback", async (req, res) => {
+  const code = req.query.code as string;
+  const state = req.query.state as string;
+  if (!code) return res.redirect("/?error=no_code");
+  if (!state || state !== req.session.oauthState) return res.redirect("/?error=bad_state");
+  req.session.oauthState = undefined;
+
+  try {
+    const tokenRes = await fetch(
+      `https://nid.naver.com/oauth2.0/token?grant_type=authorization_code` +
+        `&client_id=${encodeURIComponent(ENV.naverClientId)}` +
+        `&client_secret=${encodeURIComponent(ENV.naverClientSecret)}` +
+        `&code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
+    );
+    const tokenData = (await tokenRes.json()) as { access_token?: string; error?: string };
+    if (!tokenData.access_token) throw new Error("Token error: " + tokenData.error);
+
+    const userRes = await fetch("https://openapi.naver.com/v1/nid/me", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const nv = (await userRes.json()) as { response?: { id: string; email?: string; name?: string; nickname?: string } };
+    const r = nv.response;
+    if (!r?.id) throw new Error("No user id from Naver");
+
+    const openId = `naver:${r.id}`;
+    await upsertUser({ openId, name: r.name ?? r.nickname ?? null, email: r.email ?? null, loginMethod: "naver", lastSignedIn: new Date() });
+    const user = await getUserByOpenId(openId);
+    if (user) req.session.user = user;
+
+    res.redirect(ENV.authSuccessRedirect);
+  } catch (err) {
+    console.error("[Auth] Naver callback error:", err);
     res.redirect("/?error=auth_failed");
   }
 });
