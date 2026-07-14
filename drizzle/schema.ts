@@ -79,6 +79,37 @@ export const excludedTransactions = pgTable("excluded_transactions", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+// 카테고리별 월 예산 목표 (매월 반복 적용). category = 앱 L3 키.
+export const budgets = pgTable(
+  "budgets",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("userId").notNull(),
+    category: varchar("category", { length: 64 }).notNull(),
+    targetAmount: decimal("targetAmount", { precision: 15, scale: 2 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  (t) => ({ uq: unique().on(t.userId, t.category) })
+);
+
+export type Budget = typeof budgets.$inferSelect;
+export type InsertBudget = typeof budgets.$inferInsert;
+
+// 예산 임계치(50/80/90/100%) 알림 발송 기록 — 같은 달·카테고리·임계치는 1회만 알림.
+export const budgetAlerts = pgTable(
+  "budget_alerts",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("userId").notNull(),
+    category: varchar("category", { length: 64 }).notNull(),
+    yearMonth: varchar("yearMonth", { length: 7 }).notNull(), // 'YYYY-MM'
+    threshold: integer("threshold").notNull(), // 50 / 80 / 90 / 100
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (t) => ({ uq: unique().on(t.userId, t.category, t.yearMonth, t.threshold) })
+);
+
 export const categoryRules = pgTable("category_rules", {
   id: serial("id").primaryKey(),
   userId: integer("userId").notNull(),

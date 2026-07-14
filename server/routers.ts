@@ -43,6 +43,10 @@ import {
   autoExcludeTransfersForHashes,
   runAutoExclusions,
   categoryToRuleType,
+  getBudgetStatus,
+  setBudget,
+  deleteBudget,
+  detectNewBudgetAlerts,
 } from "./db";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
@@ -545,6 +549,30 @@ const budgetRouter = router({
     .query(async ({ ctx, input }) => {
       return getL3Stats(ctx.user.id, input.category, input.yearMonth, input.direction, input.dateStart, input.dateEnd, input.owner);
     }),
+
+  // ── 예산 목표 & 알림 ─────────────────────────────────────────
+  getBudgets: protectedProcedure
+    .input(z.object({ yearMonth: z.string() }))
+    .query(async ({ ctx, input }) => getBudgetStatus(ctx.user.id, input.yearMonth)),
+
+  setBudget: protectedProcedure
+    .input(z.object({ category: z.string().min(1), targetAmount: z.number().nonnegative() }))
+    .mutation(async ({ ctx, input }) => {
+      await setBudget(ctx.user.id, input.category, input.targetAmount);
+      return { ok: true };
+    }),
+
+  deleteBudget: protectedProcedure
+    .input(z.object({ category: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      await deleteBudget(ctx.user.id, input.category);
+      return { ok: true };
+    }),
+
+  // 이번 달 새로 넘긴 임계치 알림을 조회(+기록). 앱 진입/업로드 후 호출.
+  checkBudgetAlerts: protectedProcedure
+    .input(z.object({ yearMonth: z.string() }))
+    .mutation(async ({ ctx, input }) => detectNewBudgetAlerts(ctx.user.id, input.yearMonth)),
 });
 
 export const appRouter = router({

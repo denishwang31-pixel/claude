@@ -9,6 +9,8 @@ import { DashboardPivot } from "../components/DashboardPivot";
 import { CategoryTab } from "../components/tabs/CategoryTab";
 import { MonthlySummaryTab } from "../components/tabs/MonthlySummaryTab";
 import { MappingRulesTab } from "../components/tabs/MappingRulesTab";
+import { BudgetTab } from "../components/tabs/BudgetTab";
+import { notifyBudgetAlerts } from "../lib/budgetNotify";
 import { TransactionsTab } from "../components/tabs/TransactionsTab";
 import { useTheme } from "../contexts/ThemeContext";
 import { UsageGuide } from "../components/UsageGuide";
@@ -18,13 +20,14 @@ import { toast } from "sonner";
 
 const EMPTY_DATE: DateParts = { y: "", m: "", d: "" };
 
-type Tab = "dashboard" | "monthly" | "category" | "transactions" | "mapping";
+type Tab = "dashboard" | "monthly" | "category" | "transactions" | "mapping" | "budget";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "dashboard",    label: "대시보드" },
   { id: "monthly",      label: "월별 요약" },
   { id: "category",     label: "카테고리별" },
   { id: "transactions", label: "전체 내역" },
+  { id: "budget",       label: "예산" },
   { id: "mapping",      label: "매핑 규칙" },
 ];
 
@@ -109,6 +112,19 @@ export default function Home() {
     saveSettingsMutation.mutate({ includeTransfer, excludedCategories: cats });
   }
 
+  // ── 예산 임계치 알림 ─────────────────────────────────────────
+  const checkAlertsMutation = trpc.budget.checkBudgetAlerts.useMutation();
+  function runBudgetAlertCheck() {
+    const now = new Date();
+    const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    checkAlertsMutation.mutate(
+      { yearMonth },
+      { onSuccess: (alerts) => { if (alerts?.length) notifyBudgetAlerts(alerts); } }
+    );
+  }
+  // 앱 진입 시 1회 확인
+  useEffect(() => { runBudgetAlertCheck(); /* eslint-disable-line */ }, []);
+
   function onUploadSuccess() {
     utils.budget.getKpiSummary.invalidate();
     utils.budget.getMonthlyStats.invalidate();
@@ -117,7 +133,10 @@ export default function Home() {
     utils.budget.getSavingsStats.invalidate();
     utils.budget.getTransactions.invalidate();
     utils.budget.getIncomeDistribution.invalidate();
+    utils.budget.getBudgets.invalidate();
     setShowUpload(false);
+    // 새 지출이 반영됐으니 임계치 재확인
+    runBudgetAlertCheck();
   }
 
   // 순자산 증감 = 수입 − 지출 (저축·투자는 소비가 아니라 자산 이동이므로 빼지 않음).
@@ -308,6 +327,7 @@ export default function Home() {
           />
         )}
         {activeTab === "transactions" && <TransactionsTab owner={ownerFilter} />}
+        {activeTab === "budget" && <BudgetTab />}
         {activeTab === "mapping" && <MappingRulesTab />}
       </main>
 
