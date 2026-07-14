@@ -14,6 +14,7 @@ import { SubscriptionTab } from "../components/tabs/SubscriptionTab";
 import { AccountsTab } from "../components/tabs/AccountsTab";
 import { FamilyTab } from "../components/tabs/FamilyTab";
 import { ReportPanel } from "../components/ReportPanel";
+import { SmsImportModal } from "../components/SmsImportModal";
 import { notifyBudgetAlerts } from "../lib/budgetNotify";
 import { isBiometricLockEnabled, setBiometricLockEnabled } from "../components/BiometricGate";
 import { TransactionsTab } from "../components/tabs/TransactionsTab";
@@ -53,6 +54,7 @@ export default function Home() {
   const [ownerFilter, setOwnerFilter] = useState<"" | "동현" | "혜진">("");
   const { theme, toggleTheme } = useTheme();
   const [lockOn, setLockOn] = useState(isBiometricLockEnabled());
+  const [showSms, setShowSms] = useState(false);
 
   const dashRange = buildDateRange(dashStart, dashEnd);
   const dateParams = dashRange ? { dateStart: dashRange.start, dateEnd: dashRange.end } : {};
@@ -161,13 +163,23 @@ export default function Home() {
           <h1 className="font-serif text-xl font-bold text-cream-800">가계부 대시보드</h1>
           <div className="flex items-center gap-3">
             {activeTab === "dashboard" && (
-              <button
-                onClick={() => setShowUpload((v) => !v)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-cream-700 text-white hover:bg-cream-800 transition-colors"
-              >
-                <span>+</span>
-                <span>데이터 업로드</span>
-              </button>
+              <>
+                <button
+                  onClick={() => setShowUpload((v) => !v)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-cream-700 text-white hover:bg-cream-800 transition-colors"
+                >
+                  <span>+</span>
+                  <span>데이터 업로드</span>
+                </button>
+                <button
+                  onClick={() => setShowSms(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-cream-200 text-cream-600 hover:bg-cream-100 transition-colors"
+                  title="결제 문자를 붙여넣어 빠르게 입력"
+                >
+                  <span>💬</span>
+                  <span>문자 입력</span>
+                </button>
+              </>
             )}
             {/* 소유자 필터 (모든 화면에 적용) */}
             <div className="flex items-center rounded-lg border border-cream-200 overflow-hidden">
@@ -255,6 +267,8 @@ export default function Home() {
         {activeTab === "dashboard" && showUpload && (
           <UploadZone onSuccess={onUploadSuccess} />
         )}
+
+        {showSms && <SmsImportModal onClose={() => setShowSms(false)} onSaved={onUploadSuccess} />}
 
         {/* Filter panel — monthly & category tabs only */}
         {(activeTab === "monthly" || activeTab === "category") && (
