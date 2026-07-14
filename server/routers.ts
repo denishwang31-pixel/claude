@@ -48,6 +48,8 @@ import {
   deleteBudget,
   detectNewBudgetAlerts,
   getSubscriptions,
+  getAccounts,
+  setAccountHidden,
 } from "./db";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
@@ -577,6 +579,15 @@ const budgetRouter = router({
 
   // 정기결제·구독 감지 (거래 내역 기반)
   getSubscriptions: protectedProcedure.query(async ({ ctx }) => getSubscriptions(ctx.user.id)),
+
+  // ── 계좌(결제수단) 표시/숨김 ──────────────────────────────────
+  getAccounts: protectedProcedure.query(async ({ ctx }) => getAccounts(ctx.user.id)),
+  setAccountHidden: protectedProcedure
+    .input(z.object({ paymentMethod: z.string().min(1), hidden: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await setAccountHidden(ctx.user.id, input.paymentMethod, input.hidden);
+      return { ok: true };
+    }),
 });
 
 export const appRouter = router({

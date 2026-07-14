@@ -89,6 +89,13 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
        "createdAt" timestamp NOT NULL DEFAULT NOW(),
        UNIQUE ("userId", category, "yearMonth", threshold)
      )`,
+    // 숨긴 계좌(결제수단) — 집계·목록에서 제외할 카드/은행
+    `CREATE TABLE IF NOT EXISTS hidden_accounts (
+       "userId" integer NOT NULL,
+       "paymentMethod" varchar(128) NOT NULL,
+       "createdAt" timestamp NOT NULL DEFAULT NOW(),
+       UNIQUE ("userId", "paymentMethod")
+     )`,
     // 1회성 마이그레이션 추적 테이블
     `CREATE TABLE IF NOT EXISTS app_migrations (key varchar(64) PRIMARY KEY, "appliedAt" timestamp NOT NULL DEFAULT NOW())`,
   ];
@@ -652,7 +659,7 @@ export async function getMonthlyStats(
     ? `AND (${effectiveCatExpr}) NOT IN (${catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
     : "";
 
-  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
+  const notExcludedSQL = `AND (NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id) AND NOT EXISTS (SELECT 1 FROM hidden_accounts ha WHERE ha."userId" = ${userId} AND ha."paymentMethod" = COALESCE(t."paymentMethod",'')))`;
 
   const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
   const [incomeRows, expenseRows] = await Promise.all([
@@ -715,7 +722,7 @@ export async function getCategoryStats(
     : "";
 
   const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
-  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
+  const notExcludedSQL = `AND (NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id) AND NOT EXISTS (SELECT 1 FROM hidden_accounts ha WHERE ha."userId" = ${userId} AND ha."paymentMethod" = COALESCE(t."paymentMethod",'')))`;
   const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
 
   const rows = await db.execute(sql.raw(
@@ -771,7 +778,7 @@ export async function getBudgetStatus(
   if (budgetRows.length === 0) return [];
 
   const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
-  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
+  const notExcludedSQL = `AND (NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id) AND NOT EXISTS (SELECT 1 FROM hidden_accounts ha WHERE ha."userId" = ${userId} AND ha."paymentMethod" = COALESCE(t."paymentMethod",'')))`;
   const monthSQL = /^\d{4}-\d{2}$/.test(yearMonth) ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
 
   // 이번 달 카테고리별 지출(effectiveCategory 기준, 제외 항목 빼고, 지출만)
@@ -849,6 +856,49 @@ export async function detectNewBudgetAlerts(
   return newAlerts.sort((a, b) => a.threshold - b.threshold);
 }
 
+// ── 계좌(결제수단) 표시/숨김 관리 ──────────────────────────────
+/** 결제수단(카드/은행/페이) 목록 + 거래수·합계·숨김 여부.
+ *  숨김 필터를 적용하지 않으므로 숨긴 계좌도 관리 화면에 나온다. */
+export async function getAccounts(userId: number): Promise<{
+  paymentMethod: string; count: number; total: number; hidden: boolean;
+}[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = (await db.execute(
+    sql.raw(
+      `SELECT COALESCE(t."paymentMethod",'') as pm,
+              COUNT(*) as cnt,
+              ABS(SUM(t.amount::numeric)) as total,
+              EXISTS (SELECT 1 FROM hidden_accounts ha WHERE ha."userId" = ${userId} AND ha."paymentMethod" = COALESCE(t."paymentMethod",'')) as hidden
+       FROM transactions t
+       WHERE t."userId" = ${userId}
+       GROUP BY COALESCE(t."paymentMethod",'')
+       ORDER BY COUNT(*) DESC`
+    )
+  )) as any[];
+  return rows
+    .filter((r) => String(r.pm).length > 0)
+    .map((r) => ({
+      paymentMethod: String(r.pm),
+      count: Number(r.cnt),
+      total: Number(r.total),
+      hidden: r.hidden === true || r.hidden === "t",
+    }));
+}
+
+export async function setAccountHidden(userId: number, paymentMethod: string, hidden: boolean): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  if (hidden) {
+    await db.execute(sql`
+      INSERT INTO hidden_accounts ("userId", "paymentMethod") VALUES (${userId}, ${paymentMethod})
+      ON CONFLICT ("userId", "paymentMethod") DO NOTHING
+    `);
+  } else {
+    await db.execute(sql`DELETE FROM hidden_accounts WHERE "userId" = ${userId} AND "paymentMethod" = ${paymentMethod}`);
+  }
+}
+
 // ── 정기결제·구독 감지 ─────────────────────────────────────────
 /** 같은 가맹점·비슷한 금액이 월 간격으로 반복되면 구독으로 판정한다.
  *  (별도 테이블 없이 거래 내역에서 즉시 계산 — 읽기 전용) */
@@ -863,7 +913,7 @@ export async function getSubscriptions(userId: number): Promise<{
   const db = await getDb();
   if (!db) return [];
 
-  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
+  const notExcludedSQL = `AND (NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id) AND NOT EXISTS (SELECT 1 FROM hidden_accounts ha WHERE ha."userId" = ${userId} AND ha."paymentMethod" = COALESCE(t."paymentMethod",'')))`;
   // 같은 내용(가맹점) + 반올림 금액으로 묶고, 3회 이상 나온 것만 후보로.
   const rows = (await db.execute(
     sql.raw(
@@ -939,7 +989,7 @@ export async function getPivotData(
     : "";
 
   const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
-  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
+  const notExcludedSQL = `AND (NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id) AND NOT EXISTS (SELECT 1 FROM hidden_accounts ha WHERE ha."userId" = ${userId} AND ha."paymentMethod" = COALESCE(t."paymentMethod",'')))`;
 
   const rows = await db.execute(sql.raw(
     `SELECT sub."yearMonth",
@@ -1002,7 +1052,7 @@ export async function getKpiSummary(
   const transferExcludeSQL = catExclude.length > 0
     ? catExclude.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")
     : "''";
-  const notExcl = `NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
+  const notExcl = `(NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id) AND NOT EXISTS (SELECT 1 FROM hidden_accounts ha WHERE ha."userId" = ${userId} AND ha."paymentMethod" = COALESCE(t."paymentMethod",'')))`;
 
   // 입금(양수)=수입(단, 저축 카테고리 제외), 저축 카테고리는 입출금 net=저축, 그 외 출금=지출
   const rows = await db.execute(sql.raw(
@@ -1055,7 +1105,7 @@ export async function getL3Stats(
   const catFilter = category === "수입"
     ? `t.amount::numeric > 0 AND (${effectiveCatExpr}) NOT IN (${savingsCatsSQL}) AND (${effectiveCatExpr}) NOT IN ('근로소득','수당','부가소득') AND (${effectiveCatExpr}) <> '이체'`
     : `(${effectiveCatExpr}) = '${escapedCat}'`;
-  const notExcludedSQL = `AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
+  const notExcludedSQL = `AND (NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id) AND NOT EXISTS (SELECT 1 FROM hidden_accounts ha WHERE ha."userId" = ${userId} AND ha."paymentMethod" = COALESCE(t."paymentMethod",'')))`;
 
   const rows = await db.execute(sql.raw(
     `SELECT t.content, ABS(SUM(t.amount::numeric)) as total, COUNT(*) as cnt
@@ -1609,7 +1659,7 @@ export async function getSavingsStats(userId: number): Promise<{
      FROM transactions t
      WHERE t."userId" = ${userId}
        AND (${effectiveCatExpr}) IN ('저축', '투자')
-       AND NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)
+       AND (NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id) AND NOT EXISTS (SELECT 1 FROM hidden_accounts ha WHERE ha."userId" = ${userId} AND ha."paymentMethod" = COALESCE(t."paymentMethod",'')))
      GROUP BY t.content, (${effectiveCatExpr})
      ORDER BY total DESC`
   ));
@@ -1954,7 +2004,7 @@ export async function getIncomeDistribution(userId: number): Promise<{
   const investmentCats = new Set(rules.filter((r) => r.ruleType === "investment").map((r) => r.category));
 
   const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
-  const notExcludedSQL = `NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id)`;
+  const notExcludedSQL = `(NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id) AND NOT EXISTS (SELECT 1 FROM hidden_accounts ha WHERE ha."userId" = ${userId} AND ha."paymentMethod" = COALESCE(t."paymentMethod",'')))`;
 
   const rows = await db.execute(sql.raw(
     `SELECT (${effectiveCatExpr}) as "effectiveCategory", t."txType", ABS(SUM(t.amount::numeric)) as total, COUNT(*) as cnt
