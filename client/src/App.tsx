@@ -5,6 +5,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AuthGate } from "./components/AuthGate";
 import { AppUrlListener } from "./components/AppUrlListener";
+import { BiometricGate } from "./components/BiometricGate";
 import { Toaster } from "sonner";
 
 export default function App() {
@@ -24,7 +25,9 @@ export default function App() {
         <ThemeProvider>
           <ErrorBoundary>
             <AppUrlListener />
-            <AuthGate />
+            <BiometricGate>
+              <AuthGate />
+            </BiometricGate>
           </ErrorBoundary>
           <Toaster position="bottom-right" richColors />
         </ThemeProvider>

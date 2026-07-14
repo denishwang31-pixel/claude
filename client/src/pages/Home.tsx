@@ -12,6 +12,7 @@ import { MappingRulesTab } from "../components/tabs/MappingRulesTab";
 import { BudgetTab } from "../components/tabs/BudgetTab";
 import { SubscriptionTab } from "../components/tabs/SubscriptionTab";
 import { notifyBudgetAlerts } from "../lib/budgetNotify";
+import { isBiometricLockEnabled, setBiometricLockEnabled } from "../components/BiometricGate";
 import { TransactionsTab } from "../components/tabs/TransactionsTab";
 import { useTheme } from "../contexts/ThemeContext";
 import { UsageGuide } from "../components/UsageGuide";
@@ -46,6 +47,7 @@ export default function Home() {
   // 전역 소유자 필터 ('' = 전체) — 모든 화면의 데이터에 적용
   const [ownerFilter, setOwnerFilter] = useState<"" | "동현" | "혜진">("");
   const { theme, toggleTheme } = useTheme();
+  const [lockOn, setLockOn] = useState(isBiometricLockEnabled());
 
   const dashRange = buildDateRange(dashStart, dashEnd);
   const dateParams = dashRange ? { dateStart: dashRange.start, dateEnd: dashRange.end } : {};
@@ -194,6 +196,21 @@ export default function Home() {
             >
               <span>{theme === "light" ? "🌙" : "☀️"}</span>
               <span>{theme === "light" ? "다크 모드" : "라이트 모드"}</span>
+            </button>
+            <button
+              onClick={() => {
+                const next = !lockOn;
+                setBiometricLockEnabled(next);
+                setLockOn(next);
+                toast.success(next ? "앱 생체 잠금을 켰습니다 (앱에서 적용)" : "앱 잠금을 껐습니다");
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                lockOn ? "border-cream-700 bg-cream-700 text-white" : "border-cream-200 text-cream-600 hover:bg-cream-100"
+              }`}
+              title="앱 생체 잠금 (Face ID/지문) — 앱에서만 동작"
+            >
+              <span>{lockOn ? "🔒" : "🔓"}</span>
+              <span>잠금</span>
             </button>
             <button
               onClick={async () => {
