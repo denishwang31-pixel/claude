@@ -50,6 +50,10 @@ import {
   getSubscriptions,
   getAccounts,
   setAccountHidden,
+  getGroupInfo,
+  createGroup,
+  joinGroup,
+  leaveGroup,
 } from "./db";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
@@ -81,12 +85,12 @@ const budgetRouter = router({
       try { await fn(); } catch { /* 측정만 */ }
       return Date.now() - s;
     };
-    const txRow = (await db.execute(sql`SELECT COUNT(*)::int AS c FROM transactions WHERE "userId" = ${ctx.user.id}`)) as any[];
-    const ruleRow = (await db.execute(sql`SELECT COUNT(*)::int AS c FROM category_rules WHERE "userId" = ${ctx.user.id}`)) as any[];
+    const txRow = (await db.execute(sql`SELECT COUNT(*)::int AS c FROM transactions WHERE "userId" = ${ctx.dataUserId}`)) as any[];
+    const ruleRow = (await db.execute(sql`SELECT COUNT(*)::int AS c FROM category_rules WHERE "userId" = ${ctx.dataUserId}`)) as any[];
     const timings = {
-      getKpiSummary: await time(() => getKpiSummary(ctx.user.id, false, [], [])),
-      getCategoryStats: await time(() => getCategoryStats(ctx.user.id, false, [], [])),
-      getPivotData: await time(() => getPivotData(ctx.user.id, false, [], [])),
+      getKpiSummary: await time(() => getKpiSummary(ctx.dataUserId, false, [], [])),
+      getCategoryStats: await time(() => getCategoryStats(ctx.dataUserId, false, [], [])),
+      getPivotData: await time(() => getPivotData(ctx.dataUserId, false, [], [])),
     };
     return {
       version,
@@ -106,7 +110,7 @@ const budgetRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.user.id;
+      const userId = ctx.dataUserId;
 
       // DB가 꺼져있으면 이후 함수들이 조용히 0건/빈 값을 반환해
       // "업로드 성공"처럼 보이는 거짓 성공 응답이 나간다 — 명확한
@@ -161,13 +165,13 @@ const budgetRouter = router({
 
   // ── 데이터 전체 삭제 ─────────────────────────────────────────
   deleteAllTransactions: protectedProcedure.mutation(async ({ ctx }) => {
-    const deleted = await deleteAllTransactions(ctx.user.id);
+    const deleted = await deleteAllTransactions(ctx.dataUserId);
     return { deleted };
   }),
 
   // ── 전체 리셋 (거래·규칙·제외·설정 모두 삭제) ───────────────
   resetAllData: protectedProcedure.mutation(async ({ ctx }) => {
-    return resetAllData(ctx.user.id);
+    return resetAllData(ctx.dataUserId);
   }),
 
   // ── 선택 거래 카테고리 일괄 변경 ─────────────────────────────
@@ -177,7 +181,7 @@ const budgetRouter = router({
       newCategory: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const count = await updateCategoryBulkByIds(ctx.user.id, input.transactionIds, input.newCategory);
+      const count = await updateCategoryBulkByIds(ctx.dataUserId, input.transactionIds, input.newCategory);
       return { count };
     }),
 
@@ -185,7 +189,7 @@ const budgetRouter = router({
   deleteTransaction: protectedProcedure
     .input(z.object({ transactionId: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
-      const ok = await deleteTransaction(ctx.user.id, input.transactionId);
+      const ok = await deleteTransaction(ctx.dataUserId, input.transactionId);
       return { ok };
     }),
 
@@ -205,7 +209,7 @@ const budgetRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const id = await addManualTransaction(ctx.user.id, input);
+      const id = await addManualTransaction(ctx.dataUserId, input);
       return { id };
     }),
 
@@ -219,18 +223,18 @@ const budgetRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const count = await setExcludedByFilters(ctx.user.id, input.filters, input.owner, input.excluded);
+      const count = await setExcludedByFilters(ctx.dataUserId, input.filters, input.owner, input.excluded);
       return { count };
     }),
 
   // ── 자동 제외 검사 (상호이체 상쇄 ±5분 · 카드 취소 쌍) ───────
   runAutoExclusions: protectedProcedure.mutation(async ({ ctx }) => {
-    return runAutoExclusions(ctx.user.id);
+    return runAutoExclusions(ctx.dataUserId);
   }),
 
   // ── 컬럼 필터 옵션 (고유값 목록) ─────────────────────────────
   getFilterOptions: protectedProcedure.query(async ({ ctx }) => {
-    return getFilterOptions(ctx.user.id);
+    return getFilterOptions(ctx.dataUserId);
   }),
 
   // ── 현재 사용자 ──────────────────────────────────────────────
@@ -240,20 +244,20 @@ const budgetRouter = router({
 
   // ── 사용자 설정 ──────────────────────────────────────────────
   getSettings: protectedProcedure.query(async ({ ctx }) => {
-    return getUserSettings(ctx.user.id);
+    return getUserSettings(ctx.dataUserId);
   }),
 
   saveDashboardMemos: protectedProcedure
     .input(z.object({ memos: z.record(z.string(), z.string()) }))
     .mutation(async ({ ctx, input }) => {
-      await saveDashboardMemos(ctx.user.id, input.memos);
+      await saveDashboardMemos(ctx.dataUserId, input.memos);
       return { success: true };
     }),
 
   updateMemo: protectedProcedure
     .input(z.object({ transactionId: z.number().int(), memo: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      await updateTransactionMemo(ctx.user.id, input.transactionId, input.memo);
+      await updateTransactionMemo(ctx.dataUserId, input.transactionId, input.memo);
       return { success: true };
     }),
 
@@ -265,7 +269,7 @@ const budgetRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await saveUserSettings(ctx.user.id, input.excludedCategories, input.includeTransfer);
+      await saveUserSettings(ctx.dataUserId, input.excludedCategories, input.includeTransfer);
       return { success: true };
     }),
 
@@ -281,7 +285,7 @@ const budgetRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      return getKpiSummary(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.dateStart, input.dateEnd, input.owner);
+      return getKpiSummary(ctx.dataUserId, input.includeTransfer, input.excludedCategories, [], input.dateStart, input.dateEnd, input.owner);
     }),
 
   // ── 월별 통계 ────────────────────────────────────────────────
@@ -294,7 +298,7 @@ const budgetRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      return getMonthlyStats(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.owner);
+      return getMonthlyStats(ctx.dataUserId, input.includeTransfer, input.excludedCategories, [], input.owner);
     }),
 
   // ── 카테고리별 통계 ──────────────────────────────────────────
@@ -310,7 +314,7 @@ const budgetRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      return getCategoryStats(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.yearMonth, input.dateStart, input.dateEnd, input.owner);
+      return getCategoryStats(ctx.dataUserId, input.includeTransfer, input.excludedCategories, [], input.yearMonth, input.dateStart, input.dateEnd, input.owner);
     }),
 
   // ── 피벗 데이터 ──────────────────────────────────────────────
@@ -325,12 +329,12 @@ const budgetRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      return getPivotData(ctx.user.id, input.includeTransfer, input.excludedCategories, [], input.dateStart, input.dateEnd, input.owner);
+      return getPivotData(ctx.dataUserId, input.includeTransfer, input.excludedCategories, [], input.dateStart, input.dateEnd, input.owner);
     }),
 
   // ── 저축/투자 통계 ───────────────────────────────────────────
   getSavingsStats: protectedProcedure.query(async ({ ctx }) => {
-    return getSavingsStats(ctx.user.id);
+    return getSavingsStats(ctx.dataUserId);
   }),
 
   // ── 전체 내역 ────────────────────────────────────────────────
@@ -350,7 +354,7 @@ const budgetRouter = router({
         ...(input.filters ?? []),
       ];
       const { rows, total, excludedIds } = await getAllTransactions(
-        ctx.user.id,
+        ctx.dataUserId,
         input.page,
         input.pageSize,
         allFilters,
@@ -380,7 +384,7 @@ const budgetRouter = router({
     )
     .query(async ({ ctx, input }) => {
       return getCategoryTransactions(
-        ctx.user.id,
+        ctx.dataUserId,
         input.category,
         input.page,
         input.pageSize,
@@ -394,15 +398,15 @@ const budgetRouter = router({
   // ── 엑셀 다운로드용 전체 내역 ────────────────────────────────
   getAllTransactionsForExport: protectedProcedure.query(async ({ ctx }) => {
     const [rows, excludedIds] = await Promise.all([
-      getAllTransactionsForExport(ctx.user.id),
-      getExcludedTransactionIds(ctx.user.id),
+      getAllTransactionsForExport(ctx.dataUserId),
+      getExcludedTransactionIds(ctx.dataUserId),
     ]);
     return { rows, excludedIds: Array.from(excludedIds) };
   }),
 
   // ── 모든 카테고리 목록 ───────────────────────────────────────
   getAllCategories: protectedProcedure.query(async ({ ctx }) => {
-    return getAllCategories(ctx.user.id);
+    return getAllCategories(ctx.dataUserId);
   }),
 
   // ── 카테고리 수정 ────────────────────────────────────────────
@@ -428,22 +432,22 @@ const budgetRouter = router({
         await db.execute(sql`
           UPDATE transactions t SET "customCategory" = ${input.newCategory}
           FROM (SELECT "txDate", COALESCE("txTime",'') AS tt FROM transactions
-                WHERE id = ${input.transactionId} AND "userId" = ${ctx.user.id}) base
-          WHERE t."userId" = ${ctx.user.id} AND t.content = ${input.keyword}
+                WHERE id = ${input.transactionId} AND "userId" = ${ctx.dataUserId}) base
+          WHERE t."userId" = ${ctx.dataUserId} AND t.content = ${input.keyword}
             AND (t."txDate" < base."txDate"
                  OR (t."txDate" = base."txDate" AND COALESCE(t."txTime",'') <= base.tt))
         `);
       } else {
-        await updateTransactionCategory(ctx.user.id, input.transactionId, input.newCategory);
+        await updateTransactionCategory(ctx.dataUserId, input.transactionId, input.newCategory);
       }
 
       // 매핑 규칙 생성/업데이트 (실시간 반영) — 사용자가 체크한 경우에만
       if (input.keyword && input.saveAsRule) {
         try {
           const ruleType = categoryToRuleType(input.newCategory);
-          await upsertCategoryRule(ctx.user.id, input.keyword, input.newCategory, input.isExact, ruleType);
+          await upsertCategoryRule(ctx.dataUserId, input.keyword, input.newCategory, input.isExact, ruleType);
           // 새 규칙을 다른 기존 거래에도 반영
-          await bakeRuleCategories(ctx.user.id);
+          await bakeRuleCategories(ctx.dataUserId);
         } catch (e) {
           console.warn("[updateCategory] Rule upsert failed:", e);
         }
@@ -452,7 +456,7 @@ const budgetRouter = router({
       // 사용자가 직접 카테고리를 지정하면 "집계 대상"으로 보고 제외를 해제
       if (db) {
         await db.execute(sql.raw(
-          `DELETE FROM excluded_transactions WHERE "userId" = ${ctx.user.id} AND "transactionId" = ${input.transactionId}`
+          `DELETE FROM excluded_transactions WHERE "userId" = ${ctx.dataUserId} AND "transactionId" = ${input.transactionId}`
         ));
       }
 
@@ -463,7 +467,7 @@ const budgetRouter = router({
   resetCategory: protectedProcedure
     .input(z.object({ transactionId: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
-      await resetTransactionCategory(ctx.user.id, input.transactionId);
+      await resetTransactionCategory(ctx.dataUserId, input.transactionId);
       return { success: true };
     }),
 
@@ -476,19 +480,19 @@ const budgetRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await setExcludedTransactions(ctx.user.id, input.transactionIds, input.excluded);
+      await setExcludedTransactions(ctx.dataUserId, input.transactionIds, input.excluded);
       return { success: true };
     }),
 
   // ── 제외 전체 해제 ───────────────────────────────────────────
   clearAllExclusions: protectedProcedure.mutation(async ({ ctx }) => {
-    const cleared = await clearAllExclusions(ctx.user.id);
+    const cleared = await clearAllExclusions(ctx.dataUserId);
     return { cleared };
   }),
 
   // ── 카테고리 매핑 규칙 ───────────────────────────────────────
   getCategoryRules: protectedProcedure.query(async ({ ctx }) => {
-    return getCategoryRules(ctx.user.id);
+    return getCategoryRules(ctx.dataUserId);
   }),
 
   addCategoryRule: protectedProcedure
@@ -501,93 +505,104 @@ const budgetRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await upsertCategoryRule(ctx.user.id, input.keyword, input.category, input.isExact, input.ruleType);
+      await upsertCategoryRule(ctx.dataUserId, input.keyword, input.category, input.isExact, input.ruleType);
       // 규칙 변경 결과를 기존 거래의 ruleCategory에 즉시 반영
-      await bakeRuleCategories(ctx.user.id);
+      await bakeRuleCategories(ctx.dataUserId);
       return { success: true };
     }),
 
   deleteCategoryRule: protectedProcedure
     .input(z.object({ ruleId: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
-      await deleteCategoryRule(ctx.user.id, input.ruleId);
-      await bakeRuleCategories(ctx.user.id);
+      await deleteCategoryRule(ctx.dataUserId, input.ruleId);
+      await bakeRuleCategories(ctx.dataUserId);
       return { success: true };
     }),
 
   updateRuleActive: protectedProcedure
     .input(z.object({ ruleId: z.number().int(), isActive: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      await updateCategoryRuleActive(ctx.user.id, input.ruleId, input.isActive);
-      await bakeRuleCategories(ctx.user.id);
+      await updateCategoryRuleActive(ctx.dataUserId, input.ruleId, input.isActive);
+      await bakeRuleCategories(ctx.dataUserId);
       return { success: true };
     }),
 
   seedDefaultRules: protectedProcedure
     .mutation(async ({ ctx }) => {
-      const count = await seedDefaultRules(ctx.user.id);
-      await bakeRuleCategories(ctx.user.id);
+      const count = await seedDefaultRules(ctx.dataUserId);
+      await bakeRuleCategories(ctx.dataUserId);
       return { count };
     }),
 
   generateRulesFromTransactions: protectedProcedure
     .mutation(async ({ ctx }) => {
-      const count = await generateRulesFromTransactions(ctx.user.id);
-      await bakeRuleCategories(ctx.user.id);
+      const count = await generateRulesFromTransactions(ctx.dataUserId);
+      await bakeRuleCategories(ctx.dataUserId);
       return { count };
     }),
 
   applyRulesToAll: protectedProcedure
     .mutation(async ({ ctx }) => {
-      const count = await applyRulesToAllTransactions(ctx.user.id);
+      const count = await applyRulesToAllTransactions(ctx.dataUserId);
       return { count };
     }),
 
   getIncomeDistribution: protectedProcedure.query(async ({ ctx }) => {
-    return getIncomeDistribution(ctx.user.id);
+    return getIncomeDistribution(ctx.dataUserId);
   }),
 
   getL3Stats: protectedProcedure
     .input(z.object({ category: z.string(), yearMonth: z.string().optional(), direction: z.enum(["income", "expense"]).optional(), dateStart: z.string().optional(), dateEnd: z.string().optional(), owner: z.string().optional() }))
     .query(async ({ ctx, input }) => {
-      return getL3Stats(ctx.user.id, input.category, input.yearMonth, input.direction, input.dateStart, input.dateEnd, input.owner);
+      return getL3Stats(ctx.dataUserId, input.category, input.yearMonth, input.direction, input.dateStart, input.dateEnd, input.owner);
     }),
 
   // ── 예산 목표 & 알림 ─────────────────────────────────────────
   getBudgets: protectedProcedure
     .input(z.object({ yearMonth: z.string() }))
-    .query(async ({ ctx, input }) => getBudgetStatus(ctx.user.id, input.yearMonth)),
+    .query(async ({ ctx, input }) => getBudgetStatus(ctx.dataUserId, input.yearMonth)),
 
   setBudget: protectedProcedure
     .input(z.object({ category: z.string().min(1), targetAmount: z.number().nonnegative() }))
     .mutation(async ({ ctx, input }) => {
-      await setBudget(ctx.user.id, input.category, input.targetAmount);
+      await setBudget(ctx.dataUserId, input.category, input.targetAmount);
       return { ok: true };
     }),
 
   deleteBudget: protectedProcedure
     .input(z.object({ category: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      await deleteBudget(ctx.user.id, input.category);
+      await deleteBudget(ctx.dataUserId, input.category);
       return { ok: true };
     }),
 
   // 이번 달 새로 넘긴 임계치 알림을 조회(+기록). 앱 진입/업로드 후 호출.
   checkBudgetAlerts: protectedProcedure
     .input(z.object({ yearMonth: z.string() }))
-    .mutation(async ({ ctx, input }) => detectNewBudgetAlerts(ctx.user.id, input.yearMonth)),
+    .mutation(async ({ ctx, input }) => detectNewBudgetAlerts(ctx.dataUserId, input.yearMonth)),
 
   // 정기결제·구독 감지 (거래 내역 기반)
-  getSubscriptions: protectedProcedure.query(async ({ ctx }) => getSubscriptions(ctx.user.id)),
+  getSubscriptions: protectedProcedure.query(async ({ ctx }) => getSubscriptions(ctx.dataUserId)),
 
   // ── 계좌(결제수단) 표시/숨김 ──────────────────────────────────
-  getAccounts: protectedProcedure.query(async ({ ctx }) => getAccounts(ctx.user.id)),
+  getAccounts: protectedProcedure.query(async ({ ctx }) => getAccounts(ctx.dataUserId)),
   setAccountHidden: protectedProcedure
     .input(z.object({ paymentMethod: z.string().min(1), hidden: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      await setAccountHidden(ctx.user.id, input.paymentMethod, input.hidden);
+      await setAccountHidden(ctx.dataUserId, input.paymentMethod, input.hidden);
       return { ok: true };
     }),
+
+  // ── 가족 공유 그룹 (신원 기준 = 실제 사용자 id) ───────────────
+  getGroup: protectedProcedure.query(async ({ ctx }) => getGroupInfo(ctx.user.id)),
+  createGroup: protectedProcedure.mutation(async ({ ctx }) => createGroup(ctx.user.id)),
+  joinGroup: protectedProcedure
+    .input(z.object({ inviteCode: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => joinGroup(ctx.user.id, input.inviteCode)),
+  leaveGroup: protectedProcedure.mutation(async ({ ctx }) => {
+    await leaveGroup(ctx.user.id);
+    return { ok: true };
+  }),
 });
 
 export const appRouter = router({

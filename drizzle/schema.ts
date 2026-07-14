@@ -79,6 +79,33 @@ export const excludedTransactions = pgTable("excluded_transactions", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+// 가족 공유 그룹. 멤버는 소유자(ownerUserId)의 데이터셋을 함께 사용한다.
+export const groups = pgTable("groups", {
+  id: serial("id").primaryKey(),
+  inviteCode: varchar("inviteCode", { length: 16 }).notNull().unique(),
+  ownerUserId: integer("ownerUserId").notNull(),
+  name: varchar("name", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const groupMembers = pgTable("group_members", {
+  groupId: integer("groupId").notNull(),
+  userId: integer("userId").notNull().unique(),
+  role: varchar("role", { length: 16 }).default("member").notNull(),
+  joinedAt: timestamp("joinedAt").defaultNow().notNull(),
+});
+
+// 숨긴 계좌(결제수단) — 집계/목록에서 제외.
+export const hiddenAccounts = pgTable(
+  "hidden_accounts",
+  {
+    userId: integer("userId").notNull(),
+    paymentMethod: varchar("paymentMethod", { length: 128 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (t) => ({ uq: unique().on(t.userId, t.paymentMethod) })
+);
+
 // 카테고리별 월 예산 목표 (매월 반복 적용). category = 앱 L3 키.
 export const budgets = pgTable(
   "budgets",

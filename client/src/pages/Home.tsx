@@ -12,6 +12,7 @@ import { MappingRulesTab } from "../components/tabs/MappingRulesTab";
 import { BudgetTab } from "../components/tabs/BudgetTab";
 import { SubscriptionTab } from "../components/tabs/SubscriptionTab";
 import { AccountsTab } from "../components/tabs/AccountsTab";
+import { FamilyTab } from "../components/tabs/FamilyTab";
 import { notifyBudgetAlerts } from "../lib/budgetNotify";
 import { isBiometricLockEnabled, setBiometricLockEnabled } from "../components/BiometricGate";
 import { TransactionsTab } from "../components/tabs/TransactionsTab";
@@ -23,7 +24,7 @@ import { toast } from "sonner";
 
 const EMPTY_DATE: DateParts = { y: "", m: "", d: "" };
 
-type Tab = "dashboard" | "monthly" | "category" | "transactions" | "mapping" | "budget" | "subscription" | "accounts";
+type Tab = "dashboard" | "monthly" | "category" | "transactions" | "mapping" | "budget" | "subscription" | "accounts" | "family";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "dashboard",    label: "대시보드" },
@@ -33,6 +34,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "budget",       label: "예산" },
   { id: "subscription", label: "구독" },
   { id: "accounts",     label: "계좌" },
+  { id: "family",       label: "가족" },
   { id: "mapping",      label: "매핑 규칙" },
 ];
 
@@ -351,6 +353,7 @@ export default function Home() {
         {activeTab === "budget" && <BudgetTab />}
         {activeTab === "subscription" && <SubscriptionTab />}
         {activeTab === "accounts" && <AccountsTab />}
+        {activeTab === "family" && <FamilyTab />}
         {activeTab === "mapping" && <MappingRulesTab />}
       </main>
 

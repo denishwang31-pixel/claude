@@ -1,7 +1,7 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { upsertUser, getUserByOpenId } from "../db";
+import { upsertUser, getUserByOpenId, getDataUserId } from "../db";
 import { ENV } from "./env";
 
 declare module "express-session" {
@@ -31,7 +31,11 @@ export async function createContext({ req, res }: CreateExpressContextOptions) {
     if (user) req.session.user = user;
   }
 
-  return { req, res, user };
+  // 가족 공유: 그룹에 속하면 그룹 소유자의 데이터셋을 함께 사용한다.
+  // (그룹이 없으면 자기 자신) — 모든 데이터 조회/저장은 이 dataUserId 로 이뤄진다.
+  const dataUserId = user ? await getDataUserId(user.id) : undefined;
+
+  return { req, res, user, dataUserId };
 }
 
 type Context = Awaited<ReturnType<typeof createContext>>;
@@ -44,5 +48,6 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "로그인이 필요합니다." });
   }
-  return next({ ctx: { ...ctx, user: ctx.user } });
+  // dataUserId 는 그룹 소유자(가족 공유) 또는 자기 자신. 데이터 접근에 사용.
+  return next({ ctx: { ...ctx, user: ctx.user, dataUserId: ctx.dataUserId ?? ctx.user.id } });
 });

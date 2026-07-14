@@ -11,6 +11,7 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { buildKeywordCaseSQL } from "../shared/keywordCategories";
+import { randomBytes } from "crypto";
 
 const DB_URL = process.env.DATABASE_URL ?? "postgres://budget:budget123@localhost:5432/household_budget";
 
@@ -88,6 +89,20 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
        threshold integer NOT NULL,
        "createdAt" timestamp NOT NULL DEFAULT NOW(),
        UNIQUE ("userId", category, "yearMonth", threshold)
+     )`,
+    // 가족 공유 그룹 — 멤버는 소유자의 데이터셋을 함께 사용한다.
+    `CREATE TABLE IF NOT EXISTS groups (
+       id serial PRIMARY KEY,
+       "inviteCode" varchar(16) NOT NULL UNIQUE,
+       "ownerUserId" integer NOT NULL,
+       name varchar(64),
+       "createdAt" timestamp NOT NULL DEFAULT NOW()
+     )`,
+    `CREATE TABLE IF NOT EXISTS group_members (
+       "groupId" integer NOT NULL,
+       "userId" integer NOT NULL UNIQUE,
+       role varchar(16) NOT NULL DEFAULT 'member',
+       "joinedAt" timestamp NOT NULL DEFAULT NOW()
      )`,
     // 숨긴 계좌(결제수단) — 집계·목록에서 제외할 카드/은행
     `CREATE TABLE IF NOT EXISTS hidden_accounts (
@@ -854,6 +869,95 @@ export async function detectNewBudgetAlerts(
   }
   // 낮은 임계치부터 정렬(50 → 100)
   return newAlerts.sort((a, b) => a.threshold - b.threshold);
+}
+
+// ── 가족 공유 그룹 ─────────────────────────────────────────────
+/** 사용자가 그룹에 속하면 그룹 소유자의 userId를, 아니면 자기 자신을 반환.
+ *  모든 데이터 접근은 이 값을 기준으로 한다(가족이 같은 데이터를 공유). */
+export async function getDataUserId(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return userId;
+  try {
+    const rows = (await db.execute(sql`
+      SELECT g."ownerUserId" AS owner FROM group_members m
+      JOIN groups g ON g.id = m."groupId"
+      WHERE m."userId" = ${userId} LIMIT 1
+    `)) as any[];
+    return rows.length > 0 ? Number(rows[0].owner) : userId;
+  } catch {
+    // groups 테이블이 아직 없거나(초기) 오류 시 자기 자신으로 안전 폴백
+    return userId;
+  }
+}
+
+export async function getGroupInfo(userId: number): Promise<{
+  inGroup: boolean; isOwner: boolean; inviteCode: string | null; memberCount: number;
+}> {
+  const db = await getDb();
+  if (!db) return { inGroup: false, isOwner: false, inviteCode: null, memberCount: 0 };
+  const rows = (await db.execute(sql`
+    SELECT g.id, g."ownerUserId", g."inviteCode" FROM group_members m
+    JOIN groups g ON g.id = m."groupId" WHERE m."userId" = ${userId} LIMIT 1
+  `)) as any[];
+  if (rows.length === 0) return { inGroup: false, isOwner: false, inviteCode: null, memberCount: 0 };
+  const g = rows[0];
+  const cnt = (await db.execute(sql`SELECT COUNT(*)::int AS c FROM group_members WHERE "groupId" = ${Number(g.id)}`)) as any[];
+  return {
+    inGroup: true,
+    isOwner: Number(g.ownerUserId) === userId,
+    inviteCode: String(g.inviteCode),
+    memberCount: Number(cnt[0].c),
+  };
+}
+
+export async function createGroup(userId: number): Promise<{ inviteCode: string }> {
+  const db = await getDb();
+  if (!db) return { inviteCode: "" };
+  const existing = await getGroupInfo(userId);
+  if (existing.inGroup && existing.inviteCode) return { inviteCode: existing.inviteCode };
+  const code = randomBytes(4).toString("hex").toUpperCase(); // 8자리
+  const g = (await db.execute(sql`
+    INSERT INTO groups ("inviteCode", "ownerUserId") VALUES (${code}, ${userId}) RETURNING id
+  `)) as any[];
+  const groupId = Number(g[0].id);
+  await db.execute(sql`
+    INSERT INTO group_members ("groupId", "userId", role) VALUES (${groupId}, ${userId}, 'owner')
+    ON CONFLICT ("userId") DO UPDATE SET "groupId" = ${groupId}, role = 'owner'
+  `);
+  return { inviteCode: code };
+}
+
+export async function joinGroup(userId: number, inviteCode: string): Promise<{ ok: boolean; error?: string }> {
+  const db = await getDb();
+  if (!db) return { ok: false, error: "서버 오류" };
+  const code = inviteCode.trim().toUpperCase();
+  const rows = (await db.execute(sql`SELECT id, "ownerUserId" FROM groups WHERE "inviteCode" = ${code} LIMIT 1`)) as any[];
+  if (rows.length === 0) return { ok: false, error: "초대 코드를 찾을 수 없습니다." };
+  const groupId = Number(rows[0].id);
+  await db.execute(sql`
+    INSERT INTO group_members ("groupId", "userId", role)
+    VALUES (${groupId}, ${userId}, ${Number(rows[0].ownerUserId) === userId ? "owner" : "member"})
+    ON CONFLICT ("userId") DO UPDATE SET "groupId" = ${groupId}
+  `);
+  return { ok: true };
+}
+
+export async function leaveGroup(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const info = (await db.execute(sql`
+    SELECT g.id, g."ownerUserId" FROM group_members m JOIN groups g ON g.id = m."groupId"
+    WHERE m."userId" = ${userId} LIMIT 1
+  `)) as any[];
+  if (info.length === 0) return;
+  const groupId = Number(info[0].id);
+  if (Number(info[0].ownerUserId) === userId) {
+    // 소유자가 나가면 그룹 해체(데이터는 소유자 것으로 유지, 멤버는 각자 자기 데이터로 복귀)
+    await db.execute(sql`DELETE FROM group_members WHERE "groupId" = ${groupId}`);
+    await db.execute(sql`DELETE FROM groups WHERE id = ${groupId}`);
+  } else {
+    await db.execute(sql`DELETE FROM group_members WHERE "userId" = ${userId}`);
+  }
 }
 
 // ── 계좌(결제수단) 표시/숨김 관리 ──────────────────────────────
