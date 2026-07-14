@@ -7,6 +7,7 @@ import { createContext } from "./_core/trpc";
 import { ENV } from "./_core/env";
 import { upsertUser, getUserByOpenId, getUserByEmail, createEmailUser } from "./db";
 import { hashPassword, verifyPassword, isValidEmail } from "./_core/password";
+import { makeAppleClientSecret, decodeAppleIdToken } from "./_core/appleAuth";
 import { randomBytes } from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -63,6 +64,8 @@ app.use(
   })
 );
 app.use(express.json({ limit: "10mb" }));
+// Apple 로그인 콜백은 application/x-www-form-urlencoded 로 POST 된다(response_mode=form_post).
+app.use(express.urlencoded({ extended: true }));
 
 app.use(
   session({
@@ -296,6 +299,78 @@ app.get("/auth/naver/callback", async (req, res) => {
     res.redirect(ENV.authSuccessRedirect);
   } catch (err) {
     console.error("[Auth] Naver callback error:", err);
+    res.redirect("/?error=auth_failed");
+  }
+});
+
+// ── Apple "Sign in with Apple" ─────────────────────────────────
+app.get("/auth/apple", (req, res) => {
+  if (!ENV.appleClientId) return res.status(400).json({ error: "APPLE_CLIENT_ID not configured" });
+  const state = randomBytes(16).toString("hex");
+  req.session.oauthState = state;
+  // name/email scope 를 요청하면 Apple 은 response_mode=form_post 를 요구한다.
+  const url =
+    `https://appleid.apple.com/auth/authorize` +
+    `?client_id=${encodeURIComponent(ENV.appleClientId)}` +
+    `&redirect_uri=${encodeURIComponent(ENV.appleRedirectUri)}` +
+    `&response_type=code&response_mode=form_post` +
+    `&scope=${encodeURIComponent("name email")}` +
+    `&state=${state}`;
+  res.redirect(url);
+});
+
+app.post("/auth/apple/callback", async (req, res) => {
+  const code = req.body?.code as string | undefined;
+  const state = req.body?.state as string | undefined;
+  if (!code) return res.redirect("/?error=no_code");
+  // Apple 은 다른 도메인에서 교차 POST 하므로 세션 쿠키가 없을 수 있다.
+  // 세션에 state 가 남아있는 경우에만 엄격 검증한다(있으면 반드시 일치해야 함).
+  if (req.session.oauthState && state !== req.session.oauthState) {
+    return res.redirect("/?error=bad_state");
+  }
+  req.session.oauthState = undefined;
+
+  try {
+    const tokenRes = await fetch("https://appleid.apple.com/auth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        client_id: ENV.appleClientId,
+        client_secret: makeAppleClientSecret(),
+        redirect_uri: ENV.appleRedirectUri,
+      }),
+    });
+    const tokenData = (await tokenRes.json()) as { id_token?: string; error?: string };
+    if (!tokenData.id_token) throw new Error("Token error: " + tokenData.error);
+
+    const claims = decodeAppleIdToken(tokenData.id_token);
+    if (!claims.sub) throw new Error("No sub in id_token");
+
+    // 이름은 최초 인증 때만 form 의 user 필드(JSON)로 온다.
+    let name: string | null = null;
+    if (req.body?.user) {
+      try {
+        const u = JSON.parse(String(req.body.user)) as { name?: { firstName?: string; lastName?: string } };
+        const full = [u.name?.lastName, u.name?.firstName].filter(Boolean).join(" ").trim();
+        name = full || null;
+      } catch { /* ignore */ }
+    }
+
+    // Apple 은 이름을 최초 1회만, 이메일도 상황에 따라 안 보낼 수 있다.
+    // 값이 있을 때만 전달해 기존 저장값을 null 로 덮어쓰지 않도록 한다.
+    const openId = `apple:${claims.sub}`;
+    const upsert: Parameters<typeof upsertUser>[0] = { openId, loginMethod: "apple", lastSignedIn: new Date() };
+    if (name) upsert.name = name;
+    if (claims.email) upsert.email = claims.email;
+    await upsertUser(upsert);
+    const user = await getUserByOpenId(openId);
+    if (user) req.session.user = user;
+
+    res.redirect(ENV.authSuccessRedirect);
+  } catch (err) {
+    console.error("[Auth] Apple callback error:", err);
     res.redirect("/?error=auth_failed");
   }
 });

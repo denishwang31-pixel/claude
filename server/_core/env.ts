@@ -11,6 +11,12 @@ export const ENV = {
   naverClientId: process.env.NAVER_CLIENT_ID ?? "",
   naverClientSecret: process.env.NAVER_CLIENT_SECRET ?? "",
   naverRedirectUri: process.env.NAVER_REDIRECT_URI ?? "http://localhost:3001/auth/naver/callback",
+  // Apple "Sign in with Apple" — Services ID / Team ID / Key ID / .p8 개인키
+  appleClientId: process.env.APPLE_CLIENT_ID ?? "",
+  appleTeamId: process.env.APPLE_TEAM_ID ?? "",
+  appleKeyId: process.env.APPLE_KEY_ID ?? "",
+  applePrivateKey: process.env.APPLE_PRIVATE_KEY ?? "",
+  appleRedirectUri: process.env.APPLE_REDIRECT_URI ?? "http://localhost:3001/auth/apple/callback",
   // 로그인 성공 후 이동할 곳(웹은 "/", 앱은 딥링크 스킴으로 바꿀 수 있음)
   authSuccessRedirect: process.env.AUTH_SUCCESS_REDIRECT ?? "/",
   devAutoLogin: process.env.DEV_AUTO_LOGIN === "true",

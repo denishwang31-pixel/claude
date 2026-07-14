@@ -8,6 +8,7 @@ const SOCIALS: { id: string; label: string; bg: string; fg: string }[] = [
   { id: "kakao",  label: "카카오로 계속하기", bg: "#FEE500", fg: "#191600" },
   { id: "naver",  label: "네이버로 계속하기", bg: "#03C75A", fg: "#ffffff" },
   { id: "google", label: "Google로 계속하기", bg: "#ffffff", fg: "#1f1f1f" },
+  { id: "apple",  label: "Apple로 계속하기",  bg: "#000000", fg: "#ffffff" },
 ];
 
 export default function Login() {
