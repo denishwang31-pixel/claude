@@ -584,6 +584,32 @@ const budgetRouter = router({
   // 정기결제·구독 감지 (거래 내역 기반)
   getSubscriptions: protectedProcedure.query(async ({ ctx }) => getSubscriptions(ctx.dataUserId)),
 
+  // ── 주간/월간 리포트 ─────────────────────────────────────────
+  // 기간(현재/직전)을 클라이언트가 로컬 기준으로 계산해 전달 → 기존 집계 재사용.
+  getReport: protectedProcedure
+    .input(z.object({
+      curStart: z.string(), curEnd: z.string(),
+      prevStart: z.string(), prevEnd: z.string(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const uid = ctx.dataUserId;
+      const cur = await getKpiSummary(uid, false, [], [], input.curStart, input.curEnd);
+      const prev = await getKpiSummary(uid, false, [], [], input.prevStart, input.prevEnd);
+      const cats = await getCategoryStats(uid, false, [], [], undefined, input.curStart, input.curEnd);
+      const topCategories = cats
+        .filter((c) => c.l1 === "expense")
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5)
+        .map((c) => ({ category: c.category, total: c.total }));
+      return {
+        curExpense: cur.totalExpense,
+        prevExpense: prev.totalExpense,
+        curIncome: cur.totalIncome,
+        curSavings: cur.totalSavings,
+        topCategories,
+      };
+    }),
+
   // ── 계좌(결제수단) 표시/숨김 ──────────────────────────────────
   getAccounts: protectedProcedure.query(async ({ ctx }) => getAccounts(ctx.dataUserId)),
   setAccountHidden: protectedProcedure

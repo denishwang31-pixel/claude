@@ -13,6 +13,7 @@ import { BudgetTab } from "../components/tabs/BudgetTab";
 import { SubscriptionTab } from "../components/tabs/SubscriptionTab";
 import { AccountsTab } from "../components/tabs/AccountsTab";
 import { FamilyTab } from "../components/tabs/FamilyTab";
+import { ReportPanel } from "../components/ReportPanel";
 import { notifyBudgetAlerts } from "../lib/budgetNotify";
 import { isBiometricLockEnabled, setBiometricLockEnabled } from "../components/BiometricGate";
 import { TransactionsTab } from "../components/tabs/TransactionsTab";
@@ -268,6 +269,9 @@ export default function Home() {
         {/* ── Dashboard ── */}
         {activeTab === "dashboard" && (
           <>
+            {/* 주간/월간 리포트 */}
+            <ReportPanel />
+
             {/* 기간 필터 */}
             <div className="bg-white rounded-xl border border-cream-200 shadow-sm px-4 py-3 flex items-center gap-3 flex-wrap">
               <span className="text-sm font-medium text-cream-600">기간</span>
