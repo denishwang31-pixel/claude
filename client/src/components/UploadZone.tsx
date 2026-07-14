@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 import { cn } from "../lib/utils";
-import { parseBanksaladExcel } from "../lib/parseExcel";
+import { parseTransactionFile } from "../lib/parseExcel";
 import { trpc } from "../lib/trpc";
 import { toast } from "sonner";
 
@@ -51,17 +51,20 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
       toast.error("먼저 소유자(동현/혜진)를 선택해주세요.");
       return;
     }
-    if (!file.name.match(/\.(xlsx|xls)$/i)) {
-      toast.error("엑셀 파일(.xlsx, .xls)만 업로드 가능합니다.");
+    if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
+      toast.error("엑셀/CSV 파일(.xlsx, .xls, .csv)만 업로드 가능합니다.");
       return;
     }
 
     setLoading(true);
     try {
-      const rows = await parseBanksaladExcel(file);
+      const { rows, format } = await parseTransactionFile(file);
       if (rows.length === 0) {
-        toast.error("파싱된 데이터가 없습니다. 뱅크샐러드 가계부 내역 파일인지 확인해주세요.");
+        toast.error("파싱된 데이터가 없습니다. 뱅크샐러드 또는 은행/카드 내역 파일인지 확인해주세요.");
         return;
+      }
+      if (format !== "뱅크샐러드") {
+        toast.info(`${format} 형식으로 인식해 ${rows.length}건을 읽었습니다.`);
       }
 
       const CHUNK = 200;
