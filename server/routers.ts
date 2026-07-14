@@ -47,6 +47,7 @@ import {
   setBudget,
   deleteBudget,
   detectNewBudgetAlerts,
+  getSubscriptions,
 } from "./db";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
@@ -573,6 +574,9 @@ const budgetRouter = router({
   checkBudgetAlerts: protectedProcedure
     .input(z.object({ yearMonth: z.string() }))
     .mutation(async ({ ctx, input }) => detectNewBudgetAlerts(ctx.user.id, input.yearMonth)),
+
+  // 정기결제·구독 감지 (거래 내역 기반)
+  getSubscriptions: protectedProcedure.query(async ({ ctx }) => getSubscriptions(ctx.user.id)),
 });
 
 export const appRouter = router({
