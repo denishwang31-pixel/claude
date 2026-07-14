@@ -1,6 +1,15 @@
 node_modules/
 dist/
 .env
+.env.production
+.env.app
+.env.*.local
 *.local
+# Capacitor 네이티브 프로젝트 (npx cap add 로 생성 — 별도 관리 권장)
+/ios/
+/android/
+# Android 서명 키 — 절대 커밋 금지
+*.keystore
+*.jks
 .DS_Store
 drizzle/migrations/

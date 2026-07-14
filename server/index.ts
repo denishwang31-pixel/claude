@@ -30,7 +30,36 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 
-app.use(cors({ origin: true, credentials: true }));
+// Render/Railway 등은 앞단(프록시)에서 TLS를 종료하고 서버로는 http로 넘긴다.
+// 이 설정이 없으면 secure 쿠키가 "안전하지 않은 연결"로 오판되어 전송되지 않는다.
+app.set("trust proxy", 1);
+
+// ── CORS 허용 출처 ─────────────────────────────────────────────
+// 앱(Capacitor) 웹뷰의 출처 + 환경변수(CLIENT_ORIGINS)로 지정한 웹 도메인을 허용한다.
+//  - iOS 앱:            capacitor://localhost
+//  - Android 앱:        http://localhost / https://localhost (androidScheme)
+//  - 구형 Ionic 웹뷰:   ionic://localhost
+const ALLOWED_ORIGINS = new Set<string>([
+  "capacitor://localhost",
+  "ionic://localhost",
+  "http://localhost",
+  "https://localhost",
+  ...ENV.clientOrigins,
+]);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // 네이티브 앱/서버-사이드 요청은 Origin 헤더가 없을 수 있다 → 허용.
+      if (!origin) return callback(null, true);
+      // 개발 환경에서는 편의를 위해 모든 출처 허용(로컬 5173 등).
+      if (!ENV.isProd) return callback(null, true);
+      if (ALLOWED_ORIGINS.has(origin)) return callback(null, true);
+      return callback(new Error(`CORS로 차단된 출처입니다: ${origin}`));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: "10mb" }));
 
 app.use(
@@ -40,7 +69,11 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
+      // 앱은 서버와 출처가 다른(교차 출처) 요청이므로 프로덕션에선 SameSite=None + Secure 필수.
+      // (SameSite=None은 Secure가 없으면 브라우저/웹뷰가 쿠키를 거부한다.)
+      // 개발(http)에서는 Secure 쿠키가 막히므로 Lax + non-secure로 둔다.
       secure: ENV.isProd,
+      sameSite: ENV.isProd ? "none" : "lax",
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     },
   })
