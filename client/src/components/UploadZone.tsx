@@ -74,7 +74,8 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
       let lastPairs = { transferPairs: 0, cardPairs: 0 };
       for (let i = 0; i < rows.length; i += CHUNK) {
         const chunk = rows.slice(i, i + CHUNK);
-        const result = await uploadMutation.mutateAsync({ rows: chunk, owner });
+        const finalize = i + CHUNK >= rows.length; // 마지막 청크에서만 전체 재검사
+        const result = await uploadMutation.mutateAsync({ rows: chunk, owner, finalize });
         totalInserted += result.inserted;
         totalSkipped += result.skipped;
         totalAutoExcluded += (result as any).autoExcluded ?? 0;

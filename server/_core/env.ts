@@ -29,3 +29,10 @@ export const ENV = {
     .map((s) => s.trim())
     .filter(Boolean),
 };
+
+// 프로덕션에서 기본 세션 시크릿을 그대로 쓰면 세션 위조가 가능하다 — 기동을 막는다.
+if (ENV.isProd && ENV.sessionSecret === "dev-secret-change-in-prod") {
+  throw new Error(
+    "[env] 프로덕션에서는 SESSION_SECRET 환경변수를 반드시 설정해야 합니다 (긴 랜덤 문자열)."
+  );
+}

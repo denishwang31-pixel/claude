@@ -6,8 +6,12 @@ import { appRouter } from "./routers";
 import { createContext } from "./_core/trpc";
 import { ENV } from "./_core/env";
 import { upsertUser, getUserByOpenId, getUserByEmail, createEmailUser } from "./db";
-import { hashPassword, verifyPassword, isValidEmail } from "./_core/password";
+import { hashPassword, verifyPassword, isValidEmail, MAX_PASSWORD_LENGTH } from "./_core/password";
 import { makeAppleClientSecret, decodeAppleIdToken } from "./_core/appleAuth";
+import { toSafeUser } from "./_core/safeUser";
+import type { User } from "../drizzle/schema";
+import rateLimit from "express-rate-limit";
+import connectPgSimple from "connect-pg-simple";
 import { randomBytes } from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -67,8 +71,16 @@ app.use(express.json({ limit: "10mb" }));
 // Apple 로그인 콜백은 application/x-www-form-urlencoded 로 POST 된다(response_mode=form_post).
 app.use(express.urlencoded({ extended: true }));
 
+// 세션 저장소: 프로덕션은 PostgreSQL(connect-pg-simple)에 저장해 재시작에도 유지되고
+// 다중 인스턴스에서도 공유된다. DB가 없으면(로컬 개발) 기본 MemoryStore로 폴백.
+const PgStore = connectPgSimple(session);
+const sessionStore = ENV.isProd
+  ? new PgStore({ conString: process.env.DATABASE_URL, createTableIfMissing: true, tableName: "user_sessions" })
+  : undefined;
+
 app.use(
   session({
+    store: sessionStore,
     secret: ENV.sessionSecret,
     resave: false,
     saveUninitialized: false,
@@ -84,6 +96,29 @@ app.use(
   })
 );
 
+// 로그인 성공 시: 세션 고정(session fixation) 공격 방지를 위해 세션 ID를 새로 발급한 뒤
+// (regenerate) 안전한 사용자 정보만 저장한다. 모든 로그인/소셜 콜백이 이 함수를 쓴다.
+function loginSession(req: express.Request, user: User): Promise<void> {
+  const safe = toSafeUser(user);
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) return reject(err);
+      req.session.user = safe;
+      req.session.save((err2) => (err2 ? reject(err2) : resolve()));
+    });
+  });
+}
+
+// 인증 엔드포인트 브루트포스/남용 방지 (IP 기준)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." },
+});
+app.use(["/auth/login", "/auth/register"], authLimiter);
+
 // ── 개발용 자동 로그인 ─────────────────────────────────────────
 if (!ENV.isProd && ENV.devAutoLogin) {
   app.use(async (req, _res, next) => {
@@ -97,28 +132,33 @@ if (!ENV.isProd && ENV.devAutoLogin) {
         lastSignedIn: new Date(),
       });
       const user = await getUserByOpenId(devOpenId);
-      if (user) req.session.user = user;
+      if (user) req.session.user = toSafeUser(user);
     }
     next();
   });
 }
 
 // ── Kakao OAuth ────────────────────────────────────────────────
-app.get("/auth/kakao", (_req, res) => {
+app.get("/auth/kakao", (req, res) => {
   if (!ENV.kakaoClientId) {
     return res.status(400).json({ error: "KAKAO_CLIENT_ID not configured" });
   }
+  const state = randomBytes(16).toString("hex");
+  req.session.oauthState = state;
   const url =
     `https://kauth.kakao.com/oauth/authorize` +
     `?client_id=${ENV.kakaoClientId}` +
     `&redirect_uri=${encodeURIComponent(ENV.kakaoRedirectUri)}` +
-    `&response_type=code`;
+    `&response_type=code&state=${state}`;
   res.redirect(url);
 });
 
 app.get("/auth/kakao/callback", async (req, res) => {
   const code = req.query.code as string;
+  const state = req.query.state as string;
   if (!code) return res.redirect("/?error=no_code");
+  if (!state || state !== req.session.oauthState) return res.redirect("/?error=bad_state");
+  req.session.oauthState = undefined;
 
   try {
     // 토큰 요청
@@ -150,7 +190,7 @@ app.get("/auth/kakao/callback", async (req, res) => {
 
     await upsertUser({ openId, name, email, loginMethod: "kakao", lastSignedIn: new Date() });
     const user = await getUserByOpenId(openId);
-    if (user) req.session.user = user;
+    if (user) await loginSession(req, user);
 
     res.redirect(ENV.authSuccessRedirect);
   } catch (err) {
@@ -168,11 +208,12 @@ app.post("/auth/register", async (req, res) => {
 
     if (!isValidEmail(email)) return res.status(400).json({ error: "이메일 형식이 올바르지 않습니다." });
     if (password.length < 8) return res.status(400).json({ error: "비밀번호는 8자 이상이어야 합니다." });
+    if (password.length > MAX_PASSWORD_LENGTH) return res.status(400).json({ error: `비밀번호는 ${MAX_PASSWORD_LENGTH}자 이하여야 합니다.` });
 
-    const created = await createEmailUser({ email, passwordHash: hashPassword(password), name });
+    const created = await createEmailUser({ email, passwordHash: await hashPassword(password), name });
     if (!created) return res.status(409).json({ error: "이미 가입된 이메일입니다." });
 
-    req.session.user = created;
+    await loginSession(req, created);
     res.json({ success: true, user: { id: created.id, name: created.name, email: created.email } });
   } catch (err) {
     console.error("[Auth] register error:", err);
@@ -188,12 +229,12 @@ app.post("/auth/login", async (req, res) => {
 
     const user = await getUserByEmail(email);
     // 이메일 없음/소셜전용 계정/비번 불일치 모두 동일 메시지(계정 존재 여부 노출 방지)
-    if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+    if (!user || !user.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
       return res.status(401).json({ error: "이메일 또는 비밀번호가 올바르지 않습니다." });
     }
 
     await upsertUser({ openId: user.openId, lastSignedIn: new Date() });
-    req.session.user = user;
+    await loginSession(req, user);
     res.json({ success: true, user: { id: user.id, name: user.name, email: user.email } });
   } catch (err) {
     console.error("[Auth] login error:", err);
@@ -245,7 +286,7 @@ app.get("/auth/google/callback", async (req, res) => {
     const openId = `google:${g.id}`;
     await upsertUser({ openId, name: g.name ?? null, email: g.email ?? null, loginMethod: "google", lastSignedIn: new Date() });
     const user = await getUserByOpenId(openId);
-    if (user) req.session.user = user;
+    if (user) await loginSession(req, user);
 
     res.redirect(ENV.authSuccessRedirect);
   } catch (err) {
@@ -294,7 +335,7 @@ app.get("/auth/naver/callback", async (req, res) => {
     const openId = `naver:${r.id}`;
     await upsertUser({ openId, name: r.name ?? r.nickname ?? null, email: r.email ?? null, loginMethod: "naver", lastSignedIn: new Date() });
     const user = await getUserByOpenId(openId);
-    if (user) req.session.user = user;
+    if (user) await loginSession(req, user);
 
     res.redirect(ENV.authSuccessRedirect);
   } catch (err) {
@@ -366,7 +407,7 @@ app.post("/auth/apple/callback", async (req, res) => {
     if (claims.email) upsert.email = claims.email;
     await upsertUser(upsert);
     const user = await getUserByOpenId(openId);
-    if (user) req.session.user = user;
+    if (user) await loginSession(req, user);
 
     res.redirect(ENV.authSuccessRedirect);
   } catch (err) {

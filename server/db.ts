@@ -111,6 +111,10 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
        "createdAt" timestamp NOT NULL DEFAULT NOW(),
        UNIQUE ("userId", "paymentMethod")
      )`,
+    // 조회 성능 인덱스 — 다사용자에서 유저 전체 스캔을 막는다.
+    `CREATE INDEX IF NOT EXISTS "transactions_userId_txDate_idx" ON transactions ("userId", "txDate")`,
+    `CREATE INDEX IF NOT EXISTS "transactions_userId_paymentMethod_idx" ON transactions ("userId", "paymentMethod")`,
+    `CREATE INDEX IF NOT EXISTS "excluded_userId_txId_idx" ON excluded_transactions ("userId", "transactionId")`,
     // 1회성 마이그레이션 추적 테이블
     `CREATE TABLE IF NOT EXISTS app_migrations (key varchar(64) PRIMARY KEY, "appliedAt" timestamp NOT NULL DEFAULT NOW())`,
   ];
@@ -738,7 +742,7 @@ export async function getCategoryStats(
 
   const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
   const notExcludedSQL = `AND (NOT EXISTS (SELECT 1 FROM excluded_transactions et WHERE et."userId" = ${userId} AND et."transactionId" = t.id) AND NOT EXISTS (SELECT 1 FROM hidden_accounts ha WHERE ha."userId" = ${userId} AND ha."paymentMethod" = COALESCE(t."paymentMethod",'')))`;
-  const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
+  const monthSQL = yearMonth && /^\d{4}-\d{2}$/.test(yearMonth) ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
 
   const rows = await db.execute(sql.raw(
     `SELECT
@@ -1199,7 +1203,7 @@ export async function getL3Stats(
 
   const effectiveCatExpr = buildEffectiveCategoryExpr(userId);
   const escapedCat = category.replace(/'/g, "''");
-  const monthSQL = yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
+  const monthSQL = yearMonth && /^\d{4}-\d{2}$/.test(yearMonth) ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "";
   const savingsCatsSQL = SAVINGS_CATS.map((c) => `'${c}'`).join(",");
   // 부호로 방향 일치 (지출=출금/음수, 수입=입금/양수) → 환불이 지출에 섞이지 않음
   const signSQL = direction === "expense" ? "AND t.amount::numeric < 0"
@@ -1425,7 +1429,7 @@ export async function getCategoryTransactions(
          SELECT 1 FROM excluded_transactions et
          WHERE et."userId" = ${userId} AND et."transactionId" = t.id
        )`;
-  const monthFilter = (yearMonth ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "")
+  const monthFilter = (yearMonth && /^\d{4}-\d{2}$/.test(yearMonth) ? `AND TO_CHAR(t."txDate", 'YYYY-MM') = '${yearMonth}'` : "")
     + " " + dateRangeSQL(dateStart, dateEnd) + " " + ownerSQL(owner);
   // '수입'은 단일 카테고리로 통합 — 양수·비저축·비이체 전체가 수입
   const catMatch = category === "수입"

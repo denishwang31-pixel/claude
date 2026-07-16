@@ -1,13 +1,14 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
-import type { User } from "../../drizzle/schema";
 import { upsertUser, getUserByOpenId, getDataUserId } from "../db";
 import { ENV } from "./env";
+import { toSafeUser, type SafeUser } from "./safeUser";
 
 declare module "express-session" {
   interface SessionData {
     userId?: number;
-    user?: User;
+    // 세션엔 민감 필드가 제거된 SafeUser 만 저장한다.
+    user?: SafeUser;
     oauthState?: string;
   }
 }
@@ -27,8 +28,11 @@ export async function createContext({ req, res }: CreateExpressContextOptions) {
       loginMethod: "dev",
       lastSignedIn: new Date(),
     });
-    user = (await getUserByOpenId(DEV_OPEN_ID)) ?? null;
-    if (user) req.session.user = user;
+    const devUser = await getUserByOpenId(DEV_OPEN_ID);
+    if (devUser) {
+      user = toSafeUser(devUser);
+      req.session.user = user;
+    }
   }
 
   // 가족 공유: 그룹에 속하면 그룹 소유자의 데이터셋을 함께 사용한다.

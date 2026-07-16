@@ -1,6 +1,7 @@
 // 카드 승인/은행 입출금 문자(SMS)를 파싱해 거래 정보를 추출한다.
 // (iOS는 앱이 문자를 못 읽으므로 "붙여넣기" 입력에 사용, Android는 향후
 //  네이티브 SMS 리스너가 이 파서에 원문을 넘겨주면 자동 입력이 된다.)
+import { resolveYearlessDate } from "./parseExcel";
 
 export interface ParsedSms {
   txDate: string;      // YYYY-MM-DD
@@ -48,7 +49,7 @@ export function parsePaymentSms(text: string): ParsedSms | null {
     const y = m[1].length === 2 ? `20${m[1]}` : m[1];
     txDate = `${y}-${pad2(m[2])}-${pad2(m[3])}`;
   } else if ((m = flat.match(/(\d{1,2})[.\-/월\s]+(\d{1,2})\s*일?/))) {
-    txDate = `${new Date().getFullYear()}-${pad2(m[1])}-${pad2(m[2])}`;
+    txDate = resolveYearlessDate(Number(m[1]), Number(m[2]));
   } else {
     txDate = new Date().toISOString().slice(0, 10); // 못 찾으면 오늘
   }

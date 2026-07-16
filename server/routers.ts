@@ -58,6 +58,10 @@ import {
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
 
+// 날짜 관련 입력은 raw SQL 에 들어가므로 형식을 강제한다(SQL 인젝션 이중 방어).
+const zYearMonth = z.string().regex(/^\d{4}-\d{2}$/, "YYYY-MM 형식이어야 합니다");
+const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD 형식이어야 합니다");
+
 const TransactionRowSchema = z.object({
   txDate: z.string(),
   txTime: z.string(),
@@ -107,6 +111,8 @@ const budgetRouter = router({
       z.object({
         rows: z.array(TransactionRowSchema),
         owner: z.enum(["동현", "혜진"]),
+        // 여러 청크로 나눠 올릴 때, 전체 재검사(runAutoExclusions)는 마지막 청크에서만.
+        finalize: z.boolean().default(true),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -148,11 +154,13 @@ const budgetRouter = router({
       const newHashes = newRows.map((r) => r.dedupHash);
       await applyMappingRulesToNewTransactions(userId, newHashes);
 
-      // 1) 이체성 원본(내계좌이체·카드대금 등)은 제외 체크박스 자동 체크
+      // 1) 이체성 원본(내계좌이체·카드대금 등)은 제외 체크박스 자동 체크 (청크마다 OK — 해시 한정)
       const autoExcluded = await autoExcludeTransfersForHashes(userId, newHashes);
-      // 2) 전체 데이터 재검사: 상호이체 상쇄(±5분)·카드 취소 쌍 자동 제외
-      //    — 동현 업로드 후 혜진 업로드처럼 파일을 나눠 올려도 교차 쌍이 잡힘
-      const pairs = await runAutoExclusions(userId);
+      // 2) 전체 데이터 재검사: 상호이체 상쇄(±5분)·카드 취소 쌍 자동 제외 (전체 스캔 →
+      //    마지막 청크에서 한 번만 실행해 대량 업로드 성능 저하를 막는다)
+      const pairs = input.finalize
+        ? await runAutoExclusions(userId)
+        : { transferPairs: 0, cardPairs: 0 };
 
       return {
         inserted: insertedCount,
@@ -279,8 +287,8 @@ const budgetRouter = router({
       z.object({
         includeTransfer: z.boolean().default(false),
         excludedCategories: z.array(z.string()).default([]),
-        dateStart: z.string().optional(),
-        dateEnd: z.string().optional(),
+        dateStart: zDate.optional(),
+        dateEnd: zDate.optional(),
         owner: z.string().optional(),
       })
     )
@@ -307,9 +315,9 @@ const budgetRouter = router({
       z.object({
         includeTransfer: z.boolean().default(false),
         excludedCategories: z.array(z.string()).default([]),
-        yearMonth: z.string().optional(),
-        dateStart: z.string().optional(),
-        dateEnd: z.string().optional(),
+        yearMonth: zYearMonth.optional(),
+        dateStart: zDate.optional(),
+        dateEnd: zDate.optional(),
         owner: z.string().optional(),
       })
     )
@@ -323,8 +331,8 @@ const budgetRouter = router({
       z.object({
         includeTransfer: z.boolean().default(false),
         excludedCategories: z.array(z.string()).default([]),
-        dateStart: z.string().optional(),
-        dateEnd: z.string().optional(),
+        dateStart: zDate.optional(),
+        dateEnd: zDate.optional(),
         owner: z.string().optional(),
       })
     )
@@ -376,9 +384,9 @@ const budgetRouter = router({
         category: z.string(),
         page: z.number().int().positive().default(1),
         pageSize: z.number().int().positive().max(200).default(50),
-        yearMonth: z.string().optional(),
-        dateStart: z.string().optional(),
-        dateEnd: z.string().optional(),
+        yearMonth: zYearMonth.optional(),
+        dateStart: zDate.optional(),
+        dateEnd: zDate.optional(),
         owner: z.string().optional(),
       })
     )
@@ -552,14 +560,14 @@ const budgetRouter = router({
   }),
 
   getL3Stats: protectedProcedure
-    .input(z.object({ category: z.string(), yearMonth: z.string().optional(), direction: z.enum(["income", "expense"]).optional(), dateStart: z.string().optional(), dateEnd: z.string().optional(), owner: z.string().optional() }))
+    .input(z.object({ category: z.string(), yearMonth: zYearMonth.optional(), direction: z.enum(["income", "expense"]).optional(), dateStart: zDate.optional(), dateEnd: zDate.optional(), owner: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       return getL3Stats(ctx.dataUserId, input.category, input.yearMonth, input.direction, input.dateStart, input.dateEnd, input.owner);
     }),
 
   // ── 예산 목표 & 알림 ─────────────────────────────────────────
   getBudgets: protectedProcedure
-    .input(z.object({ yearMonth: z.string() }))
+    .input(z.object({ yearMonth: zYearMonth }))
     .query(async ({ ctx, input }) => getBudgetStatus(ctx.dataUserId, input.yearMonth)),
 
   setBudget: protectedProcedure
@@ -578,7 +586,7 @@ const budgetRouter = router({
 
   // 이번 달 새로 넘긴 임계치 알림을 조회(+기록). 앱 진입/업로드 후 호출.
   checkBudgetAlerts: protectedProcedure
-    .input(z.object({ yearMonth: z.string() }))
+    .input(z.object({ yearMonth: zYearMonth }))
     .mutation(async ({ ctx, input }) => detectNewBudgetAlerts(ctx.dataUserId, input.yearMonth)),
 
   // 정기결제·구독 감지 (거래 내역 기반)
@@ -588,8 +596,8 @@ const budgetRouter = router({
   // 기간(현재/직전)을 클라이언트가 로컬 기준으로 계산해 전달 → 기존 집계 재사용.
   getReport: protectedProcedure
     .input(z.object({
-      curStart: z.string(), curEnd: z.string(),
-      prevStart: z.string(), prevEnd: z.string(),
+      curStart: zDate, curEnd: zDate,
+      prevStart: zDate, prevEnd: zDate,
     }))
     .query(async ({ ctx, input }) => {
       const uid = ctx.dataUserId;

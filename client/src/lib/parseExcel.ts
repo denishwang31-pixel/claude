@@ -19,6 +19,14 @@ export interface ParsedRow {
 function pad2(n: string | number): string {
   return String(n).padStart(2, "0");
 }
+/** 연도 없는 MM/DD 를 해석: 올해로 두되, 결과가 오늘보다 미래면 작년으로.
+ *  (1월에 12월 명세서를 넣었을 때 미래 날짜로 저장되는 것을 방지) */
+export function resolveYearlessDate(mm: number, dd: number): string {
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  let y = now.getFullYear();
+  if (new Date(y, mm - 1, dd).getTime() > now.getTime()) y -= 1;
+  return `${y}-${pad2(mm)}-${pad2(dd)}`;
+}
 function toNumber(v: unknown): number {
   if (typeof v === "number") return v;
   const s = String(v ?? "").replace(/[^0-9.\-]/g, "");
@@ -32,8 +40,8 @@ export function normalizeDate(v: unknown): string {
   if (m) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
   m = s.match(/^(\d{4})(\d{2})(\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  m = s.match(/^(\d{1,2})[.\-/](\d{1,2})$/); // MM/DD → 올해로 가정
-  if (m) return `${new Date().getFullYear()}-${pad2(m[1])}-${pad2(m[2])}`;
+  m = s.match(/^(\d{1,2})[.\-/](\d{1,2})$/); // MM/DD → 연도 추정
+  if (m) return resolveYearlessDate(Number(m[1]), Number(m[2]));
   return "";
 }
 function extractTime(v: unknown): string {
