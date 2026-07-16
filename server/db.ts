@@ -783,6 +783,11 @@ export async function getCategoryStats(
 // ── 예산 목표 & 임계치 알림 ────────────────────────────────────
 export const BUDGET_THRESHOLDS = [50, 80, 90, 100];
 
+/** 달성률(percent)이 넘긴 임계치 목록. detectNewBudgetAlerts 의 판정 로직(테스트용). */
+export function crossedThresholds(percent: number): number[] {
+  return BUDGET_THRESHOLDS.filter((t) => percent >= t);
+}
+
 /** 카테고리별 월 예산 목표 + 해당 월 지출·달성률. yearMonth='YYYY-MM'. */
 export async function getBudgetStatus(
   userId: number,

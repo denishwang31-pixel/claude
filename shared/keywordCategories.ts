@@ -211,6 +211,16 @@ export const KEYWORD_CATEGORY_RULES: KeywordCategoryRule[] = [
   ]},
 ];
 
+/** buildKeywordCaseSQL 과 동일한 "첫 매칭 우선" 규칙을 JS로 재현한다.
+ *  (SQL CASE 의 동작 검증·클라이언트 미리보기용). 매칭 실패 시 null. */
+export function classifyByKeywords(content: string): string | null {
+  const c = (content ?? "").toLowerCase();
+  for (const rule of KEYWORD_CATEGORY_RULES) {
+    if (rule.keywords.some((k) => c.includes(k.toLowerCase()))) return rule.category;
+  }
+  return null;
+}
+
 /** SQL 이스케이프: 홑따옴표만 방어(키워드에 % _ 는 쓰지 않는다). */
 function esc(s: string): string {
   return s.replace(/'/g, "''");
