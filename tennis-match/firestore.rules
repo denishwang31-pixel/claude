@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* ---------- 전역 헬퍼 ---------- */
+    function signedIn() { return request.auth != null; }
+
+    function isClubMember(clubId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+    }
+    function clubRole(clubId) {
+      return get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role;
+    }
+    function isClubAdmin(clubId) {
+      return isClubMember(clubId) && (clubRole(clubId) == '총무' || clubRole(clubId) == '운영진');
+    }
+
+    /* ---------- 사용자 라우팅/프로필 ---------- */
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    /* ---------- 초대코드(루트, FIX-04) ----------
+       - 로그인 사용자는 조회 가능(가입 시 코드→clubId 확인). 코드를 알아야 문서 특정 가능.
+       - 생성/삭제는 해당 클럽 총무. (createClub 트랜잭션 시점엔 owner 멤버가 이미 존재) */
+    match /inviteCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && isClubAdmin(request.resource.data.clubId);
+      allow delete: if signedIn() && isClubAdmin(resource.data.clubId);
+      allow update: if false;
+    }
+
+    /* ---------- 클럽 ---------- */
+    match /clubs/{clubId} {
+      allow read: if isClubMember(clubId);
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isClubAdmin(clubId);
+
+      /* 회원: 읽기 멤버 전체 / 생성은 (지정 오너 자기자신) or (유효 초대코드 자기가입) or 총무 */
+      match /members/{memberId} {
+        allow read: if isClubMember(clubId);
+        allow create: if (request.auth.uid == memberId && (
+                          get(/databases/$(database)/documents/clubs/$(clubId)).data.ownerId == request.auth.uid ||
+                          (
+                            'joinCode' in request.resource.data &&
+                            exists(/databases/$(database)/documents/inviteCodes/$(request.resource.data.joinCode)) &&
+                            get(/databases/$(database)/documents/inviteCodes/$(request.resource.data.joinCode)).data.clubId == clubId
+                          )
+                        ))
+                        || isClubAdmin(clubId);
+        allow update: if isClubAdmin(clubId) || request.auth.uid == memberId;
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      /* 모임: 생성/삭제 총무. 회원은 자기 RSVP 키만 변경 가능(FIX-03 S-2) */
+      match /meetings/{meetingId} {
+        allow read: if isClubMember(clubId);
+        allow create, delete: if isClubAdmin(clubId);
+        allow update: if isClubAdmin(clubId) || (
+          isClubMember(clubId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvp']) &&
+          request.resource.data.rsvp.diff(resource.data.rsvp).affectedKeys().hasOnly([request.auth.uid])
+        );
+      }
+
+      /* 게시판: 작성 멤버. 회원 수정은 댓글 추가(comments)만. 삭제는 총무 또는 작성자(FIX-03 S-3) */
+      match /posts/{postId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubMember(clubId) && request.resource.data.authorId == request.auth.uid;
+        allow update: if isClubAdmin(clubId) || (
+          isClubMember(clubId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments'])
+        );
+        allow delete: if isClubAdmin(clubId) || resource.data.authorId == request.auth.uid;
+      }
+
+      match /fees/{monthKey} {
+        allow read: if isClubMember(clubId);
+        allow write: if isClubAdmin(clubId);
+      }
+      match /courts/{courtId} {
+        allow read: if isClubMember(clubId);
+        allow write: if isClubAdmin(clubId);
+      }
+      match /meta/{docId} {
+        allow read: if isClubMember(clubId);
+        allow write: if isClubAdmin(clubId);
+      }
+    }
+
+    /* ---------- 게스트 모집(루트 공개, FIX-05) ----------
+       - 읽기: 로그인 사용자 전체(공개 게시판)
+       - 모집글 생성/수정/삭제: 해당 클럽 총무
+       - 신청(applicants/{uid}): 본인만 생성/취소, 확정(status 변경)은 모집 클럽 총무 */
+    match /guestPosts/{postId} {
+      function postClubId() {
+        return get(/databases/$(database)/documents/guestPosts/$(postId)).data.clubId;
+      }
+      function isPostAdmin() { return isClubAdmin(postClubId()); }
+
+      allow read: if signedIn();
+      allow create: if signedIn() && isClubAdmin(request.resource.data.clubId);
+      allow update, delete: if signedIn() && isClubAdmin(resource.data.clubId);
+
+      match /applicants/{applicantUid} {
+        allow read: if signedIn();
+        allow create, delete: if request.auth.uid == applicantUid;
+        allow update: if isPostAdmin();
+      }
+    }
+  }
+}

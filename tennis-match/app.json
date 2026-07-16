@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "테니스매치",
+    "slug": "tennis-match",
+    "scheme": "tennismatch",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.donghyun.tennismatch"
+    },
+    "ios": {
+      "bundleIdentifier": "com.donghyun.tennismatch",
+      "supportsTablet": true
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
