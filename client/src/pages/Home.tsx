@@ -15,6 +15,7 @@ import { AccountsTab } from "../components/tabs/AccountsTab";
 import { FamilyTab } from "../components/tabs/FamilyTab";
 import { ReportPanel } from "../components/ReportPanel";
 import { SmsImportModal } from "../components/SmsImportModal";
+import { AppHeader } from "../components/AppHeader";
 import { notifyBudgetAlerts } from "../lib/budgetNotify";
 import { isBiometricLockEnabled, setBiometricLockEnabled } from "../components/BiometricGate";
 import { TransactionsTab } from "../components/tabs/TransactionsTab";
@@ -157,110 +158,30 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-cream-50">
-      {/* Header */}
-      <header className="bg-white border-b border-cream-200 shadow-sm sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 flex items-center justify-between h-14">
-          <h1 className="font-serif text-xl font-bold text-cream-800">가계부 대시보드</h1>
-          <div className="flex items-center gap-3">
-            {activeTab === "dashboard" && (
-              <>
-                <button
-                  onClick={() => setShowUpload((v) => !v)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-cream-700 text-white hover:bg-cream-800 transition-colors"
-                >
-                  <span>+</span>
-                  <span>데이터 업로드</span>
-                </button>
-                <button
-                  onClick={() => setShowSms(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-cream-200 text-cream-600 hover:bg-cream-100 transition-colors"
-                  title="결제 문자를 붙여넣어 빠르게 입력"
-                >
-                  <span>💬</span>
-                  <span>문자 입력</span>
-                </button>
-              </>
-            )}
-            {/* 소유자 필터 (모든 화면에 적용) */}
-            <div className="flex items-center rounded-lg border border-cream-200 overflow-hidden">
-              {([["", "전체"], ["동현", "동현"], ["혜진", "혜진"]] as const).map(([val, label]) => (
-                <button
-                  key={label}
-                  onClick={() => setOwnerFilter(val as "" | "동현" | "혜진")}
-                  className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                    ownerFilter === val
-                      ? "bg-cream-700 text-white"
-                      : "text-cream-500 hover:bg-cream-100"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={runDiagnostics}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-cream-200 text-cream-600 hover:bg-cream-100 transition-colors"
-              title="시스템 진단 (속도/규칙 수 확인)"
-            >
-              <span>🔧</span>
-              <span>진단</span>
-            </button>
-            <button
-              onClick={toggleTheme}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-cream-200 text-cream-600 hover:bg-cream-100 transition-colors"
-              title="테마 전환"
-              aria-label={theme === "light" ? "다크 모드로 전환" : "라이트 모드로 전환"}
-            >
-              <span>{theme === "light" ? "🌙" : "☀️"}</span>
-              <span>{theme === "light" ? "다크 모드" : "라이트 모드"}</span>
-            </button>
-            <button
-              onClick={() => {
-                const next = !lockOn;
-                setBiometricLockEnabled(next);
-                setLockOn(next);
-                toast.success(next ? "앱 생체 잠금을 켰습니다 (앱에서 적용)" : "앱 잠금을 껐습니다");
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                lockOn ? "border-cream-700 bg-cream-700 text-white" : "border-cream-200 text-cream-600 hover:bg-cream-100"
-              }`}
-              title="앱 생체 잠금 (Face ID/지문) — 앱에서만 동작"
-            >
-              <span>{lockOn ? "🔒" : "🔓"}</span>
-              <span>잠금</span>
-            </button>
-            <button
-              onClick={async () => {
-                await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include" });
-                await utils.budget.me.invalidate();
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-cream-200 text-cream-600 hover:bg-cream-100 transition-colors"
-              title="로그아웃"
-            >
-              <span>로그아웃</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Tab bar */}
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex gap-1 overflow-x-auto pb-0">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? "border-cream-700 text-cream-800"
-                    : "border-transparent text-cream-500 hover:text-cream-700"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        tabs={TABS}
+        activeTab={activeTab}
+        onTabChange={(id) => setActiveTab(id as Tab)}
+        showDashboardActions={activeTab === "dashboard"}
+        onUploadToggle={() => setShowUpload((v) => !v)}
+        onSmsOpen={() => setShowSms(true)}
+        ownerFilter={ownerFilter}
+        onOwnerChange={setOwnerFilter}
+        onDiagnostics={runDiagnostics}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        lockOn={lockOn}
+        onToggleLock={() => {
+          const next = !lockOn;
+          setBiometricLockEnabled(next);
+          setLockOn(next);
+          toast.success(next ? "앱 생체 잠금을 켰습니다 (앱에서 적용)" : "앱 잠금을 껐습니다");
+        }}
+        onLogout={async () => {
+          await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include" });
+          await utils.budget.me.invalidate();
+        }}
+      />
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         {/* Upload zone — collapsible on dashboard */}
