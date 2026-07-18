@@ -56,6 +56,8 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
     `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS "dashboardMemos" text DEFAULT '{}'`,
     // 규칙 매칭 결과를 굳혀두는 컬럼 (읽기 시점 상관 서브쿼리 제거용)
     `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS "ruleCategory" varchar(64)`,
+    // 자동분류(뱅크샐러드 대분류/키워드) 결과를 굳혀두는 컬럼 (읽기 시점 31KB CASE 제거용)
+    `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS "autoCategory" varchar(64)`,
     // 데이터 소유자 (동현/혜진) — 업로드/수기입력 시 지정
     `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS "owner" varchar(16)`,
     // 구 카테고리 → 새 카테고리 키로 이관 (아래 '정리' 단계보다 먼저 실행되어야 함)
@@ -111,6 +113,8 @@ async function runAutoMigrations(db: ReturnType<typeof drizzle>) {
        "createdAt" timestamp NOT NULL DEFAULT NOW(),
        UNIQUE ("userId", "paymentMethod")
      )`,
+    // 자동분류 컬럼 백필(최초 1회) — 아직 비어있는(구버전) 행만 계산해 채운다.
+    `UPDATE transactions t SET "autoCategory" = (${autoMapSQL()}) WHERE t."autoCategory" IS NULL`,
     // 조회 성능 인덱스 — 다사용자에서 유저 전체 스캔을 막는다.
     `CREATE INDEX IF NOT EXISTS "transactions_userId_txDate_idx" ON transactions ("userId", "txDate")`,
     `CREATE INDEX IF NOT EXISTS "transactions_userId_paymentMethod_idx" ON transactions ("userId", "paymentMethod")`,
@@ -566,20 +570,41 @@ function autoMapSQL(): string {
 }
 
 function buildEffectiveCategoryExpr(_userId: number): string {
-  // 우선순위: 수동지정 > 규칙매칭(사전 계산된 ruleCategory) > 자동분류(대분류/키워드) > 원본
+  // 우선순위: 수동지정 > 규칙매칭(ruleCategory) > 자동분류(autoCategory) > 원본
   //
-  // 예전에는 여기서 category_rules를 행마다 훑는 상관 서브쿼리를 돌렸는데,
-  // 이 표현식이 집계 쿼리 하나에 5~6번씩 인라인되어 O(거래수 × 규칙수 × N)
-  // 이 되었고, 규칙이 수천 개 쌓이면(자동 생성 반복) 대시보드 쿼리가 수십
-  // 초로 늘어나 클라이언트 타임아웃을 유발했다. 이제 규칙 매칭 결과는
-  // bakeRuleCategories로 ruleCategory 컬럼에 미리 굳혀두고, 읽기 시점에는
-  // 컬럼만 참조하므로 규칙 수와 무관하게 O(거래수)로 일정하다.
+  // ruleCategory 와 마찬가지로 자동분류 결과도 autoCategory 컬럼에 미리 굳혀둔다
+  // (bakeMissingAutoCategories / 마이그레이션 백필). 예전에는 여기에 31KB 키워드
+  // CASE 를 담은 autoMapSQL() 을 인라인했는데, 이 표현식이 집계 쿼리 하나에 5~6번
+  // 들어가 요청당 쿼리 텍스트가 최대 ~200KB로 불어나 매 요청 파싱 비용이 컸다.
+  // 이제 읽기 시점에는 컬럼만 참조하므로 쿼리가 가볍고 일정하다.
   return `COALESCE(
     t."customCategory",
     t."ruleCategory",
-    ${autoMapSQL()},
+    t."autoCategory",
     t.category
   )`;
+}
+
+/** 자동분류 결과를 autoCategory 컬럼에 채운다(아직 비어있는 행만).
+ *  업로드/수기입력 직후 호출 — 새 행에만 계산이 돌아 O(신규건수)로 저렴하다.
+ *  autoMapSQL() 은 t.category/subCategory/content 에만 의존하므로 userId 무관. */
+export async function bakeMissingAutoCategories(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.execute(sql.raw(
+    `UPDATE transactions t SET "autoCategory" = (${autoMapSQL()})
+       WHERE t."userId" = ${userId} AND t."autoCategory" IS NULL`
+  ));
+}
+
+/** 키워드 사전이 바뀌었을 때 전체 재계산(관리용). 사용자 전체 행을 다시 굳힌다. */
+export async function rebakeAutoCategories(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.execute(sql.raw(
+    `UPDATE transactions t SET "autoCategory" = (${autoMapSQL()})
+       WHERE t."userId" = ${userId}`
+  ));
 }
 
 /**
@@ -1545,6 +1570,8 @@ export async function addManualTransaction(userId: number, input: {
             ${input.owner ?? null}, ${dedupHash})
     RETURNING id
   `);
+  // 자동분류 컬럼 채우기(customCategory가 있어 표시엔 영향 없지만 컬럼 불변식 유지)
+  await bakeMissingAutoCategories(userId);
   return Number((res as any[])[0]?.id ?? null);
 }
 
@@ -2067,8 +2094,8 @@ export async function generateRulesFromTransactions(userId: number): Promise<num
   const INVEST_KEYWORDS = ["ETF", "주식", "펀드", "ISA", "IRP", "투자"];
 
   // 뱅크샐러드 대분류 원본이 아니라 앱 L3로 매핑된 카테고리를 규칙에 저장한다.
-  // (과거엔 t.category 원본을 저장해 '온라인쇼핑'·'생활' 같은 값이 규칙에 박혀 '기타'로 떨어졌다)
-  const mappedCat = `COALESCE(t."customCategory", ${autoMapSQL()})`;
+  // (autoCategory에 이미 굳혀둔 자동분류 결과 재사용 — 읽기 비용 절감)
+  const mappedCat = `COALESCE(t."customCategory", t."autoCategory", '기타_기타')`;
   const rows = await db.execute(sql.raw(
     `SELECT t.content, ${mappedCat} as category, t."txType", COUNT(*) as cnt
      FROM transactions t
@@ -2162,6 +2189,8 @@ export async function applyRulesToAllTransactions(userId: number): Promise<numbe
   const db = await getDb();
   if (!db) return 0;
 
+  // 자동분류(키워드 사전 갱신 반영)도 함께 재계산 → '전체 재적용'이 분류를 최신화한다.
+  await rebakeAutoCategories(userId);
   await bakeRuleCategories(userId);
 
   // 규칙이 실제로 매칭된 거래 수 반환

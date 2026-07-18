@@ -26,6 +26,7 @@ import {
   bakeRuleCategories,
   getExistingHashes,
   insertTransactions,
+  bakeMissingAutoCategories,
   setExcludedTransactions,
   clearAllExclusions,
   getUserSettings,
@@ -149,6 +150,9 @@ const budgetRouter = router({
       }));
 
       const insertedCount = await insertTransactions(dbRows);
+
+      // 자동분류(뱅크샐러드/키워드) 결과를 autoCategory 컬럼에 굳힌다(새 행만).
+      await bakeMissingAutoCategories(userId);
 
       // Apply mapping rules to newly inserted transactions
       const newHashes = newRows.map((r) => r.dedupHash);
