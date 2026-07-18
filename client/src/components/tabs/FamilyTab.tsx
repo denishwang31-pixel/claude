@@ -26,6 +26,13 @@ export function FamilyTab() {
     onSuccess: () => { toast.success("그룹에서 나왔습니다."); refreshAll(); },
     onError: () => toast.error("나가기 실패"),
   });
+  const regenM = trpc.budget.regenerateInviteCode.useMutation({
+    onSuccess: (r) => {
+      if (r.inviteCode) { toast.success("초대 코드를 재발급했습니다."); utils.budget.getGroup.invalidate(); }
+      else toast.error(r.error ?? "재발급 실패");
+    },
+    onError: () => toast.error("재발급 실패"),
+  });
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -54,9 +61,22 @@ export function FamilyTab() {
             <div className="text-sm text-cream-500 mt-3">
               현재 <b>{group.memberCount}명</b> 참여 중 · 내 역할: {group.isOwner ? "관리자(데이터 소유자)" : "구성원"}
             </div>
+            {group.inviteExpired && (
+              <p className="text-xs text-red-500 mt-2">⚠️ 초대 코드가 만료되었습니다. {group.isOwner ? "재발급하세요." : "관리자에게 재발급을 요청하세요."}</p>
+            )}
             <p className="text-xs text-cream-400 mt-2">
               가족에게 이 코드를 알려주고, 그 사람 앱의 "가족" 탭에서 코드를 입력하면 함께 보게 됩니다.
+              초대 코드는 발급 후 72시간 동안 유효합니다.
             </p>
+            {group.isOwner && (
+              <button
+                onClick={() => regenM.mutate()}
+                disabled={regenM.isPending}
+                className="mt-3 text-sm px-3 py-1.5 rounded-lg border border-cream-200 text-cream-600 hover:bg-cream-100 disabled:opacity-60"
+              >
+                초대 코드 재발급
+              </button>
+            )}
           </div>
           <button
             onClick={() => {

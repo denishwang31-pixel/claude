@@ -55,6 +55,7 @@ import {
   createGroup,
   joinGroup,
   leaveGroup,
+  regenerateInviteCode,
 } from "./db";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
@@ -641,6 +642,7 @@ const budgetRouter = router({
     await leaveGroup(ctx.user.id);
     return { ok: true };
   }),
+  regenerateInviteCode: protectedProcedure.mutation(async ({ ctx }) => regenerateInviteCode(ctx.user.id)),
 });
 
 export const appRouter = router({

@@ -85,6 +85,7 @@ export const groups = pgTable("groups", {
   inviteCode: varchar("inviteCode", { length: 16 }).notNull().unique(),
   ownerUserId: integer("ownerUserId").notNull(),
   name: varchar("name", { length: 64 }),
+  inviteCodeExpiresAt: timestamp("inviteCodeExpiresAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
