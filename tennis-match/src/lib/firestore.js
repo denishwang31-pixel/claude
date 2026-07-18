@@ -79,6 +79,10 @@ export const saveMatches = (clubId, meetingId, matches) =>
 export const addMember = (clubId, memberId, data) =>
   setDoc(D(clubId, 'members', memberId), { ...data, role: ROLES.MEMBER, status: '활동' });
 
+/* PHASE 3 — 본인 푸시 토큰 저장(규칙: 본인 문서 update 허용) */
+export const savePushToken = (clubId, memberId, token) =>
+  updateDoc(D(clubId, 'members', memberId), { pushToken: token });
+
 export const addPost = (clubId, data) =>
   addDoc(C(clubId, 'posts'), { ...data, comments: [], date: today() });
 

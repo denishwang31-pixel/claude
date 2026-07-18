@@ -1,9 +1,12 @@
-/* PHASE 2 — 로그인 화면 (전화번호 OTP)
-   RN 실기기에서는 expo-firebase-recaptcha의 FirebaseRecaptchaVerifierModal 필요.
-   여기서는 UI + 흐름을 구성하고 recaptcha ref 배선 지점을 표시. */
+/* PHASE 2 — 로그인 화면 (전화번호 OTP) — recaptcha 실배선(R-1 1차)
+   1차: Firebase JS SDK + expo-firebase-recaptcha(FirebaseRecaptchaVerifierModal).
+        ⚠️ 이 패키지는 deprecated 상태지만 JS SDK 전화인증의 현실적 유일 경로.
+   2차: @react-native-firebase/auth + EAS dev build 로 마이그레이션(ROADMAP R-1). */
 import React, { useState, useRef } from 'react';
 import { View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
+import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { firebaseConfig } from '../firebaseConfig';
 import { sendOtp, confirmOtp, getMyClubId } from '../src/lib/auth';
 import { Card, Btn, Field } from '../src/components/ui';
 import { C } from '../src/lib/theme';
@@ -16,9 +19,12 @@ export default function Login() {
   const [verId, setVerId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const recaptchaRef = useRef(null); // TODO: FirebaseRecaptchaVerifierModal 연결
+  const recaptchaRef = useRef(null);
 
-  const toE164 = (p) => (p.startsWith('0') ? '+82' + p.slice(1) : p); // 010… → +8210…
+  const toE164 = (p) => {
+    const digits = p.replace(/[^0-9+]/g, '');
+    return digits.startsWith('0') ? '+82' + digits.slice(1) : digits;
+  };
 
   const requestCode = async () => {
     setErr(''); setBusy(true);
@@ -41,6 +47,14 @@ export default function Login() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.ink, justifyContent: 'center', padding: 24 }}>
+      <FirebaseRecaptchaVerifierModal
+        ref={recaptchaRef}
+        firebaseConfig={firebaseConfig}
+        attemptInvisibleVerification
+        title="봇이 아님을 확인"
+        cancelLabel="닫기"
+      />
+
       <Text style={{ fontSize: 32, fontWeight: '900', color: '#fff', textAlign: 'center' }}>🎾</Text>
       <Text style={{ fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center', marginTop: 8 }}>테니스매치</Text>
       <Text style={{ fontSize: 13, color: '#6ee7b7', textAlign: 'center', marginTop: 4, marginBottom: 28 }}>클럽 운영을 한 곳에서</Text>
@@ -51,7 +65,7 @@ export default function Login() {
             <Text style={{ fontSize: 13, fontWeight: '700', marginBottom: 8 }}>휴대폰 번호</Text>
             <Field placeholder="010-0000-0000" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
             <View style={{ marginTop: 12 }}>
-              <Btn full disabled={busy || phone.length < 10} onPress={requestCode}>{busy ? '발송 중…' : '인증번호 받기'}</Btn>
+              <Btn full disabled={busy || phone.replace(/\D/g, '').length < 10} onPress={requestCode}>{busy ? '발송 중…' : '인증번호 받기'}</Btn>
             </View>
           </>
         ) : (
@@ -66,7 +80,6 @@ export default function Login() {
         )}
         {err ? <Text style={{ fontSize: 12, color: C.danger, textAlign: 'center', marginTop: 10 }}>{err}</Text> : null}
       </Card>
-      {/* <FirebaseRecaptchaVerifierModal ref={recaptchaRef} firebaseConfig={...} /> */}
     </View>
   );
 }

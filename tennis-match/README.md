@@ -37,11 +37,14 @@ firebaseConfig.js       ← 키 입력 필요
 ```
 
 ## 현재 상태
-- PHASE 1·2·2.5 완료 (FIX-01~08 반영). `node scripts/test-engine.mjs` 로 엔진 회귀 검증.
-- 실행 전: `firebaseConfig.js` 키 입력 → `firebase deploy --only firestore:rules` → Phone Auth 활성화.
+- **PHASE 1~4 코드 완료** (FIX-01~08 + 푸시 + 날씨 + 지도). 남은 것은 계정·키 설정과 스토어 절차.
+- 검증: `npm run test:engine`(엔진 123케이스), `npm run test:rules`(보안 규칙, Java 필요)
+
+## 시작하기
+**→ `SETUP-GUIDE.md` 를 순서대로 따라하세요** (Firebase 키 → 로컬 실행 → Functions 배포 → EAS 빌드 → 카카오 키 → 스토어)
 
 ## 남은 작업 (ROADMAP.md 참조)
-- 다음 1순위: `scripts/test-rules.mjs`(에뮬레이터 규칙 테스트), Expo 스모크 테스트
-- R-1 결정: 전화인증 스택(@react-native-firebase + EAS dev build 권장)
-- PHASE 3: 푸시 알림 / PHASE 4: 기상청·카카오맵 / PHASE 5~6: 빌드·스토어
+- 사용자 수동: SETUP-GUIDE.md 1~6 (계정/키/콘솔/빌드)
+- R-1 2차: @react-native-firebase/auth 전환(1차 출시 후)
+- 2차 기능: 안드로이드 입금 알림 파싱 네이티브 모듈
 - FIX-09/10(P2): 구독 범위 제한·pastPairs 집계, 공용 Toast

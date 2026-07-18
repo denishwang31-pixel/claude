@@ -6,6 +6,9 @@ import {
   confirmApplicant, subApplicants, updateMeeting, addCourt, deleteCourt, addMember,
 } from '../lib/firestore';
 import { GUEST_STATUS } from '../lib/constants';
+import { KAKAO_JS_KEY } from '../lib/keys';
+import { geocodeAddress } from '../lib/kakao';
+import { KakaoMapCourts } from './KakaoMapCourts';
 import { Card, SectionTitle, Chip, Btn, Field, Avatar } from './ui';
 import { C } from '../lib/theme';
 
@@ -182,16 +185,20 @@ export function Courts({ clubId, courts, isAdmin, flash }) {
         </View>
       )}
 
-      {/* 간이 지도 (PHASE 4: WebView + Kakao 지도로 교체) */}
-      <Card style={{ marginTop: 12, backgroundColor: C.ink, borderColor: C.green, height: 150 }}>
-        {list.slice(0, 8).map((c, i) => (
-          <View key={c.id} style={{ position: 'absolute', left: `${15 + (i * 23) % 70}%`, top: `${18 + (i * 31) % 55}%`, alignItems: 'center' }}>
-            <Text style={{ fontSize: 16 }}>📍</Text>
-            <Text style={{ fontSize: 9, color: C.lime, fontWeight: '700' }}>{c.name.slice(0, 8)}</Text>
-          </View>
-        ))}
-        <Text style={{ position: 'absolute', bottom: 6, right: 8, fontSize: 9, color: '#34d399' }}>{sido || '전국'}{gu ? ` · ${gu}` : ''} · {list.length}개</Text>
-      </Card>
+      {/* 지도: 카카오 JS 키가 있으면 실지도(WebView), 없으면 간이 지도 */}
+      {KAKAO_JS_KEY ? (
+        <View style={{ marginTop: 12 }}><KakaoMapCourts courts={list} /></View>
+      ) : (
+        <Card style={{ marginTop: 12, backgroundColor: C.ink, borderColor: C.green, height: 150 }}>
+          {list.slice(0, 8).map((c, i) => (
+            <View key={c.id} style={{ position: 'absolute', left: `${15 + (i * 23) % 70}%`, top: `${18 + (i * 31) % 55}%`, alignItems: 'center' }}>
+              <Text style={{ fontSize: 16 }}>📍</Text>
+              <Text style={{ fontSize: 9, color: C.lime, fontWeight: '700' }}>{c.name.slice(0, 8)}</Text>
+            </View>
+          ))}
+          <Text style={{ position: 'absolute', bottom: 6, right: 8, fontSize: 9, color: '#34d399' }}>{sido || '전국'}{gu ? ` · ${gu}` : ''} · {list.length}개</Text>
+        </Card>
+      )}
 
       {list.map((c) => (
         <Card key={c.id} style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -222,10 +229,11 @@ export function Courts({ clubId, courts, isAdmin, flash }) {
             <View style={{ marginTop: 8 }}><Field placeholder="주소" value={nc.addr} onChangeText={(t) => setNc({ ...nc, addr: t })} /></View>
             <View style={{ marginTop: 8 }}><Field placeholder="예약 사이트 링크 (https://…)" value={nc.link} onChangeText={(t) => setNc({ ...nc, link: t })} /></View>
             <View style={{ marginTop: 8 }}>
-              <Btn full disabled={!nc.name || !nc.sido} onPress={() => {
-                addCourt(clubId, { ...nc, indoor: false });
+              <Btn full disabled={!nc.name || !nc.sido} onPress={async () => {
+                const geo = await geocodeAddress(nc.addr); // 카카오 REST 키 있으면 좌표 자동 저장
+                addCourt(clubId, { ...nc, indoor: false, ...(geo || {}) });
                 setNc({ sido: '', gu: '', name: '', addr: '', surface: '하드', link: '' });
-                flash('코트 등록됨');
+                flash(geo ? '코트 등록됨 (지도 좌표 포함)' : '코트 등록됨');
               }}>코트 등록</Btn>
             </View>
           </Card>

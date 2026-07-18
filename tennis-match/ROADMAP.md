@@ -39,24 +39,25 @@
 - [x] FIX-05 게스트 크로스클럽(루트 guestPosts + applicants 서브컬렉션 + uid 귀속)
 - [x] FIX-06 댓글 arrayUnion / FIX-07 weather null 계약 / FIX-08 상수화·결산 연도
 - [x] scripts/test-engine.mjs (엔진 제약 회귀 123케이스 통과)
-- [ ] **남은 실배포 준비(사용자 수동)**: Firebase Phone Auth 활성화,
-      `firebase deploy --only firestore:rules`, firebaseConfig 키 입력,
-      login.jsx recaptcha 실배선(R-1 결정 반영)
-- [ ] `scripts/test-rules.mjs` (@firebase/rules-unit-testing) 작성·통과 — **다음 착수 1순위**
+- [x] `scripts/test-rules.mjs` (@firebase/rules-unit-testing) 작성·에뮬레이터 통과
+- [x] login.jsx recaptcha 실배선 (1차: expo-firebase-recaptcha / 2차: RNFirebase 전환)
+- [ ] **사용자 수동(SETUP-GUIDE.md 1~2)**: Firebase 키 입력, Phone Auth 활성화, rules 배포
 - [ ] Expo Go/dev client 스모크 테스트(로그인→온보딩→5탭)
 
-## PHASE 3. 푸시 알림 (미착수)
-- [ ] expo-notifications 토큰 수집 → members.pushToken
-- [ ] Cloud Functions 트리거(모임 생성/대진 확정/게스트 확정/회비 리마인드)
-- [ ] iOS APNs .p8 발급·등록
+## PHASE 3. 푸시 알림 — ✅ 코드 완료 (배포는 SETUP-GUIDE.md 3~4)
+- [x] expo-notifications 토큰 수집 → members.pushToken (notifications.js + 탭 레이아웃)
+- [x] Cloud Functions 트리거 4종: 모임 생성/대진 발표·취소/게스트 확정/회비 리마인드
+- [ ] **사용자 수동**: Blaze 전환, functions 배포, eas init(projectId), iOS APNs .p8
 
-## PHASE 4. 실연동 (미착수)
-- [ ] 기상청 단기예보 → meeting.forecast (weatherFor 는 이미 forecast 소비 계약)
-- [ ] 카카오맵 SDK/WebView + 로컬 API 좌표 변환(코트 lat/lng)
+## PHASE 4. 실연동 — ✅ 코드 완료 (키 입력은 SETUP-GUIDE.md 3·5)
+- [x] 기상청 단기예보 Cloud Function(12시간 주기, 격자 변환, 우천 60%↑ 총무 푸시)
+- [x] 카카오맵 WebView 코트 지도 + 주소→좌표 자동 변환(코트 등록 시)
+- [ ] **사용자 수동**: KMA_SERVICE_KEY 시크릿, 카카오 키 2종(keys.js)
 - [ ] (2차) 안드로이드 입금 알림 파싱 네이티브 모듈 — 현재는 CSV 붙여넣기로 대체
 
-## PHASE 5~6. 빌드·내부테스트·스토어 등록 (미착수)
-- [ ] eas build preview / 클럽 실사용 / Play $25 / Apple $99
+## PHASE 5~6. 빌드·내부테스트·스토어 등록 (SETUP-GUIDE.md 4·6)
+- [x] eas.json (development/preview/production 프로필)
+- [ ] eas build preview / 클럽 실사용 1~2주 / Play $25 / Apple $99
 
 ---
 

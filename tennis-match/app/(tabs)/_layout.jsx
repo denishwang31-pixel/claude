@@ -1,7 +1,9 @@
-/* 5탭 네비게이션 (expo-router Tabs) */
-import React from 'react';
+/* 5탭 네비게이션 (expo-router Tabs) + 푸시 토큰 등록(PHASE 3) */
+import React, { useEffect } from 'react';
 import { Text } from 'react-native';
 import { Tabs } from 'expo-router';
+import { useApp } from '../_layout';
+import { registerPushToken } from '../../src/lib/notifications';
 import { C } from '../../src/lib/theme';
 
 const icon = (emoji) => ({ color }) => (
@@ -9,6 +11,13 @@ const icon = (emoji) => ({ color }) => (
 );
 
 export default function TabsLayout() {
+  const { clubId, me } = useApp() || {};
+
+  // 로그인+클럽 확정 후 1회 푸시 토큰 등록
+  useEffect(() => {
+    if (clubId && me) registerPushToken(clubId, me);
+  }, [clubId, me]);
+
   return (
     <Tabs
       screenOptions={{
