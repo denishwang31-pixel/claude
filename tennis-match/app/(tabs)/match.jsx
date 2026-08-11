@@ -56,11 +56,23 @@ export default function Match() {
       couples: bothHere(pairs?.couples),
       fixedPairs: bothHere(pairs?.fixedPairs),
     };
-    const matches = generateMatchesV5(attendees, meeting.courts, meeting.rounds, rules, past, restScores, options);
+    const report = {};
+    const matches = generateMatchesV5(attendees, meeting.courts, meeting.rounds, rules, past, restScores, { ...options, report });
     if (!matches.length) return flash('현재 성비/인원으로는 편성 가능한 구성이 없습니다 (잡복 금지)');
     saveMatches(clubId, meeting.id, matches);
+
+    // 제약을 지킬 수 없어 완화했거나 편성 못 한 타임이 있으면 그대로 알려준다
     const n = options.couples.length + options.fixedPairs.length;
-    flash(`${matches.length}경기 생성${n ? ` · 커플/페어 ${n}건 반영` : ''}`);
+    const parts = [`${matches.length}경기 생성`];
+    if (n && !report.relaxed.length) parts.push(`커플/페어 ${n}건 반영`);
+    if (report.relaxed.length) {
+      const team = report.relaxed.filter((x) => x.what === 'fixedPairTeam').map((x) => x.round);
+      const allc = report.relaxed.filter((x) => x.what === 'allPairConstraints').map((x) => x.round);
+      if (team.length) parts.push(`${team.join('·')}타임은 고정페어 같은팀 적용 불가(성비 문제)`);
+      if (allc.length) parts.push(`${allc.join('·')}타임은 커플/페어 제약 해제`);
+    }
+    if (report.skippedRounds.length) parts.push(`${report.skippedRounds.join('·')}타임은 편성 불가`);
+    flash(parts.join(' · '));
   };
 
   const changeRest = (id, delta) => {

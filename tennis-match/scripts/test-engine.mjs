@@ -147,5 +147,63 @@ function checkMatches(matches, players) {
   checkMatches(matches, players);
 }
 
+// 케이스 9: 불가능한 제약 → 무한 재시도 대신 완화해서 결과를 낸다 (VBA 멈춤 이슈와 동종)
+{
+  // 1코트는 혼복만 가능 → 동성 고정페어는 같은 팀이 될 수 없는 구조
+  const players = roster(2, 2);
+  const report = {};
+  const t0 = Date.now();
+  const matches = generateMatchesV5(players, 1, 4, DEFAULT_RULES, {}, {}, { fixedPairs: [['M1', 'M2']], report });
+  const ms = Date.now() - t0;
+  ok(matches.length > 0, '불가능 제약에서도 편성 결과가 나옴(빈 결과 아님)');
+  ok(report.relaxed.length > 0, '완화 사실이 report 에 기록됨');
+  ok(ms < 3000, `제한 시간 내 종료 (${ms}ms)`);
+  checkMatches(matches, players);
+}
+
+// 케이스 10: 커플이 많아 성비 동기화가 불가능해도 완화 후 편성
+{
+  const players = roster(5, 3);
+  const report = {};
+  const matches = generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, {
+    couples: [['M1', 'F1'], ['M2', 'F2'], ['M3', 'F3']], report,
+  });
+  ok(matches.length > 0, '커플 과다 상황에서도 편성 결과가 나옴');
+  checkMatches(matches, players);
+}
+
+// 케이스 11: 코트를 다 채울 수 없는 성비 → 가능한 코트만 사용해 편성
+{
+  const players = roster(5, 3); // 2면을 채우는 조합이 없음(부분 사용 필요)
+  const matches = generateMatchesV5(players, 2, 3, DEFAULT_RULES, {}, {});
+  ok(matches.length > 0, '코트 부분 사용으로 편성 가능');
+  checkMatches(matches, players);
+}
+
+// 케이스 12: 성립 불가 로스터는 조용히 실패하지 않고 report 에 남긴다
+{
+  const players = roster(3, 1); // 남복(4)·여복(4)·혼복(2+2) 어느 것도 불가
+  const report = {};
+  const matches = generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, { report });
+  ok(matches.length === 0, '편성 불가 로스터는 빈 결과');
+  ok(report.skippedRounds.length === 4, '편성 못 한 타임이 report 에 기록됨');
+}
+
+// 케이스 13: 과부하 상황 성능 (VBA 가 수 분 걸리던 조건)
+{
+  const players = roster(9, 6);
+  const past = {};
+  const ids = players.map((p) => p.id);
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) past[[ids[i], ids[j]].sort().join('|')] = 5;
+  }
+  const strict = [DEFAULT_RULES[2], DEFAULT_RULES[0], DEFAULT_RULES[1], DEFAULT_RULES[3], DEFAULT_RULES[4]];
+  const t0 = Date.now();
+  const matches = generateMatchesV5(players, 3, 4, strict, past, {});
+  const ms = Date.now() - t0;
+  ok(matches.length > 0, '페어 전소진 + strict 에서도 편성됨');
+  ok(ms < 1000, `과부하 상황 1초 이내 (${ms}ms)`);
+}
+
 console.log(`\n엔진 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);
