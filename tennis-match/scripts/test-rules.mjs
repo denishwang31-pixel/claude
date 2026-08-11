@@ -151,6 +151,24 @@ await T('총무의 커플/페어 설정 허용',
 await T('회원의 커플/페어 설정 거부',
   assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'meta', 'pairs'), { couples: [], fixedPairs: [] })));
 
+console.log('\n[코트장 / 대진 설정]');
+await T('총무의 코트장 등록 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'venues', 'v1'),
+    { name: '올림픽공원', courts: 3, startTime: '10:00', endTime: '13:00', roundMinutes: 40, leadId: 'mem1' })));
+await T('회원의 코트장 읽기 허용',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'venues', 'v1'))));
+await T('회원의 코트장 수정 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'venues', 'v1'), { courts: 99 })));
+await T('총무의 대진 기본설정 저장 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'meta', 'matchConfig'),
+    { defaultRoundType: 'MX', skillBalance: true, allowMixed: false })));
+await T('회원의 대진 기본설정 변경 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'meta', 'matchConfig'), { defaultRoundType: 'SINGLES' })));
+await T('회원의 모임 타임유형(roundPlan) 변경 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt1'), { roundPlan: { 1: 'SINGLES' } })));
+await T('총무의 타임유형 변경 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'meetings', 'mt1'), { roundPlan: { 1: 'SINGLES' } })));
+
 console.log('\n[회비/기타]');
 await T('회원 회비 읽기 허용',
   assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'fees', '2026-07'))));

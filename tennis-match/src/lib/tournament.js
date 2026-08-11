@@ -188,6 +188,82 @@ export function championOf(bracket) {
   return last?.matches?.[0]?.winner || null;
 }
 
+/* ============================================================
+   NTRP 실력 그룹 배정 — 대회에서 수준별로 나눠 진행할 때
+   - 남/여를 각각 NTRP 내림차순으로 정렬해 상위부터 그룹에 채운다
+     (같은 그룹 안에서도 성비가 유지되도록 성별로 따로 배분)
+   - sizes 로 그룹별 정원을 지정. 합계가 인원과 달라도 최대한 맞춰 배분한다.
+   ============================================================ */
+
+/** 그룹 기본 이름: A그룹(상위) → B그룹 → … */
+export const groupLabel = (i) => `${String.fromCharCode(65 + i)}그룹`;
+
+/**
+ * @param {Array} players [{id,name,gender,ntrp}]
+ * @param {Array<number>} sizes 그룹별 정원 (예: [8, 8, 6])
+ * @returns {Array} groups [{ name, memberIds:[], range:{min,max} }]
+ */
+export function assignSkillGroups(players, sizes) {
+  const list = (players || []).filter(Boolean);
+  const n = list.length;
+  const counts = (sizes || []).map((v) => Math.max(0, Math.floor(Number(v) || 0)));
+  if (!counts.length || !n) return [];
+
+  // 정원 합계를 실제 인원에 맞춰 보정(부족하면 마지막 그룹에서 줄이고, 남으면 마지막 그룹에 더함)
+  let total = counts.reduce((a, b) => a + b, 0);
+  const adj = [...counts];
+  let gi = adj.length - 1;
+  while (total > n && gi >= 0) {
+    const cut = Math.min(adj[gi], total - n);
+    adj[gi] -= cut; total -= cut; gi -= 1;
+  }
+  if (total < n) adj[adj.length - 1] += n - total;
+
+  const skill = (p) => (typeof p.ntrp === 'number' ? p.ntrp : 3.0);
+  const byGender = {
+    M: list.filter((p) => p.gender === 'M').sort((a, b) => skill(b) - skill(a)),
+    F: list.filter((p) => p.gender !== 'M').sort((a, b) => skill(b) - skill(a)),
+  };
+  // 각 그룹이 가져갈 남/여 인원 = 전체 성비에 비례
+  const ratioM = byGender.M.length / n;
+
+  const groups = adj.map((size, i) => ({ name: groupLabel(i), size, memberIds: [] }));
+  const want = groups.map((g) => ({
+    M: Math.round(g.size * ratioM),
+    F: g.size - Math.round(g.size * ratioM),
+  }));
+
+  // 상위 그룹부터 실력 순으로 채우되, 남은 인원이 모자라면 다른 성별로 보충
+  groups.forEach((g, i) => {
+    ['M', 'F'].forEach((gd) => {
+      const take = Math.min(want[i][gd], byGender[gd].length);
+      for (let k = 0; k < take; k++) g.memberIds.push(byGender[gd].shift().id);
+    });
+  });
+  // 정원을 못 채운 그룹에 남은 인원(성별 무관, 실력순) 배분
+  const leftover = [...byGender.M, ...byGender.F].sort((a, b) => skill(b) - skill(a));
+  groups.forEach((g) => {
+    while (g.memberIds.length < g.size && leftover.length) g.memberIds.push(leftover.shift().id);
+  });
+  // 그래도 남으면 마지막 그룹에
+  if (leftover.length) groups[groups.length - 1].memberIds.push(...leftover.map((p) => p.id));
+
+  // 그룹별 NTRP 범위 계산(표시용)
+  const byId = Object.fromEntries(list.map((p) => [p.id, p]));
+  groups.forEach((g) => {
+    const vals = g.memberIds.map((id) => skill(byId[id]));
+    g.range = vals.length ? { min: Math.min(...vals), max: Math.max(...vals) } : null;
+  });
+  return groups.map(({ name, memberIds, range }) => ({ name, memberIds, range }));
+}
+
+/** 그룹 간 회원 이동(운영진 수동 조정) */
+export function moveMemberToGroup(groups, memberId, toIndex) {
+  const next = groups.map((g) => ({ ...g, memberIds: g.memberIds.filter((id) => id !== memberId) }));
+  if (toIndex >= 0 && toIndex < next.length) next[toIndex].memberIds.push(memberId);
+  return next;
+}
+
 /* ---------------- 3) 참가팀 자동 구성 도우미 ---------------- */
 /**
  * 참가 인원(회원)에서 복식 팀을 자동 구성.

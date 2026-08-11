@@ -38,6 +38,21 @@ const linkMap = (links) => {
   return m;
 };
 
+/** Fisher-Yates 셔플(편향 없는 무작위) */
+const shuffleArr = (arr) => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
+/** 실력 값 — player.ntrp 우선, 없으면 등급(A/B/C)로 근사, 그것도 없으면 3.0 */
+const GRADE_NTRP = { A: 4.0, B: 3.5, C: 3.0, D: 2.5 };
+const skillOf = (p) =>
+  (typeof p?.ntrp === 'number' ? p.ntrp : GRADE_NTRP[p?.grade]) ?? 3.0;
+
 /** 이전 모임 전체에서 누적 페어 기록 수집 (VBA "이전페어" 시트 역할) */
 export function collectPastPairs(meetings, excludeMeetingId) {
   const past = {};
@@ -61,7 +76,19 @@ const TYPES = {
   MX: { m: 2, f: 2, label: '혼복' },
   // 잡복(남3여1 등 성비가 안 맞는 복식). 기본 금지, allowMixed 옵션에서만 사용
   ANY: { m: 0, f: 0, any: 4, label: '잡복' },
+  // 단식(1:1) — 타임 유형을 SINGLES 로 지정했을 때만 사용
+  MS: { m: 2, f: 0, singles: true, label: '남단식' },
+  WS: { m: 0, f: 2, singles: true, label: '여단식' },
 };
+
+/** 타임(라운드) 유형 — 모임/클럽 설정에서 타임별로 지정 */
+export const ROUND_TYPES = [
+  { key: 'MX', name: '혼복', desc: '남녀 2:2 (기본)' },
+  { key: 'SAME', name: '남복/여복', desc: '동성 복식만' },
+  { key: 'SINGLES', name: '단식', desc: '1:1 경기 (코트당 2명)' },
+  { key: 'AUTO', name: '자동', desc: '홀수 타임 동성복식 / 짝수 타임 혼복' },
+];
+export const DEFAULT_ROUND_TYPE = 'MX';
 
 /* ============================================================
    로스터 진단 — 대진 생성 전에 "가능한가? 안 되면 몇 명 더 필요한가?"를 계산
@@ -73,9 +100,25 @@ const TYPES = {
      needForFullStrict  요청한 코트를 전부 잡복 없이 채우려면 필요한 추가 인원 {m,f}
      needForOneMoreStrict 잡복 없이 한 면 더 늘리려면 필요한 추가 인원 {m,f}
    ============================================================ */
-export function diagnoseRoster(players, courts) {
+export function diagnoseRoster(players, courts, roundType) {
   const M = (players || []).filter((p) => p.gender === 'M').length;
   const F = (players || []).length - M;
+
+  // 단식 타임은 코트당 2명 — 판정 기준이 다르다
+  if (roundType === 'SINGLES') {
+    const singlesCourts = Math.min(courts, Math.floor(M / 2) + Math.floor(F / 2));
+    return {
+      M, F, singles: true,
+      strictCourts: singlesCourts,
+      mixedCourts: singlesCourts,
+      canPlayStrict: singlesCourts > 0,
+      canPlayMixed: singlesCourts > 0,
+      needForFirstCourt: singlesCourts > 0 ? { m: 0, f: 0 }
+        : { m: M === 1 ? 1 : (F === 1 ? 0 : 2), f: F === 1 ? 1 : 0 },
+      needForFullStrict: { m: 0, f: 0 },
+      needForOneMoreStrict: { m: 0, f: 0 },
+    };
+  }
 
   /** m명·f명으로 잡복 없이 채울 수 있는 최대 코트 수 */
   const strictCapacity = (m, f, maxCourts) => {
@@ -177,11 +220,61 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
   const planRound = (r, useCouples, useFixed, deadline) => {
     const syncMap = useCouples ? partnerOf : {};
     const teamMap = useFixed ? fixedOf : {};
-    const allowMixed = !!options.allowMixed; // 잡복 허용(기본 false)
+    const allowMixed = !!options.allowMixed;     // 잡복 허용(기본 false)
+    const skillBalance = !!options.skillBalance; // NTRP 근접 매칭(기본 false)
     const availM = players.filter((p) => p.gender === 'M').length;
     const availF = players.filter((p) => p.gender === 'F').length;
 
     /* 1) 타임별 코트 구성 사전 결정: 혼복x + 남복y + 여복z = courts 전수 탐색 */
+    /* 이 타임의 유형 (MX 혼복 / SAME 동성복식 / SINGLES 단식 / AUTO 자동) */
+    const plan = (options.roundPlan && options.roundPlan[r]) || options.defaultRoundType || 'AUTO';
+
+    /* --- 단식 타임: 코트당 2명. 남단식 a면 + 여단식 b면 --- */
+    if (plan === 'SINGLES') {
+      let sb = null, sbScore = -Infinity;
+      for (let a = 0; a <= courts; a++) {
+        for (let b = 0; a + b <= courts; b++) {
+          if (a + b === 0) continue;
+          if (2 * a > availM || 2 * b > availF) continue;
+          const onCourt = 2 * a + 2 * b;
+          let s = onCourt * 10 * W.maxPlay;
+          s -= Math.abs((availM - 2 * a) - (availF - 2 * b));
+          if (s > sbScore) { sbScore = s; sb = { a, b }; }
+        }
+      }
+      if (!sb) return null;
+      const pickS = (gender, n) =>
+        players.filter((p) => p.gender === gender)
+          .sort((p1, p2) =>
+            (games[p1.id] - games[p2.id]) * W.evenGames
+            - (rest(p1.id) - rest(p2.id)) * W.restPriority * 0.5
+            || Math.random() - 0.5)
+          .slice(0, n);
+      const sm = shuffleArr(pickS('M', 2 * sb.a));
+      const sf = shuffleArr(pickS('F', 2 * sb.b));
+      // 실력 매칭: 비슷한 NTRP 끼리 붙도록 정렬 후 인접끼리 배정
+      if (skillBalance) {
+        sm.sort((p1, p2) => skillOf(p2) - skillOf(p1));
+        sf.sort((p1, p2) => skillOf(p2) - skillOf(p1));
+      }
+      const singlesMatches = [];
+      let court = 1;
+      for (let i = 0; i + 1 < sm.length; i += 2) {
+        singlesMatches.push({
+          id: uid(), round: r, court: court++, type: TYPES.MS.label,
+          teamA: [sm[i].id], teamB: [sm[i + 1].id], score: null,
+        });
+      }
+      for (let i = 0; i + 1 < sf.length; i += 2) {
+        singlesMatches.push({
+          id: uid(), round: r, court: court++, type: TYPES.WS.label,
+          teamA: [sf[i].id], teamB: [sf[i + 1].id], score: null,
+        });
+      }
+      if (!singlesMatches.length) return null;
+      return { matches: singlesMatches, tempPairs: {} };
+    }
+
     let best = null, bestScore = -Infinity;
     // x+y+z <= courts : 코트를 다 채우지 못하는 성비(예: 남5 여3 / 2면)에서도
     // 쓸 수 있는 코트만 사용해 편성하도록 부분 조합까지 평가한다.
@@ -203,8 +296,15 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
 
           const onCourt = needM + needF + w * 4;
           let s = onCourt * 10 * W.maxPlay;                 // 출전 인원 최대화 최우선
-          const patternFit = r % 2 === 1 ? y + z : x;        // 홀수=동성복식, 짝수=혼복
-          s += patternFit * 3 * W.pattern;
+
+          /* 타임 유형 반영: 지정된 유형에 강한 가산점(불가능하면 자연히 다른 구성으로 폴백) */
+          if (plan === 'MX') s += x * 40;                    // 혼복 우선
+          else if (plan === 'SAME') s += (y + z) * 40;       // 동성 복식 우선
+          else {                                             // AUTO: 홀수=동성, 짝수=혼복
+            const patternFit = r % 2 === 1 ? y + z : x;
+            s += patternFit * 3 * W.pattern;
+          }
+
           s -= w * 5;                                        // 잡복은 되도록 적게(최후 수단)
           // 동성 고정페어가 있으면 해당 성별 동성복식 코트를 확보하도록 유도
           if (useFixed && sameSexFixed.M && y > 0) s += 20;
@@ -301,11 +401,16 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
 
     const MAX_GLOBAL = 200, MAX_GAME = 40;
     let roundResult = null;
+    // 실력 매칭이 켜지면 실력순 정렬(같은 코트에 비슷한 수준끼리 모임), 아니면 무작위
+    const arrange = (pool) => (skillBalance
+      ? [...pool].sort((p1, p2) => skillOf(p2) - skillOf(p1) || Math.random() - 0.5)
+      : shuffleArr(pool));
+
     for (let attempt = 0; attempt < MAX_GLOBAL && !roundResult; attempt++) {
       // 시간 상한: 불가능한 제약에 매달리지 않고 즉시 완화 단계로 넘어감
       if (attempt % 10 === 0 && Date.now() > deadline) return null;
-      const m = [...poolM].sort(() => Math.random() - 0.5);
-      const f = [...poolF].sort(() => Math.random() - 0.5);
+      const m = arrange(poolM);
+      const f = arrange(poolF);
       const tempPairs = {};
       const matches = [];
       let ok = true;
@@ -332,8 +437,15 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
             const four = [...ms, ...fs];          // 남자 먼저, 여자 뒤
             teamA = [four[0], four[2]];           // 교차 배분 → 팀별 성비 균형
             teamB = [four[1], four[3]];
-          } else if (courtTypes[c] === 'MX') { teamA = [ms[0], fs[0]]; teamB = [ms[1], fs[1]]; }
-          else { const pl = ms.length ? ms : fs; teamA = [pl[0], pl[1]]; teamB = [pl[2], pl[3]]; }
+          } else if (courtTypes[c] === 'MX') {
+            // 실력 매칭 시 1등남+2등여 / 2등남+1등여 로 교차 → 양 팀 실력 합 균등
+            if (skillBalance) { teamA = [ms[0], fs[1]]; teamB = [ms[1], fs[0]]; }
+            else { teamA = [ms[0], fs[0]]; teamB = [ms[1], fs[1]]; }
+          } else {
+            const pl = ms.length ? ms : fs;
+            if (skillBalance) { teamA = [pl[0], pl[3]]; teamB = [pl[1], pl[2]]; } // 1·4 vs 2·3
+            else { teamA = [pl[0], pl[1]]; teamB = [pl[2], pl[3]]; }
+          }
           if (!teamA[0] || !teamA[1] || !teamB[0] || !teamB[1]) { m.unshift(...ms); f.unshift(...fs); break; }
 
           /* 고정 페어 보정: 이 코트 4명 중 고정 페어가 갈라졌으면 같은 팀으로 재배치.
@@ -364,8 +476,13 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
             placed = { teamA, teamB, kA, kB, type: t.label };
           } else {
             m.unshift(...ms); f.unshift(...fs);
-            m.sort(() => Math.random() - 0.5);
-            f.sort(() => Math.random() - 0.5);
+            if (skillBalance) {                    // 실력순은 유지하고 동점자끼리만 섞음
+              m.sort((p1, p2) => skillOf(p2) - skillOf(p1) || Math.random() - 0.5);
+              f.sort((p1, p2) => skillOf(p2) - skillOf(p1) || Math.random() - 0.5);
+            } else {
+              m.splice(0, m.length, ...shuffleArr(m));
+              f.splice(0, f.length, ...shuffleArr(f));
+            }
           }
         }
         if (!placed) { ok = false; break; }

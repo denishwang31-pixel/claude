@@ -284,5 +284,78 @@ function checkMatches(matches, players) {
   }
 }
 
+/* ---------------- 타임 유형 / 단식 / 실력 매칭 ---------------- */
+const withNtrp = (nm, nf) => [
+  ...Array.from({ length: nm }, (_, i) => ({ ...mk(i + 1, 'M'), ntrp: 2.5 + (i % 6) * 0.5 })),
+  ...Array.from({ length: nf }, (_, i) => ({ ...mk(i + 1, 'F'), ntrp: 2.5 + (i % 6) * 0.5 })),
+];
+
+// 케이스 19: 타임 유형 지정이 그대로 반영
+{
+  const players = roster(8, 8);
+  const mx = generateMatchesV5(players, 2, 3, DEFAULT_RULES, {}, {}, { defaultRoundType: 'MX' });
+  ok(mx.length > 0 && mx.every((m) => m.type === '혼복'), 'MX 지정 시 전부 혼복');
+
+  const same = generateMatchesV5(players, 2, 3, DEFAULT_RULES, {}, {}, { defaultRoundType: 'SAME' });
+  ok(same.length > 0 && same.every((m) => m.type === '남복' || m.type === '여복'), 'SAME 지정 시 동성복식만');
+
+  const mixedPlan = generateMatchesV5(players, 2, 3, DEFAULT_RULES, {}, {}, {
+    roundPlan: { 1: 'MX', 2: 'SAME', 3: 'SINGLES' },
+  });
+  const r1 = mixedPlan.filter((m) => m.round === 1);
+  const r2 = mixedPlan.filter((m) => m.round === 2);
+  const r3 = mixedPlan.filter((m) => m.round === 3);
+  ok(r1.length && r1.every((m) => m.type === '혼복'), '1타임 혼복');
+  ok(r2.length && r2.every((m) => m.type === '남복' || m.type === '여복'), '2타임 동성복식');
+  ok(r3.length && r3.every((m) => m.type === '남단식' || m.type === '여단식'), '3타임 단식');
+}
+
+// 케이스 20: 단식은 코트당 2명, 팀당 1명
+{
+  const players = roster(6, 6);
+  const singles = generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, { defaultRoundType: 'SINGLES' });
+  ok(singles.length > 0, '단식 편성됨');
+  singles.forEach((m) => {
+    ok(m.teamA.length === 1 && m.teamB.length === 1, '단식은 1:1');
+    ok(m.teamA[0] !== m.teamB[0], '자기 자신과 대결 불가');
+  });
+  // 동일 타임 중복 없음
+  const byRound = {};
+  singles.forEach((m) => { (byRound[m.round] ||= []).push(...m.teamA, ...m.teamB); });
+  Object.entries(byRound).forEach(([r, ids]) => {
+    ok(new Set(ids).size === ids.length, `단식 ROUND ${r} 중복 배정 없음`);
+  });
+  // 성별 규칙: 남단식은 남자끼리
+  const byId = Object.fromEntries(players.map((p) => [p.id, p]));
+  singles.forEach((m) => {
+    const g = [byId[m.teamA[0]].gender, byId[m.teamB[0]].gender];
+    if (m.type === '남단식') ok(g.every((x) => x === 'M'), '남단식은 남자끼리');
+    if (m.type === '여단식') ok(g.every((x) => x === 'F'), '여단식은 여자끼리');
+  });
+}
+
+// 케이스 21: 실력 매칭이 양 팀 실력 합을 균등하게 만든다
+{
+  const players = withNtrp(8, 8);
+  const skill = (id) => players.find((p) => p.id === id).ntrp;
+  const teamGap = (ms) => ms.filter((m) => m.teamA.length === 2).map((m) =>
+    Math.abs(m.teamA.map(skill).reduce((a, b) => a + b, 0) - m.teamB.map(skill).reduce((a, b) => a + b, 0)));
+  const avg = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
+  const off = generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, {});
+  const on = generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, { skillBalance: true });
+  ok(avg(teamGap(on)) <= avg(teamGap(off)) + 0.01,
+    `실력매칭 ON 이 팀 균형 우수 (ON ${avg(teamGap(on)).toFixed(2)} vs OFF ${avg(teamGap(off)).toFixed(2)})`);
+  ok(avg(teamGap(on)) < 1.0, `실력매칭 시 팀 실력차 1.0 미만 (${avg(teamGap(on)).toFixed(2)})`);
+  checkMatches(on, players);
+}
+
+// 케이스 22: 단식 진단
+{
+  const d = diagnoseRoster(roster(5, 3), 3, 'SINGLES');
+  ok(d.strictCourts === 3, '남5여3 3면 단식: 3면 가능(남2+여1)');
+  const d2 = diagnoseRoster(roster(1, 0), 2, 'SINGLES');
+  ok(!d2.canPlayStrict, '1명은 단식 불가');
+}
+
 console.log(`\n엔진 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

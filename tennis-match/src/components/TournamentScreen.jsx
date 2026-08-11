@@ -6,7 +6,7 @@ import {
 } from '../lib/firestore';
 import {
   buildGroups, groupStandings, qualifiers, buildBracket, applyResult,
-  championOf, roundName, autoTeams, orderBySeed,
+  championOf, roundName, autoTeams, orderBySeed, assignSkillGroups, moveMemberToGroup,
 } from '../lib/tournament';
 import { effectiveNtrp } from '../lib/ntrp';
 import { Card, SectionTitle, Chip, Btn, Field } from './ui';
@@ -24,6 +24,9 @@ function CreateTournament({ clubId, members, onDone, flash }) {
   const [teamMode, setTeamMode] = useState('balanced'); // balanced | random
   const [picked, setPicked] = useState({});             // 참가 회원
   const [seeds, setSeeds] = useState({});               // entryIndex → seed no
+  const [useSkillGroups, setUseSkillGroups] = useState(false); // NTRP 실력 그룹 사용
+  const [groupSizes, setGroupSizes] = useState('8,8');         // 그룹별 정원
+  const [skillGroups, setSkillGroups] = useState(null);        // 배정 결과(수동 조정 가능)
 
   const pickedList = members.filter((m) => picked[m.id]);
   const teams = useMemo(() => {
@@ -34,7 +37,32 @@ function CreateTournament({ clubId, members, onDone, flash }) {
     );
   }, [picked, teamMode, members]);
 
+  const runAssign = () => {
+    const sizes = groupSizes.split(',').map((v) => Number(v.trim())).filter((v) => v > 0);
+    if (!sizes.length) return flash('그룹 정원을 쉼표로 입력하세요 (예: 8,8,6)');
+    if (pickedList.length < 2) return flash('참가자를 먼저 선택하세요');
+    const gs = assignSkillGroups(
+      pickedList.map((m) => ({ id: m.id, name: m.name, gender: m.gender, ntrp: effectiveNtrp(m).value ?? 3.0 })),
+      sizes,
+    );
+    setSkillGroups(gs);
+    flash(`${gs.length}개 그룹으로 자동 배정되었습니다`);
+  };
+
   const create = () => {
+    if (useSkillGroups) {
+      if (!skillGroups?.length) return flash('먼저 [자동 배정]을 실행하세요');
+      addTournament(clubId, {
+        name: name || `${date} 클럽대회`,
+        date,
+        mode: 'skillGroups',
+        skillGroups,
+        entries: [], groups: [], bracket: null,
+        stage: 'skillGroups', status: 'ongoing',
+      });
+      flash('실력 그룹 대회가 개설되었습니다');
+      return onDone();
+    }
     if (teams.length < 2) return flash('참가자는 최소 4명(2팀) 이상이어야 합니다');
     const entries = teams.map((t, i) => ({ ...t, seed: seeds[i] ? Number(seeds[i]) : null }));
     const groups = useGroup ? buildGroups(entries, Math.max(1, +groupCount)) : [];
@@ -103,8 +131,72 @@ function CreateTournament({ clubId, members, onDone, flash }) {
         </View>
       </Card>
 
-      <SectionTitle>팀 구성 방식</SectionTitle>
+      <SectionTitle>실력(NTRP) 그룹 나누기</SectionTitle>
       <Card>
+        <Pressable onPress={() => setUseSkillGroups(!useSkillGroups)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: useSkillGroups ? C.green : '#e7e5e4', alignItems: 'center', justifyContent: 'center' }}>
+            {useSkillGroups && <Text style={{ color: C.lime, fontWeight: '900', fontSize: 13 }}>✓</Text>}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '700' }}>수준별 그룹으로 진행</Text>
+            <Text style={{ fontSize: 11, color: C.faint }}>
+              NTRP 순으로 그룹을 나눠 그룹별로 시합합니다 (남·여 각각 실력순 배분)
+            </Text>
+          </View>
+        </Pressable>
+
+        {useSkillGroups && (
+          <View style={{ marginTop: 12 }}>
+            <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>
+              그룹별 정원 (쉼표로 구분 · 앞쪽이 상위 그룹)
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Field placeholder="8,8,6" value={groupSizes} onChangeText={setGroupSizes} style={{ flex: 1 }} />
+              <Btn onPress={runAssign}>자동 배정</Btn>
+            </View>
+
+            {skillGroups?.map((g, gi) => (
+              <View key={g.name} style={{ marginTop: 10, backgroundColor: '#fafaf9', borderRadius: 12, padding: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800' }}>{g.name} ({g.memberIds.length}명)</Text>
+                  {g.range && (
+                    <Text style={{ fontSize: 11, color: C.green2 }}>
+                      NTRP {g.range.min.toFixed(1)}~{g.range.max.toFixed(1)}
+                    </Text>
+                  )}
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                  {g.memberIds.map((id) => {
+                    const m = members.find((x) => x.id === id);
+                    if (!m) return null;
+                    return (
+                      <Pressable key={id}
+                        onPress={() => {
+                          // 탭할 때마다 다음 그룹으로 이동(운영진 수동 조정)
+                          const to = (gi + 1) % skillGroups.length;
+                          setSkillGroups(moveMemberToGroup(skillGroups, id, to));
+                        }}
+                        style={{ backgroundColor: m.gender === 'F' ? C.femaleBg : C.maleBg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: m.gender === 'F' ? C.female : C.male }}>
+                          {m.name} {(effectiveNtrp(m).value ?? 3).toFixed(1)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ))}
+            {skillGroups && (
+              <Text style={{ fontSize: 10, color: C.faint, marginTop: 8 }}>
+                이름을 누르면 다음 그룹으로 이동합니다 (운영진 수동 조정)
+              </Text>
+            )}
+          </View>
+        )}
+      </Card>
+
+      {!useSkillGroups && <SectionTitle>팀 구성 방식</SectionTitle>}
+      {!useSkillGroups && <Card>
         <View style={{ flexDirection: 'row', gap: 6 }}>
           <Chip tone={teamMode === 'balanced' ? 'green' : 'outline'} onPress={() => setTeamMode('balanced')}>NTRP 균등</Chip>
           <Chip tone={teamMode === 'random' ? 'green' : 'outline'} onPress={() => setTeamMode('random')}>무작위</Chip>
@@ -123,10 +215,10 @@ function CreateTournament({ clubId, members, onDone, flash }) {
             ))}
           </View>
         )}
-      </Card>
+      </Card>}
 
       <View style={{ marginTop: 12 }}>
-        <Btn full disabled={teams.length < 2} onPress={create}>대회 개설</Btn>
+        <Btn full disabled={useSkillGroups ? !skillGroups?.length : teams.length < 2} onPress={create}>대회 개설</Btn>
       </View>
     </View>
   );
@@ -284,6 +376,49 @@ function Knockout({ clubId, t, isAdmin, nameOfEntry, flash }) {
   );
 }
 
+/* ---------------- 실력 그룹 대회 ---------------- */
+function SkillGroupsView({ clubId, t, members, isAdmin, flash }) {
+  const groups = t.skillGroups || [];
+  const move = (memberId, gi) => {
+    if (!isAdmin) return;
+    const to = (gi + 1) % groups.length;
+    updateTournament(clubId, t.id, { skillGroups: moveMemberToGroup(groups, memberId, to) });
+  };
+  return (
+    <View>
+      <Text style={{ fontSize: 11, color: C.sub, marginBottom: 8 }}>
+        NTRP 기준으로 나뉜 수준별 그룹입니다. 그룹 안에서 자유롭게 시합을 진행하세요.
+        {isAdmin ? ' 이름을 누르면 다음 그룹으로 이동합니다.' : ''}
+      </Text>
+      {groups.map((g, gi) => (
+        <View key={g.name}>
+          <SectionTitle right={g.range ? <Chip tone="outline">NTRP {g.range.min.toFixed(1)}~{g.range.max.toFixed(1)}</Chip> : null}>
+            {g.name} ({g.memberIds.length}명)
+          </SectionTitle>
+          <Card>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {g.memberIds.map((id) => {
+                const m = members.find((x) => x.id === id);
+                if (!m) return null;
+                const v = effectiveNtrp(m).value;
+                return (
+                  <Pressable key={id} onPress={() => move(id, gi)}
+                    style={{ backgroundColor: m.gender === 'F' ? C.femaleBg : C.maleBg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: m.gender === 'F' ? C.female : C.male }}>
+                      {m.name} {v != null ? v.toFixed(1) : '-'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+              {g.memberIds.length === 0 && <Text style={{ fontSize: 12, color: C.faint }}>배정된 인원이 없습니다.</Text>}
+            </View>
+          </Card>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /* ---------------- 메인 ---------------- */
 export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
   const [view, setView] = useState('list'); // list | create | detail
@@ -314,12 +449,16 @@ export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
         <Card>
           <Text style={{ fontSize: 16, fontWeight: '900' }}>{t.name}</Text>
           <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
-            {t.date} · {t.entries?.length || 0}팀 · {t.useGroupStage ? '예선 + 토너먼트' : '토너먼트'}
+            {t.date} · {t.mode === 'skillGroups'
+              ? `${t.skillGroups?.length || 0}개 실력 그룹`
+              : `${t.entries?.length || 0}팀 · ${t.useGroupStage ? '예선 + 토너먼트' : '토너먼트'}`}
             {t.status === 'finished' ? ' · 종료' : ' · 진행 중'}
           </Text>
         </Card>
 
-        {t.stage === 'group' ? (
+        {t.stage === 'skillGroups' ? (
+          <SkillGroupsView clubId={clubId} t={t} members={members} isAdmin={isAdmin} flash={flash} />
+        ) : t.stage === 'group' ? (
           <GroupStage clubId={clubId} t={t} isAdmin={isAdmin} nameOfEntry={nameOfEntry} flash={flash} />
         ) : (
           <Knockout clubId={clubId} t={t} isAdmin={isAdmin} nameOfEntry={nameOfEntry} flash={flash} />
@@ -345,7 +484,7 @@ export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: '700' }}>{x.name}</Text>
             <Text style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
-              {x.date} · {x.entries?.length || 0}팀
+              {x.date} · {x.mode === 'skillGroups' ? `${x.skillGroups?.length || 0}개 그룹` : `${x.entries?.length || 0}팀`}
               {x.championId ? ` · 🏆 ${x.entries?.find((e) => e.id === x.championId)?.name || ''}` : ''}
             </Text>
           </View>

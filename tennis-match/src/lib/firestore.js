@@ -83,6 +83,23 @@ export const addMember = (clubId, memberId, data) =>
 export const updateClubSettings = (clubId, settings) =>
   updateDoc(doc(db, 'clubs', clubId), { settings });
 
+/* ---- 코트장(venue) — 클럽이 여러 곳을 운영하는 경우 ----
+   각 코트장마다 면수·운영시간·리드(담당자)를 따로 관리 */
+export const subVenues = (clubId, cb) =>
+  onSnapshot(C(clubId, 'venues'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))));
+
+export const addVenue = (clubId, data) => addDoc(C(clubId, 'venues'), data);
+export const updateVenue = (clubId, id, patch) => updateDoc(D(clubId, 'venues', id), patch);
+export const deleteVenue = (clubId, id) => deleteDoc(D(clubId, 'venues', id));
+
+/* ---- 대진 편성 기본 설정(클럽 단위) ---- */
+export const subMatchConfig = (clubId, cb) =>
+  onSnapshot(D(clubId, 'meta', 'matchConfig'), (d) => cb(d.exists() ? d.data() : null));
+
+export const setMatchConfig = (clubId, cfg) =>
+  setDoc(D(clubId, 'meta', 'matchConfig'), cfg, { merge: true });
+
 /* ---- NTRP 등급 관리 ---- */
 export const setNtrpSelf = (clubId, memberId, value) =>
   updateDoc(D(clubId, 'members', memberId), { ntrpSelf: value });

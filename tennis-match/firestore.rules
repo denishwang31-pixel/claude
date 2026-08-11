@@ -91,6 +91,12 @@ service cloud.firestore {
         allow write: if isClubAdmin(clubId);
       }
 
+      // 코트장(복수 운영): 읽기 멤버, 등록·수정은 총무
+      match /venues/{venueId} {
+        allow read: if isClubMember(clubId);
+        allow write: if isClubAdmin(clubId);
+      }
+
       match /fees/{monthKey} {
         allow read: if isClubMember(clubId);
         allow write: if isClubAdmin(clubId);

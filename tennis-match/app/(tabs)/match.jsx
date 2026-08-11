@@ -5,8 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DraggableFlatList from 'react-native-draggable-flatlist';
 import { useApp } from '../_layout';
 import { useClub } from '../../src/hooks/useClub';
-import { generateMatchesV5, collectPastPairs, diagnoseRoster, describeShortage } from '../../src/lib/matchmaking';
-import { setRules, setRestScore, saveMatches } from '../../src/lib/firestore';
+import {
+  generateMatchesV5, collectPastPairs, diagnoseRoster, describeShortage, ROUND_TYPES,
+} from '../../src/lib/matchmaking';
+import { DEFAULT_MATCH_CONFIG } from '../../src/lib/schedule';
+import { effectiveNtrp } from '../../src/lib/ntrp';
+import { setRules, setRestScore, saveMatches, updateMeeting } from '../../src/lib/firestore';
 import { Card, SectionTitle, Chip, Btn, Field, Avatar } from '../../src/components/ui';
 import { C } from '../../src/lib/theme';
 
@@ -15,7 +19,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 export default function Match() {
   const { clubId, me } = useApp();
   const insets = useSafeAreaInsets();
-  const { club, members, meetings, rules, pairs, isAdmin, nameOf } = useClub(clubId, me);
+  const { club, members, meetings, rules, pairs, matchConfig, isAdmin, nameOf } = useClub(clubId, me);
+  const cfg = { ...DEFAULT_MATCH_CONFIG, ...(matchConfig || {}) };
   const [showRules, setShowRules] = useState(true);
   const [editing, setEditing] = useState(null);
   const [sc, setSc] = useState({ a: '', b: '' });
@@ -27,8 +32,12 @@ export default function Match() {
   const attendees = useMemo(() => {
     if (!meeting) return [];
     return [
-      ...members.filter((m) => meeting.rsvp?.[m.id] === 'yes'),
-      ...(meeting.guests || []).map((g) => ({ id: 'g:' + g.name, name: g.name, gender: g.gender, grade: g.grade })),
+      // 실력 매칭을 위해 확정 NTRP 를 함께 넘긴다
+      ...members.filter((m) => meeting.rsvp?.[m.id] === 'yes')
+        .map((m) => ({ ...m, ntrp: effectiveNtrp(m).value ?? undefined })),
+      ...(meeting.guests || []).map((g) => ({
+        id: 'g:' + (g.uid || g.name), name: g.name, gender: g.gender, grade: g.grade, ntrp: g.ntrp,
+      })),
     ];
   }, [meeting, members]);
 
@@ -56,6 +65,9 @@ export default function Match() {
       couples: bothHere(pairs?.couples),
       fixedPairs: bothHere(pairs?.fixedPairs),
       allowMixed,
+      skillBalance: meeting.skillBalance ?? cfg.skillBalance,   // 모임별 설정 > 클럽 기본
+      defaultRoundType: cfg.defaultRoundType,
+      roundPlan: meeting.roundPlan || {},                        // 타임별 유형(체크박스)
     };
     const report = {};
     const matches = generateMatchesV5(
@@ -80,8 +92,16 @@ export default function Match() {
     flash(parts.join(' · '));
   };
 
+  const roundTypeOf = (r) => (meeting.roundPlan?.[r]) || cfg.defaultRoundType;
+  const setRoundType = (r, key) => {
+    const plan = { ...(meeting.roundPlan || {}) };
+    if (key === cfg.defaultRoundType) delete plan[r]; else plan[r] = key;
+    updateMeeting(clubId, meeting.id, { roundPlan: plan });
+  };
+
   const gen = () => {
-    const d = diagnoseRoster(attendees, meeting.courts);
+    // 1타임 유형 기준으로 진단(단식은 코트당 2명이라 기준이 다름)
+    const d = diagnoseRoster(attendees, meeting.courts, roundTypeOf(1));
 
     // ① 잡복을 허용해도 편성 불가 → 최소 필요 인원 안내
     if (!d.canPlayMixed) {
@@ -130,7 +150,7 @@ export default function Match() {
     }
 
     // ④ 정상: 잡복 없이 전부 편성 가능
-    runGenerate(!!club?.settings?.allowMixedDefault);
+    runGenerate(!!(cfg.allowMixed || club?.settings?.allowMixedDefault));
   };
 
   const changeRest = (id, delta) => {
@@ -182,7 +202,7 @@ export default function Match() {
 
         {/* 편성 가능 여부 사전 진단 — 생성 버튼을 누르기 전에 상황을 보여준다 */}
         {(() => {
-          const d = diagnoseRoster(attendees, meeting.courts);
+          const d = diagnoseRoster(attendees, meeting.courts, roundTypeOf(1));
           if (attendees.length === 0) return null;
           const full = d.strictCourts >= meeting.courts;
           const tone = !d.canPlayMixed ? C.danger : full ? C.green2 : '#a16207';
@@ -216,6 +236,37 @@ export default function Match() {
         })()}
         {isAdmin && <View style={{ marginTop: 12 }}><Btn full onPress={gen}>{meeting.matches?.length ? '대진 재생성' : '자동 대진 생성'}</Btn></View>}
       </Card>
+
+      {/* 타임별 경기 유형 — 기본값은 클럽 설정(현재: 해당 유형), 타임마다 개별 변경 가능 */}
+      {isAdmin && (
+        <>
+          <SectionTitle right={
+            <Chip tone={(meeting.skillBalance ?? cfg.skillBalance) ? 'green' : 'outline'}
+              onPress={() => updateMeeting(clubId, meeting.id, { skillBalance: !(meeting.skillBalance ?? cfg.skillBalance) })}>
+              {(meeting.skillBalance ?? cfg.skillBalance) ? '✓ 실력매칭' : '실력매칭 OFF'}
+            </Chip>
+          }>
+            타임별 경기 유형
+          </SectionTitle>
+          <Card>
+            <Text style={{ fontSize: 10, color: C.faint, marginBottom: 8 }}>
+              기본값: {ROUND_TYPES.find((t) => t.key === cfg.defaultRoundType)?.name || '자동'}
+              {'  '}(더보기 → 대진 설정에서 변경) · 아래에서 타임마다 다르게 지정할 수 있습니다
+            </Text>
+            {Array.from({ length: meeting.rounds || 0 }, (_, i) => i + 1).map((r) => (
+              <View key={r} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5, borderTopWidth: r > 1 ? 1 : 0, borderTopColor: '#f5f5f4' }}>
+                <Text style={{ width: 48, fontSize: 12, fontWeight: '800', color: C.ink }}>{r}타임</Text>
+                <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+                  {ROUND_TYPES.map((t) => (
+                    <Chip key={t.key} tone={roundTypeOf(r) === t.key ? 'green' : 'outline'}
+                      onPress={() => setRoundType(r, t.key)}>{t.name}</Chip>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </Card>
+        </>
+      )}
       <SectionTitle right={<Chip tone="outline" onPress={() => setShowRules(!showRules)}>{showRules ? '접기' : '펼치기'}</Chip>}>
         편성 기준 우선순위
       </SectionTitle>

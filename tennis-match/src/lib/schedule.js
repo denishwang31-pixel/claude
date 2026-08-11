@@ -21,6 +21,15 @@ export const DEFAULT_SETTINGS = {
   payLink: '',
 };
 
+/* 대진 편성 기본 설정 (클럽 meta/matchConfig).
+   모임마다 타임별로 덮어쓸 수 있고, 여기 값은 "기본값" 역할. */
+export const DEFAULT_MATCH_CONFIG = {
+  defaultRoundType: 'MX',   // 기본 타임 유형: 혼복
+  allowMixed: false,        // 잡복 허용
+  skillBalance: false,      // NTRP 근접 매칭
+  ruleOrder: null,          // 편성 기준 우선순위(키 배열) — null 이면 기본 순서
+};
+
 /** 'HH:MM' → 분 (잘못된 값이면 null) */
 export function toMinutes(hhmm) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim());

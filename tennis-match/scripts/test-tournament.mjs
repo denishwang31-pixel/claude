@@ -111,5 +111,41 @@ const mkEntries = (n) => Array.from({ length: n }, (_, i) => ({ id: `e${i + 1}`,
   ok(new Set(allPlayers).size === 4, '중복 배정 없음');
 }
 
+/* ---- NTRP 실력 그룹 배정 ---- */
+{
+  const mkP = (id, gender, ntrp) => ({ id, name: id, gender, ntrp });
+  const players = [
+    mkP('m1', 'M', 4.5), mkP('m2', 'M', 4.0), mkP('m3', 'M', 3.5), mkP('m4', 'M', 3.0),
+    mkP('m5', 'M', 2.5), mkP('m6', 'M', 2.0),
+    mkP('f1', 'F', 4.5), mkP('f2', 'F', 3.5), mkP('f3', 'F', 3.0), mkP('f4', 'F', 2.5),
+  ];
+  const groups = T.assignSkillGroups(players, [5, 5]);
+  ok(groups.length === 2, '2개 그룹 생성');
+  const all = groups.flatMap((g) => g.memberIds);
+  ok(all.length === 10, `전원 배정 (${all.length}/10)`);
+  ok(new Set(all).size === 10, '중복 배정 없음');
+  // 상위 그룹의 평균 NTRP 가 하위보다 높아야 함
+  const avg = (ids) => ids.map((id) => players.find((p) => p.id === id).ntrp).reduce((a, b) => a + b, 0) / ids.length;
+  ok(avg(groups[0].memberIds) > avg(groups[1].memberIds),
+    `A그룹이 상위 실력 (A ${avg(groups[0].memberIds).toFixed(2)} > B ${avg(groups[1].memberIds).toFixed(2)})`);
+  // 남녀가 각각 실력순으로 나뉘었는지: A그룹에 최상위 남·여가 포함
+  ok(groups[0].memberIds.includes('m1'), '최상위 남성은 A그룹');
+  ok(groups[0].memberIds.includes('f1'), '최상위 여성은 A그룹');
+  ok(groups[1].memberIds.includes('m6'), '최하위 남성은 B그룹');
+  ok(groups[0].range && groups[0].range.min <= groups[0].range.max, 'A그룹 NTRP 범위 계산');
+
+  // 정원 합이 인원과 달라도 전원 배정
+  const g3 = T.assignSkillGroups(players, [3, 3, 3]);
+  ok(g3.flatMap((g) => g.memberIds).length === 10, '정원 합(9) < 인원(10) 이어도 전원 배정');
+  const g4 = T.assignSkillGroups(players, [8, 8]);
+  ok(g4.flatMap((g) => g.memberIds).length === 10, '정원 합(16) > 인원(10) 이어도 중복 없이 배정');
+  ok(new Set(g4.flatMap((g) => g.memberIds)).size === 10, '과다 정원에서도 중복 없음');
+
+  // 수동 이동
+  const moved = T.moveMemberToGroup(groups, 'm1', 1);
+  ok(!moved[0].memberIds.includes('m1') && moved[1].memberIds.includes('m1'), '회원 그룹 이동');
+  ok(moved.flatMap((g) => g.memberIds).length === 10, '이동 후에도 인원 유지');
+}
+
 console.log(`\n대회 엔진 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

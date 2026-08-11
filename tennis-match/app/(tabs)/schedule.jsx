@@ -15,7 +15,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 export default function Schedule() {
   const { clubId, me } = useApp();
   const insets = useSafeAreaInsets();
-  const { club, members, meetings, isAdmin, nameOf } = useClub(clubId, me);
+  const { club, members, meetings, venues, isAdmin, nameOf } = useClub(clubId, me);
   const settings = { ...DEFAULT_SETTINGS, ...(club?.settings || {}) };
   const [nd, setNd] = useState(null); // 클럽 설정 로드 후 초기화
   const [toast, setToast] = useState(null);
@@ -24,10 +24,21 @@ export default function Schedule() {
   const blank = () => ({
     date: '',
     time: settings.startTime,
-    place: club?.settings?.defaultPlace || '',
+    place: '',
     courts: String(settings.courts),
     rounds: String(roundsFromSettings(settings)),
+    venueId: null,
   });
+
+  /** 코트장을 고르면 그 코트장의 면수·시간·타임 수로 자동 채움 */
+  const pickVenue = (v) => {
+    if (!v) return setNd({ ...nd, venueId: null });
+    setNd({
+      ...nd, venueId: v.id, place: v.name,
+      time: v.startTime, courts: String(v.courts),
+      rounds: String(roundsFromSettings(v)),
+    });
+  };
   // 클럽 설정이 로드되면 새 모임 입력값을 클럽 기본값으로 채운다
   useEffect(() => { if (club && !nd) setNd(blank()); }, [club]);
 
@@ -88,8 +99,21 @@ export default function Schedule() {
             </SectionTitle>
             <Card>
               <Text style={{ fontSize: 11, color: C.faint, marginBottom: 8 }}>
-                클럽 설정: {describeSettings(settings)}  (더보기 → 클럽 설정에서 변경)
+                클럽 기본: {describeSettings(settings)}  (더보기 → 클럽 설정에서 변경)
               </Text>
+              {venues.length > 0 && (
+                <View style={{ marginBottom: 10 }}>
+                  <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>코트장 선택</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    <Chip tone={!nd.venueId ? 'green' : 'outline'} onPress={() => pickVenue(null)}>직접 입력</Chip>
+                    {venues.map((v) => (
+                      <Chip key={v.id} tone={nd.venueId === v.id ? 'green' : 'outline'} onPress={() => pickVenue(v)}>
+                        {v.name} ({v.courts}면)
+                      </Chip>
+                    ))}
+                  </View>
+                </View>
+              )}
               <Field placeholder="날짜 (YYYY-MM-DD)" value={nd.date} onChangeText={(t) => setNd({ ...nd, date: t })} />
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
                 <Field placeholder="시간" value={nd.time} onChangeText={(t) => setNd({ ...nd, time: t })} style={{ flex: 1 }} />
@@ -104,6 +128,7 @@ export default function Schedule() {
                   addMeeting(clubId, {
                     date: nd.date, time: nd.time, place: nd.place,
                     courts: Math.max(1, +nd.courts || 1), rounds: Math.max(1, +nd.rounds || 1),
+                    venueId: nd.venueId || null,
                   });
                   setNd(blank());
                   flash('모임 등록 + 전체 알림 발송');
