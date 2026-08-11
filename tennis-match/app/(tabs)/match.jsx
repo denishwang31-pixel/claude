@@ -1,11 +1,11 @@
 /* 대진 — VBA v5 엔진 + 우선순위 드래그 + 휴식점수 + 스코어 입력 */
 import React, { useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DraggableFlatList from 'react-native-draggable-flatlist';
 import { useApp } from '../_layout';
 import { useClub } from '../../src/hooks/useClub';
-import { generateMatchesV5, collectPastPairs } from '../../src/lib/matchmaking';
+import { generateMatchesV5, collectPastPairs, diagnoseRoster, describeShortage } from '../../src/lib/matchmaking';
 import { setRules, setRestScore, saveMatches } from '../../src/lib/firestore';
 import { Card, SectionTitle, Chip, Btn, Field, Avatar } from '../../src/components/ui';
 import { C } from '../../src/lib/theme';
@@ -15,7 +15,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 export default function Match() {
   const { clubId, me } = useApp();
   const insets = useSafeAreaInsets();
-  const { members, meetings, rules, pairs, isAdmin, nameOf } = useClub(clubId, me);
+  const { club, members, meetings, rules, pairs, isAdmin, nameOf } = useClub(clubId, me);
   const [showRules, setShowRules] = useState(true);
   const [editing, setEditing] = useState(null);
   const [sc, setSc] = useState({ a: '', b: '' });
@@ -46,8 +46,8 @@ export default function Match() {
   const nM = attendees.filter((p) => p.gender === 'M').length;
   const nF = attendees.length - nM;
 
-  const gen = () => {
-    if (attendees.length < 4) return flash('참석자가 4명 이상이어야 합니다');
+  /** 실제 편성 실행 (allowMixed: 잡복 허용 여부) */
+  const runGenerate = (allowMixed) => {
     const past = collectPastPairs(meetings, meeting.id);
     // 오늘 참석자 안에 양쪽 모두 있는 커플/고정페어만 제약으로 적용
     const present = new Set(attendees.map((p) => p.id));
@@ -55,15 +55,20 @@ export default function Match() {
     const options = {
       couples: bothHere(pairs?.couples),
       fixedPairs: bothHere(pairs?.fixedPairs),
+      allowMixed,
     };
     const report = {};
-    const matches = generateMatchesV5(attendees, meeting.courts, meeting.rounds, rules, past, restScores, { ...options, report });
-    if (!matches.length) return flash('현재 성비/인원으로는 편성 가능한 구성이 없습니다 (잡복 금지)');
+    const matches = generateMatchesV5(
+      attendees, meeting.courts, meeting.rounds, rules, past, restScores, { ...options, report },
+    );
+    if (!matches.length) return flash('편성 가능한 구성이 없습니다');
     saveMatches(clubId, meeting.id, matches);
 
     // 제약을 지킬 수 없어 완화했거나 편성 못 한 타임이 있으면 그대로 알려준다
     const n = options.couples.length + options.fixedPairs.length;
+    const mixedN = matches.filter((m) => m.type === '잡복').length;
     const parts = [`${matches.length}경기 생성`];
+    if (mixedN) parts.push(`잡복 ${mixedN}경기 포함`);
     if (n && !report.relaxed.length) parts.push(`커플/페어 ${n}건 반영`);
     if (report.relaxed.length) {
       const team = report.relaxed.filter((x) => x.what === 'fixedPairTeam').map((x) => x.round);
@@ -71,8 +76,61 @@ export default function Match() {
       if (team.length) parts.push(`${team.join('·')}타임은 고정페어 같은팀 적용 불가(성비 문제)`);
       if (allc.length) parts.push(`${allc.join('·')}타임은 커플/페어 제약 해제`);
     }
-    if (report.skippedRounds.length) parts.push(`${report.skippedRounds.join('·')}타임은 편성 불가`);
+    if (report.skippedRounds.length) parts.push(`${report.skippedRounds.join('·')}타임 편성 불가`);
     flash(parts.join(' · '));
+  };
+
+  const gen = () => {
+    const d = diagnoseRoster(attendees, meeting.courts);
+
+    // ① 잡복을 허용해도 편성 불가 → 최소 필요 인원 안내
+    if (!d.canPlayMixed) {
+      Alert.alert(
+        '대진표를 만들 수 없습니다',
+        `현재 참석 ${d.M + d.F}명 (남 ${d.M} · 여 ${d.F})\n`
+        + '복식 한 경기에는 4명이 필요합니다.\n\n'
+        + `▸ 최소 1면이라도 진행하려면\n   ${describeShortage(d.needForFirstCourt)}이 더 필요합니다.`,
+        [{ text: '확인' }],
+      );
+      return;
+    }
+
+    // ② 잡복 없이 아예 편성 불가 → 필요 인원 안내 + 잡복 허용 여부 확인
+    if (!d.canPlayStrict) {
+      Alert.alert(
+        '잡복 없이는 편성할 수 없습니다',
+        `현재 참석 ${d.M + d.F}명 (남 ${d.M} · 여 ${d.F})\n`
+        + '남복(남4)·여복(여4)·혼복(남2여2) 조합이 만들어지지 않습니다.\n\n'
+        + `▸ 잡복 없이 하려면: ${describeShortage(d.needForFirstCourt)} 추가 필요\n`
+        + `▸ 잡복을 허용하면: 지금 인원으로 ${d.mixedCourts}면 진행 가능\n\n`
+        + '잡복(남3여1 등)을 허용하시겠습니까?',
+        [
+          { text: '아니오', style: 'cancel' },
+          { text: '예, 잡복으로 편성', onPress: () => runGenerate(true) },
+        ],
+      );
+      return;
+    }
+
+    // ③ 일부 코트만 잡복 없이 채울 수 있음 → 코트를 더 쓰려면 잡복 필요
+    if (d.strictCourts < meeting.courts && d.mixedCourts > d.strictCourts) {
+      Alert.alert(
+        '일부 코트만 사용됩니다',
+        `현재 참석 ${d.M + d.F}명 (남 ${d.M} · 여 ${d.F}) · 확보 코트 ${meeting.courts}면\n\n`
+        + `▸ 잡복 없이: ${d.strictCourts}면만 사용 (나머지는 대기)\n`
+        + `▸ ${meeting.courts}면 모두 쓰려면: ${describeShortage(d.needForFullStrict)} 추가 필요\n`
+        + `▸ 잡복을 허용하면: ${d.mixedCourts}면까지 사용 가능\n\n`
+        + '잡복(남3여1 등)을 허용하시겠습니까?',
+        [
+          { text: '아니오 (잡복 없이)', onPress: () => runGenerate(false) },
+          { text: '예, 잡복 허용', onPress: () => runGenerate(true) },
+        ],
+      );
+      return;
+    }
+
+    // ④ 정상: 잡복 없이 전부 편성 가능
+    runGenerate(!!club?.settings?.allowMixedDefault);
   };
 
   const changeRest = (id, delta) => {
@@ -121,6 +179,30 @@ export default function Match() {
         <Text style={{ fontSize: 10, color: C.faint, marginTop: 4 }}>
           고정 원칙: 남복·여복·혼복만(잡복 금지) · 동일 타임 중복 금지 · 이전 모임 페어 누적 반영
         </Text>
+
+        {/* 편성 가능 여부 사전 진단 — 생성 버튼을 누르기 전에 상황을 보여준다 */}
+        {(() => {
+          const d = diagnoseRoster(attendees, meeting.courts);
+          if (attendees.length === 0) return null;
+          const full = d.strictCourts >= meeting.courts;
+          const tone = !d.canPlayMixed ? C.danger : full ? C.green2 : '#a16207';
+          return (
+            <View style={{ marginTop: 8, backgroundColor: '#fafaf9', borderRadius: 10, padding: 8 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: tone }}>
+                {!d.canPlayMixed
+                  ? `⚠ 인원 부족 — 1면 진행에 ${describeShortage(d.needForFirstCourt)} 더 필요`
+                  : full
+                    ? `✓ ${meeting.courts}면 모두 잡복 없이 편성 가능`
+                    : `△ 잡복 없이 ${d.strictCourts}면만 가능 (${meeting.courts}면 사용하려면 ${describeShortage(d.needForFullStrict)} 추가)`}
+              </Text>
+              {d.canPlayMixed && !full && (
+                <Text style={{ fontSize: 10, color: C.faint, marginTop: 2 }}>
+                  잡복을 허용하면 {d.mixedCourts}면까지 사용 가능합니다 (생성 시 확인창)
+                </Text>
+              )}
+            </View>
+          );
+        })()}
         {(() => {
           const present = new Set(attendees.map((p) => p.id));
           const c = (pairs?.couples || []).filter(([a, b]) => present.has(a) && present.has(b)).length;

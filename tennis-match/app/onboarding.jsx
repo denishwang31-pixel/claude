@@ -9,6 +9,7 @@ import { createClub, findClubByInviteCode } from '../src/lib/firestore';
 import { seedClub } from '../src/lib/seed';
 import { linkUserToClub } from '../src/lib/auth';
 import { ROLES } from '../src/lib/constants';
+import { DEFAULT_SETTINGS, roundsFromSettings } from '../src/lib/schedule';
 import { Card, Btn, Field, Chip } from '../src/components/ui';
 import { C } from '../src/lib/theme';
 
@@ -20,6 +21,11 @@ export default function Onboarding() {
   const [gender, setGender] = useState('M');
   const [startedAt, setStartedAt] = useState('');
   const [withDemo, setWithDemo] = useState(false); // R-3: 실사용 기본 off
+  // 최초 관리자가 정하는 클럽 운영 기본값
+  const [courts, setCourts] = useState('2');
+  const [startTime, setStartTime] = useState('10:00');
+  const [endTime, setEndTime] = useState('13:00');
+  const [roundMinutes, setRoundMinutes] = useState(40);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -42,7 +48,12 @@ export default function Onboarding() {
     setErr(''); setBusy(true);
     try {
       const profile = buildProfile();
-      const { clubId } = await createClub(clubName, { feeAmount: 30000, guestFee: 10000, payLink: '' }, { uid, ...profile });
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        courts: Math.max(1, Math.min(20, Number(courts) || 2)),
+        startTime, endTime, roundMinutes,
+      };
+      const { clubId } = await createClub(clubName, settings, { uid, ...profile });
       await seedClub(clubId, withDemo);
       await linkUserToClub(uid, clubId, profile);
       router.replace('/(tabs)');
@@ -94,6 +105,33 @@ export default function Onboarding() {
           <>
             <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 6 }}>클럽 이름</Text>
             <Field placeholder="예: 그린스매시 테니스클럽" value={clubName} onChangeText={setClubName} />
+
+            {/* 최초 관리자 운영 설정 — 나중에 [더보기 → 클럽 설정]에서 변경 가능 */}
+            <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 6 }}>
+              운영 설정 <Text style={{ fontSize: 11, color: C.faint, fontWeight: '400' }}>(나중에 변경 가능)</Text>
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>코트 면수</Text>
+                <Field keyboardType="number-pad" value={courts} onChangeText={setCourts} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>시작</Text>
+                <Field placeholder="10:00" value={startTime} onChangeText={setStartTime} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>종료</Text>
+                <Field placeholder="13:00" value={endTime} onChangeText={setEndTime} />
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {[30, 40, 45, 60].map((v) => (
+                <Chip key={v} tone={roundMinutes === v ? 'green' : 'outline'} onPress={() => setRoundMinutes(v)}>{v}분/타임</Chip>
+              ))}
+            </View>
+            <Text style={{ fontSize: 11, color: C.green2, marginTop: 6 }}>
+              → 총 {roundsFromSettings({ startTime, endTime, roundMinutes })}타임 진행 예정
+            </Text>
             <Pressable onPress={() => setWithDemo(!withDemo)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 }}>
               <View style={{ width: 20, height: 20, borderRadius: 5, backgroundColor: withDemo ? C.green : '#e7e5e4', alignItems: 'center', justifyContent: 'center' }}>
                 {withDemo && <Text style={{ color: C.lime, fontWeight: '900', fontSize: 12 }}>✓</Text>}

@@ -8,6 +8,7 @@
     "ios": "expo start --ios",
     "test:engine": "node scripts/test-engine.mjs",
     "test:tournament": "node scripts/test-tournament.mjs",
+    "test:schedule": "node scripts/test-schedule.mjs",
     "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-rules.mjs\""
   },
   "dependencies": {

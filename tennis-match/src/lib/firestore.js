@@ -79,6 +79,10 @@ export const saveMatches = (clubId, meetingId, matches) =>
 export const addMember = (clubId, memberId, data) =>
   setDoc(D(clubId, 'members', memberId), { ...data, role: ROLES.MEMBER, status: '활동' });
 
+/* ---- 클럽 운영 설정(코트·시간·타임 길이 등) ---- */
+export const updateClubSettings = (clubId, settings) =>
+  updateDoc(doc(db, 'clubs', clubId), { settings });
+
 /* ---- NTRP 등급 관리 ---- */
 export const setNtrpSelf = (clubId, memberId, value) =>
   updateDoc(D(clubId, 'members', memberId), { ntrpSelf: value });

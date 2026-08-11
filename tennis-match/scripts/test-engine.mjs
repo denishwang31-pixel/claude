@@ -4,7 +4,10 @@ import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('../src/lib/matchmaking.js', import.meta.url), 'utf8');
 const mod = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
-const { generateMatchesV5, DEFAULT_RULES, collectPastPairs, computeStats } = mod;
+const {
+  generateMatchesV5, DEFAULT_RULES, collectPastPairs, computeStats,
+  diagnoseRoster, describeShortage,
+} = mod;
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error('  ✗', msg); } };
@@ -16,6 +19,7 @@ const roster = (nm, nf) => [
 ];
 
 const HARD_TYPES = new Set(['남복', '여복', '혼복']);
+const ALL_TYPES = new Set(['남복', '여복', '혼복', '잡복']);
 
 function checkMatches(matches, players) {
   const byId = Object.fromEntries(players.map((p) => [p.id, p]));
@@ -203,6 +207,81 @@ function checkMatches(matches, players) {
   const ms = Date.now() - t0;
   ok(matches.length > 0, '페어 전소진 + strict 에서도 편성됨');
   ok(ms < 1000, `과부하 상황 1초 이내 (${ms}ms)`);
+}
+
+/* ---------------- 잡복 허용 / 로스터 진단 ---------------- */
+
+// 케이스 14: 기본은 잡복 금지 — 남3여1 은 편성되지 않아야 함
+{
+  const players = roster(3, 1);
+  const strict = generateMatchesV5(players, 1, 2, DEFAULT_RULES, {}, {});
+  ok(strict.length === 0, '기본(잡복 금지)에서 남3여1 은 편성 불가');
+  const mixed = generateMatchesV5(players, 1, 2, DEFAULT_RULES, {}, {}, { allowMixed: true });
+  ok(mixed.length > 0, '잡복 허용 시 남3여1 편성 가능');
+  mixed.forEach((m) => {
+    ok(ALL_TYPES.has(m.type), `허용되지 않은 타입: ${m.type}`);
+    const four = new Set([...m.teamA, ...m.teamB]);
+    ok(four.size === 4, '잡복 경기에 중복 인물');
+  });
+}
+
+// 케이스 15: 잡복 허용해도 하드룰(동일 타임 중복 금지)은 유지
+{
+  const players = roster(5, 3);
+  const matches = generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, { allowMixed: true });
+  ok(matches.length > 0, '잡복 허용 편성 성공');
+  const byRound = {};
+  matches.forEach((m) => { (byRound[m.round] ||= []).push(m); });
+  Object.entries(byRound).forEach(([r, ms]) => {
+    const seen = new Set(); let dup = false;
+    ms.forEach((m) => [...m.teamA, ...m.teamB].forEach((id) => { if (seen.has(id)) dup = true; seen.add(id); }));
+    ok(!dup, `ROUND ${r}: 잡복 허용 시에도 동일 타임 중복 없음`);
+  });
+}
+
+// 케이스 16: 잡복은 최후 수단 — 정규 조합이 가능하면 잡복을 쓰지 않음
+{
+  const players = roster(4, 4); // 남복+여복 또는 혼복2 로 충분
+  const matches = generateMatchesV5(players, 2, 3, DEFAULT_RULES, {}, {}, { allowMixed: true });
+  const mixedCount = matches.filter((m) => m.type === '잡복').length;
+  ok(mixedCount === 0, `정규 편성 가능할 땐 잡복 미사용 (실제 ${mixedCount}경기)`);
+}
+
+// 케이스 17: diagnoseRoster 정확도
+{
+  const d31 = diagnoseRoster(roster(3, 1), 1);
+  ok(d31.strictCourts === 0, '남3여1: 잡복 없이 0면');
+  ok(d31.mixedCourts === 1, '남3여1: 잡복 허용 시 1면');
+  ok(d31.needForFirstCourt.m === 1 && d31.needForFirstCourt.f === 0, '남3여1: 남성 1명이면 남복 가능');
+
+  const d13 = diagnoseRoster(roster(1, 3), 1);
+  ok(d13.needForFirstCourt.f === 1 && d13.needForFirstCourt.m === 0, '남1여3: 여성 1명이면 여복 가능');
+
+  const d53 = diagnoseRoster(roster(5, 3), 2);
+  ok(d53.strictCourts === 1, '남5여3 2면: 잡복 없이 1면');
+  ok(d53.mixedCourts === 2, '남5여3 2면: 잡복 허용 시 2면');
+  ok(d53.needForFullStrict.f === 1, '남5여3 2면: 여성 1명 추가면 2면 정규 가능');
+
+  const d21 = diagnoseRoster(roster(2, 1), 2);
+  ok(!d21.canPlayMixed, '총 3명: 잡복도 불가');
+  ok(d21.needForFirstCourt.f === 1, '총 3명(남2여1): 여성 1명이면 혼복 가능');
+
+  const d96 = diagnoseRoster(roster(9, 6), 3);
+  ok(d96.strictCourts === 3 && d96.canPlayStrict, '남9여6 3면: 전부 정규 편성 가능');
+  ok(describeShortage(d96.needForFullStrict) === '추가 인원 불필요', '부족 없음 문구');
+  ok(describeShortage({ m: 2, f: 1 }) === '남성 2명 · 여성 1명', '부족 인원 문구 형식');
+}
+
+// 케이스 18: 진단과 실제 편성 결과가 일치
+{
+  for (const [nm, nf, courts] of [[3, 1, 1], [5, 3, 2], [7, 1, 2], [9, 6, 3], [10, 2, 3], [2, 2, 1]]) {
+    const players = roster(nm, nf);
+    const d = diagnoseRoster(players, courts);
+    const strict = generateMatchesV5(players, courts, 1, DEFAULT_RULES, {}, {});
+    const mixed = generateMatchesV5(players, courts, 1, DEFAULT_RULES, {}, {}, { allowMixed: true });
+    ok(strict.length === d.strictCourts, `남${nm}여${nf} ${courts}면: 정규 예측(${d.strictCourts}) = 실제(${strict.length})`);
+    ok(mixed.length === d.mixedCourts, `남${nm}여${nf} ${courts}면: 잡복 예측(${d.mixedCourts}) = 실제(${mixed.length})`);
+  }
 }
 
 console.log(`\n엔진 테스트: ${pass} 통과 / ${fail} 실패`);

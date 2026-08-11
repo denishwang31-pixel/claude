@@ -59,7 +59,75 @@ const TYPES = {
   MM: { m: 4, f: 0, label: '남복' },
   FF: { m: 0, f: 4, label: '여복' },
   MX: { m: 2, f: 2, label: '혼복' },
+  // 잡복(남3여1 등 성비가 안 맞는 복식). 기본 금지, allowMixed 옵션에서만 사용
+  ANY: { m: 0, f: 0, any: 4, label: '잡복' },
 };
+
+/* ============================================================
+   로스터 진단 — 대진 생성 전에 "가능한가? 안 되면 몇 명 더 필요한가?"를 계산
+   반환:
+     M, F               남/여 참석 인원
+     strictCourts       잡복 없이 채울 수 있는 코트 수
+     mixedCourts        잡복 허용 시 채울 수 있는 코트 수
+     needForFirstCourt  1면이라도 만들려면 추가로 필요한 인원 {m,f} (불가일 때만 의미)
+     needForFullStrict  요청한 코트를 전부 잡복 없이 채우려면 필요한 추가 인원 {m,f}
+     needForOneMoreStrict 잡복 없이 한 면 더 늘리려면 필요한 추가 인원 {m,f}
+   ============================================================ */
+export function diagnoseRoster(players, courts) {
+  const M = (players || []).filter((p) => p.gender === 'M').length;
+  const F = (players || []).length - M;
+
+  /** m명·f명으로 잡복 없이 채울 수 있는 최대 코트 수 */
+  const strictCapacity = (m, f, maxCourts) => {
+    let best = 0;
+    for (let x = 0; x <= maxCourts; x++) {
+      for (let y = 0; x + y <= maxCourts; y++) {
+        for (let z = 0; x + y + z <= maxCourts; z++) {
+          if (2 * x + 4 * y <= m && 2 * x + 4 * z <= f) best = Math.max(best, x + y + z);
+        }
+      }
+    }
+    return best;
+  };
+
+  /** target 면을 잡복 없이 채우기 위한 최소 추가 인원 */
+  const needFor = (target) => {
+    let best = null;
+    for (let x = 0; x <= target; x++) {
+      for (let y = 0; x + y <= target; y++) {
+        const z = target - x - y;
+        if (z < 0) continue;
+        const addM = Math.max(0, (2 * x + 4 * y) - M);
+        const addF = Math.max(0, (2 * x + 4 * z) - F);
+        const total = addM + addF;
+        if (!best || total < best.m + best.f) best = { m: addM, f: addF };
+      }
+    }
+    return best || { m: 0, f: 0 };
+  };
+
+  const strictCourts = strictCapacity(M, F, courts);
+  const mixedCourts = Math.min(courts, Math.floor((M + F) / 4));
+
+  return {
+    M, F,
+    strictCourts,
+    mixedCourts,
+    canPlayStrict: strictCourts > 0,
+    canPlayMixed: mixedCourts > 0,
+    needForFirstCourt: strictCourts > 0 ? { m: 0, f: 0 } : needFor(1),
+    needForFullStrict: needFor(courts),
+    needForOneMoreStrict: strictCourts < courts ? needFor(strictCourts + 1) : { m: 0, f: 0 },
+  };
+}
+
+/** 진단 결과를 사람이 읽는 문장으로 (경고창 본문용) */
+export function describeShortage(need) {
+  const parts = [];
+  if (need.m > 0) parts.push(`남성 ${need.m}명`);
+  if (need.f > 0) parts.push(`여성 ${need.f}명`);
+  return parts.length ? parts.join(' · ') : '추가 인원 불필요';
+}
 
 /**
  * @param {Array} players    [{id,name,gender:'M'|'F',grade}]
@@ -109,6 +177,7 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
   const planRound = (r, useCouples, useFixed, deadline) => {
     const syncMap = useCouples ? partnerOf : {};
     const teamMap = useFixed ? fixedOf : {};
+    const allowMixed = !!options.allowMixed; // 잡복 허용(기본 false)
     const availM = players.filter((p) => p.gender === 'M').length;
     const availF = players.filter((p) => p.gender === 'F').length;
 
@@ -119,25 +188,35 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
     for (let x = 0; x <= courts; x++) {
       for (let y = 0; x + y <= courts; y++) {
         for (let z = 0; x + y + z <= courts; z++) {
-          if (x + y + z === 0) continue;
+          if (x + y + z === 0 && !allowMixed) continue;
           const needM = 2 * x + 4 * y;
           const needF = 2 * x + 4 * z;
           if (needM > availM || needF > availF) continue;
-          const onCourt = needM + needF;
+
+          // 잡복 허용 시: 정규 조합으로 채우고 남은 인원·코트로 잡복 코트 추가
+          let w = 0;
+          if (allowMixed) {
+            const restPeople = (availM - needM) + (availF - needF);
+            w = Math.min(courts - (x + y + z), Math.floor(restPeople / 4));
+          }
+          if (x + y + z + w === 0) continue;
+
+          const onCourt = needM + needF + w * 4;
           let s = onCourt * 10 * W.maxPlay;                 // 출전 인원 최대화 최우선
           const patternFit = r % 2 === 1 ? y + z : x;        // 홀수=동성복식, 짝수=혼복
           s += patternFit * 3 * W.pattern;
+          s -= w * 5;                                        // 잡복은 되도록 적게(최후 수단)
           // 동성 고정페어가 있으면 해당 성별 동성복식 코트를 확보하도록 유도
           if (useFixed && sameSexFixed.M && y > 0) s += 20;
           if (useFixed && sameSexFixed.F && z > 0) s += 20;
           s -= Math.abs((availM - needM) - (availF - needF)); // 잔여 성비 불균형 페널티
-          if (s > bestScore) { bestScore = s; best = { x, y, z, needM, needF }; }
+          if (s > bestScore) { bestScore = s; best = { x, y, z, w, needM, needF }; }
         }
       }
     }
-    if (!best || best.needM + best.needF < 4) return null; // 이 타임 편성 불가
+    if (!best || best.needM + best.needF + best.w * 4 < 4) return null; // 이 타임 편성 불가
 
-    const { x, y, z, needM, needF } = best;
+    const { x, y, z, w, needM, needF } = best;
 
     /* 2) 타임 단위 풀 선발: 출전횟수 최소 → 휴식점수 → 랜덤 */
     const ranked = (gender) =>
@@ -149,8 +228,18 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
           || Math.random() - 0.5);
     const rankM = ranked('M');
     const rankF = ranked('F');
-    const poolM = rankM.slice(0, needM);
-    const poolF = rankF.slice(0, needF);
+
+    // 잡복 코트가 있으면 남은 인원에서 성비대로 추가 선발
+    let mixM = 0, mixF = 0;
+    if (w > 0) {
+      const restM = availM - needM;
+      const restF = availF - needF;
+      mixM = Math.min(restM, Math.round((4 * w) * restM / Math.max(1, restM + restF)));
+      mixF = 4 * w - mixM;
+      if (mixF > restF) { mixF = restF; mixM = 4 * w - mixF; }
+    }
+    const poolM = rankM.slice(0, needM + mixM);
+    const poolF = rankF.slice(0, needF + mixF);
 
     /* 2-b) 커플/고정페어 라운드 동기화:
        파트너 중 한 명만 뽑힌 경우 → 상대를 데려오거나(빈 슬롯/교체) 둘 다 제외.
@@ -198,7 +287,7 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
         if (!changed) break;
       }
       // 인원 수가 어긋나면(제약 충돌) 이 구성으로는 불가 → 상위에서 제약 완화 재시도
-      if (poolM.length !== needM || poolF.length !== needF) return null;
+      if (poolM.length !== needM + mixM || poolF.length !== needF + mixF) return null;
     }
 
     /* 3) 코트별 슬롯 배정 + 페어 중복 체크(재시도) */
@@ -207,6 +296,8 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
     ];
     courtTypes.sort((a, b) =>
       r % 2 === 0 ? (a === 'MX' ? -1 : 1) : (a === 'MX' ? 1 : -1));
+    // 잡복 코트는 항상 마지막 코트에 배치(정규 조합을 우선 채운 뒤 남는 인원)
+    courtTypes = [...courtTypes, ...Array(w).fill('ANY')];
 
     const MAX_GLOBAL = 200, MAX_GAME = 40;
     let roundResult = null;
@@ -223,10 +314,25 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
         const t = TYPES[courtTypes[c]];
         let placed = null;
         for (let g = 0; g < MAX_GAME && !placed; g++) {
-          const ms = m.splice(0, t.m);
-          const fs = f.splice(0, t.f);
+          let ms, fs;
+          if (t.any) {
+            // 잡복: 성별 무관 4명 — 남은 인원이 많은 쪽에서 번갈아 뽑아 편중을 줄임
+            ms = []; fs = [];
+            for (let k = 0; k < 4; k++) {
+              if (m.length && (m.length >= f.length || !f.length)) ms.push(m.shift());
+              else if (f.length) fs.push(f.shift());
+            }
+          } else {
+            ms = m.splice(0, t.m);
+            fs = f.splice(0, t.f);
+          }
+
           let teamA, teamB;
-          if (courtTypes[c] === 'MX') { teamA = [ms[0], fs[0]]; teamB = [ms[1], fs[1]]; }
+          if (t.any) {
+            const four = [...ms, ...fs];          // 남자 먼저, 여자 뒤
+            teamA = [four[0], four[2]];           // 교차 배분 → 팀별 성비 균형
+            teamB = [four[1], four[3]];
+          } else if (courtTypes[c] === 'MX') { teamA = [ms[0], fs[0]]; teamB = [ms[1], fs[1]]; }
           else { const pl = ms.length ? ms : fs; teamA = [pl[0], pl[1]]; teamB = [pl[2], pl[3]]; }
           if (!teamA[0] || !teamA[1] || !teamB[0] || !teamB[1]) { m.unshift(...ms); f.unshift(...fs); break; }
 

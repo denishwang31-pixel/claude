@@ -13,13 +13,14 @@ import { Ntrp } from '../../src/components/NtrpScreen';
 import { Tournaments } from '../../src/components/TournamentScreen';
 import { Attendance } from '../../src/components/AttendanceScreen';
 import { Pairs } from '../../src/components/PairsScreen';
+import { ClubSettings } from '../../src/components/ClubSettingsScreen';
 import { Card, SectionTitle, Chip } from '../../src/components/ui';
 import { C } from '../../src/lib/theme';
 
 const MENU = [
   ['tournament', '🏆 대회'], ['ntrp', '📊 NTRP 등급'], ['attendance', '✅ 출석'],
   ['pairs', '💑 커플·고정 페어'], ['fees', '💳 회비'], ['board', '📋 게시판'],
-  ['guest', '🎾 게스트 모집'], ['courts', '📍 코트 검색'], ['members', '👥 회원'],
+  ['guest', '🎾 게스트 모집'], ['courts', '📍 코트 검색'], ['members', '👥 회원'], ['settings', '⚙️ 클럽 설정'],
 ];
 
 export default function More() {
@@ -42,6 +43,7 @@ export default function More() {
       case 'ntrp': return <Ntrp {...{ clubId, members, me, meVal, isAdmin, flash }} />;
       case 'attendance': return <Attendance {...{ clubId, members, meetings, isAdmin, flash }} />;
       case 'pairs': return <Pairs {...{ clubId, members, pairs, isAdmin, flash }} />;
+      case 'settings': return <ClubSettings {...{ clubId, club, isAdmin, flash }} />;
       case 'fees': return <Fees {...{ clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash }} />;
       case 'board': return <Board {...{ clubId, posts, meVal, me, isAdmin, flash }} />;
       case 'guest': return <Guest {...{ clubId, club, guestPosts, meetings, members, me, meVal, isAdmin, nameOf, flash }} />;
