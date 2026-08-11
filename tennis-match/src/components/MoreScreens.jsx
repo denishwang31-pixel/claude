@@ -4,7 +4,9 @@ import { View, Text, TextInput, Pressable, Linking } from 'react-native';
 import {
   addPost, addComment, addGuestPost, deleteGuestPost, applyToGuestPost, cancelApplication,
   confirmApplicant, subApplicants, updateMeeting, addCourt, deleteCourt, addMember,
+  updateMemberProfile,
 } from '../lib/firestore';
+import { effectiveNtrp, careerText } from '../lib/ntrp';
 import { GUEST_STATUS } from '../lib/constants';
 import { KAKAO_JS_KEY } from '../lib/keys';
 import { geocodeAddress } from '../lib/kakao';
@@ -243,29 +245,80 @@ export function Courts({ clubId, courts, isAdmin, flash }) {
   );
 }
 
-/* ---------------- 회원 관리 ---------------- */
+/* ---------------- 회원 관리 (프로필·구력 편집 포함) ---------------- */
 export function Members({ clubId, members, stats, me, isAdmin, flash }) {
-  const [nm, setNm] = useState({ name: '', gender: 'M', grade: 'B' });
+  const [nm, setNm] = useState({ name: '', gender: 'M', grade: 'B', startedAt: '' });
+  const [openId, setOpenId] = useState(null);
+  const [draft, setDraft] = useState({});
+
+  const openEdit = (m) => {
+    setOpenId(openId === m.id ? null : m.id);
+    setDraft({ startedAt: m.startedAt || '', grade: m.grade || 'B' });
+  };
+
   return (
     <View>
       <Card>
-        {members.map((m, i) => (
-          <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: m.gender === 'F' ? C.femaleBg : C.maleBg, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 12, fontWeight: '900', color: m.gender === 'F' ? C.female : C.male }}>{m.name?.[0]}</Text>
-              </View>
-              <View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700' }}>{m.name}</Text>
-                  {m.role !== '회원' && <Chip tone="lime">{m.role}</Chip>}
+        {members.map((m, i) => {
+          const eff = effectiveNtrp(m);
+          const canEdit = isAdmin || m.id === me; // 본인 또는 운영진
+          const open = openId === m.id;
+          return (
+            <View key={m.id} style={{ paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
+              <Pressable onPress={() => canEdit && openEdit(m)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: m.gender === 'F' ? C.femaleBg : C.maleBg, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 12, fontWeight: '900', color: m.gender === 'F' ? C.female : C.male }}>{m.name?.[0]}</Text>
+                  </View>
+                  <View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700' }}>{m.name}</Text>
+                      {m.role !== '회원' && <Chip tone="lime">{m.role}</Chip>}
+                      {eff.value != null && <Chip tone="outline">NTRP {eff.value.toFixed(1)}</Chip>}
+                    </View>
+                    <Text style={{ fontSize: 10, color: C.faint }}>
+                      {m.gender === 'M' ? '남' : '여'} · {m.grade}조 · {m.status}
+                      {m.startedAt ? ` · 구력 ${careerText(m.startedAt)}` : ''}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={{ fontSize: 10, color: C.faint }}>{m.gender === 'M' ? '남' : '여'} · {m.grade}조 · {m.status}</Text>
-              </View>
+                {stats[m.id] && <Text style={{ fontSize: 11, color: C.faint }}>{stats[m.id].wins}승{stats[m.id].games - stats[m.id].wins}패</Text>}
+              </Pressable>
+
+              {open && (
+                <View style={{ marginTop: 10, backgroundColor: '#fafaf9', borderRadius: 12, padding: 12 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', marginBottom: 4 }}>테니스 시작일 (구력)</Text>
+                  <Text style={{ fontSize: 10, color: C.faint, marginBottom: 6 }}>
+                    대회 참가 시 구력 제한(예: 입문부 3년 이하)을 확인하는 기준이 됩니다. YYYY-MM-DD 또는 YYYY-MM
+                  </Text>
+                  <Field placeholder="2019-03-01" value={draft.startedAt}
+                    onChangeText={(t) => setDraft({ ...draft, startedAt: t })} />
+                  <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
+                    {['A', 'B', 'C'].map((g) => (
+                      <Chip key={g} tone={draft.grade === g ? 'lime' : 'outline'} onPress={() => setDraft({ ...draft, grade: g })}>{g}조</Chip>
+                    ))}
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                    <Btn small onPress={() => {
+                      const patch = { grade: draft.grade };
+                      const s = (draft.startedAt || '').trim();
+                      if (s) {
+                        const norm = /^\d{4}-\d{2}$/.test(s) ? `${s}-01` : s;
+                        if (Number.isNaN(new Date(norm).getTime())) return flash('날짜 형식을 확인하세요 (YYYY-MM-DD)');
+                        patch.startedAt = norm;
+                      }
+                      updateMemberProfile(clubId, m.id, patch);
+                      setOpenId(null);
+                      flash('프로필이 저장되었습니다');
+                    }}>저장</Btn>
+                    <Btn small tone="ghost" onPress={() => setOpenId(null)}>취소</Btn>
+                  </View>
+                </View>
+              )}
             </View>
-            {stats[m.id] && <Text style={{ fontSize: 11, color: C.faint }}>{stats[m.id].wins}승{stats[m.id].games - stats[m.id].wins}패</Text>}
-          </View>
-        ))}
+          );
+        })}
       </Card>
       {isAdmin && (
         <>
@@ -277,9 +330,15 @@ export function Members({ clubId, members, stats, me, isAdmin, flash }) {
               {['A', 'B', 'C'].map((g) => <Chip key={g} tone={nm.grade === g ? 'lime' : 'outline'} onPress={() => setNm({ ...nm, grade: g })}>{g}조</Chip>)}
             </View>
             <View style={{ marginTop: 8 }}>
+              <Field placeholder="테니스 시작일 (선택, YYYY-MM-DD)" value={nm.startedAt} onChangeText={(t) => setNm({ ...nm, startedAt: t })} />
+            </View>
+            <View style={{ marginTop: 8 }}>
               <Btn full disabled={!nm.name} onPress={() => {
-                addMember(clubId, 'local:' + rid(), nm);
-                setNm({ name: '', gender: 'M', grade: 'B' });
+                const data = { name: nm.name, gender: nm.gender, grade: nm.grade };
+                const s = (nm.startedAt || '').trim();
+                if (s) data.startedAt = /^\d{4}-\d{2}$/.test(s) ? `${s}-01` : s;
+                addMember(clubId, 'local:' + rid(), data);
+                setNm({ name: '', gender: 'M', grade: 'B', startedAt: '' });
                 flash('회원 추가됨 (본인 계정 연동은 초대코드 가입 권장)');
               }}>추가</Btn>
             </View>

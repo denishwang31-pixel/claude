@@ -18,6 +18,7 @@ export default function Onboarding() {
   const [clubName, setClubName] = useState('');
   const [myName, setMyName] = useState('');
   const [gender, setGender] = useState('M');
+  const [startedAt, setStartedAt] = useState('');
   const [withDemo, setWithDemo] = useState(false); // R-3: 실사용 기본 off
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -25,11 +26,22 @@ export default function Onboarding() {
 
   const uid = auth.currentUser?.uid;
 
+  // 테니스 시작일(구력) — 대회 참가 기준으로 쓰이므로 가입 때 받아둔다
+  const buildProfile = () => {
+    const p = { name: myName, gender, grade: 'B' };
+    const s = startedAt.trim();
+    if (s) {
+      const norm = /^\d{4}-\d{2}$/.test(s) ? `${s}-01` : s;
+      if (!Number.isNaN(new Date(norm).getTime())) p.startedAt = norm;
+    }
+    return p;
+  };
+
   const doCreate = async () => {
     if (!uid) return setErr('로그인이 필요합니다.');
     setErr(''); setBusy(true);
     try {
-      const profile = { name: myName, gender, grade: 'B' };
+      const profile = buildProfile();
       const { clubId } = await createClub(clubName, { feeAmount: 30000, guestFee: 10000, payLink: '' }, { uid, ...profile });
       await seedClub(clubId, withDemo);
       await linkUserToClub(uid, clubId, profile);
@@ -44,7 +56,7 @@ export default function Onboarding() {
     try {
       const found = await findClubByInviteCode(code);
       if (!found) { setErr('초대코드를 찾을 수 없습니다.'); setBusy(false); return; }
-      const profile = { name: myName, gender, grade: 'B' };
+      const profile = buildProfile();
       // members 문서에 joinCode 포함(규칙에서 코드 검증)
       await setDoc(doc(db, 'clubs', found.clubId, 'members', uid), {
         ...profile, role: ROLES.MEMBER, status: '활동', joinCode: String(code).toUpperCase(),
@@ -74,6 +86,9 @@ export default function Onboarding() {
         <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
           {['M', 'F'].map((g) => <Chip key={g} tone={gender === g ? 'green' : 'outline'} onPress={() => setGender(g)}>{g === 'M' ? '남' : '여'}</Chip>)}
         </View>
+
+        <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 6 }}>테니스 시작일 <Text style={{ fontSize: 11, color: C.faint, fontWeight: '400' }}>(선택 · 구력)</Text></Text>
+        <Field placeholder="예: 2019-03 (대회 참가 기준)" value={startedAt} onChangeText={setStartedAt} />
 
         {mode === 'create' ? (
           <>

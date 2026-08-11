@@ -6,3 +6,6 @@ web-build/
 .DS_Store
 # Firebase 키는 커밋 금지 권장
 # firebaseConfig.js
+firestore-debug.log
+firebase-debug.log
+.firebaserc

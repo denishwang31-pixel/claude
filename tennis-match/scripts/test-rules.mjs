@@ -118,6 +118,39 @@ await T('오너 클럽 생성 + 본인 멤버 문서 허용', (async () => {
 await T('ownerId 불일치 클럽 생성 거부',
   assertFails(setDoc(doc(mem1, 'clubs', 'club3'), { name: '사칭클럽', ownerId: 'owner1' })));
 
+console.log('\n[NTRP 등급]');
+await T('본인 셀프 평가 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { ntrpSelf: 3.5 })));
+await T('타인에 대한 내 투표 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem2'), { 'ntrpVotes.mem1': 3.5 })));
+await T('타인 명의 투표 위조 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem2'), { 'ntrpVotes.owner1': 5.0 })));
+await T('일반 회원의 인증등급 설정 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem2'), { ntrpCertified: 5.0 })));
+await T('운영진의 인증등급 설정 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem2'), { ntrpCertified: 4.0 })));
+await T('회원이 남의 이름/역할 변경 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem2'), { role: '총무' })));
+
+console.log('\n[출석 / 대회 / 커플]');
+await T('총무의 출석 체크 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'meetings', 'mt1'), { 'attendance.mem1': true })));
+await T('일반 회원의 출석 조작 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt1'), { 'attendance.mem2': true })));
+await T('총무의 대회 개설 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'tournaments', 't1'),
+    { name: '봄대회', date: '2099-03-01', entries: [], stage: 'group', status: 'ongoing' })));
+await T('회원의 대회 읽기 허용',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'tournaments', 't1'))));
+await T('회원의 대회 결과 조작 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'tournaments', 't1'), { status: 'finished' })));
+// Firestore 는 중첩 배열 불가 → 객체 배열로 저장(firestore.js setPairs 가 변환)
+await T('총무의 커플/페어 설정 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'meta', 'pairs'),
+    { couples: [{ a: 'mem1', b: 'mem2' }], fixedPairs: [] })));
+await T('회원의 커플/페어 설정 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'meta', 'pairs'), { couples: [], fixedPairs: [] })));
+
 console.log('\n[회비/기타]');
 await T('회원 회비 읽기 허용',
   assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'fees', '2026-07'))));

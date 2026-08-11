@@ -27,6 +27,17 @@ export const DEFAULT_RULES = [
 
 const pairKey = (a, b) => [a, b].sort().join('|');
 
+/* ---------- 커플 / 고정 페어 유틸 ----------
+   couples    : [[idA,idB], …] 함께 오고 가야 하는 관계(부부·커플).
+                → 매 라운드 "둘 다 출전" 또는 "둘 다 휴식" 으로 동기화.
+   fixedPairs : [[idA,idB], …] 대회 준비 등으로 항상 같은 팀이어야 하는 조합.
+                → 라운드 동기화 + 같은 팀 배정 + 페어중복 페널티 면제.        */
+const linkMap = (links) => {
+  const m = {};
+  (links || []).forEach(([a, b]) => { if (a && b) { m[a] = b; m[b] = a; } });
+  return m;
+};
+
 /** 이전 모임 전체에서 누적 페어 기록 수집 (VBA "이전페어" 시트 역할) */
 export function collectPastPairs(meetings, excludeMeetingId) {
   const past = {};
@@ -57,18 +68,34 @@ const TYPES = {
  * @param {Array} ruleOrder  DEFAULT_RULES 순서(우선순위)
  * @param {Object} pastPairs collectPastPairs 결과
  * @param {Object} restScores {playerId: number}
+ * @param {Object} options   { couples: [[idA,idB]…], fixedPairs: [[idA,idB]…] }
+ *   - couples    : 함께 오고 가야 하는 관계 → 라운드 출전 동기화
+ *   - fixedPairs : 항상 같은 팀이어야 하는 조합 → 동기화 + 같은 팀 + 중복 페널티 면제
  * @returns {Array} matches  [{id,round,court,type,teamA:[id,id],teamB:[id,id],score}]
  */
-export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs = {}, restScores = {}) {
+export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs = {}, restScores = {}, options = {}) {
   const W = {};
   (ruleOrder || DEFAULT_RULES).forEach((r, i) => { W[r.key] = (ruleOrder || DEFAULT_RULES).length - i; });
   const strictPair = W.pairNoRepeat >= 4; // 페어중복방지 1~2순위 → 엄격
+
+  // 커플·고정페어(둘 다 라운드 동기화 대상, 고정페어는 같은 팀까지 강제)
+  const coupleOf = linkMap(options.couples);
+  const fixedOf = linkMap(options.fixedPairs);
+  const partnerOf = { ...coupleOf, ...fixedOf }; // 동기화용 통합 맵
+  const isFixedPair = (id1, id2) => fixedOf[id1] === id2;
 
   const games = {};
   players.forEach((p) => { games[p.id] = 0; });
   const usedPairs = { ...pastPairs };
   const allMatches = [];
   const rest = (id) => restScores[id] || 0;
+
+  // 동성 고정페어는 동성 복식 코트가 있어야 한 팀이 될 수 있음 → 코트 구성 시 반영
+  const genderById = Object.fromEntries(players.map((p) => [p.id, p.gender]));
+  const sameSexFixed = { M: 0, F: 0 };
+  (options.fixedPairs || []).forEach(([a, b]) => {
+    if (genderById[a] && genderById[a] === genderById[b]) sameSexFixed[genderById[a]] += 1;
+  });
 
   for (let r = 1; r <= rounds; r++) {
     const availM = players.filter((p) => p.gender === 'M').length;
@@ -86,6 +113,9 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
         let s = onCourt * 10 * W.maxPlay;                 // 출전 인원 최대화 최우선
         const patternFit = r % 2 === 1 ? y + z : x;        // 홀수=동성복식, 짝수=혼복
         s += patternFit * 3 * W.pattern;
+        // 동성 고정페어가 있으면 해당 성별 동성복식 코트를 확보하도록 유도
+        if (sameSexFixed.M && y > 0) s += 20;
+        if (sameSexFixed.F && z > 0) s += 20;
         s -= Math.abs((availM - needM) - (availF - needF)); // 잔여 성비 불균형 페널티
         if (s > bestScore) { bestScore = s; best = { x, y, z, needM, needF }; }
       }
@@ -95,16 +125,66 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
     const { x, y, z, needM, needF } = best;
 
     /* 2) 타임 단위 풀 선발: 출전횟수 최소 → 휴식점수 → 랜덤 */
-    const pick = (gender, n) =>
+    const ranked = (gender) =>
       players
         .filter((p) => p.gender === gender)
         .sort((a, b) =>
           (games[a.id] - games[b.id]) * W.evenGames
           - (rest(a.id) - rest(b.id)) * W.restPriority * 0.5
-          || Math.random() - 0.5)
-        .slice(0, n);
-    const poolM = pick('M', needM);
-    const poolF = pick('F', needF);
+          || Math.random() - 0.5);
+    const rankM = ranked('M');
+    const rankF = ranked('F');
+    const poolM = rankM.slice(0, needM);
+    const poolF = rankF.slice(0, needF);
+
+    /* 2-b) 커플/고정페어 라운드 동기화:
+       파트너 중 한 명만 뽑힌 경우 → 상대를 데려오거나(빈 슬롯/교체) 둘 다 제외.
+       "일찍 온 사람이 혼자 기다리는" 상황을 구조적으로 차단. */
+    if (Object.keys(partnerOf).length) {
+      const pools = { M: poolM, F: poolF };
+      const ranks = { M: rankM, F: rankF };
+      const byId = Object.fromEntries(players.map((p) => [p.id, p]));
+      const inPool = (id) => pools.M.some((p) => p.id === id) || pools.F.some((p) => p.id === id);
+
+      // 최대 몇 바퀴 돌며 수렴(교체가 다른 커플을 깨뜨릴 수 있으므로)
+      for (let iter = 0; iter < 4; iter++) {
+        let changed = false;
+        for (const p of [...pools.M, ...pools.F]) {
+          const mateId = partnerOf[p.id];
+          if (!mateId || inPool(mateId)) continue;
+          const mate = byId[mateId];
+          if (!mate) continue; // 상대가 오늘 불참 → 제약 무시(혼자 출전 허용)
+          const mp = pools[mate.gender];
+          if (!mp) continue;
+
+          // (a) 상대 성별 풀에 빈 슬롯이 있으면 그대로 투입
+          const capacity = mate.gender === 'M' ? needM : needF;
+          if (mp.length < capacity) { mp.push(mate); changed = true; continue; }
+
+          // (b) 교체: 파트너 제약이 없는 사람 중 출전 수가 가장 많은 사람과 스왑
+          let victimIdx = -1, victimGames = -1;
+          mp.forEach((q, i) => {
+            if (partnerOf[q.id]) return;               // 다른 커플은 건드리지 않음
+            if (games[q.id] > victimGames) { victimGames = games[q.id]; victimIdx = i; }
+          });
+          if (victimIdx >= 0) { mp[victimIdx] = mate; changed = true; continue; }
+
+          // (c) 상대를 넣을 수 없으면 본인을 빼고 다음 순번으로 대체
+          const own = pools[p.gender];
+          const idx = own.findIndex((q) => q.id === p.id);
+          if (idx >= 0) {
+            const sub = ranks[p.gender].find(
+              (q) => !inPool(q.id) && q.id !== mateId && !partnerOf[q.id],
+            );
+            if (sub) { own[idx] = sub; } else { own.splice(idx, 1); }
+            changed = true;
+          }
+        }
+        if (!changed) break;
+      }
+      // 인원 수가 어긋나면(제약 충돌) 이 타임은 건너뛰어 잘못된 편성 방지
+      if (poolM.length !== needM || poolF.length !== needF) continue;
+    }
 
     /* 3) 코트별 슬롯 배정 + 페어 중복 체크(재시도) */
     let courtTypes = [
@@ -132,10 +212,32 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
           if (courtTypes[c] === 'MX') { teamA = [ms[0], fs[0]]; teamB = [ms[1], fs[1]]; }
           else { const pl = ms.length ? ms : fs; teamA = [pl[0], pl[1]]; teamB = [pl[2], pl[3]]; }
           if (!teamA[0] || !teamA[1] || !teamB[0] || !teamB[1]) { m.unshift(...ms); f.unshift(...fs); break; }
+
+          /* 고정 페어 보정: 이 코트 4명 중 고정 페어가 갈라졌으면 같은 팀으로 재배치.
+             단 혼복 코트에 동성 고정페어가 들어오면 한 팀 구성이 불가능 → 위반 처리 후 재시도 */
+          let fpViolation = false;
+          if (Object.keys(fixedOf).length) {
+            const four = [...teamA, ...teamB];
+            const fp = four.find((p) => {
+              const mate = fixedOf[p.id];
+              return mate && four.some((q) => q.id === mate);
+            });
+            if (fp) {
+              const mate = four.find((q) => q.id === fixedOf[fp.id]);
+              const others = four.filter((q) => q.id !== fp.id && q.id !== mate.id);
+              if (courtTypes[c] === 'MX' && fp.gender === mate.gender) fpViolation = true;
+              else { teamA = [fp, mate]; teamB = others; }
+            }
+          }
+
           const kA = pairKey(teamA[0].id, teamA[1].id);
           const kB = pairKey(teamB[0].id, teamB[1].id);
-          const repeat = (usedPairs[kA] || 0) + (usedPairs[kB] || 0) + (tempPairs[kA] || 0) + (tempPairs[kB] || 0);
-          if (repeat === 0 || (!strictPair && g > MAX_GAME * 0.6) || g === MAX_GAME - 1) {
+          // 고정 페어는 반복 배정이 목적이므로 페어중복 페널티에서 제외
+          const exemptA = isFixedPair(teamA[0].id, teamA[1].id);
+          const exemptB = isFixedPair(teamB[0].id, teamB[1].id);
+          const repeat = (exemptA ? 0 : (usedPairs[kA] || 0) + (tempPairs[kA] || 0))
+            + (exemptB ? 0 : (usedPairs[kB] || 0) + (tempPairs[kB] || 0));
+          if (!fpViolation && (repeat === 0 || (!strictPair && g > MAX_GAME * 0.6) || g === MAX_GAME - 1)) {
             placed = { teamA, teamB, kA, kB, type: t.label };
           } else {
             m.unshift(...ms); f.unshift(...fs);

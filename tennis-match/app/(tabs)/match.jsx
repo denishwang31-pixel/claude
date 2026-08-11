@@ -15,7 +15,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 export default function Match() {
   const { clubId, me } = useApp();
   const insets = useSafeAreaInsets();
-  const { members, meetings, rules, isAdmin, nameOf } = useClub(clubId, me);
+  const { members, meetings, rules, pairs, isAdmin, nameOf } = useClub(clubId, me);
   const [showRules, setShowRules] = useState(true);
   const [editing, setEditing] = useState(null);
   const [sc, setSc] = useState({ a: '', b: '' });
@@ -49,10 +49,18 @@ export default function Match() {
   const gen = () => {
     if (attendees.length < 4) return flash('참석자가 4명 이상이어야 합니다');
     const past = collectPastPairs(meetings, meeting.id);
-    const matches = generateMatchesV5(attendees, meeting.courts, meeting.rounds, rules, past, restScores);
+    // 오늘 참석자 안에 양쪽 모두 있는 커플/고정페어만 제약으로 적용
+    const present = new Set(attendees.map((p) => p.id));
+    const bothHere = (list) => (list || []).filter(([a, b]) => present.has(a) && present.has(b));
+    const options = {
+      couples: bothHere(pairs?.couples),
+      fixedPairs: bothHere(pairs?.fixedPairs),
+    };
+    const matches = generateMatchesV5(attendees, meeting.courts, meeting.rounds, rules, past, restScores, options);
     if (!matches.length) return flash('현재 성비/인원으로는 편성 가능한 구성이 없습니다 (잡복 금지)');
     saveMatches(clubId, meeting.id, matches);
-    flash(`${matches.length}경기 생성 (이전 페어 기록 반영)`);
+    const n = options.couples.length + options.fixedPairs.length;
+    flash(`${matches.length}경기 생성${n ? ` · 커플/페어 ${n}건 반영` : ''}`);
   };
 
   const changeRest = (id, delta) => {
@@ -101,6 +109,17 @@ export default function Match() {
         <Text style={{ fontSize: 10, color: C.faint, marginTop: 4 }}>
           고정 원칙: 남복·여복·혼복만(잡복 금지) · 동일 타임 중복 금지 · 이전 모임 페어 누적 반영
         </Text>
+        {(() => {
+          const present = new Set(attendees.map((p) => p.id));
+          const c = (pairs?.couples || []).filter(([a, b]) => present.has(a) && present.has(b)).length;
+          const f = (pairs?.fixedPairs || []).filter(([a, b]) => present.has(a) && present.has(b)).length;
+          if (!c && !f) return null;
+          return (
+            <Text style={{ fontSize: 10, color: C.green2, marginTop: 2 }}>
+              적용 제약: {c ? `커플 ${c}쌍(출전 타임 동기화)` : ''}{c && f ? ' · ' : ''}{f ? `고정 페어 ${f}조(같은 팀)` : ''}
+            </Text>
+          );
+        })()}
         {isAdmin && <View style={{ marginTop: 12 }}><Btn full onPress={gen}>{meeting.matches?.length ? '대진 재생성' : '자동 대진 생성'}</Btn></View>}
       </Card>
       <SectionTitle right={<Chip tone="outline" onPress={() => setShowRules(!showRules)}>{showRules ? '접기' : '펼치기'}</Chip>}>

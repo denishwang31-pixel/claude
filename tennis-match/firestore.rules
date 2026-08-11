@@ -50,7 +50,16 @@ service cloud.firestore {
                           )
                         ))
                         || isClubAdmin(clubId);
-        allow update: if isClubAdmin(clubId) || request.auth.uid == memberId;
+        // 본인/운영진은 자유 수정. 그 외 회원은 "그 사람에 대한 내 NTRP 투표"만 가능
+        allow update: if isClubAdmin(clubId)
+          || request.auth.uid == memberId
+          || (
+            isClubMember(clubId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ntrpVotes'])
+            && request.resource.data.ntrpVotes.diff(
+                 resource.data.get('ntrpVotes', {})
+               ).affectedKeys().hasOnly([request.auth.uid])
+          );
         allow delete: if isClubAdmin(clubId);
       }
 
@@ -74,6 +83,12 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments'])
         );
         allow delete: if isClubAdmin(clubId) || resource.data.authorId == request.auth.uid;
+      }
+
+      // 대회: 읽기 멤버, 생성·편집(스코어/대진)은 총무
+      match /tournaments/{tournamentId} {
+        allow read: if isClubMember(clubId);
+        allow write: if isClubAdmin(clubId);
       }
 
       match /fees/{monthKey} {

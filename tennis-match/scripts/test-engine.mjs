@@ -90,5 +90,62 @@ function checkMatches(matches, players) {
   ok(totalWins === matches.length * 2, '케이스5: 승리 집계 불일치(경기당 승자 2인)');
 }
 
+// 케이스 6: 커플 라운드 동기화 — 둘 다 출전하거나 둘 다 휴식
+{
+  const players = roster(6, 6);
+  const couples = [['M1', 'F1'], ['M2', 'F2']];
+  const matches = generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, { couples });
+  checkMatches(matches, players);
+  const byRound = {};
+  matches.forEach((m) => {
+    (byRound[m.round] ||= new Set());
+    [...m.teamA, ...m.teamB].forEach((id) => byRound[m.round].add(id));
+  });
+  for (const [r, set] of Object.entries(byRound)) {
+    couples.forEach(([a, b]) => {
+      ok(set.has(a) === set.has(b), `ROUND ${r}: 커플 ${a}/${b} 출전 라운드 불일치`);
+    });
+  }
+}
+
+// 케이스 7: 고정 페어 — 함께 출전 시 반드시 같은 팀
+{
+  const players = roster(6, 6);
+  const fixedPairs = [['M1', 'F1'], ['M3', 'M4']];
+  const matches = generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, { fixedPairs });
+  checkMatches(matches, players);
+  matches.forEach((m) => {
+    fixedPairs.forEach(([a, b]) => {
+      const four = [...m.teamA, ...m.teamB];
+      if (four.includes(a) && four.includes(b)) {
+        const sameTeam = (m.teamA.includes(a) && m.teamA.includes(b)) || (m.teamB.includes(a) && m.teamB.includes(b));
+        ok(sameTeam, `고정 페어 ${a}/${b} 가 같은 경기에서 분리됨 (R${m.round} C${m.court})`);
+      }
+    });
+    // 고정 페어도 라운드 동기화 대상
+  });
+  const byRound = {};
+  matches.forEach((m) => {
+    (byRound[m.round] ||= new Set());
+    [...m.teamA, ...m.teamB].forEach((id) => byRound[m.round].add(id));
+  });
+  for (const [r, set] of Object.entries(byRound)) {
+    fixedPairs.forEach(([a, b]) => {
+      ok(set.has(a) === set.has(b), `ROUND ${r}: 고정페어 ${a}/${b} 출전 라운드 불일치`);
+    });
+  }
+}
+
+// 케이스 8: 커플 + 고정페어 동시 적용에도 하드룰 유지
+{
+  const players = roster(8, 8);
+  const matches = generateMatchesV5(players, 3, 4, DEFAULT_RULES, {}, {}, {
+    couples: [['M1', 'F1']],
+    fixedPairs: [['M2', 'F2'], ['F5', 'F6']],
+  });
+  ok(matches.length > 0, '케이스8: 편성 결과 없음');
+  checkMatches(matches, players);
+}
+
 console.log(`\n엔진 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   subClub, subMembers, subMeetings, subPosts, subGuestPosts,
-  subCourts, subRules, subFee,
+  subCourts, subRules, subFee, subPairs, subTournaments,
 } from '../lib/firestore';
 import { DEFAULT_RULES } from '../lib/matchmaking';
 import { isAdminRole, isGuestId, guestUid } from '../lib/constants';
@@ -46,6 +46,8 @@ export function useClub(clubId, me, opts = {}) {
   const [courts, setCourts] = useState([]);
   const [ruleKeys, setRuleKeys] = useState(null);
   const [fee, setFee] = useState({ paid: {} });
+  const [pairs, setPairsState] = useState({ couples: [], fixedPairs: [] });
+  const [tournaments, setTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -59,6 +61,8 @@ export function useClub(clubId, me, opts = {}) {
       subCourts(clubId, setCourts),
       subRules(clubId, setRuleKeys),
       subFee(clubId, feeMonth, setFee),
+      subPairs(clubId, (p) => setPairsState({ couples: p?.couples || [], fixedPairs: p?.fixedPairs || [] })),
+      subTournaments(clubId, setTournaments),
     ];
     return () => unsubs.forEach((u) => u && u());
   }, [clubId, feeMonth]);
@@ -93,5 +97,8 @@ export function useClub(clubId, me, opts = {}) {
     };
   }, [members, meetings]);
 
-  return { club, members, meetings, posts, guestPosts, courts, rules, fee, meVal, isAdmin, nameOf, loading };
+  return {
+    club, members, meetings, posts, guestPosts, courts, rules, fee,
+    pairs, tournaments, meVal, isAdmin, nameOf, loading,
+  };
 }

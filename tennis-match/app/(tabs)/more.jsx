@@ -9,12 +9,17 @@ import { computeStats } from '../../src/lib/matchmaking';
 import { logout } from '../../src/lib/auth';
 import { Board, Guest, Courts, Members } from '../../src/components/MoreScreens';
 import { Fees } from '../../src/components/FeesScreen';
+import { Ntrp } from '../../src/components/NtrpScreen';
+import { Tournaments } from '../../src/components/TournamentScreen';
+import { Attendance } from '../../src/components/AttendanceScreen';
+import { Pairs } from '../../src/components/PairsScreen';
 import { Card, SectionTitle, Chip } from '../../src/components/ui';
 import { C } from '../../src/lib/theme';
 
 const MENU = [
-  ['fees', '💳 회비'], ['board', '📋 게시판'], ['guest', '🎾 게스트 모집'],
-  ['courts', '📍 코트 검색'], ['members', '👥 회원'],
+  ['tournament', '🏆 대회'], ['ntrp', '📊 NTRP 등급'], ['attendance', '✅ 출석'],
+  ['pairs', '💑 커플·고정 페어'], ['fees', '💳 회비'], ['board', '📋 게시판'],
+  ['guest', '🎾 게스트 모집'], ['courts', '📍 코트 검색'], ['members', '👥 회원'],
 ];
 
 export default function More() {
@@ -25,7 +30,7 @@ export default function More() {
   const [toast, setToast] = useState(null);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2000); };
 
-  const { club, members, meetings, posts, guestPosts, courts, fee, meVal, isAdmin, nameOf } =
+  const { club, members, meetings, posts, guestPosts, courts, fee, pairs, tournaments, meVal, isAdmin, nameOf } =
     useClub(clubId, me, { feeMonth });
   const { stats } = useMemo(() => computeStats(members, meetings), [members, meetings]);
 
@@ -33,6 +38,10 @@ export default function More() {
 
   const renderSub = () => {
     switch (sub) {
+      case 'tournament': return <Tournaments {...{ clubId, members, tournaments, isAdmin, flash }} />;
+      case 'ntrp': return <Ntrp {...{ clubId, members, me, meVal, isAdmin, flash }} />;
+      case 'attendance': return <Attendance {...{ clubId, members, meetings, isAdmin, flash }} />;
+      case 'pairs': return <Pairs {...{ clubId, members, pairs, isAdmin, flash }} />;
       case 'fees': return <Fees {...{ clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash }} />;
       case 'board': return <Board {...{ clubId, posts, meVal, me, isAdmin, flash }} />;
       case 'guest': return <Guest {...{ clubId, club, guestPosts, meetings, members, me, meVal, isAdmin, nameOf, flash }} />;

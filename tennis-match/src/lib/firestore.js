@@ -14,7 +14,7 @@
    ============================================================ */
 import {
   collection, doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc,
-  onSnapshot, query, where, orderBy, serverTimestamp, arrayUnion, runTransaction,
+  onSnapshot, query, where, orderBy, serverTimestamp, arrayUnion, runTransaction, deleteField,
 } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { ROLES, GUEST_STATUS } from './constants';
@@ -78,6 +78,62 @@ export const saveMatches = (clubId, meetingId, matches) =>
    memberId 는 임시 uid(예: 'local:'+random) 를 넘길 수 있음 */
 export const addMember = (clubId, memberId, data) =>
   setDoc(D(clubId, 'members', memberId), { ...data, role: ROLES.MEMBER, status: '활동' });
+
+/* ---- NTRP 등급 관리 ---- */
+export const setNtrpSelf = (clubId, memberId, value) =>
+  updateDoc(D(clubId, 'members', memberId), { ntrpSelf: value });
+
+export const setNtrpCertified = (clubId, memberId, value) =>
+  updateDoc(D(clubId, 'members', memberId), { ntrpCertified: value });
+
+export const clearNtrpCertified = (clubId, memberId) =>
+  updateDoc(D(clubId, 'members', memberId), { ntrpCertified: deleteField() });
+
+/** 회원 투표: 대상 회원 문서의 ntrpVotes.{voterUid} 만 갱신 */
+export const setNtrpVote = (clubId, targetId, voterId, value) =>
+  updateDoc(D(clubId, 'members', targetId), { [`ntrpVotes.${voterId}`]: value });
+
+/* ---- 프로필(구력 등) ---- */
+export const updateMemberProfile = (clubId, memberId, patch) =>
+  updateDoc(D(clubId, 'members', memberId), patch);
+
+/* ---- 출석 ---- */
+export const setAttendance = (clubId, meetingId, memberId, present) =>
+  updateDoc(D(clubId, 'meetings', meetingId), { [`attendance.${memberId}`]: present });
+
+export const bulkSetAttendance = (clubId, meetingId, map) =>
+  updateDoc(D(clubId, 'meetings', meetingId), { attendance: map });
+
+/* ---- 커플 / 고정 페어 (클럽 단위 설정) ----
+   ⚠️ Firestore 는 중첩 배열([[a,b]])을 저장할 수 없다.
+   저장 형태: [{a,b}]  ↔  앱/엔진 사용 형태: [[a,b]]  (여기서 변환) */
+const pairsToDocs = (arr) => (arr || []).map((p) => (Array.isArray(p) ? { a: p[0], b: p[1] } : p));
+const pairsToTuples = (arr) => (arr || []).map((p) => (Array.isArray(p) ? p : [p.a, p.b]));
+
+export const subPairs = (clubId, cb) =>
+  onSnapshot(D(clubId, 'meta', 'pairs'), (d) => {
+    const raw = d.exists() ? d.data() : {};
+    cb({ couples: pairsToTuples(raw.couples), fixedPairs: pairsToTuples(raw.fixedPairs) });
+  });
+
+export const setPairs = (clubId, data) =>
+  setDoc(D(clubId, 'meta', 'pairs'), {
+    couples: pairsToDocs(data?.couples),
+    fixedPairs: pairsToDocs(data?.fixedPairs),
+  }, { merge: true });
+
+/* ---- 대회 ---- */
+export const subTournaments = (clubId, cb) =>
+  onSnapshot(C(clubId, 'tournaments'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.date || '').localeCompare(a.date || ''))));
+
+export const addTournament = (clubId, data) =>
+  addDoc(C(clubId, 'tournaments'), { ...data, createdAt: serverTimestamp() });
+
+export const updateTournament = (clubId, id, patch) =>
+  updateDoc(D(clubId, 'tournaments', id), patch);
+
+export const deleteTournament = (clubId, id) => deleteDoc(D(clubId, 'tournaments', id));
 
 /* PHASE 3 — 본인 푸시 토큰 저장(규칙: 본인 문서 update 허용) */
 export const savePushToken = (clubId, memberId, token) =>
