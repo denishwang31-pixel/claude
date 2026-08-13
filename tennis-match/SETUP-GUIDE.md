@@ -53,17 +53,54 @@ npx expo start          # QR → Expo Go
    firebase deploy --only functions
    ```
 
-## 4. EAS 빌드 (⏱ 30분 + 빌드 대기)
+## 4. EAS 빌드 — 스토어 등록 전에 앱 파일 만들기 (⏱ 30분 + 빌드 대기)
 
 ```bash
 npm i -g eas-cli
-eas login                # Expo 계정 (expo.dev 가입)
+eas login                # Expo 계정 (expo.dev 가입, 무료)
 cd tennis-match
 eas init                 # projectId 가 app.json 에 자동 기록됨 → 푸시 토큰 발급에 사용
-eas build --profile development --platform android   # 푸시 포함 개발용 APK
-eas build --profile preview --platform android       # 클럽 배포용 APK
 ```
-- iOS 는 Apple Developer($99/년) 가입 후 `--platform ios`. TestFlight 업로드는 `eas submit`.
+
+### 4-1. 안드로이드 APK — **무료, 스토어 등록 불필요** ⭐
+
+```bash
+eas build --profile preview --platform android
+```
+- 10~20분 뒤 빌드 완료 → 터미널/이메일에 **다운로드 링크**가 나옵니다
+- 그 링크를 카톡방에 공유하면 회원들이 눌러서 바로 설치할 수 있습니다
+- 설치 시 "출처를 알 수 없는 앱" 경고가 뜨면 **[설정 → 허용]** 하면 됩니다
+- **인원 제한 없음, 심사 없음, 비용 0원** — 클럽 테스트는 이걸로 충분합니다
+- 푸시 알림까지 테스트하려면 `--profile development` 로 만든 APK 를 쓰세요
+  (Expo Go 로는 푸시가 안 됩니다)
+
+### 4-2. iOS — **APK 같은 건 없습니다**
+
+APK 는 안드로이드 전용 형식이고, iOS 는 애플이 앱 파일(.ipa)을 아무 폰에나 설치하지 못하게 막아둡니다.
+따라서 아이폰에 넣으려면 **Apple Developer 계정($99/년)이 사실상 필수**입니다.
+
+| 방법 | 비용 | 인원 | 설명 |
+|---|---|---|---|
+| **TestFlight** (권장) | $99/년 | 내부 100명 / 외부 1만명 | 링크 초대로 설치. 정식 출시 전 베타 배포의 표준 |
+| Ad Hoc 배포 | $99/년 | 100대/년 | 기기 UDID 를 하나하나 등록해야 해서 번거로움 |
+| iOS 시뮬레이터 빌드 | 무료 | — | **맥 + Xcode 시뮬레이터에서만** 실행. 실제 아이폰 불가 |
+| Expo Go | 무료 | 무제한 | 별도 앱 설치 아님. 앱 흐름만 확인 가능, 푸시 불가 |
+
+```bash
+# 맥이 있다면 시뮬레이터용(무료, 아이폰엔 설치 불가)
+eas build --profile preview --platform ios
+
+# Apple Developer 가입 후 실제 아이폰 배포용
+eas build --profile preview-ios-device --platform ios
+eas submit --platform ios      # TestFlight 업로드
+```
+
+### 4-3. 권장 순서
+
+1. **안드로이드 APK 로 먼저 클럽 테스트** (무료, 지금 바로 가능)
+2. 2~4주 실사용하며 버그 정리
+3. 아이폰 쓰는 회원이 많으면 그때 **$99 결제 → TestFlight**
+4. 안정화되면 Play 스토어 정식 출시(6번)
 
 ## 5. 카카오맵 (⏱ 15분) — 선택(안 해도 간이 지도로 동작)
 
