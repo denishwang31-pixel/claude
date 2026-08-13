@@ -7,16 +7,44 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "backgroundColor": "#fafaf9",
+    "primaryColor": "#064e3b",
     "android": {
-      "package": "com.donghyun.tennismatch"
+      "package": "com.donghyun.tennismatch",
+      "versionCode": 1,
+      "permissions": [
+        "INTERNET",
+        "POST_NOTIFICATIONS",
+        "VIBRATE"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#022c22"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.donghyun.tennismatch",
-      "supportsTablet": true
+      "buildNumber": "1",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "color": "#064e3b"
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": false
+    },
+    "icon": "./assets/icon.png",
+    "web": {
+      "favicon": "./assets/favicon.png"
     }
   }
 }

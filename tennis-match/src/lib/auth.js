@@ -7,7 +7,8 @@
    @react-native-firebase/auth + EAS dev build 로 전환 검토(아래 sendOtp/confirmOtp 교체).
    ============================================================ */
 import {
-  PhoneAuthProvider, signInWithCredential, onAuthStateChanged, signOut,
+  onAuthStateChanged, signOut,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig';
@@ -17,18 +18,32 @@ export function subAuth(cb) {
   return onAuthStateChanged(auth, (user) => cb(user ? user.uid : null));
 }
 
-/** 전화번호로 OTP 발송 (RN: expo-firebase-recaptcha 의 recaptchaVerifier 필요) */
-export async function sendOtp(phoneE164, recaptchaVerifier) {
-  const provider = new PhoneAuthProvider(auth);
-  const verificationId = await provider.verifyPhoneNumber(phoneE164, recaptchaVerifier);
-  return verificationId; // confirmOtp 에 전달
+/* ------------------------------------------------------------------
+   로그인 방식 (1차: 이메일 / 체험용 익명)
+   ⚠️ 전화번호 인증은 Firebase "JS" SDK 로는 RN 에서 recaptcha 웹뷰가 필요한데,
+   그 역할을 하던 expo-firebase-recaptcha 가 SDK 48 에서 지원 종료됐다.
+   전화 인증은 R-1 2차에서 @react-native-firebase/auth 로 전환하며 붙인다.
+   (전환 시 이 파일의 signIn* 만 교체하면 되고 나머지 계층은 그대로)
+   ------------------------------------------------------------------ */
+
+/** 이메일 회원가입 → uid */
+export async function signUpEmail(email, password) {
+  const res = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  return res.user.uid;
 }
 
-/** OTP 코드 확인 → 로그인 완료 */
-export async function confirmOtp(verificationId, code) {
-  const credential = PhoneAuthProvider.credential(verificationId, code);
-  const result = await signInWithCredential(auth, credential);
-  return result.user.uid;
+/** 이메일 로그인 → uid */
+export async function signInEmail(email, password) {
+  const res = await signInWithEmailAndPassword(auth, email.trim(), password);
+  return res.user.uid;
+}
+
+/** 체험 모드(익명) 로그인 → uid.
+ *  Firebase 콘솔 → Authentication → 로그인 방법 → "익명" 사용 설정 필요.
+ *  앱을 지우면 계정이 사라지므로 실사용 전 이메일 계정 사용 권장. */
+export async function signInAnon() {
+  const res = await signInAnonymously(auth);
+  return res.user.uid;
 }
 
 /** 로그인 사용자의 소속 clubId (없으면 null → 온보딩) */

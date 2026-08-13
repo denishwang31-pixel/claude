@@ -12,9 +12,12 @@
 3. 표시되는 `firebaseConfig` 값 6개를 **`firebaseConfig.js`** 에 복사
    (apiKey / authDomain / projectId / storageBucket / messagingSenderId / appId)
 4. 좌측 **빌드 → Firestore Database → 데이터베이스 만들기** (위치: `asia-northeast3`, 프로덕션 모드)
-5. 좌측 **빌드 → Authentication → 시작하기 → 전화** 사용 설정
-   - 같은 화면 하단 **테스트용 전화번호**에 본인 번호 + 고정 코드(예: `+821012345678` / `123456`)를
-     등록해 두면 SMS 없이 개발 테스트 가능
+5. 좌측 **빌드 → Authentication → 시작하기** → **로그인 방법** 탭에서 2가지 사용 설정
+   - **이메일/비밀번호** → 사용 설정 (실제 로그인용)
+   - **익명** → 사용 설정 (앱의 "계정 없이 체험해보기" 버튼용)
+   - ℹ️ 전화번호 인증은 1차에서 제외했습니다. Firebase JS SDK 의 전화 인증은 RN 에서
+     recaptcha 웹뷰가 필요한데 그 패키지(expo-firebase-recaptcha)가 지원 종료됐기 때문입니다.
+     정식 출시 때 `@react-native-firebase/auth` 로 전환하며 추가합니다(R-1 2차).
 6. 터미널:
    ```bash
    npm i -g firebase-tools
@@ -122,10 +125,16 @@ eas submit --platform ios      # TestFlight 업로드
 
 ## 남은 개발 결정 1건 — R-1 (전화 인증 스택)
 
-현재 코드는 **Firebase JS SDK + expo-firebase-recaptcha** 로 배선되어 있습니다(1차 출시 가능).
-이 패키지는 deprecated 라 장기적으로는 **`@react-native-firebase/auth` + dev build** 전환이 안전합니다.
-전환 시점: 1차 출시 후. 전환 범위: `auth.js`의 sendOtp/confirmOtp + `login.jsx`의 모달 제거 (데이터 계층은 무관).
-지금 당장은 아무것도 안 해도 됩니다 — 1번의 테스트용 전화번호로 개발하세요.
+1차 로그인은 **이메일/비밀번호 + 익명(체험)** 으로 구현되어 있습니다. 전화번호 인증은 빠져 있습니다.
+
+이유: Firebase **JS** SDK 의 전화 인증은 RN 에서 recaptcha 웹뷰가 필요한데, 그 역할을 하던
+`expo-firebase-recaptcha` 가 Expo SDK 48 에서 지원 종료됐습니다(SDK 51 에서 번들 실패 확인).
+
+전환 계획(정식 출시 전): `@react-native-firebase/auth` + dev build 로 바꾸면 recaptcha 없이
+기기 검증으로 전화 인증이 동작합니다. 수정 범위는 `src/lib/auth.js` 의 로그인 함수와
+`app/login.jsx` UI 뿐이고, 데이터 계층·화면은 그대로입니다.
+
+지금 APK 테스트는 이메일 가입으로 충분합니다.
 
 ---
 

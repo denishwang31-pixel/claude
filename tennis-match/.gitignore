@@ -9,3 +9,5 @@ web-build/
 firestore-debug.log
 firebase-debug.log
 .firebaserc
+android/
+ios/
