@@ -89,9 +89,32 @@ export function useClub(clubId, me, opts = {}) {
      isAdmin    : 화면에서 쓰는 값. 보기 모드가 켜져 있으면 그 모드를 따름
      canAppoint : 역할 임명(회장 전용) */
   const realStaff = !!meVal && isStaffRole(meVal.role);
-  const isAdmin = viewMode === 'member' ? false : (viewMode === 'staff' ? true : realStaff);
-  const canAppoint = !!meVal && canAppointRole(meVal.role) && viewMode !== 'member';
+  const isAdmin = viewMode === 'member' ? false
+    : (viewMode === 'staff' || viewMode === 'lead') ? true : realStaff;
+  const canAppoint = !!meVal && canAppointRole(meVal.role) && !viewMode;
   const isPresident = meVal?.role === ROLES.PRESIDENT;
+
+  /* 내가 리드로 지정된 코트장 / 내가 소속(정기 운동)된 코트장 */
+  const myLeadVenues = useMemo(
+    () => venues.filter((v) => v.leadId === me),
+    [venues, me],
+  );
+  const myVenues = useMemo(
+    () => venues.filter((v) => (meVal?.venueIds || []).includes(v.id)),
+    [venues, meVal],
+  );
+
+  /* 보기 모드에 따라 "내가 볼 수 있는 코트장" 범위를 정한다
+     staff  : 전체
+     lead   : 내가 리드인 코트장(없으면 전체 — 리드 지정 전 테스트 대비)
+     member : 내가 소속된 코트장
+     null   : 실제 역할대로 */
+  const scopeVenues = useMemo(() => {
+    const mode = viewMode || (realStaff ? 'staff' : 'member');
+    if (mode === 'staff') return venues;
+    if (mode === 'lead') return myLeadVenues.length ? myLeadVenues : venues;
+    return myVenues;
+  }, [viewMode, realStaff, venues, myLeadVenues, myVenues]);
 
   // 게스트 ID('g:<uid>')는 저장된 표시명을 우선 사용(타 클럽 회원일 수 있음)
   const nameOf = useMemo(() => {
@@ -113,5 +136,6 @@ export function useClub(clubId, me, opts = {}) {
     club, members, meetings, posts, guestPosts, courts, rules, fee,
     pairs, tournaments, venues, matchConfig, meVal,
     isAdmin, realStaff, canAppoint, isPresident, viewMode, nameOf, loading,
+    myLeadVenues, myVenues, scopeVenues,
   };
 }

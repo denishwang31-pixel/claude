@@ -1,11 +1,12 @@
-/* 게시판 / 게스트 모집 / 코트 검색 / 회원 관리 서브화면 묶음 */
-import React, { useEffect, useState } from 'react';
+/* 클럽 공지 / 게스트 모집(공개 게시판) / 코트 검색 서브화면 묶음 */
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable, Linking } from 'react-native';
 import {
   addPost, addComment, addGuestPost, deleteGuestPost, applyToGuestPost, cancelApplication,
   confirmApplicant, subApplicants, updateMeeting, addCourt, deleteCourt,
 } from '../lib/firestore';
 import { GUEST_STATUS } from '../lib/constants';
+import { DateField, TimeField, Label } from './pickers';
 import { KAKAO_JS_KEY } from '../lib/keys';
 import { geocodeAddress } from '../lib/kakao';
 import { KakaoMapCourts } from './KakaoMapCourts';
@@ -65,96 +66,286 @@ export function Board({ clubId, posts, meVal, me, isAdmin, flash }) {
   );
 }
 
-/* ---------------- 게스트 모집 (루트 공개, FIX-05) ---------------- */
-function GuestPostCard({ post, clubId, meetings, me, meVal, isAdmin, nameOf, flash }) {
+/* ---------------- 게스트 모집 = 공개 게시판 (루트 guestPosts, FIX-05) ----------------
+   모든 클럽·회원이 함께 보는 하나의 게시판이다.
+   · 모집글은 클럽 운영진이 올리고, 신청은 어느 클럽 회원이든 할 수 있다.
+   · 모집 조건(남/여 인원)과 신청자 성별을 비교해 "매칭" 배지를 띄운다.
+   · 확정하면 모집 클럽의 해당 모임(guests)에 자동으로 들어가 대진에 포함된다. */
+
+const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+const dateLabel = (d) => {
+  if (!d) return '';
+  const dt = new Date(`${d}T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return d;
+  return `${d.slice(5).replace('-', '.')}(${WEEK[dt.getDay()]})`;
+};
+const dday = (d) => {
+  const diff = Math.round((new Date(`${d}T00:00:00`) - new Date(`${today()}T00:00:00`)) / 86400000);
+  return diff <= 0 ? '오늘' : `D-${diff}`;
+};
+
+/** 모집 조건 요약 — 신규(needMale/needFemale) 우선, 구버전(need 문자열) 하위호환 */
+function needSummary(post) {
+  const m = post.needMale || 0;
+  const f = post.needFemale || 0;
+  if (m || f) return [m ? `남 ${m}` : null, f ? `여 ${f}` : null].filter(Boolean).join(' · ');
+  return post.need || `${post.slots || 0}명`;
+}
+/** 내 성별이 아직 필요한 자리인가 */
+function matchesMe(post, meVal, confirmed) {
+  if (!meVal?.gender) return false;
+  const m = post.needMale || 0;
+  const f = post.needFemale || 0;
+  if (!m && !f) return true; // 조건이 자유 서술이면 일단 매칭 후보
+  const doneM = confirmed.filter((a) => a.gender === 'M').length;
+  const doneF = confirmed.filter((a) => a.gender === 'F').length;
+  return meVal.gender === 'F' ? doneF < f : doneM < m;
+}
+
+function GuestPostCard({ post, clubId, meetings, me, meVal, isAdmin, flash }) {
   const [applicants, setApplicants] = useState([]);
   useEffect(() => subApplicants(post.id, setApplicants), [post.id]);
 
-  const canManage = isAdmin && post.clubId === clubId; // 모집 클럽 총무만 확정
+  const isMyClub = post.clubId === clubId;
+  const canManage = isAdmin && isMyClub;        // 모집 클럽 운영진만 확정·삭제
   const mine = applicants.find((a) => a.uid === me);
-  const confirmedN = applicants.filter((a) => a.status === GUEST_STATUS.CONFIRMED).length;
+  const confirmed = applicants.filter((a) => a.status === GUEST_STATUS.CONFIRMED);
+  const left = Math.max(0, (post.slots || 0) - confirmed.length);
+  const fits = !mine && left > 0 && matchesMe(post, meVal, confirmed);
 
   const apply = () => {
     if (!meVal) return flash('프로필을 먼저 등록하세요');
     if (mine) return flash('이미 신청했습니다');
-    applyToGuestPost(post.id, { uid: me, name: meVal.name, gender: meVal.gender, grade: meVal.grade, clubId });
+    applyToGuestPost(post.id, { uid: me, name: meVal.name, gender: meVal.gender, grade: meVal.grade || '', clubId });
     flash('참여 의사 전달. 확정되면 알림이 옵니다');
   };
   const confirm = (a) => {
     confirmApplicant(post.id, a.uid);
-    // 모집 클럽의 같은 날짜 모임에 게스트로 자동 포함(uid 귀속)
-    const mt = meetings.find((m) => m.date === post.date);
+    // 모집글에 연결된 모임(없으면 같은 날짜 모임)에 게스트로 자동 포함 — uid 귀속
+    const mt = meetings.find((m) => m.id === post.meetingId) || meetings.find((m) => m.date === post.date);
     if (mt && !(mt.guests || []).some((g) => g.uid === a.uid)) {
-      updateMeeting(clubId, mt.id, { guests: [...(mt.guests || []), { uid: a.uid, name: a.name, gender: a.gender, grade: a.grade }] });
+      updateMeeting(clubId, mt.id, {
+        guests: [...(mt.guests || []), { uid: a.uid, name: a.name, gender: a.gender, grade: a.grade || '' }],
+      });
     }
-    flash('게스트 확정! 대진 자동 포함 (PHASE 3: 본인 푸시)');
+    flash(mt ? '게스트 확정! 해당 모임 대진에 자동 포함됩니다' : '게스트 확정! (연결된 모임을 찾지 못해 수동 추가 필요)');
   };
 
   return (
-    <Card style={{ marginBottom: 12 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontWeight: '900', fontSize: 14 }}>{post.clubName}</Text>
-        <Chip tone="lime">{Math.max(0, (post.slots || 0) - confirmedN)}자리 남음</Chip>
+    <Card style={{ marginBottom: 12, padding: 0, overflow: 'hidden' }}>
+      {/* 상단 띠 — 날짜/D-day/남은자리 */}
+      <View style={{
+        flexDirection: 'row', alignItems: 'center', gap: 8,
+        backgroundColor: left > 0 ? C.ink : '#57534e', paddingHorizontal: 12, paddingVertical: 8,
+      }}>
+        <Text style={{ color: C.lime, fontSize: 13, fontWeight: '900' }}>{dateLabel(post.date)}</Text>
+        {!!post.time && <Text style={{ color: '#6ee7b7', fontSize: 11 }}>{post.time}</Text>}
+        <Text style={{ color: '#6ee7b7', fontSize: 10 }}>{dday(post.date)}</Text>
+        <View style={{ marginLeft: 'auto', backgroundColor: left > 0 ? C.lime : '#a8a29e', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
+          <Text style={{ fontSize: 10, fontWeight: '900', color: C.ink }}>
+            {left > 0 ? `${left}자리 남음` : '모집 완료'}
+          </Text>
+        </View>
       </View>
-      <Text style={{ fontSize: 12, color: '#44403c', marginTop: 4 }}>{post.date} · {post.place} ({post.region})</Text>
-      <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>모집: {post.need} · 게스트비 {(post.fee || 0).toLocaleString()}원</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
-        {applicants.map((a) => {
-          const confirmed = a.status === GUEST_STATUS.CONFIRMED;
-          return (
-            <View key={a.uid} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: confirmed ? C.green : '#f5f5f4', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: confirmed ? C.lime : C.sub }}>{a.name} {confirmed ? '✓확정' : '신청'}</Text>
-              {canManage && !confirmed && (
-                <Pressable onPress={() => confirm(a)}><Text style={{ fontSize: 11, color: C.green2, textDecorationLine: 'underline' }}>확정</Text></Pressable>
-              )}
-            </View>
-          );
-        })}
-        {applicants.length === 0 && <Text style={{ fontSize: 11, color: C.faint }}>아직 신청자가 없습니다.</Text>}
-      </View>
-      <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-        {mine ? (
-          <Btn small tone="ghost" onPress={() => { cancelApplication(post.id, me); flash('신청을 취소했습니다'); }}>신청 취소</Btn>
-        ) : (
-          <Btn small onPress={apply}>참여 의사 개진</Btn>
-        )}
-        {canManage && <Btn small tone="ghost" onPress={() => deleteGuestPost(post.id)}>모집글 삭제</Btn>}
+
+      <View style={{ padding: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <Text style={{ fontWeight: '900', fontSize: 14 }}>{post.clubName || '이름 없는 클럽'}</Text>
+          {isMyClub && <Chip tone="outline">우리 클럽</Chip>}
+          {fits && <Chip tone="lime">내 조건 맞음</Chip>}
+        </View>
+
+        <Text style={{ fontSize: 12, color: '#44403c', marginTop: 6 }}>
+          📍 {post.place}{post.region ? ` · ${post.region}` : ''}
+        </Text>
+        <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
+          모집 {needSummary(post)} · 게스트비 {(post.fee || 0).toLocaleString()}원
+        </Text>
+        {!!post.note && <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>💬 {post.note}</Text>}
+
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 10 }}>
+          {applicants.map((a) => {
+            const ok = a.status === GUEST_STATUS.CONFIRMED;
+            return (
+              <View key={a.uid} style={{
+                flexDirection: 'row', alignItems: 'center', gap: 4,
+                backgroundColor: ok ? C.green : '#f5f5f4', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
+              }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: ok ? C.lime : C.sub }}>
+                  {a.name}{a.gender ? `(${a.gender === 'F' ? '여' : '남'})` : ''} {ok ? '✓확정' : '신청'}
+                </Text>
+                {canManage && !ok && (
+                  <Pressable onPress={() => confirm(a)} hitSlop={6}>
+                    <Text style={{ fontSize: 11, color: C.green2, textDecorationLine: 'underline' }}>확정</Text>
+                  </Pressable>
+                )}
+              </View>
+            );
+          })}
+          {applicants.length === 0 && <Text style={{ fontSize: 11, color: C.faint }}>아직 신청자가 없습니다.</Text>}
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+          {mine ? (
+            <Btn small tone="ghost" onPress={() => { cancelApplication(post.id, me); flash('신청을 취소했습니다'); }}>신청 취소</Btn>
+          ) : (
+            <Btn small onPress={apply}>참여 의사 개진</Btn>
+          )}
+          {canManage && <Btn small tone="ghost" onPress={() => deleteGuestPost(post.id)}>모집글 삭제</Btn>}
+        </View>
       </View>
     </Card>
   );
 }
 
-export function Guest({ clubId, club, guestPosts, meetings, me, meVal, isAdmin, nameOf, flash }) {
-  const [ng, setNg] = useState({ date: '', place: '', region: '', slots: '2', need: '' });
+const EMPTY_NG = { meetingId: '', date: '', time: '', place: '', region: '', needMale: '1', needFemale: '1', note: '' };
+
+export function Guest({ clubId, club, guestPosts, meetings, venues, me, meVal, isAdmin, flash }) {
+  const [ng, setNg] = useState(EMPTY_NG);
+  const [adding, setAdding] = useState(false);
+  const [scope, setScope] = useState('all');   // all | mine | others
+  const [region, setRegion] = useState(null);
+
+  const regions = useMemo(
+    () => [...new Set(guestPosts.map((p) => p.region).filter(Boolean))].sort(),
+    [guestPosts],
+  );
+  const list = useMemo(() => guestPosts
+    .filter((p) => (scope === 'mine' ? p.clubId === clubId : scope === 'others' ? p.clubId !== clubId : true))
+    .filter((p) => !region || p.region === region)
+    .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || ''))),
+  [guestPosts, scope, region, clubId]);
+
+  /* 모집글 올릴 때 우리 클럽 예정 모임을 고르면 날짜·시간·장소가 자동으로 채워진다 */
+  const upcoming = useMemo(
+    () => meetings.filter((m) => !m.canceled && m.date >= today()).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8),
+    [meetings],
+  );
+  const pickMeeting = (m) => {
+    const v = (venues || []).find((x) => x.id === m.venueId);
+    setNg({
+      ...ng, meetingId: m.id, date: m.date, time: m.time || v?.startTime || '',
+      place: m.place || v?.name || '', region: ng.region || v?.region || '',
+    });
+  };
+
+  const submit = () => {
+    const needMale = Number(ng.needMale) || 0;
+    const needFemale = Number(ng.needFemale) || 0;
+    addGuestPost({
+      clubId, clubName: club?.name || '', meetingId: ng.meetingId || null,
+      date: ng.date, time: ng.time || '', place: ng.place, region: ng.region,
+      needMale, needFemale, slots: needMale + needFemale, note: ng.note,
+      fee: club?.settings?.guestFee || 10000, authorId: me,
+    });
+    setNg(EMPTY_NG);
+    setAdding(false);
+    flash('모집글이 공개 게시판에 등록되었습니다');
+  };
+
   return (
     <View>
-      <Text style={{ fontSize: 11, color: C.sub, marginBottom: 8 }}>
-        공개 게시판입니다. 다른 클럽 회원도 신청할 수 있고, 게스트 경기 기록은 본인 계정에 누적됩니다.
-      </Text>
-      {guestPosts.map((post) => (
-        <GuestPostCard key={post.id} {...{ post, clubId, meetings, me, meVal, isAdmin, nameOf, flash }} />
-      ))}
-      {guestPosts.length === 0 && <Card><Text style={{ fontSize: 12, color: C.sub }}>진행 중인 게스트 모집이 없습니다.</Text></Card>}
+      <Card style={{ backgroundColor: C.ink, borderColor: C.green }}>
+        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900' }}>공개 게시판</Text>
+        <Text style={{ color: '#6ee7b7', fontSize: 11, marginTop: 4, lineHeight: 16 }}>
+          여기 올라온 모집글은 앱을 쓰는 모든 클럽·회원에게 보입니다.
+          신청 후 모집 클럽 운영진이 확정하면 그 클럽 대진에 자동으로 들어가고,
+          게스트로 뛴 경기 기록은 내 계정에 그대로 쌓입니다.
+        </Text>
+      </Card>
+
+      {/* 필터 */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+        {[['all', '전체'], ['mine', '우리 클럽'], ['others', '다른 클럽']].map(([k, label]) => (
+          <Chip key={k} tone={scope === k ? 'green' : 'outline'} onPress={() => setScope(k)}>{label}</Chip>
+        ))}
+      </View>
+      {regions.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+          <Chip tone={!region ? 'lime' : 'outline'} onPress={() => setRegion(null)}>전 지역</Chip>
+          {regions.map((r) => (
+            <Chip key={r} tone={region === r ? 'lime' : 'outline'} onPress={() => setRegion(r)}>{r}</Chip>
+          ))}
+        </View>
+      )}
+
+      <View style={{ marginTop: 12 }}>
+        {list.map((post) => (
+          <GuestPostCard key={post.id} {...{ post, clubId, meetings, me, meVal, isAdmin, flash }} />
+        ))}
+        {list.length === 0 && (
+          <Card><Text style={{ fontSize: 12, color: C.sub }}>
+            {guestPosts.length === 0 ? '진행 중인 게스트 모집이 없습니다.' : '조건에 맞는 모집글이 없습니다. 필터를 바꿔보세요.'}
+          </Text></Card>
+        )}
+      </View>
 
       {isAdmin && (
         <>
-          <SectionTitle>게스트 모집글 올리기</SectionTitle>
-          <Card>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Field placeholder="날짜 (YYYY-MM-DD)" value={ng.date} onChangeText={(t) => setNg({ ...ng, date: t })} style={{ flex: 2 }} />
-              <Field placeholder="인원" keyboardType="number-pad" value={ng.slots} onChangeText={(t) => setNg({ ...ng, slots: t })} style={{ flex: 1 }} />
-            </View>
-            <View style={{ marginTop: 8 }}><Field placeholder="장소" value={ng.place} onChangeText={(t) => setNg({ ...ng, place: t })} /></View>
-            <View style={{ marginTop: 8 }}><Field placeholder="지역 (예: 경기 과천시)" value={ng.region} onChangeText={(t) => setNg({ ...ng, region: t })} /></View>
-            <View style={{ marginTop: 8 }}><Field placeholder="모집 조건 (예: 남1 여1 · C조 이상)" value={ng.need} onChangeText={(t) => setNg({ ...ng, need: t })} /></View>
-            <View style={{ marginTop: 8 }}>
-              <Btn full disabled={!ng.date || !ng.place} onPress={() => {
-                addGuestPost({ clubId, clubName: club?.name || '', date: ng.date, place: ng.place, region: ng.region, slots: +ng.slots, need: ng.need, fee: club?.settings?.guestFee || 10000, authorId: me });
-                setNg({ date: '', place: '', region: '', slots: '2', need: '' });
-                flash('모집글이 공개 게시판에 등록됨');
-              }}>모집글 등록</Btn>
-            </View>
-          </Card>
+          <SectionTitle right={
+            <Chip tone={adding ? 'green' : 'outline'} onPress={() => setAdding(!adding)}>{adding ? '닫기' : '+ 모집글'}</Chip>
+          }>게스트 모집글 올리기</SectionTitle>
+          {adding && (
+            <Card>
+              {upcoming.length > 0 && (
+                <>
+                  <Label hint="고르면 날짜·시간·장소가 자동 입력됩니다">우리 클럽 예정 모임</Label>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                    {upcoming.map((m) => (
+                      <Chip key={m.id} tone={ng.meetingId === m.id ? 'green' : 'outline'} onPress={() => pickMeeting(m)}>
+                        {dateLabel(m.date)} {m.time || ''}
+                      </Chip>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              <Label>날짜</Label>
+              <DateField value={ng.date} onChange={(v) => setNg({ ...ng, date: v, meetingId: '' })} minDate={today()} />
+
+              <View style={{ marginTop: 8 }}>
+                <Label hint="선택">시작 시간</Label>
+                <TimeField value={ng.time} onChange={(v) => setNg({ ...ng, time: v })} />
+              </View>
+
+              <View style={{ marginTop: 8 }}>
+                <Label>장소</Label>
+                <Field placeholder="예: 과천시민회관 테니스장" value={ng.place} onChangeText={(t) => setNg({ ...ng, place: t })} />
+              </View>
+              <View style={{ marginTop: 8 }}>
+                <Label hint="다른 클럽이 지역으로 검색합니다">지역</Label>
+                <Field placeholder="예: 경기 과천시" value={ng.region} onChangeText={(t) => setNg({ ...ng, region: t })} />
+              </View>
+
+              <View style={{ marginTop: 8 }}>
+                <Label hint="성별로 나눠 적으면 자동 매칭됩니다">모집 인원</Label>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 10, color: C.male, marginBottom: 4, fontWeight: '700' }}>남</Text>
+                    <Field keyboardType="number-pad" value={ng.needMale} onChangeText={(t) => setNg({ ...ng, needMale: t })} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 10, color: C.female, marginBottom: 4, fontWeight: '700' }}>여</Text>
+                    <Field keyboardType="number-pad" value={ng.needFemale} onChangeText={(t) => setNg({ ...ng, needFemale: t })} />
+                  </View>
+                </View>
+              </View>
+
+              <View style={{ marginTop: 8 }}>
+                <Label hint="선택">추가 조건·안내</Label>
+                <Field placeholder="예: C조 이상 · 볼값 별도" value={ng.note} onChangeText={(t) => setNg({ ...ng, note: t })} />
+              </View>
+
+              <View style={{ marginTop: 12 }}>
+                <Btn full disabled={!ng.date || !ng.place || (!Number(ng.needMale) && !Number(ng.needFemale))} onPress={submit}>
+                  공개 게시판에 등록
+                </Btn>
+              </View>
+              <Text style={{ fontSize: 10, color: C.faint, marginTop: 6 }}>
+                게스트비는 클럽 설정의 게스트비({(club?.settings?.guestFee || 10000).toLocaleString()}원)가 자동으로 붙습니다.
+              </Text>
+            </Card>
+          )}
         </>
       )}
     </View>

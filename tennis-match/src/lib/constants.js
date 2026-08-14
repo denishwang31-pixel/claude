@@ -27,6 +27,14 @@ export const isAdminRole = (role) => isStaffRole(role) || role === '운영진';
 /** 역할 임명 권한 — 회장만 */
 export const canAppointRole = (role) => role === ROLES.PRESIDENT;
 
+/** 보기 모드 — 운영진이 다른 입장에서 화면을 확인할 때 사용 */
+export const VIEW_MODES = [
+  { key: null, label: '내 역할' },
+  { key: 'staff', label: '운영진' },
+  { key: 'lead', label: '리드' },
+  { key: 'member', label: '회원' },
+];
+
 /** 역할 배지 색상 키 */
 export const roleTone = (role) => (role === ROLES.PRESIDENT ? 'lime' : isStaffRole(role) ? 'green' : 'outline');
 

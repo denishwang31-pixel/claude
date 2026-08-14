@@ -34,6 +34,8 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'clubs', CLUB, 'meetings', 'mt1'), { date: '2099-01-01', rsvp: { mem1: 'no' }, guests: [], matches: [], restScores: {}, canceled: false });
   await setDoc(doc(db, 'clubs', CLUB, 'posts', 'p1'), { type: 'notice', title: '공지', body: '내용', author: '총무', authorId: 'owner1', pinned: true, comments: [] });
   await setDoc(doc(db, 'guestPosts', 'gp1'), { clubId: CLUB, clubName: '테스트클럽', date: '2099-01-01', slots: 2 });
+  // 앱 운영자 명단 — 콘솔에서만 만들 수 있는 문서(클라이언트 쓰기 불가)
+  await setDoc(doc(db, 'appAdmins', 'appboss'), { note: '앱 운영자' });
 });
 
 const owner = env.authenticatedContext('owner1').firestore();   // 총무
@@ -196,16 +198,37 @@ await T('일반 회원의 지출 조회 거부(운영진 전용)',
   assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'expenses', 'e1'))));
 await T('일반 회원의 회비 조회 거부(운영진 전용)',
   assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'fees', '2026-07'))));
-await T('운영진의 용품 등록 허용',
-  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'gear', 'g1'), { title: '라켓', category: '라켓', price: 290000 })));
-await T('회원의 용품 조회 허용',
-  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'gear', 'g1'))));
-await T('회원의 용품 등록 거부',
-  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'gear', 'g2'), { title: '몰래광고' })));
 await T('운영진의 원포인트 영상 등록 허용',
   assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'tips', 't1'), { title: '포핸드', category: '포핸드', url: 'https://youtu.be/abc' })));
 await T('회원의 원포인트 조회 허용',
   assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'tips', 't1'))));
+
+console.log('\n[용품 = 앱 운영자 전용(루트 /gear)]');
+const appAdmin = env.authenticatedContext('appboss').firestore();
+await T('앱 운영자의 용품 등록 허용',
+  assertSucceeds(setDoc(doc(appAdmin, 'gear', 'g1'), { title: '라켓', category: '라켓', price: 290000 })));
+await T('앱 운영자의 용품 수정 허용',
+  assertSucceeds(updateDoc(doc(appAdmin, 'gear', 'g1'), { price: 250000 })));
+await T('일반 회원의 용품 조회 허용(전 클럽 공용)',
+  assertSucceeds(getDoc(doc(mem1, 'gear', 'g1'))));
+await T('타 클럽 사용자도 용품 조회 허용',
+  assertSucceeds(getDoc(doc(outsider, 'gear', 'g1'))));
+await T('비로그인 용품 조회 거부',
+  assertFails(getDoc(doc(anon, 'gear', 'g1'))));
+await T('클럽 운영진(총무)의 용품 등록 거부',
+  assertFails(setDoc(doc(owner, 'gear', 'g2'), { title: '몰래광고' })));
+await T('일반 회원의 용품 등록 거부',
+  assertFails(setDoc(doc(mem1, 'gear', 'g3'), { title: '몰래광고' })));
+await T('일반 회원의 용품 삭제 거부',
+  assertFails(deleteDoc(doc(mem1, 'gear', 'g1'))));
+await T('앱 운영자의 용품 삭제 허용',
+  assertSucceeds(deleteDoc(doc(appAdmin, 'gear', 'g1'))));
+await T('앱 운영자 명단 조회 허용(내 권한 확인용)',
+  assertSucceeds(getDoc(doc(mem1, 'appAdmins', 'appboss'))));
+await T('앱 운영자 명단 자가 등록 거부(콘솔 전용)',
+  assertFails(setDoc(doc(mem1, 'appAdmins', 'mem1'), { note: '내가 운영자' })));
+await T('앱 운영자도 명단 추가 거부(콘솔 전용)',
+  assertFails(setDoc(doc(appAdmin, 'appAdmins', 'mem1'), { note: '승격' })));
 
 console.log('\n[회비/기타]');
 await T('회원 회비 쓰기 거부',

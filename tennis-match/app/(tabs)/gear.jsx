@@ -1,5 +1,6 @@
 /* 용품 — 카테고리별 테니스 용품 소개/광고. 누르면 판매처로 이동.
-   운영진이 등록·삭제하고, 회원은 둘러보기만 합니다. */
+   앱 관리자(appAdmins/{uid})만 등록·삭제하고, 운영진 포함 모든 회원은 둘러보기·링크 이동만 합니다.
+   용품 데이터는 클럽이 아니라 앱 전체가 공유하는 루트 컬렉션(gear)에 저장됩니다. */
 import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, Image, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,9 +13,9 @@ import { Card, SectionTitle, Chip, Btn, Field } from '../../src/components/ui';
 import { C } from '../../src/lib/theme';
 
 export default function Gear() {
-  const { clubId, me, viewMode } = useApp();
+  const { clubId, me, viewMode, isAppAdmin } = useApp();
   const insets = useSafeAreaInsets();
-  const { isAdmin } = useClub(clubId, me, { viewMode });
+  useClub(clubId, me, { viewMode }); // 클럽 컨텍스트 유지(광고는 앱 공통)
 
   const [items, setItems] = useState([]);
   const [cat, setCat] = useState(null);
@@ -23,10 +24,7 @@ export default function Gear() {
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2000); };
   const [f, setF] = useState({ title: '', category: GEAR_CATEGORIES[0], price: '', image: '', link: '', desc: '' });
 
-  React.useEffect(() => {
-    if (!clubId) return undefined;
-    return subGear(clubId, setItems);
-  }, [clubId]);
+  React.useEffect(() => subGear(setItems), []);
 
   const list = useMemo(
     () => items.filter((x) => !cat || x.category === cat),
@@ -39,7 +37,9 @@ export default function Gear() {
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <View style={{ backgroundColor: C.ink, paddingTop: insets.top + 8, paddingBottom: 12, paddingHorizontal: 16 }}>
         <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>🛍 용품</Text>
-        <Text style={{ color: '#6ee7b7', fontSize: 11, marginTop: 2 }}>라켓·의류·소모품 추천</Text>
+        <Text style={{ color: '#6ee7b7', fontSize: 11, marginTop: 2 }}>
+          라켓·의류·소모품 추천{isAppAdmin ? ' · 앱 관리자 모드' : ''}
+        </Text>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
@@ -72,8 +72,8 @@ export default function Gear() {
                     </View>
                   </View>
                 </View>
-                {isAdmin && (
-                  <Pressable onPress={() => { deleteGear(clubId, it.id); flash('삭제됨'); }}
+                {isAppAdmin && (
+                  <Pressable onPress={() => { deleteGear(it.id); flash('삭제됨'); }}
                     style={{ position: 'absolute', top: 6, right: 8 }}>
                     <Text style={{ fontSize: 12, color: C.danger }}>✕</Text>
                   </Pressable>
@@ -84,12 +84,12 @@ export default function Gear() {
           {list.length === 0 && (
             <Card><Text style={{ fontSize: 12, color: C.sub }}>
               {cat ? `${cat} 항목이 없습니다.` : '등록된 용품이 없습니다.'}
-              {isAdmin ? ' 아래에서 추가하세요.' : ''}
+              {isAppAdmin ? ' 아래에서 추가하세요.' : ''}
             </Text></Card>
           )}
         </View>
 
-        {isAdmin && (
+        {isAppAdmin && (
           <>
             <SectionTitle right={
               <Chip tone={adding ? 'green' : 'outline'} onPress={() => setAdding(!adding)}>{adding ? '닫기' : '+ 추가'}</Chip>
@@ -122,7 +122,7 @@ export default function Gear() {
                 </View>
                 <View style={{ marginTop: 12 }}>
                   <Btn full disabled={!f.title} onPress={() => {
-                    addGear(clubId, { ...f, price: Number(f.price) || 0, active: true });
+                    addGear({ ...f, price: Number(f.price) || 0, active: true });
                     setF({ title: '', category: GEAR_CATEGORIES[0], price: '', image: '', link: '', desc: '' });
                     flash('용품이 등록되었습니다');
                   }}>등록</Btn>

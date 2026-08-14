@@ -116,13 +116,25 @@ export const addExpense = (clubId, data) =>
 
 export const deleteExpense = (clubId, id) => deleteDoc(D(clubId, 'expenses', id));
 
-/* ---- 용품 광고 ---- */
-export const subGear = (clubId, cb) =>
-  onSnapshot(C(clubId, 'gear'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+/* ---- 용품 광고 (루트 공통 컬렉션) ----
+   앱 관리자만 등록·수정하고, 모든 클럽·회원은 조회와 링크 이동만 가능.
+   앱 관리자 = appAdmins/{uid} 문서가 존재하는 사용자(Firebase 콘솔에서 수동 등록). */
+export const subGear = (cb) =>
+  onSnapshot(collection(db, 'gear'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
 
-export const addGear = (clubId, data) => addDoc(C(clubId, 'gear'), { ...data, createdAt: serverTimestamp() });
-export const updateGear = (clubId, id, patch) => updateDoc(D(clubId, 'gear', id), patch);
-export const deleteGear = (clubId, id) => deleteDoc(D(clubId, 'gear', id));
+export const addGear = (data) => addDoc(collection(db, 'gear'), { ...data, createdAt: serverTimestamp() });
+export const updateGear = (id, patch) => updateDoc(doc(db, 'gear', id), patch);
+export const deleteGear = (id) => deleteDoc(doc(db, 'gear', id));
+
+/** 앱 관리자 여부 확인 (로그인은 동일, 권한만 다름) */
+export const checkAppAdmin = async (uid) => {
+  if (!uid) return false;
+  try {
+    const snap = await getDoc(doc(db, 'appAdmins', uid));
+    return snap.exists();
+  } catch (e) { return false; }
+};
 
 /* ---- 원포인트 레슨(유튜브) ---- */
 export const subTips = (clubId, cb) =>

@@ -23,11 +23,11 @@ import { C } from '../../src/lib/theme';
 
 /** [키, 라벨, 운영진 전용 여부] */
 const MENU = [
+  ['guest', '🎾 게스트 모집 (공개 게시판)', false],
   ['tournament', '🏆 대회', false],
   ['rank', '📈 랭킹·기록', false],
   ['ntrp', '📊 NTRP 등급', false],
-  ['board', '📋 게시판', false],
-  ['guest', '🎾 게스트 모집', false],
+  ['board', '📢 클럽 공지·자유글', false],
   ['courts', '📍 코트 검색', false],
   ['members', '👥 회원', false],
   ['attendance', '✅ 출석', true],
@@ -67,7 +67,7 @@ export default function More() {
       case 'matchcfg': return <MatchConfig {...{ clubId, matchConfig, rules, isAdmin, flash }} />;
       case 'fees': return <Fees {...{ clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash }} />;
       case 'board': return <Board {...{ clubId, posts, meVal, me, isAdmin, flash }} />;
-      case 'guest': return <Guest {...{ clubId, club, guestPosts, meetings, members, me, meVal, isAdmin, nameOf, flash }} />;
+      case 'guest': return <Guest {...{ clubId, club, guestPosts, meetings, venues, me, meVal, isAdmin, flash }} />;
       case 'courts': return <Courts {...{ clubId, courts, isAdmin, flash }} />;
       case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, flash }} />;
       default: return null;
@@ -93,7 +93,7 @@ export default function More() {
         {!sub && viewMode && (
           <View style={{ marginLeft: 'auto', backgroundColor: C.lime, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
             <Text style={{ fontSize: 10, fontWeight: '800', color: C.ink }}>
-              {viewMode === 'staff' ? '운영진 모드' : '회원 모드'}
+              {viewMode === 'staff' ? '운영진 모드' : viewMode === 'lead' ? '리드 모드' : '회원 모드'}
             </Text>
           </View>
         )}

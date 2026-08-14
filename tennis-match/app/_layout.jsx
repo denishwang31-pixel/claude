@@ -6,13 +6,14 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { subAuth, getMyClubId } from '../src/lib/auth';
+import { checkAppAdmin } from '../src/lib/firestore';
 import { C } from '../src/lib/theme';
 
 export const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
 
 export default function RootLayout() {
-  const [session, setSession] = useState({ uid: null, clubId: null, me: null });
+  const [session, setSession] = useState({ uid: null, clubId: null, me: null, isAppAdmin: false });
   const [loading, setLoading] = useState(true);
   /** 보기 모드: null = 실제 역할 그대로 / 'staff' = 운영진처럼 / 'member' = 일반 회원처럼
    *  (운영진이 회원 화면을 확인하거나, 테스트할 때 사용) */
@@ -23,9 +24,9 @@ export default function RootLayout() {
   // 인증 상태 구독 → uid, 소속 clubId 해석
   useEffect(() => {
     const unsub = subAuth(async (uid) => {
-      if (!uid) { setSession({ uid: null, clubId: null, me: null }); setLoading(false); return; }
-      const clubId = await getMyClubId(uid);
-      setSession({ uid, clubId, me: uid }); // me(memberId) = uid
+      if (!uid) { setSession({ uid: null, clubId: null, me: null, isAppAdmin: false }); setLoading(false); return; }
+      const [clubId, appAdmin] = await Promise.all([getMyClubId(uid), checkAppAdmin(uid)]);
+      setSession({ uid, clubId, me: uid, isAppAdmin: appAdmin }); // me(memberId) = uid
       setLoading(false);
     });
     return unsub;

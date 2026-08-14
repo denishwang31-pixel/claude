@@ -23,6 +23,11 @@ service cloud.firestore {
     function isPresident(clubId) {
       return isClubMember(clubId) && clubRole(clubId) == '회장';
     }
+    /** 앱 운영자 = appAdmins/{uid} 문서가 존재하는 계정 (Firebase 콘솔에서 수동 등록) */
+    function isAppAdmin() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/appAdmins/$(request.auth.uid));
+    }
 
     /* ---------- 사용자 라우팅/프로필 ---------- */
     match /users/{uid} {
@@ -114,11 +119,8 @@ service cloud.firestore {
         allow read, write: if isClubAdmin(clubId);
       }
 
-      // 용품 광고 / 원포인트 영상: 읽기 멤버 전체, 등록은 운영진
-      match /gear/{gearId} {
-        allow read: if isClubMember(clubId);
-        allow write: if isClubAdmin(clubId);
-      }
+      // 원포인트 영상: 읽기 멤버 전체, 등록은 운영진
+      // (용품은 앱 전체 공용이므로 루트 /gear 로 이동 — 아래 참조)
       match /tips/{tipId} {
         allow read: if isClubMember(clubId);
         allow write: if isClubAdmin(clubId);
@@ -136,6 +138,23 @@ service cloud.firestore {
         allow read: if isClubMember(clubId);
         allow write: if isClubAdmin(clubId);
       }
+    }
+
+    /* ---------- 앱 운영자 명단(루트) ----------
+       - 별도 로그인은 없다. 평소처럼 이메일로 로그인하고, 이 컬렉션에
+         본인 uid 문서가 있으면 앱 운영자 권한이 켜진다.
+       - 문서 생성은 Firebase 콘솔에서만(클라이언트 쓰기 전면 차단). */
+    match /appAdmins/{uid} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    /* ---------- 용품(루트, 앱 공용) ----------
+       - 읽기: 로그인 사용자 전체(모든 클럽이 같은 목록을 본다)
+       - 등록·수정·삭제: 앱 운영자만. 클럽 운영진도 쓸 수 없다. */
+    match /gear/{gearId} {
+      allow read: if signedIn();
+      allow write: if isAppAdmin();
     }
 
     /* ---------- 게스트 모집(루트 공개, FIX-05) ----------
