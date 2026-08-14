@@ -9,13 +9,15 @@ import { createClub, findClubByInviteCode } from '../src/lib/firestore';
 import { seedClub } from '../src/lib/seed';
 import { linkUserToClub } from '../src/lib/auth';
 import { ROLES } from '../src/lib/constants';
+import { useLocalSearchParams } from 'expo-router';
 import { DEFAULT_SETTINGS, roundsFromSettings } from '../src/lib/schedule';
 import { Card, Btn, Field, Chip } from '../src/components/ui';
 import { C } from '../src/lib/theme';
 
 export default function Onboarding() {
   const router = useRouter();
-  const [mode, setMode] = useState('create'); // create | join
+  const params = useLocalSearchParams();
+  const [mode, setMode] = useState(params?.mode === 'create' ? 'create' : 'create'); // create | join
   const [clubName, setClubName] = useState('');
   const [myName, setMyName] = useState('');
   const [gender, setGender] = useState('M');

@@ -9,7 +9,7 @@
     "doctor": "npx expo-doctor",
     "test:engine": "node scripts/test-engine.mjs",
     "test:tournament": "node scripts/test-tournament.mjs",
-    "test:schedule": "node scripts/test-schedule.mjs",
+    "test:schedule": "node scripts/test-schedule.mjs && node scripts/test-recurrence.mjs",
     "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-rules.mjs\""
   },
   "dependencies": {

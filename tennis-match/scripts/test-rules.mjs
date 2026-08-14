@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import {
   initializeTestEnvironment, assertSucceeds, assertFails,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
 
 const env = await initializeTestEnvironment({
   projectId: 'demo-tennis-rules',
@@ -28,7 +28,7 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   const db = ctx.firestore();
   await setDoc(doc(db, 'clubs', CLUB), { name: '테스트클럽', ownerId: 'owner1', inviteCode: 'ABC234' });
   await setDoc(doc(db, 'inviteCodes', 'ABC234'), { clubId: CLUB, clubName: '테스트클럽' });
-  await setDoc(doc(db, 'clubs', CLUB, 'members', 'owner1'), { name: '총무', gender: 'M', grade: 'B', role: '총무', status: '활동' });
+  await setDoc(doc(db, 'clubs', CLUB, 'members', 'owner1'), { name: '회장', gender: 'M', grade: 'B', role: '회장', status: '활동' });
   await setDoc(doc(db, 'clubs', CLUB, 'members', 'mem1'), { name: '회원1', gender: 'F', grade: 'B', role: '회원', status: '활동' });
   await setDoc(doc(db, 'clubs', CLUB, 'members', 'mem2'), { name: '회원2', gender: 'M', grade: 'C', role: '회원', status: '활동' });
   await setDoc(doc(db, 'clubs', CLUB, 'meetings', 'mt1'), { date: '2099-01-01', rsvp: { mem1: 'no' }, guests: [], matches: [], restScores: {}, canceled: false });
@@ -169,9 +169,45 @@ await T('회원의 모임 타임유형(roundPlan) 변경 거부',
 await T('총무의 타임유형 변경 허용',
   assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'meetings', 'mt1'), { roundPlan: { 1: 'SINGLES' } })));
 
+console.log('\n[역할 임명 / 지출 / 용품·원포인트]');
+// mem2 로 임명 테스트(뒤 테스트가 쓰는 mem1 은 일반 회원으로 유지)
+await T('회장의 역할 임명 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem2'), { role: '책임리더' })));
+await T('임명된 책임리더도 운영진 권한 보유',
+  assertSucceeds(getDoc(doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'fees', '2026-07'))));
+await T('책임리더는 역할 임명 불가(회장 전용)',
+  assertFails(updateDoc(doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'members', 'mem1'), { role: '총무' })));
+// 원상 복구 — 이후 테스트가 mem2 를 일반 회원으로 가정
+await env.withSecurityRulesDisabled(async (ctx) => {
+  await updateDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'mem2'), { role: '회원' });
+});
+await T('일반 회원의 역할 변경 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem2'), { role: '총무' })));
+await T('본인이 자기 역할 승격 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { role: '회장' })));
+await T('회원 본인 프로필(성별) 수정 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { gender: 'M', grade: '' })));
+await T('운영진의 회원 삭제 허용',
+  assertSucceeds(deleteDoc(doc(owner, 'clubs', CLUB, 'members', 'local:abc'))));
+await T('운영진의 지출 등록 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'expenses', 'e1'),
+    { date: '2099-01-05', category: '코트 대관', amount: 120000 })));
+await T('일반 회원의 지출 조회 거부(운영진 전용)',
+  assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'expenses', 'e1'))));
+await T('일반 회원의 회비 조회 거부(운영진 전용)',
+  assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'fees', '2026-07'))));
+await T('운영진의 용품 등록 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'gear', 'g1'), { title: '라켓', category: '라켓', price: 290000 })));
+await T('회원의 용품 조회 허용',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'gear', 'g1'))));
+await T('회원의 용품 등록 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'gear', 'g2'), { title: '몰래광고' })));
+await T('운영진의 원포인트 영상 등록 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'tips', 't1'), { title: '포핸드', category: '포핸드', url: 'https://youtu.be/abc' })));
+await T('회원의 원포인트 조회 허용',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'tips', 't1'))));
+
 console.log('\n[회비/기타]');
-await T('회원 회비 읽기 허용',
-  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'fees', '2026-07'))));
 await T('회원 회비 쓰기 거부',
   assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'fees', '2026-07'), { paid: { mem1: true } })));
 await T('비멤버의 클럽 문서 읽기 거부',

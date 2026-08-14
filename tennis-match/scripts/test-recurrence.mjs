@@ -1,0 +1,14 @@
+import { readFileSync } from 'node:fs';
+const s = readFileSync('src/lib/schedule.js','utf8');
+const M = await import('data:text/javascript;base64,'+Buffer.from(s).toString('base64'));
+let p=0,f=0; const ok=(c,m)=>{c?p++:(f++,console.error('  ✗',m));};
+ok(M.expandRecurrence('2026-08-16','2026-09-13','weekly').length===5,'매주 5회');
+ok(M.expandRecurrence('2026-08-16','2026-09-27','biweekly').length===4,'격주 4회');
+ok(M.expandRecurrence('2026-08-16','2026-11-30','monthly').length===4,'매월 4회');
+ok(M.expandRecurrence('2026-08-16','2026-09-13','none').length===1,'반복없음 1회');
+ok(M.expandRecurrence('2026-08-16','2026-08-01','weekly').length===1,'기한이 과거면 시작일만');
+ok(M.expandRecurrence('bad','2026-09-13','weekly').length===0,'잘못된 날짜는 빈 배열');
+ok(M.expandRecurrence('2026-08-16','2030-12-31','weekly').length<=60,'상한 60회 적용');
+ok(M.dowName('2026-08-16')==='일','요일 계산');
+console.log(`\n반복 일정 테스트: ${p} 통과 / ${f} 실패`);
+process.exit(f?1:0);

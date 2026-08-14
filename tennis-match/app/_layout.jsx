@@ -1,5 +1,5 @@
-/* 루트 레이아웃 — 실제 Firebase Auth 연동 (PHASE 2).
-   로그인 상태·소속 clubId 에 따라 로그인/온보딩/탭으로 라우팅. */
+/* 루트 레이아웃 — Firebase Auth 연동 + 라우팅 가드
+   + 운영진/회원 "보기 모드" 전환(테스트·체험용) */
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -14,6 +14,9 @@ export const useApp = () => useContext(AppCtx);
 export default function RootLayout() {
   const [session, setSession] = useState({ uid: null, clubId: null, me: null });
   const [loading, setLoading] = useState(true);
+  /** 보기 모드: null = 실제 역할 그대로 / 'staff' = 운영진처럼 / 'member' = 일반 회원처럼
+   *  (운영진이 회원 화면을 확인하거나, 테스트할 때 사용) */
+  const [viewMode, setViewMode] = useState(null);
   const router = useRouter();
   const segments = useSegments();
 
@@ -37,6 +40,9 @@ export default function RootLayout() {
     else if (session.uid && session.clubId && inAuthFlow) router.replace('/(tabs)');
   }, [loading, session, segments]);
 
+  /** 클럽을 새로 만들거나 옮길 때 호출 */
+  const switchClub = (clubId) => setSession((s) => ({ ...s, clubId }));
+
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center' }}>
@@ -48,7 +54,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AppCtx.Provider value={session}>
+        <AppCtx.Provider value={{ ...session, viewMode, setViewMode, switchClub }}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="login" />
             <Stack.Screen name="onboarding" />

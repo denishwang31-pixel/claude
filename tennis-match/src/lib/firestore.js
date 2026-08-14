@@ -14,7 +14,7 @@
    ============================================================ */
 import {
   collection, doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc,
-  onSnapshot, query, where, orderBy, serverTimestamp, arrayUnion, runTransaction, deleteField,
+  onSnapshot, query, where, orderBy, serverTimestamp, arrayUnion, runTransaction, deleteField, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { ROLES, GUEST_STATUS } from './constants';
@@ -99,6 +99,50 @@ export const subMatchConfig = (clubId, cb) =>
 
 export const setMatchConfig = (clubId, cfg) =>
   setDoc(D(clubId, 'meta', 'matchConfig'), cfg, { merge: true });
+
+/* ---- 회원 역할/삭제 (회장만 임명 — 규칙에서 강제) ---- */
+export const setMemberRole = (clubId, memberId, role) =>
+  updateDoc(D(clubId, 'members', memberId), { role });
+
+export const deleteMember = (clubId, memberId) => deleteDoc(D(clubId, 'members', memberId));
+
+/* ---- 지출 관리 (회비 메뉴) ---- */
+export const subExpenses = (clubId, cb) =>
+  onSnapshot(C(clubId, 'expenses'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.date || '').localeCompare(a.date || ''))));
+
+export const addExpense = (clubId, data) =>
+  addDoc(C(clubId, 'expenses'), { ...data, createdAt: serverTimestamp() });
+
+export const deleteExpense = (clubId, id) => deleteDoc(D(clubId, 'expenses', id));
+
+/* ---- 용품 광고 ---- */
+export const subGear = (clubId, cb) =>
+  onSnapshot(C(clubId, 'gear'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+
+export const addGear = (clubId, data) => addDoc(C(clubId, 'gear'), { ...data, createdAt: serverTimestamp() });
+export const updateGear = (clubId, id, patch) => updateDoc(D(clubId, 'gear', id), patch);
+export const deleteGear = (clubId, id) => deleteDoc(D(clubId, 'gear', id));
+
+/* ---- 원포인트 레슨(유튜브) ---- */
+export const subTips = (clubId, cb) =>
+  onSnapshot(C(clubId, 'tips'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+
+export const addTip = (clubId, data) => addDoc(C(clubId, 'tips'), { ...data, createdAt: serverTimestamp() });
+export const deleteTip = (clubId, id) => deleteDoc(D(clubId, 'tips', id));
+
+/* ---- 여러 모임 한번에 생성(정기 모임 반복 등록) ---- */
+export const addMeetingsBatch = async (clubId, list) => {
+  const batch = writeBatch(db);
+  list.forEach((data) => {
+    const ref = doc(C(clubId, 'meetings'));
+    batch.set(ref, {
+      ...data, rsvp: {}, guests: [], matches: [], restScores: {},
+      canceled: false, createdAt: serverTimestamp(),
+    });
+  });
+  await batch.commit();
+};
 
 /* ---- NTRP 등급 관리 ---- */
 export const setNtrpSelf = (clubId, memberId, value) =>
@@ -221,7 +265,7 @@ async function reserveInviteCode(clubId, clubName) {
 export const createClub = async (name, settings, owner) => {
   const { uid, ...ownerData } = owner;
   const ref = await addDoc(collection(db, 'clubs'), { name, settings, ownerId: uid, createdAt: serverTimestamp() });
-  await setDoc(doc(db, 'clubs', ref.id, 'members', uid), { ...ownerData, role: ROLES.ADMIN, status: '활동' });
+  await setDoc(doc(db, 'clubs', ref.id, 'members', uid), { ...ownerData, role: ROLES.PRESIDENT, status: '활동' });
   const code = await reserveInviteCode(ref.id, name);
   await setDoc(doc(db, 'clubs', ref.id, 'meta', 'rules'), { order: null });
   await updateDoc(ref, { inviteCode: code }); // 총무 표시용

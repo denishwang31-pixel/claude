@@ -15,7 +15,7 @@ import {
   subCourts, subRules, subFee, subPairs, subTournaments, subVenues, subMatchConfig,
 } from '../lib/firestore';
 import { DEFAULT_RULES } from '../lib/matchmaking';
-import { isAdminRole, isGuestId, guestUid } from '../lib/constants';
+import { isStaffRole, canAppointRole, isGuestId, guestUid, ROLES } from '../lib/constants';
 
 const RULE_BY_KEY = Object.fromEntries(DEFAULT_RULES.map((r) => [r.key, r]));
 
@@ -37,6 +37,7 @@ const monthKeyNow = () => new Date().toISOString().slice(0, 7);
 
 export function useClub(clubId, me, opts = {}) {
   const feeMonth = opts.feeMonth || monthKeyNow();
+  const viewMode = opts.viewMode || null; // 'staff' | 'member' | null(실제 역할)
 
   const [club, setClub] = useState(null);
   const [members, setMembers] = useState([]);
@@ -83,7 +84,14 @@ export function useClub(clubId, me, opts = {}) {
     () => members.find((m) => m.id === me) || null,
     [members, me],
   );
-  const isAdmin = !!meVal && isAdminRole(meVal.role);
+  /* 권한 —
+     realStaff  : 실제 역할 기준 운영진(회장·총무·책임리더) 여부
+     isAdmin    : 화면에서 쓰는 값. 보기 모드가 켜져 있으면 그 모드를 따름
+     canAppoint : 역할 임명(회장 전용) */
+  const realStaff = !!meVal && isStaffRole(meVal.role);
+  const isAdmin = viewMode === 'member' ? false : (viewMode === 'staff' ? true : realStaff);
+  const canAppoint = !!meVal && canAppointRole(meVal.role) && viewMode !== 'member';
+  const isPresident = meVal?.role === ROLES.PRESIDENT;
 
   // 게스트 ID('g:<uid>')는 저장된 표시명을 우선 사용(타 클럽 회원일 수 있음)
   const nameOf = useMemo(() => {
@@ -103,6 +111,7 @@ export function useClub(clubId, me, opts = {}) {
 
   return {
     club, members, meetings, posts, guestPosts, courts, rules, fee,
-    pairs, tournaments, venues, matchConfig, meVal, isAdmin, nameOf, loading,
+    pairs, tournaments, venues, matchConfig, meVal,
+    isAdmin, realStaff, canAppoint, isPresident, viewMode, nameOf, loading,
   };
 }

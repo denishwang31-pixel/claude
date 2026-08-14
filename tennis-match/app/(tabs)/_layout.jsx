@@ -1,4 +1,5 @@
-/* 5탭 네비게이션 (expo-router Tabs) + 푸시 토큰 등록(PHASE 3) */
+/* 하단 탭 네비게이션 + 푸시 토큰 등록(PHASE 3)
+   탭: 홈 · 일정 · 대진 · 용품 · 원포인트 · 더보기 (랭킹은 더보기 안으로) */
 import React, { useEffect } from 'react';
 import { Text } from 'react-native';
 import { Tabs } from 'expo-router';
@@ -6,8 +7,8 @@ import { useApp } from '../_layout';
 import { registerPushToken } from '../../src/lib/notifications';
 import { C } from '../../src/lib/theme';
 
-const icon = (emoji) => ({ color }) => (
-  <Text style={{ fontSize: 18, opacity: color === C.green ? 1 : 0.5 }}>{emoji}</Text>
+const icon = (emoji) => ({ focused }) => (
+  <Text style={{ fontSize: 17, opacity: focused ? 1 : 0.45 }}>{emoji}</Text>
 );
 
 export default function TabsLayout() {
@@ -25,13 +26,16 @@ export default function TabsLayout() {
         tabBarActiveTintColor: C.green,
         tabBarInactiveTintColor: C.faint,
         tabBarStyle: { backgroundColor: '#fff', borderTopColor: C.border },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '700' },
       }}>
       <Tabs.Screen name="index" options={{ title: '홈', tabBarIcon: icon('🏠') }} />
       <Tabs.Screen name="schedule" options={{ title: '일정', tabBarIcon: icon('📅') }} />
       <Tabs.Screen name="match" options={{ title: '대진', tabBarIcon: icon('🎾') }} />
-      <Tabs.Screen name="rank" options={{ title: '랭킹', tabBarIcon: icon('🏆') }} />
+      <Tabs.Screen name="gear" options={{ title: '용품', tabBarIcon: icon('🛍') }} />
+      <Tabs.Screen name="tips" options={{ title: '원포인트', tabBarIcon: icon('🎯') }} />
       <Tabs.Screen name="more" options={{ title: '더보기', tabBarIcon: icon('☰') }} />
+      {/* 랭킹은 더보기 메뉴에서 진입 (하단 탭 과밀 방지) */}
+      <Tabs.Screen name="rank" options={{ href: null }} />
     </Tabs>
   );
 }

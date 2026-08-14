@@ -17,9 +17,9 @@ import { C } from '../../src/lib/theme';
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default function Match() {
-  const { clubId, me } = useApp();
+  const { clubId, me, viewMode } = useApp();
   const insets = useSafeAreaInsets();
-  const { club, members, meetings, rules, pairs, matchConfig, isAdmin, nameOf } = useClub(clubId, me);
+  const { club, members, meetings, rules, pairs, matchConfig, isAdmin, nameOf } = useClub(clubId, me, { viewMode });
   const cfg = { ...DEFAULT_MATCH_CONFIG, ...(matchConfig || {}) };
   const [showRules, setShowRules] = useState(true);
   const [editing, setEditing] = useState(null);
@@ -45,7 +45,7 @@ export default function Match() {
     return (
       <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top }}>
         <ScrollView contentContainerStyle={{ padding: 16 }}>
-          <Card><Text style={{ color: C.sub }}>예정된 모임이 없습니다. 일정 탭에서 먼저 등록하세요.</Text></Card>
+          <Card><Text style={{ color: C.sub }}>예정된 모임이 없습니다.{isAdmin ? ' 일정 탭에서 먼저 등록하세요.' : ''}</Text></Card>
         </ScrollView>
       </View>
     );
@@ -192,6 +192,13 @@ export default function Match() {
 
   const Header = (
     <View>
+      {!isAdmin && (
+        <Card style={{ marginBottom: 8, backgroundColor: '#fafaf9' }}>
+          <Text style={{ fontSize: 12, color: C.sub }}>
+            대진표는 <Text style={{ fontWeight: '700' }}>운영진이 편성</Text>합니다. 확정된 대진을 확인만 할 수 있어요.
+          </Text>
+        </Card>
+      )}
       <Card>
         <Text style={{ fontSize: 14, fontWeight: '700' }}>
           {meeting.date} · 참석 {attendees.length}명 (남{nM} 여{nF}) · 코트 {meeting.courts}면 · {meeting.rounds}R

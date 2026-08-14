@@ -9,9 +9,9 @@ import { Card, SectionTitle } from '../../src/components/ui';
 import { C } from '../../src/lib/theme';
 
 export default function Rank() {
-  const { clubId, me } = useApp();
+  const { clubId, me, viewMode } = useApp();
   const insets = useSafeAreaInsets();
-  const { club, members, meetings, meVal, nameOf } = useClub(clubId, me);
+  const { club, members, meetings, meVal, nameOf } = useClub(clubId, me, { viewMode });
   const [view, setView] = useState('rank');
 
   const year = new Date().getFullYear();

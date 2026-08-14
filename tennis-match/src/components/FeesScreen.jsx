@@ -1,31 +1,62 @@
-/* ---------------- 회비 관리 (FIX-02, 원본 Fees 이식) ----------------
-   월별 납부 현황 + CSV/텍스트 붙여넣기 이름 매칭 + 미납 리마인드.
-   입금 알림 자동매칭(안드로이드 네이티브)은 PHASE 4/2차 — 여기선 수동+반자동. */
-import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable } from 'react-native';
-import { setFeePaid } from '../lib/firestore';
-import { Card, SectionTitle, Btn } from './ui';
+/* 회비 — 월납/연납 구분, 납부 현황, 지출 관리 (운영진 전용 화면)
+   수입(회비) - 지출 = 잔액 을 한눈에 보여줍니다. */
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, TextInput, Pressable, Alert } from 'react-native';
+import { setFeePaid, subExpenses, addExpense, deleteExpense } from '../lib/firestore';
+import { FEE_CYCLE } from '../lib/constants';
+import { DateField, Label } from './pickers';
+import { Card, SectionTitle, Chip, Btn, Field } from './ui';
 import { C } from '../lib/theme';
 
+const todayStr = () => new Date().toISOString().slice(0, 10);
 const monthKeyNow = () => new Date().toISOString().slice(0, 7);
+const yearKeyNow = () => new Date().toISOString().slice(0, 4);
+
+const EXPENSE_CATS = ['코트 대관', '공·소모품', '경조사', '회식', '대회 참가', '기타'];
 
 export function Fees({ clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash }) {
+  const [cycle, setCycle] = useState(FEE_CYCLE.MONTHLY);
+  const [tab, setTab] = useState('income'); // income | expense
   const [paste, setPaste] = useState('');
-  const amount = fee.amount || club?.settings?.feeAmount || 30000;
-  const active = members.filter((m) => m.status === '활동');
+  const [expenses, setExpenses] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [ex, setEx] = useState({ date: todayStr(), category: EXPENSE_CATS[0], amount: '', memo: '' });
+
+  useEffect(() => {
+    if (!clubId) return undefined;
+    return subExpenses(clubId, setExpenses);
+  }, [clubId]);
+
+  /* 운영진 전용 */
+  if (!isAdmin) {
+    return (
+      <Card>
+        <Text style={{ fontSize: 13, fontWeight: '700', marginBottom: 4 }}>운영진 전용 메뉴</Text>
+        <Text style={{ fontSize: 12, color: C.sub, lineHeight: 18 }}>
+          회비와 지출 내역은 회장·총무·책임리더만 확인할 수 있습니다.
+          납부 문의는 총무에게 연락해 주세요.
+        </Text>
+      </Card>
+    );
+  }
+
+  const amount = fee.amount
+    || (cycle === FEE_CYCLE.YEARLY ? club?.settings?.feeYearly : club?.settings?.feeAmount)
+    || (cycle === FEE_CYCLE.YEARLY ? 300000 : 30000);
+  const active = members.filter((m) => m.status === '활동' || !m.status);
   const paidMap = fee.paid || {};
+  const periodKey = cycle === FEE_CYCLE.YEARLY ? feeMonth.slice(0, 4) : feeMonth;
 
   const togglePaid = (id) => {
-    if (!isAdmin) return;
     const next = { ...paidMap, [id]: !paidMap[id] };
-    setFeePaid(clubId, feeMonth, next, amount);
+    setFeePaid(clubId, periodKey, next, amount);
   };
 
   const runMatch = () => {
     let hit = 0;
     const next = { ...paidMap };
     active.forEach((m) => { if (m.name && paste.includes(m.name)) { next[m.id] = true; hit++; } });
-    setFeePaid(clubId, feeMonth, next, amount);
+    setFeePaid(clubId, periodKey, next, amount);
     setPaste('');
     flash(`${hit}명 입금자명 매칭 완료`);
   };
@@ -33,34 +64,98 @@ export function Fees({ clubId, club, members, fee, feeMonth, setFeeMonth, isAdmi
   const paidN = active.filter((m) => paidMap[m.id]).length;
   const pct = active.length ? Math.round((paidN / active.length) * 100) : 0;
 
+  /* 수입·지출 집계 */
+  const income = paidN * amount;
+  const periodExpenses = useMemo(
+    () => expenses.filter((e) => (e.date || '').startsWith(cycle === FEE_CYCLE.YEARLY ? periodKey : periodKey)),
+    [expenses, periodKey, cycle],
+  );
+  const spent = periodExpenses.reduce((n, e) => n + (Number(e.amount) || 0), 0);
+
+  /* 기간 선택 칩 */
+  const periods = cycle === FEE_CYCLE.YEARLY
+    ? [0, -1].map((off) => String(Number(yearKeyNow()) + off))
+    : [0, -1, -2].map((off) => {
+      const d = new Date(); d.setMonth(d.getMonth() + off);
+      return d.toISOString().slice(0, 7);
+    });
+
+  const Tab = ({ v, label }) => (
+    <Pressable onPress={() => setTab(v)}
+      style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', backgroundColor: tab === v ? C.green : '#fff', borderWidth: tab === v ? 0 : 1, borderColor: C.border }}>
+      <Text style={{ fontWeight: '700', fontSize: 13, color: tab === v ? C.lime : C.sub }}>{label}</Text>
+    </Pressable>
+  );
+
   return (
     <View>
-      <Card style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* 납부 주기 */}
+      <Card>
+        <Label>납부 주기</Label>
         <View style={{ flexDirection: 'row', gap: 6 }}>
-          {[-1, 0].map((off) => {
-            const d = new Date(); d.setMonth(d.getMonth() + off);
-            const mk = d.toISOString().slice(0, 7);
-            return (
-              <Pressable key={mk} onPress={() => setFeeMonth(mk)}
-                style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, backgroundColor: feeMonth === mk ? C.green : '#f5f5f4' }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: feeMonth === mk ? C.lime : C.sub }}>{mk}</Text>
-              </Pressable>
-            );
-          })}
+          {[[FEE_CYCLE.MONTHLY, '월 납입'], [FEE_CYCLE.YEARLY, '연 납입']].map(([k, label]) => (
+            <Chip key={k} tone={cycle === k ? 'green' : 'outline'}
+              onPress={() => { setCycle(k); setFeeMonth(k === FEE_CYCLE.YEARLY ? yearKeyNow() + '-01' : monthKeyNow()); }}>
+              {label}
+            </Chip>
+          ))}
         </View>
-        <Text style={{ fontSize: 14, fontWeight: '900', color: C.green }}>{paidN}/{active.length} 납부</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+          {periods.map((p) => (
+            <Chip key={p} tone={periodKey === p ? 'lime' : 'outline'}
+              onPress={() => setFeeMonth(cycle === FEE_CYCLE.YEARLY ? `${p}-01` : p)}>{p}</Chip>
+          ))}
+        </View>
       </Card>
-      <View style={{ height: 8, backgroundColor: '#e7e5e4', borderRadius: 999, marginTop: 8, overflow: 'hidden' }}>
-        <View style={{ height: 8, width: `${pct}%`, backgroundColor: C.lime2 }} />
+
+      {/* 요약 */}
+      <Card style={{ marginTop: 10, backgroundColor: C.ink, borderColor: C.green }}>
+        <Text style={{ color: C.lime, fontSize: 11, fontWeight: '800' }}>{periodKey} 정산</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+          {[['수입', income, '#6ee7b7'], ['지출', spent, '#fca5a5'], ['잔액', income - spent, C.lime]].map(([label, v, col]) => (
+            <View key={label} style={{ flex: 1, backgroundColor: C.green, borderRadius: 12, padding: 8, alignItems: 'center' }}>
+              <Text style={{ color: col, fontSize: 14, fontWeight: '900' }}>{Number(v).toLocaleString()}</Text>
+              <Text style={{ color: '#6ee7b7', fontSize: 10 }}>{label}</Text>
+            </View>
+          ))}
+        </View>
+      </Card>
+
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+        <Tab v="income" label="회비 납부" />
+        <Tab v="expense" label="지출 관리" />
       </View>
 
-      {isAdmin && (
-        <>
-          <SectionTitle>자동/반자동 처리</SectionTitle>
+      {tab === 'income' ? (
+        <View>
+          <SectionTitle>
+            {periodKey} 납부 현황 ({paidN}/{active.length} · {pct}%)
+          </SectionTitle>
+          <View style={{ height: 8, backgroundColor: '#e7e5e4', borderRadius: 999, overflow: 'hidden', marginBottom: 8 }}>
+            <View style={{ height: 8, width: `${pct}%`, backgroundColor: C.lime2 }} />
+          </View>
           <Card>
             <Text style={{ fontSize: 11, color: C.faint, marginBottom: 8 }}>
-              은행 거래내역(입금자명 포함) 텍스트/CSV를 붙여넣으면 회원 이름을 자동 매칭합니다.
-              (안드로이드 입금 알림 자동 감지는 PHASE 4/2차 네이티브 모듈)
+              1인당 {Number(amount).toLocaleString()}원 · 이름을 눌러 납부/미납을 바꿉니다
+            </Text>
+            {active.map((m, i) => (
+              <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 7, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
+                <Text style={{ fontSize: 14, fontWeight: '600' }}>{m.name}</Text>
+                <Pressable onPress={() => togglePaid(m.id)}
+                  style={{ paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999, backgroundColor: paidMap[m.id] ? C.green : '#fee2e2' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: paidMap[m.id] ? C.lime : '#b91c1c' }}>
+                    {paidMap[m.id] ? '납부' : '미납'}
+                  </Text>
+                </Pressable>
+              </View>
+            ))}
+            {active.length === 0 && <Text style={{ fontSize: 12, color: C.faint }}>활동 회원이 없습니다.</Text>}
+          </Card>
+
+          <SectionTitle>입금 내역 일괄 매칭</SectionTitle>
+          <Card>
+            <Text style={{ fontSize: 11, color: C.faint, marginBottom: 8 }}>
+              은행 거래내역(입금자명 포함)을 붙여넣으면 회원 이름을 찾아 자동으로 납부 처리합니다.
             </Text>
             <TextInput
               value={paste} onChangeText={setPaste} multiline
@@ -72,35 +167,85 @@ export function Fees({ clubId, club, members, fee, feeMonth, setFeeMonth, isAdmi
               <Btn full tone="ghost" disabled={!paste} onPress={runMatch}>붙여넣기 일괄 매칭</Btn>
             </View>
           </Card>
-        </>
-      )}
 
-      <SectionTitle>{feeMonth} 납부 현황 (월 {amount.toLocaleString()}원)</SectionTitle>
-      <Card>
-        {active.map((m, i) => (
-          <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
-            <Text style={{ fontSize: 14, fontWeight: '600' }}>{m.name}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {!paidMap[m.id] && club?.settings?.payLink ? (
-                <Text style={{ fontSize: 11, color: C.green2 }}>송금 링크</Text>
-              ) : null}
-              <Pressable onPress={() => togglePaid(m.id)}
-                style={{ paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999, backgroundColor: paidMap[m.id] ? C.green : '#fee2e2' }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: paidMap[m.id] ? C.lime : '#b91c1c' }}>{paidMap[m.id] ? '납부' : '미납'}</Text>
-              </Pressable>
-            </View>
+          <View style={{ marginTop: 10 }}>
+            <Btn full tone="ghost" onPress={() => flash('미납자에게 리마인드 푸시 발송 (PHASE 3 연동 지점)')}>
+              미납자 {active.length - paidN}명에게 리마인드
+            </Btn>
           </View>
-        ))}
-        {active.length === 0 && <Text style={{ fontSize: 12, color: C.faint }}>활동 회원이 없습니다.</Text>}
-      </Card>
+        </View>
+      ) : (
+        <View>
+          <SectionTitle right={
+            <Chip tone={adding ? 'green' : 'outline'} onPress={() => setAdding(!adding)}>{adding ? '닫기' : '+ 지출'}</Chip>
+          }>
+            {periodKey} 지출 ({periodExpenses.length}건 · {spent.toLocaleString()}원)
+          </SectionTitle>
 
-      {isAdmin && (
-        <View style={{ marginTop: 8 }}>
-          <Btn full tone="ghost" onPress={() => flash('미납자에게 리마인드 푸시 발송 (PHASE 3 연동 지점)')}>미납자 리마인드 발송</Btn>
+          {adding && (
+            <Card style={{ marginBottom: 10 }}>
+              <Label>날짜</Label>
+              <DateField value={ex.date} onChange={(v) => setEx({ ...ex, date: v })} />
+              <View style={{ marginTop: 10 }}>
+                <Label>항목</Label>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {EXPENSE_CATS.map((c) => (
+                    <Chip key={c} tone={ex.category === c ? 'green' : 'outline'} onPress={() => setEx({ ...ex, category: c })}>{c}</Chip>
+                  ))}
+                </View>
+              </View>
+              <View style={{ marginTop: 10 }}>
+                <Label hint="숫자만">금액</Label>
+                <Field keyboardType="number-pad" placeholder="120000" value={ex.amount} onChangeText={(v) => setEx({ ...ex, amount: v })} />
+              </View>
+              <View style={{ marginTop: 10 }}>
+                <Label hint="선택">메모</Label>
+                <Field placeholder="예: 3월 코트 대관비" value={ex.memo} onChangeText={(v) => setEx({ ...ex, memo: v })} />
+              </View>
+              <View style={{ marginTop: 12 }}>
+                <Btn full disabled={!ex.amount || !ex.date} onPress={() => {
+                  addExpense(clubId, { ...ex, amount: Number(ex.amount) || 0 });
+                  setEx({ date: todayStr(), category: EXPENSE_CATS[0], amount: '', memo: '' });
+                  setAdding(false);
+                  flash('지출이 등록되었습니다');
+                }}>지출 등록</Btn>
+              </View>
+            </Card>
+          )}
+
+          <Card>
+            {periodExpenses.map((e, i) => (
+              <View key={e.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Chip tone="outline">{e.category}</Chip>
+                    <Text style={{ fontSize: 11, color: C.faint }}>{e.date}</Text>
+                  </View>
+                  {!!e.memo && <Text style={{ fontSize: 12, color: C.sub, marginTop: 3 }}>{e.memo}</Text>}
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 14, fontWeight: '900', color: C.danger }}>-{Number(e.amount).toLocaleString()}</Text>
+                  <Pressable onPress={() => Alert.alert('지출 삭제', `${e.category} ${Number(e.amount).toLocaleString()}원을 삭제할까요?`, [
+                    { text: '취소', style: 'cancel' },
+                    { text: '삭제', style: 'destructive', onPress: () => { deleteExpense(clubId, e.id); flash('삭제됨'); } },
+                  ])}>
+                    <Text style={{ fontSize: 11, color: C.faint }}>삭제</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))}
+            {periodExpenses.length === 0 && (
+              <Text style={{ fontSize: 12, color: C.faint }}>{periodKey} 지출 내역이 없습니다.</Text>
+            )}
+          </Card>
+
+          {expenses.length > periodExpenses.length && (
+            <Text style={{ fontSize: 11, color: C.faint, textAlign: 'center', marginTop: 10 }}>
+              다른 기간의 지출 {expenses.length - periodExpenses.length}건은 위에서 기간을 바꿔 확인하세요.
+            </Text>
+          )}
         </View>
       )}
     </View>
   );
 }
-
-export { monthKeyNow };
