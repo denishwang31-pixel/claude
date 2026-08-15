@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useApp } from '../_layout';
+import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
@@ -31,6 +32,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export default function Schedule() {
   const { clubId, me, viewMode } = useApp();
+  const bottomPad = useBottomPad();
   const params = useLocalSearchParams();
   const { club, members, meetings, venues, isAdmin, scopeVenues, nameOf } =
     useClub(clubId, me, { viewMode });
@@ -229,7 +231,7 @@ export default function Schedule() {
         onBack={open ? () => { setOpen(false); setEditing(null); } : undefined}
         backLabel="일정"
       />
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 90 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
         {/* 코트장 필터 — 여러 곳을 운영하는 클럽 */}
         {!open && scopeVenues.length > 1 && (
           <View style={{ marginBottom: S.md, zIndex: 20 }}>

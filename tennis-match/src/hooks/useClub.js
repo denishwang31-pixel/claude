@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   subClub, subMembers, subMeetings, subPosts, subGuestPosts,
   subCourts, subRules, subFee, subPairs, subTournaments, subVenues, subMatchConfig,
-  subPolls,
+  subPolls, setMemberRole,
 } from '../lib/firestore';
 import { DEFAULT_RULES } from '../lib/matchmaking';
 import {
@@ -94,8 +94,23 @@ export function useClub(clubId, me, opts = {}) {
      realStaff  : 실제 역할 기준 운영 담당(회장·총무·운영진·리드) 여부
      isAdmin    : 화면에서 쓰는 값. 보기 모드가 켜져 있으면 그 모드를 따름
      canAppoint : 역할 임명(회장 전용) */
-  const realRole = normalizeRole(meVal?.role);
+  /* 클럽을 만든 사람은 언제나 회장이다.
+
+     예전 버전은 클럽 생성자에게 '총무'를 줬다. 그 시절에 만든 클럽은
+     회장이 아무도 없는데 임명은 회장만 할 수 있어서, 아무도 회장이 될 수
+     없는 교착에 빠진다. 그래서 ownerId 는 저장된 역할과 무관하게 회장으로
+     인정하고, 아래에서 회원 문서도 조용히 회장으로 올려 준다. */
+  const isOwner = !!club && !!me && club.ownerId === me;
+  const storedRole = normalizeRole(meVal?.role);
+  const realRole = isOwner ? ROLES.PRESIDENT : storedRole;
   const realStaff = !!meVal && isStaffRole(realRole);
+
+  /* 자가 치유 — 소유자인데 역할이 회장이 아니면 한 번만 올려 준다 */
+  useEffect(() => {
+    if (!clubId || !isOwner || !meVal) return;
+    if (normalizeRole(meVal.role) === ROLES.PRESIDENT) return;
+    setMemberRole(clubId, me, ROLES.PRESIDENT).catch(() => {});
+  }, [clubId, isOwner, meVal?.role]);
 
   /* 보기 모드가 켜져 있으면 그 역할인 척한다.
      실제 역할보다 넓은 권한은 절대 주지 않는다 — 회원이 회장 모드를 켜도
@@ -153,6 +168,6 @@ export function useClub(clubId, me, opts = {}) {
     pairs, tournaments, venues, matchConfig, polls, meVal,
     isAdmin, realStaff, canAppoint, isPresident, viewMode, nameOf, loading,
     myLeadVenues, myVenues, scopeVenues,
-    realRole, effectiveRole, seeFees, seeAllVenues,
+    realRole, effectiveRole, seeFees, seeAllVenues, isOwner,
   };
 }

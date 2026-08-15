@@ -13,6 +13,7 @@ const TYPE_TONE = {
   잡복: { bg: '#fef3c7', fg: '#92400e' },
   남단식: { bg: '#f0f9ff', fg: '#075985' },
   여단식: { bg: '#fff1f2', fg: '#be123c' },
+  혼성단식: { bg: '#fef3c7', fg: '#92400e' },
 };
 
 const CELL_W = 132;   // 코트 열 너비

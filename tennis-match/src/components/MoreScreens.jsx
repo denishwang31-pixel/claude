@@ -10,8 +10,12 @@ import { DateField, TimeField, Label } from './pickers';
 import { KAKAO_JS_KEY } from '../lib/keys';
 import { geocodeAddress } from '../lib/kakao';
 import { KakaoMapCourts } from './KakaoMapCourts';
+import {
+  ALL_COURTS, SURFACE_FILTERS, searchCourts, courtSidos, courtGungus, courtDongs,
+  courtLink, linkKind, courtRegionText,
+} from '../lib/courtData';
 import { Card, SectionTitle, Chip, Btn, Field, Avatar } from './ui';
-import { C } from '../lib/theme';
+import { C, R, F } from '../lib/theme';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -352,77 +356,188 @@ export function Guest({ clubId, club, guestPosts, meetings, venues, me, meVal, i
   );
 }
 
-/* ---------------- 코트 검색 ---------------- */
+/* ---------------- 코트 검색 ----------------
+
+   지역을 시/도 → 시·군·구 → 동 순으로 좁힌다. 아래 단계를 안 고르면
+   그 위 단계 전체가 검색된다(서울만 골라도 서울 전부가 나온다).
+   표면(하드·클레이·인조잔디)으로도 걸러 볼 수 있다.
+
+   예약 링크는 기관 대문이 아니라 예약 화면으로 보낸다.
+   정확한 주소를 아는 코트는 [예약하기], 검색 결과로 보내는 코트는
+   [예약 찾기]로 구분해 표시한다.                                   */
 export function Courts({ clubId, courts, isAdmin, flash }) {
   const [sido, setSido] = useState(null);
-  const [gu, setGu] = useState(null);
+  const [gungu, setGungu] = useState(null);
+  const [dong, setDong] = useState(null);
+  const [surfaces, setSurfaces] = useState([]);
+  const [keyword, setKeyword] = useState('');
   const [nc, setNc] = useState({ sido: '', gu: '', name: '', addr: '', surface: '하드', link: '' });
-  const sidos = [...new Set(courts.map((c) => c.sido))];
-  const gus = sido ? [...new Set(courts.filter((c) => c.sido === sido).map((c) => c.gu))] : [];
-  const list = courts.filter((c) => (!sido || c.sido === sido) && (!gu || c.gu === gu));
+
+  /* 클럽이 직접 등록한 코트도 같은 목록에서 함께 검색되게 합친다 */
+  const merged = useMemo(() => [
+    ...ALL_COURTS,
+    ...(courts || []).map((c) => ({
+      ...c, gungu: c.gungu || c.gu || '', dong: c.dong || '', operator: c.operator || '클럽 등록', mine: true,
+    })),
+  ], [courts]);
+
+  const sidos = useMemo(() => courtSidos(merged), [merged]);
+  const gungus = useMemo(() => (sido ? courtGungus(sido, merged) : []), [sido, merged]);
+  const dongs = useMemo(() => (sido && gungu ? courtDongs(sido, gungu, merged) : []), [sido, gungu, merged]);
+  const list = useMemo(
+    () => searchCourts({ sido, gungu, dong, surfaces, keyword }, merged),
+    [sido, gungu, dong, surfaces, keyword, merged],
+  );
+
+  const toggleSurface = (s) =>
+    setSurfaces((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+
+  const openCourt = (c) => {
+    const url = courtLink(c);
+    if (!url) return flash('이 코트는 등록된 예약 링크가 없습니다');
+    return Linking.openURL(url);
+  };
 
   return (
     <View>
-      <Text style={{ fontSize: 11, color: C.sub, marginBottom: 8 }}>
-        지역 → 구 단위로 좁히면 코트 핀이 표시됩니다. 예약은 각 코트 사이트로 이동. (PHASE 4: 카카오맵 SDK)
-      </Text>
+      {/* 1단계: 시/도 */}
+      <Label hint="아래 단계를 안 골라도 검색됩니다">지역</Label>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        <Chip tone={!sido ? 'green' : 'outline'} onPress={() => { setSido(null); setGu(null); }}>전국</Chip>
-        {sidos.map((s) => <Chip key={s} tone={sido === s ? 'green' : 'outline'} onPress={() => { setSido(s); setGu(null); }}>{s}</Chip>)}
+        <Chip tone={!sido ? 'green' : 'outline'}
+          onPress={() => { setSido(null); setGungu(null); setDong(null); }}>전체</Chip>
+        {sidos.map((s) => (
+          <Chip key={s} tone={sido === s ? 'green' : 'outline'}
+            onPress={() => { setSido(s); setGungu(null); setDong(null); }}>{s}</Chip>
+        ))}
       </View>
-      {sido && (
+
+      {/* 2단계: 시·군·구 */}
+      {!!sido && gungus.length > 0 && (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-          {gus.map((g) => <Chip key={g} tone={gu === g ? 'lime' : 'outline'} onPress={() => setGu(g)}>{g}</Chip>)}
+          <Chip tone={!gungu ? 'soft' : 'outline'}
+            onPress={() => { setGungu(null); setDong(null); }}>{sido} 전체</Chip>
+          {gungus.map((g) => (
+            <Chip key={g} tone={gungu === g ? 'soft' : 'outline'}
+              onPress={() => { setGungu(g); setDong(null); }}>{g}</Chip>
+          ))}
         </View>
       )}
 
-      {/* 지도: 카카오 JS 키가 있으면 실지도(WebView), 없으면 간이 지도 */}
-      {KAKAO_JS_KEY ? (
-        <View style={{ marginTop: 12 }}><KakaoMapCourts courts={list} /></View>
-      ) : (
-        <Card style={{ marginTop: 12, backgroundColor: C.ink, borderColor: C.green, height: 150 }}>
-          {list.slice(0, 8).map((c, i) => (
-            <View key={c.id} style={{ position: 'absolute', left: `${15 + (i * 23) % 70}%`, top: `${18 + (i * 31) % 55}%`, alignItems: 'center' }}>
-              <Text style={{ fontSize: 16 }}>📍</Text>
-              <Text style={{ fontSize: 9, color: C.lime, fontWeight: '700' }}>{c.name.slice(0, 8)}</Text>
-            </View>
+      {/* 3단계: 동 — 그 구에 코트가 있는 동만 나온다 */}
+      {!!gungu && dongs.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          <Chip tone={!dong ? 'soft' : 'outline'} onPress={() => setDong(null)}>{gungu} 전체</Chip>
+          {dongs.map((d) => (
+            <Chip key={d} tone={dong === d ? 'soft' : 'outline'} onPress={() => setDong(d)}>{d}</Chip>
           ))}
-          <Text style={{ position: 'absolute', bottom: 6, right: 8, fontSize: 9, color: '#8FD6B8' }}>{sido || '전국'}{gu ? ` · ${gu}` : ''} · {list.length}개</Text>
+        </View>
+      )}
+
+      {/* 코트 종류 */}
+      <View style={{ marginTop: 14 }}>
+        <Label hint="여러 개 고를 수 있습니다">코트 종류</Label>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          <Chip tone={surfaces.length === 0 ? 'green' : 'outline'} onPress={() => setSurfaces([])}>전체</Chip>
+          {SURFACE_FILTERS.map((s) => (
+            <Chip key={s} tone={surfaces.includes(s) ? 'green' : 'outline'}
+              onPress={() => toggleSurface(s)}>{s}</Chip>
+          ))}
+        </View>
+      </View>
+
+      <View style={{ marginTop: 12 }}>
+        <Field placeholder="코트명 검색 (예: 올림픽공원)" value={keyword} onChangeText={setKeyword} />
+      </View>
+
+      {/* 지도 — 카카오 JS 키가 있어야 실지도가 뜬다 */}
+      <View style={{ marginTop: 12 }}><KakaoMapCourts courts={list} /></View>
+
+      <SectionTitle hint={`${list.length}곳`}>
+        {[sido, gungu, dong].filter(Boolean).join(' ') || '전체 지역'}
+      </SectionTitle>
+
+      {list.length === 0 && (
+        <Card>
+          <Text style={{ fontSize: 12, color: C.sub, lineHeight: 18 }}>
+            조건에 맞는 코트가 없습니다. 지역이나 코트 종류를 넓혀 보세요.
+          </Text>
         </Card>
       )}
 
-      {list.map((c) => (
-        <Card key={c.id} style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontWeight: '700', fontSize: 14 }}>{c.name}</Text>
-            <Text style={{ fontSize: 11, color: C.sub }}>{c.addr} · {c.surface}{c.indoor ? ' · 실내' : ''}</Text>
+      {list.map((c, i) => (
+        <Card key={`${c.sido}${c.name}${i}`} style={{ marginTop: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={F.bodyBold} numberOfLines={2}>{c.name}</Text>
+              <Text style={{ fontSize: 11, color: C.sub, marginTop: 3 }}>
+                {courtRegionText(c)}{c.addr ? ` · ${c.addr}` : ''}
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
+                <Chip tone="outline">{c.surface || '하드'}</Chip>
+                {!!c.indoor && <Chip tone="soft">실내</Chip>}
+                {c.courts > 0 && <Chip tone="outline">{c.courts}면</Chip>}
+                {!!c.mine && <Chip tone="soft">우리 클럽 등록</Chip>}
+              </View>
+              {!!c.operator && (
+                <Text style={{ fontSize: 10, color: C.faint, marginTop: 6 }}>{c.operator}</Text>
+              )}
+            </View>
+            <View style={{ alignItems: 'flex-end', gap: 6 }}>
+              {courtLink(c) ? (
+                <Pressable onPress={() => openCourt(c)}
+                  style={{
+                    backgroundColor: linkKind(c) === 'exact' ? C.green : C.fill,
+                    paddingHorizontal: 12, paddingVertical: 8, borderRadius: R.pill,
+                  }}>
+                  <Text style={{
+                    fontSize: 11.5, fontWeight: '700',
+                    color: linkKind(c) === 'exact' ? '#fff' : C.sub,
+                  }}>
+                    {linkKind(c) === 'exact' ? '예약하기' : '예약 찾기'}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {isAdmin && c.mine && (
+                <Pressable onPress={() => deleteCourt(clubId, c.id)}>
+                  <Text style={{ fontSize: 11, color: C.faint }}>삭제</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
-          {c.link ? (
-            <Pressable onPress={() => Linking.openURL(c.link)} style={{ backgroundColor: C.lime, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: C.ink }}>예약 사이트 →</Text>
-            </Pressable>
-          ) : null}
-          {isAdmin && (
-            <Pressable onPress={() => deleteCourt(clubId, c.id)} style={{ marginLeft: 8 }}><Text style={{ color: C.faint }}>✕</Text></Pressable>
-          )}
         </Card>
       ))}
 
+      <Text style={{ fontSize: 10, color: C.faint, marginTop: 14, lineHeight: 16 }}>
+        면수·운영시간은 바뀔 수 있습니다. 예약 전에 링크에서 확인하세요.
+        {'\n'}[예약하기]는 예약 화면으로 바로, [예약 찾기]는 그 기관 검색 결과로 이동합니다.
+      </Text>
+
       {isAdmin && (
         <>
-          <SectionTitle>코트 추가 (주소·링크 직접 입력)</SectionTitle>
+          <SectionTitle hint="목록에 없는 코트를 우리 클럽 것으로 추가합니다">코트 추가</SectionTitle>
           <Card>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Field placeholder="시/도" value={nc.sido} onChangeText={(t) => setNc({ ...nc, sido: t })} style={{ flex: 1 }} />
-              <Field placeholder="구/시" value={nc.gu} onChangeText={(t) => setNc({ ...nc, gu: t })} style={{ flex: 1 }} />
+              <Field placeholder="시/군/구" value={nc.gu} onChangeText={(t) => setNc({ ...nc, gu: t })} style={{ flex: 1 }} />
             </View>
             <View style={{ marginTop: 8 }}><Field placeholder="코트명" value={nc.name} onChangeText={(t) => setNc({ ...nc, name: t })} /></View>
             <View style={{ marginTop: 8 }}><Field placeholder="주소" value={nc.addr} onChangeText={(t) => setNc({ ...nc, addr: t })} /></View>
-            <View style={{ marginTop: 8 }}><Field placeholder="예약 사이트 링크 (https://…)" value={nc.link} onChangeText={(t) => setNc({ ...nc, link: t })} /></View>
             <View style={{ marginTop: 8 }}>
+              <Label>코트 종류</Label>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {SURFACE_FILTERS.map((s) => (
+                  <Chip key={s} tone={nc.surface === s ? 'green' : 'outline'}
+                    onPress={() => setNc({ ...nc, surface: s })}>{s}</Chip>
+                ))}
+              </View>
+            </View>
+            <View style={{ marginTop: 8 }}>
+              <Field placeholder="예약 페이지 링크 (https://…)" value={nc.link} onChangeText={(t) => setNc({ ...nc, link: t })} />
+            </View>
+            <View style={{ marginTop: 12 }}>
               <Btn full disabled={!nc.name || !nc.sido} onPress={async () => {
                 const geo = await geocodeAddress(nc.addr); // 카카오 REST 키 있으면 좌표 자동 저장
-                addCourt(clubId, { ...nc, indoor: false, ...(geo || {}) });
+                addCourt(clubId, { ...nc, gungu: nc.gu, indoor: false, ...(geo || {}) });
                 setNc({ sido: '', gu: '', name: '', addr: '', surface: '하드', link: '' });
                 flash(geo ? '코트 등록됨 (지도 좌표 포함)' : '코트 등록됨');
               }}>코트 등록</Btn>

@@ -51,6 +51,10 @@ export const C = {
 /** 간격 */
 export const S = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 28 };
 
+/** 하단 탭바 높이(대략). 스크롤 끝 여백을 이만큼 더 줘야 마지막 카드가
+    탭바에 가리지 않는다. 기기별 제스처바 높이는 세이프에어리어로 따로 더한다. */
+export const TAB_BAR_SPACE = 78;
+
 /** 모서리 반경 */
 export const R = { sm: 8, md: 12, lg: 14, xl: 18, pill: 999 };
 

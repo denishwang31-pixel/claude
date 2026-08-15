@@ -357,5 +357,62 @@ const withNtrp = (nm, nf) => [
   ok(!d2.canPlayStrict, '1명은 단식 불가');
 }
 
+/* ---------------- 케이스 23: 단식 게임 수 균등 ----------------
+   버그였던 것: 남/여 단식을 몇 면씩 쓸지 그 타임만 보고 정하다 보니
+   매 타임 같은 조합이 뽑혀 한쪽 성별만 계속 뛰었다.
+   (남4·여4·3면 4타임 → 여자 4게임, 남자 2게임)                        */
+{
+  const gamesOf = (players, ms) => {
+    const g = Object.fromEntries(players.map((p) => [p.id, 0]));
+    ms.forEach((m) => [...m.teamA, ...m.teamB].forEach((id) => { g[id] += 1; }));
+    return players.map((p) => g[p.id]);
+  };
+  const singlesRun = (nM, nF, courts, rounds, opt = {}) => {
+    const players = roster(nM, nF);
+    const ms = generateMatchesV5(players, courts, rounds, DEFAULT_RULES, {}, {},
+      { defaultRoundType: 'SINGLES', ...opt });
+    const vals = gamesOf(players, ms);
+    return { players, ms, vals, spread: Math.max(...vals) - Math.min(...vals) };
+  };
+
+  // 사용자가 신고한 바로 그 케이스
+  const r = singlesRun(4, 4, 3, 4);
+  ok(r.spread === 0, `남4여4 3면 4타임 단식: 전원 같은 경기 수 (편차 ${r.spread})`);
+  ok(r.vals.every((v) => v === 3), `남4여4 3면 4타임: 전원 3경기 (${r.vals.join(',')})`);
+
+  // 1면이면 예전엔 남자가 0게임이었다
+  const one = singlesRun(4, 4, 1, 4);
+  ok(one.vals.every((v) => v > 0), `남4여4 1면 4타임: 아무도 0경기가 아님 (${one.vals.join(',')})`);
+  ok(one.spread === 0, `남4여4 1면 4타임 편차 0 (${one.spread})`);
+
+  // 성비가 같은 여러 조합에서 편차가 최소를 벗어나지 않는다
+  [[4, 4], [6, 6], [8, 8], [2, 2], [10, 10]].forEach(([nM, nF]) => {
+    [1, 2, 3, 4].forEach((c) => {
+      const x = singlesRun(nM, nF, c, 4);
+      const slots = x.ms.length * 2;
+      const lo = Math.floor(slots / x.players.length);
+      const hi = Math.ceil(slots / x.players.length);
+      ok(x.spread <= Math.max(1, hi - lo),
+        `남${nM}여${nF} ${c}면 단식 편차 ${x.spread} ≤ ${Math.max(1, hi - lo)}`);
+    });
+  });
+
+  // 잡복 금지(기본)에서는 혼성 단식이 나오지 않는다
+  const strict = singlesRun(1, 7, 3, 4);
+  ok(strict.ms.every((m) => m.type !== '혼성단식'), '잡복 금지 클럽은 혼성 단식 없음');
+
+  // 잡복 허용이면 성별이 홀수여도 아무도 놀지 않는다
+  const mixed = singlesRun(1, 7, 3, 4, { allowMixed: true });
+  ok(mixed.vals.every((v) => v > 0), `남1여7 잡복허용: 전원 출전 (${mixed.vals.join(',')})`);
+  ok(mixed.spread === 0, `남1여7 잡복허용 편차 0 (${mixed.spread})`);
+  const byId = Object.fromEntries(mixed.players.map((p) => [p.id, p]));
+  mixed.ms.forEach((m) => {
+    const g = [byId[m.teamA[0]].gender, byId[m.teamB[0]].gender];
+    if (m.type === '혼성단식') ok(g[0] !== g[1], '혼성단식은 남녀 대결');
+    if (m.type === '남단식') ok(g.every((x) => x === 'M'), '남단식은 남자끼리(혼성 허용시에도)');
+    if (m.type === '여단식') ok(g.every((x) => x === 'F'), '여단식은 여자끼리(혼성 허용시에도)');
+  });
+}
+
 console.log(`\n엔진 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

@@ -16,21 +16,28 @@ service cloud.firestore {
         ('책임리더'는 예전 이름 — 기존 데이터 호환을 위해 리드와 같게 인정한다.
          src/lib/constants.js 의 STAFF_ROLES 와 반드시 같아야 한다) */
     function isClubAdmin(clubId) {
-      return isClubMember(clubId) && (
+      return (isClubMember(clubId) && (
         clubRole(clubId) == '회장' || clubRole(clubId) == '총무' ||
         clubRole(clubId) == '운영진' || clubRole(clubId) == '리드' ||
         clubRole(clubId) == '책임리더'
-      );
+      )) || isClubOwner(clubId);
     }
     /** 회비·지출을 다룰 수 있는 역할 = 회장·총무 (constants.js canSeeFees 와 동일) */
     function canSeeFees(clubId) {
-      return isClubMember(clubId) && (
+      return (isClubMember(clubId) && (
         clubRole(clubId) == '회장' || clubRole(clubId) == '총무'
-      );
+      )) || isClubOwner(clubId);
     }
-    /** 역할 임명 권한은 회장만 */
+    /** 클럽을 만든 사람 — 저장된 역할과 무관하게 회장으로 인정한다.
+        (예전 버전은 생성자에게 '총무'를 줬다. 그러면 회장이 아무도 없는데
+         임명은 회장만 가능해 아무도 회장이 될 수 없는 교착이 생긴다) */
+    function isClubOwner(clubId) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/clubs/$(clubId)).data.get('ownerId', '') == request.auth.uid;
+    }
+    /** 역할 임명 권한은 회장(또는 클럽 소유자)만 */
     function isPresident(clubId) {
-      return isClubMember(clubId) && clubRole(clubId) == '회장';
+      return (isClubMember(clubId) && clubRole(clubId) == '회장') || isClubOwner(clubId);
     }
     /** 앱 운영자 = appAdmins/{uid} 문서가 존재하는 계정 (Firebase 콘솔에서 수동 등록) */
     function isAppAdmin() {

@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useApp } from '../_layout';
+import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { computeStats } from '../../src/lib/matchmaking';
@@ -12,6 +13,7 @@ import { C } from '../../src/lib/theme';
 
 export default function Rank() {
   const { clubId, me, viewMode } = useApp();
+  const bottomPad = useBottomPad();
   const router = useRouter();
   const { club, members, meetings, meVal, nameOf } = useClub(clubId, me, { viewMode });
 
@@ -57,7 +59,7 @@ export default function Rank() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenHeader title="랭킹·기록" subtitle={club?.name} onBack={goBack} backLabel="더보기" />
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
           <Tab v="rank" label="클럽 랭킹" />
           <Tab v="me" label="내 커리어" />

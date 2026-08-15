@@ -79,6 +79,8 @@ const TYPES = {
   // 단식(1:1) — 타임 유형을 SINGLES 로 지정했을 때만 사용
   MS: { m: 2, f: 0, singles: true, label: '남단식' },
   WS: { m: 0, f: 2, singles: true, label: '여단식' },
+  // 혼성 단식 — 성별 인원이 홀수라 짝이 안 맞을 때, 잡복 허용 클럽에서만 사용
+  XS: { m: 1, f: 1, singles: true, label: '혼성단식' },
 };
 
 /** 타임(라운드) 유형 — 모임/클럽 설정에서 타임별로 지정 */
@@ -229,34 +231,73 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
     /* 이 타임의 유형 (MX 혼복 / SAME 동성복식 / SINGLES 단식 / AUTO 자동) */
     const plan = (options.roundPlan && options.roundPlan[r]) || options.defaultRoundType || 'AUTO';
 
-    /* --- 단식 타임: 코트당 2명. 남단식 a면 + 여단식 b면 --- */
+    /* --- 단식 타임: 코트당 2명. 남단식 a면 + 여단식 b면 ---
+
+       남/여 몇 면씩 쓸지를 그 타임만 보고 정하면, 성비가 같은 클럽에서
+       매 타임 똑같은 조합이 뽑혀 한쪽 성별만 계속 뛰게 된다.
+       (실제 사례: 남4·여4·3면 → 여자 4게임, 남자 2게임)
+
+       그래서 후보 조합마다 "이 조합을 쓰면 각자 경기 수가 어떻게 되는지"를
+       미리 계산해, 경기 수 제곱합이 가장 작은 = 가장 고른 조합을 고른다.
+       제곱합은 편차가 클수록 급격히 커져서, 적게 뛴 사람이 있는 쪽에
+       자연스럽게 코트를 더 준다. */
     if (plan === 'SINGLES') {
-      let sb = null, sbScore = -Infinity;
-      for (let a = 0; a <= courts; a++) {
-        for (let b = 0; a + b <= courts; b++) {
-          if (a + b === 0) continue;
-          if (2 * a > availM || 2 * b > availF) continue;
-          const onCourt = 2 * a + 2 * b;
-          let s = onCourt * 10 * W.maxPlay;
-          s -= Math.abs((availM - 2 * a) - (availF - 2 * b));
-          if (s > sbScore) { sbScore = s; sb = { a, b }; }
+      /* 경기 수가 적은 사람 우선, 같으면 많이 쉰 사람 우선 */
+      const byNeed = (gender) => players
+        .filter((p) => p.gender === gender)
+        .sort((p1, p2) =>
+          (games[p1.id] - games[p2.id]) * W.evenGames
+          - (rest(p1.id) - rest(p2.id)) * W.restPriority * 0.5
+          || Math.random() - 0.5);
+      const queueM = byNeed('M');
+      const queueF = byNeed('F');
+
+      /* 후보: 남단식 a면 + 여단식 b면 + 혼성단식 c면.
+         혼성은 잡복을 허용한 클럽에서만 쓴다(c 는 그 외엔 항상 0). */
+      let sb = null, sbKey = null;
+      const maxC = allowMixed ? courts : 0;
+      for (let a = 0; 2 * a <= availM && a <= courts; a++) {
+        for (let b = 0; 2 * b <= availF && a + b <= courts; b++) {
+          const leftM = availM - 2 * a;
+          const leftF = availF - 2 * b;
+          const cLimit = Math.min(maxC, courts - a - b, leftM, leftF);
+          for (let c = 0; c <= cLimit; c++) {
+            if (a + b + c === 0) continue;
+            /* 이 조합을 쓰면 각자 경기 수가 몇이 되는지 미리 계산한다 */
+            const after = { ...games };
+            queueM.slice(0, 2 * a + c).forEach((p) => { after[p.id] += 1; });
+            queueF.slice(0, 2 * b + c).forEach((p) => { after[p.id] += 1; });
+            const vals = players.map((p) => after[p.id]);
+            const sumSq = vals.reduce((t, v) => t + v * v, 0);   // 작을수록 고르다
+            const spread = Math.max(...vals) - Math.min(...vals);
+            const key = [
+              -(a + b + c) * W.maxPlay,     // 1) 코트를 최대한 채운다
+              sumSq * W.evenGames,          // 2) 경기 수를 고르게
+              spread,                       // 3) 최대-최소 편차
+              c,                            // 4) 같은 조건이면 동성 단식을 먼저
+              Math.random(),                // 5) 그래도 같으면 무작위
+            ];
+            const better = !sbKey || key.some((v, i) => v < sbKey[i]
+              && key.slice(0, i).every((u, j) => u === sbKey[j]));
+            if (better) { sbKey = key; sb = { a, b, c }; }
+          }
         }
       }
       if (!sb) return null;
-      const pickS = (gender, n) =>
-        players.filter((p) => p.gender === gender)
-          .sort((p1, p2) =>
-            (games[p1.id] - games[p2.id]) * W.evenGames
-            - (rest(p1.id) - rest(p2.id)) * W.restPriority * 0.5
-            || Math.random() - 0.5)
-          .slice(0, n);
-      const sm = shuffleArr(pickS('M', 2 * sb.a));
-      const sf = shuffleArr(pickS('F', 2 * sb.b));
+
+      const sm = shuffleArr(queueM.slice(0, 2 * sb.a));
+      const sf = shuffleArr(queueF.slice(0, 2 * sb.b));
+      // 혼성 단식에 들어갈 사람 — 동성 단식에 안 뽑힌 사람 중 앞에서부터
+      const xm = queueM.slice(2 * sb.a, 2 * sb.a + sb.c);
+      const xf = queueF.slice(2 * sb.b, 2 * sb.b + sb.c);
       // 실력 매칭: 비슷한 NTRP 끼리 붙도록 정렬 후 인접끼리 배정
       if (skillBalance) {
         sm.sort((p1, p2) => skillOf(p2) - skillOf(p1));
         sf.sort((p1, p2) => skillOf(p2) - skillOf(p1));
+        xm.sort((p1, p2) => skillOf(p2) - skillOf(p1));
+        xf.sort((p1, p2) => skillOf(p2) - skillOf(p1));
       }
+
       const singlesMatches = [];
       let court = 1;
       for (let i = 0; i + 1 < sm.length; i += 2) {
@@ -269,6 +310,12 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
         singlesMatches.push({
           id: uid(), round: r, court: court++, type: TYPES.WS.label,
           teamA: [sf[i].id], teamB: [sf[i + 1].id], score: null,
+        });
+      }
+      for (let i = 0; i < xm.length && i < xf.length; i += 1) {
+        singlesMatches.push({
+          id: uid(), round: r, court: court++, type: TYPES.XS.label,
+          teamA: [xm[i].id], teamB: [xf[i].id], score: null,
         });
       }
       if (!singlesMatches.length) return null;

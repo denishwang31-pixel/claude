@@ -202,6 +202,25 @@ await T('운영진의 회비 조회 거부(회장·총무 전용)',
 await env.withSecurityRulesDisabled(async (ctx) => {
   await updateDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'mem2'), { role: '회원' });
 });
+
+/* 구 버전 클럽 구제 — 예전에는 클럽 생성자에게 '총무'를 줬다.
+   그러면 회장이 아무도 없는데 임명은 회장만 할 수 있어 교착에 빠진다.
+   소유자(ownerId)는 저장된 역할과 무관하게 회장으로 인정해야 한다. */
+await env.withSecurityRulesDisabled(async (ctx) => {
+  await updateDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'owner1'), { role: '총무' });
+});
+await T('소유자는 역할이 총무여도 임명 가능(교착 해소)',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem2'), { role: '운영진' })));
+await T('소유자는 자기 역할을 회장으로 올릴 수 있다',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'owner1'), { role: '회장' })));
+await T('소유자는 회비도 볼 수 있다',
+  assertSucceeds(getDoc(doc(owner, 'clubs', CLUB, 'fees', '2026-07'))));
+await T('소유자가 아닌 총무는 임명 불가',
+  assertFails(updateDoc(doc(env.authenticatedContext('mem2').firestore(),
+    'clubs', CLUB, 'members', 'mem1'), { role: '회장' })));
+await env.withSecurityRulesDisabled(async (ctx) => {
+  await updateDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'mem2'), { role: '회원' });
+});
 await T('일반 회원의 역할 변경 거부',
   assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem2'), { role: '총무' })));
 await T('본인이 자기 역할 승격 거부',

@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Image, Linking } from 'react-native';
 import { useApp } from '../_layout';
+import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { subTips, addTip, deleteTip } from '../../src/lib/firestore';
@@ -25,6 +26,7 @@ const thumbOf = (url) => {
 
 export default function Tips() {
   const { clubId, me, viewMode } = useApp();
+  const bottomPad = useBottomPad();
   const { isAdmin } = useClub(clubId, me, { viewMode });
 
   const [items, setItems] = useState([]);
@@ -58,7 +60,7 @@ export default function Tips() {
         backLabel="원포인트"
       />
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           <Chip tone={!cat ? 'green' : 'outline'} onPress={() => setCat(null)}>전체</Chip>
           {TIP_CATEGORIES.map((c) => (

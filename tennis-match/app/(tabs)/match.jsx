@@ -6,6 +6,7 @@ import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import DraggableFlatList from 'react-native-draggable-flatlist';
 import { useApp } from '../_layout';
+import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
@@ -35,6 +36,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export default function Match() {
   const { clubId, me, viewMode } = useApp();
+  const bottomPad = useBottomPad();
   const params = useLocalSearchParams();
   const router = useRouter();
   const {
@@ -165,8 +167,10 @@ export default function Match() {
     saveMatches(clubId, meeting.id, matches);
 
     const mixedN = matches.filter((m) => m.type === '잡복').length;
+    const xSingles = matches.filter((m) => m.type === '혼성단식').length;
     const parts = [`${matches.length}경기 생성`];
     if (mixedN) parts.push(`잡복 ${mixedN}경기`);
+    if (xSingles) parts.push(`혼성단식 ${xSingles}경기`);
     if (report.relaxed?.length) parts.push(`${report.relaxed.map((x) => x.round).join('·')}타임 제약 완화`);
     if (report.skippedRounds?.length) parts.push(`${report.skippedRounds.join('·')}타임 편성 불가`);
     flash(parts.join(' · '));
@@ -611,7 +615,6 @@ export default function Match() {
           </Text>
         </Card>
       )}
-      <View style={{ height: 40 }} />
     </View>
   );
 
@@ -647,7 +650,7 @@ export default function Match() {
         )}
         ListHeaderComponent={Header}
         ListFooterComponent={Footer}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}
         activationDistance={12}
       />
       {toast && (

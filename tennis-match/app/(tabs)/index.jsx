@@ -11,6 +11,7 @@ import { View, Text, ScrollView, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useApp } from '../_layout';
+import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
 import { computeStats } from '../../src/lib/matchmaking';
 import { weatherFor } from '../../src/lib/weather';
@@ -41,6 +42,7 @@ const QUICK = [
 
 export default function Home() {
   const { clubId, me, viewMode, setViewMode, resetOnboarding } = useApp();
+  const bottomPad = useBottomPad();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const {
@@ -132,7 +134,7 @@ export default function Home() {
           <Text style={F.h2}>테니스매치</Text>
           <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>클럽 없이 둘러보는 중</Text>
         </View>
-        <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: 60 }}>
+        <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: bottomPad }}>
           <EmptyState
             title="클럽에 들어가면 시작됩니다"
             body={'일정·대진표·회비·랭킹은 클럽 단위로 운영됩니다.\n클럽을 찾아 가입 신청하거나 직접 만들어 보세요.'}
@@ -208,7 +210,7 @@ export default function Home() {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: 60 }}>
+      <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: bottomPad }}>
         {/* 코트장 드롭다운 — 여기서 고른 코트가 일정·대진표까지 이어진다 */}
         {scopeVenues.length > 1 && (
           <View style={{ marginBottom: S.md, zIndex: 20 }}>

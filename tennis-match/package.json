@@ -13,7 +13,9 @@
     "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-rules.mjs\"",
     "test:kdk": "node scripts/test-kdk.mjs",
     "test:team": "node scripts/test-team.mjs",
-    "test:all": "npm run test:engine && npm run test:kdk && npm run test:team && npm run test:tournament && npm run test:schedule"
+    "test:all": "npm run test:engine && npm run test:kdk && npm run test:team && npm run test:tournament && npm run test:schedule && npm run test:courts",
+    "courts:seoul": "node scripts/fetch-courts.mjs",
+    "test:courts": "node scripts/test-courts.mjs"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "^8.0.1",

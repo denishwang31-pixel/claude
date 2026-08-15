@@ -3,8 +3,9 @@
    서브화면을 열면 안드로이드 뒤로가기와 화면 안 [‹ 뒤로] 가 같은 동작을 합니다. */
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useApp } from '../_layout';
+import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { computeStats } from '../../src/lib/matchmaking';
@@ -73,16 +74,30 @@ const MENU_FLAT = MENU_GROUPS.flatMap((g) => g.items.map(([k, , label]) => [k, l
 
 export default function More() {
   const { clubId, me, viewMode, resetOnboarding } = useApp();
+  const bottomPad = useBottomPad();
   const router = useRouter();
   const params = useLocalSearchParams();
+  const navigation = useNavigation();
   const [sub, setSub] = useState(null);
 
-  /* 홈에서 바로 들어온 경우 해당 화면을 연다. 'manage' 는 루트 목록(운영 그룹) */
+  /* 홈에서 바로 들어온 경우(예: 홈 → 채팅) 해당 화면을 연다. 'manage' 는 루트 목록.
+
+     open 값은 한 번 쓰고 즉시 비운다. 남겨 두면
+       (1) 탭을 떠났다 돌아와도 그 화면이 계속 열려 있고,
+       (2) 같은 화면을 다시 열려 해도 값이 안 바뀌어 effect 가 안 돈다. */
   useEffect(() => {
     if (!params?.open) return;
     const k = String(params.open);
     setSub(k === 'manage' ? null : k);
+    router.setParams({ open: '' });
   }, [params?.open]);
+
+  /* 하단 [더보기] 탭을 누르면 언제나 메뉴 목록으로 — 마지막으로 봤던
+     서브화면(채팅 등)이 열리면 "더보기를 눌렀는데 채팅이 뜬다"가 된다. */
+  useEffect(() => navigation.addListener?.('tabPress', () => {
+    setSub(null);
+    router.setParams({ open: '' });
+  }), [navigation]);
   const [feeMonth, setFeeMonth] = useState(new Date().toISOString().slice(0, 7));
   const [toast, setToast] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -162,7 +177,7 @@ export default function More() {
     return (
       <View style={{ flex: 1, backgroundColor: C.bg }}>
         <ScreenHeader title="더보기" subtitle="클럽 없이 둘러보는 중" />
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
           <Card style={{ backgroundColor: C.ink }}>
             <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>아직 클럽에 속해 있지 않습니다</Text>
             <Text style={{ color: C.lime2, fontSize: 12, marginTop: 6, lineHeight: 18 }}>
@@ -229,7 +244,7 @@ export default function More() {
         ) : null}
       />
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
         {!sub ? (
           <>
             {MENU_GROUPS.filter((g) => !g.staffOnly || isAdmin).map((g) => (

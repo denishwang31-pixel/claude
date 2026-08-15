@@ -5,6 +5,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Image } from 'react-native';
 import { useApp } from '../_layout';
+import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { subGear, addGear, deleteGear } from '../../src/lib/firestore';
@@ -24,6 +25,7 @@ const BLANK = {
 
 export default function Gear() {
   const { clubId, me, viewMode, isAppAdmin } = useApp();
+  const bottomPad = useBottomPad();
   useClub(clubId, me, { viewMode }); // 클럽 컨텍스트 유지(용품은 앱 공통)
 
   const [items, setItems] = useState([]);
@@ -73,7 +75,7 @@ export default function Gear() {
         ) : null}
       />
 
-      <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: 60 }}>
+      <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: bottomPad }}>
         <FilterRow>
           <Chip tone={!cat ? 'green' : 'outline'} onPress={() => setCat(null)}>전체</Chip>
           {GEAR_CATEGORIES.map((c) => (
