@@ -296,7 +296,9 @@ export default function Home() {
             <Card style={{ paddingVertical: 4 }}>
               {visible.slice(0, 6).map((m, i) => {
                 const cnt = Object.values(m.rsvp || {}).filter((v) => v === RSVP.YES).length + (m.guests?.length || 0);
-                const enough = cnt >= (m.courts || 1) * 4;
+                // 단식 모임은 코트당 2명이 정원이다
+                const per = m.playMode === 'singles' ? 2 : 4;
+                const enough = cnt >= (m.courts || 1) * per;
                 return (
                   <Pressable key={m.id}
                     onPress={() => router.push({ pathname: '/(tabs)/match', params: { meetingId: m.id } })}

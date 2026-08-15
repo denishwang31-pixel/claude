@@ -1,29 +1,65 @@
-/* 클럽 운영 설정 — 코트 면수 / 운영 시간 / 타임 길이 / 잡복 기본값 / 회비
-   여기서 정한 값이 새 모임 등록의 기본값이 된다. */
+/* ============================================================
+   클럽 설정
+
+   v2에서 고친 불일치
+     · "코트 면수/운영 시간"이 어느 코트에 대한 것인지 표시가 없었다.
+       → 코트장(venues)이 등록돼 있으면: 코트장별 설정은 [코트장 관리]가
+         담당한다고 명시하고, 등록된 코트장 목록 + 바로가기를 보여준다.
+         이 화면의 값은 "코트장을 지정하지 않은 모임의 기본값"으로 못박는다.
+     · 잡복 기본 허용이 [대진 설정]과 이중으로 존재 → 여기서 제거, 안내로 대체.
+     · 클럽 이름·지역·대표 이미지·가입 비밀번호를 만들 때만 넣을 수 있고
+       이후 수정 불가 + 이름을 바꿔도 검색 목록(clubDirectory)에 옛 값이 남음
+       → 여기서 수정 가능하게 하고 저장 시 공개 목록을 함께 동기화.
+   ============================================================ */
 import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { updateClubSettings } from '../lib/firestore';
+import { updateClubSettings, saveClubProfile } from '../lib/firestore';
 import {
   DEFAULT_SETTINGS, roundsFromSettings, roundTimes, toMinutes,
 } from '../lib/schedule';
+import { RegionPicker } from './RegionPicker';
+import { Icon } from './Icon';
+import { Label } from './pickers';
 import { Card, SectionTitle, Chip, Btn, Field } from './ui';
-import { C } from '../lib/theme';
+import { C, S, R, F } from '../lib/theme';
 
-export function ClubSettings({ clubId, club, isAdmin, flash }) {
+export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin, flash, onOpenVenues, onOpenMatchConfig }) {
   const [s, setS] = useState({ ...DEFAULT_SETTINGS, ...(club?.settings || {}) });
-  useEffect(() => { setS({ ...DEFAULT_SETTINGS, ...(club?.settings || {}) }); }, [club?.id]);
+  const [profile, setProfile] = useState({
+    name: club?.name || '',
+    image: club?.image || '',
+    joinPassword: club?.joinPassword || '',
+  });
+  useEffect(() => {
+    setS({ ...DEFAULT_SETTINGS, ...(club?.settings || {}) });
+    setProfile({ name: club?.name || '', image: club?.image || '', joinPassword: club?.joinPassword || '' });
+  }, [club?.id]);
 
+  const hasVenues = venues.length > 0;
   const startOk = toMinutes(s.startTime) != null;
   const endOk = toMinutes(s.endTime) != null;
   const rounds = startOk && endOk ? roundsFromSettings(s) : 0;
   const times = rounds ? roundTimes(s, rounds) : [];
 
-  const save = () => {
+  const save = async () => {
     if (!startOk || !endOk) return flash('시간 형식을 확인하세요 (예: 10:00)');
+    if (!profile.name.trim()) return flash('클럽 이름을 입력하세요');
     const courts = Math.max(1, Math.min(20, Number(s.courts) || 1));
     const roundMinutes = Math.max(10, Math.min(180, Number(s.roundMinutes) || 40));
-    updateClubSettings(clubId, { ...s, courts, roundMinutes });
-    flash('클럽 설정이 저장되었습니다');
+    try {
+      await updateClubSettings(clubId, { ...s, courts, roundMinutes });
+      // 이름·이미지·비밀번호 + 공개 검색 목록 동기화
+      await saveClubProfile(clubId, {
+        name: profile.name.trim(),
+        image: profile.image.trim(),
+        joinPassword: profile.joinPassword.trim(),
+        region: (s.region || '').trim(),
+        memberCount: members.length,
+      });
+      return flash('클럽 설정이 저장되었습니다');
+    } catch (e) {
+      return flash('저장에 실패했습니다. 잠시 후 다시 시도하세요');
+    }
   };
 
   const set = (k, v) => setS({ ...s, [k]: v });
@@ -32,10 +68,15 @@ export function ClubSettings({ clubId, club, isAdmin, flash }) {
     return (
       <View>
         <Card>
-          <Text style={{ fontSize: 13, fontWeight: '700', marginBottom: 8 }}>현재 클럽 운영 설정</Text>
+          <Text style={[F.bodyBold, { marginBottom: 8 }]}>현재 클럽 운영 설정</Text>
           <Text style={{ fontSize: 13, color: C.sub }}>운영 시간: {s.startTime} ~ {s.endTime}</Text>
           <Text style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>코트: {s.courts}면 · 한 타임 {s.roundMinutes}분</Text>
           <Text style={{ fontSize: 13, color: C.green2, marginTop: 6, fontWeight: '700' }}>→ 총 {rounds}타임 진행</Text>
+          {hasVenues && (
+            <Text style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>
+              코트장별 설정은 [코트장 관리]에 있습니다: {venues.map((v) => v.name).join(' · ')}
+            </Text>
+          )}
           <Text style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>설정 변경은 총무·운영진만 가능합니다.</Text>
         </Card>
       </View>
@@ -44,114 +85,163 @@ export function ClubSettings({ clubId, club, isAdmin, flash }) {
 
   return (
     <View>
+      {/* ---------- 클럽 정보 ---------- */}
+      <SectionTitle hint="여기서 바꾸면 클럽 검색 결과에도 바로 반영됩니다.">클럽 정보</SectionTitle>
       <Card>
-        <Text style={{ fontSize: 12, color: C.sub, lineHeight: 18 }}>
-          클럽이 정기적으로 확보한 코트와 운동 시간을 설정하세요. 여기서 정한 값이
-          <Text style={{ fontWeight: '700' }}> 새 모임 등록의 기본값</Text>이 되고, 타임(라운드) 수가 자동 계산됩니다.
-          모임마다 다르면 모임 등록 화면에서 개별 수정할 수 있습니다.
-        </Text>
+        <Label>클럽 이름</Label>
+        <Field value={profile.name} onChangeText={(v) => setProfile({ ...profile, name: v })} />
+
+        <View style={{ marginTop: S.md }}>
+          <Label hint="다른 사람이 검색하는 기준">활동 지역</Label>
+          <RegionPicker value={s.region || ''} onChange={(v) => set('region', v)} labels={false} />
+        </View>
+
+        <View style={{ marginTop: S.md }}>
+          <Label hint="선택 · 검색 결과에 표시">대표 이미지 URL</Label>
+          <Field placeholder="https://..." autoCapitalize="none"
+            value={profile.image} onChangeText={(v) => setProfile({ ...profile, image: v })} />
+        </View>
+
+        <View style={{ marginTop: S.md }}>
+          <Label hint="아는 사람은 승인 없이 바로 입장 · 비우면 승인제만">클럽 가입 비밀번호</Label>
+          <Field placeholder="비워두면 가입 신청(승인)만 가능"
+            value={profile.joinPassword} onChangeText={(v) => setProfile({ ...profile, joinPassword: v })} />
+        </View>
       </Card>
 
-      <SectionTitle>코트 면수</SectionTitle>
+      {/* ---------- 코트/시간 — 어떤 코트에 대한 값인지 명시 ---------- */}
+      <SectionTitle
+        hint={hasVenues
+          ? '코트장을 지정하지 않은 모임에만 쓰이는 기본값입니다.'
+          : '새 모임 등록의 기본값이 됩니다. 코트장이 여러 곳이면 [코트장 관리]에 등록하세요.'}>
+        {hasVenues ? '기본 코트 설정 (코트장 미지정 모임용)' : '코트·운영 시간'}
+      </SectionTitle>
+
+      {/* 코트장이 등록된 클럽 — 코트장별 설정은 저쪽이 담당한다고 못박는다 */}
+      {hasVenues && (
+        <Card style={{ marginBottom: S.sm }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <Icon name="venues" size={16} color={C.green} />
+            <Text style={[F.bodyBold, { flex: 1 }]}>등록된 코트장 {venues.length}곳</Text>
+            {!!onOpenVenues && (
+              <Chip tone="soft" onPress={onOpenVenues}>코트장 관리로</Chip>
+            )}
+          </View>
+          {venues.map((v, i) => (
+            <View key={v.id} style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              paddingVertical: 7, borderTopWidth: i ? 1 : 0, borderTopColor: C.border,
+            }}>
+              <Text style={{ fontSize: 13.5, fontWeight: '600', color: C.text }}>{v.name}</Text>
+              <Text style={{ fontSize: 12, color: C.sub }}>
+                {v.startTime}~{v.endTime} · {v.courts}면 · {v.roundMinutes}분
+              </Text>
+            </View>
+          ))}
+          <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 16 }}>
+            각 코트장의 면수·시간은 [코트장 관리]에서 바꿉니다.
+            아래 값은 코트장을 고르지 않고 등록한 모임에만 적용됩니다.
+          </Text>
+        </Card>
+      )}
+
       <Card>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <Label>코트 면수</Label>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 }}>
           <Pressable onPress={() => set('courts', Math.max(1, (Number(s.courts) || 1) - 1))}
-            style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
+            style={{ width: 42, height: 42, borderRadius: R.md, backgroundColor: C.fill, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 20, fontWeight: '700', color: C.sub }}>−</Text>
           </Pressable>
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 28, fontWeight: '700', color: C.ink }}>{s.courts}<Text style={{ fontSize: 14, color: C.sub }}>면</Text></Text>
+            <Text style={{ fontSize: 26, fontWeight: '700', color: C.text }}>
+              {s.courts}<Text style={{ fontSize: 14, color: C.sub }}>면</Text>
+            </Text>
           </View>
           <Pressable onPress={() => set('courts', Math.min(20, (Number(s.courts) || 1) + 1))}
-            style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: C.lime, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 20, fontWeight: '700', color: C.ink }}>＋</Text>
+            style={{ width: 42, height: 42, borderRadius: R.md, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: '#fff' }}>＋</Text>
           </Pressable>
         </View>
-        <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, textAlign: 'center' }}>
-          한 면당 4명이 동시에 경기합니다 (복식 기준)
-        </Text>
-      </Card>
 
-      <SectionTitle>운영 시간</SectionTitle>
-      <Card>
-        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>시작</Text>
-            <Field placeholder="10:00" value={s.startTime} onChangeText={(v) => set('startTime', v)} />
+        <View style={{ marginTop: S.lg }}>
+          <Label>운영 시간</Label>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <View style={{ flex: 1 }}>
+              <Field placeholder="10:00" value={s.startTime} onChangeText={(v) => set('startTime', v)} />
+            </View>
+            <Text style={{ fontSize: 15, color: C.faint }}>~</Text>
+            <View style={{ flex: 1 }}>
+              <Field placeholder="13:00" value={s.endTime} onChangeText={(v) => set('endTime', v)} />
+            </View>
           </View>
-          <Text style={{ fontSize: 16, color: C.faint, paddingBottom: 10 }}>~</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>종료</Text>
-            <Field placeholder="13:00" value={s.endTime} onChangeText={(v) => set('endTime', v)} />
+          {(!startOk || !endOk) && (
+            <Text style={{ fontSize: 11, color: C.danger, marginTop: 6 }}>24시간 형식으로 입력하세요 (예: 09:30, 18:00)</Text>
+          )}
+        </View>
+
+        <View style={{ marginTop: S.md }}>
+          <Label>한 타임(게임) 길이</Label>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {[20, 30, 40, 45, 60].map((v) => (
+              <Chip key={v} tone={Number(s.roundMinutes) === v ? 'green' : 'outline'} onPress={() => set('roundMinutes', v)}>{v}분</Chip>
+            ))}
           </View>
         </View>
-        {(!startOk || !endOk) && (
-          <Text style={{ fontSize: 11, color: C.danger, marginTop: 6 }}>24시간 형식으로 입력하세요 (예: 09:30, 18:00)</Text>
-        )}
 
-        <Text style={{ fontSize: 11, color: C.sub, marginTop: 12, marginBottom: 6 }}>한 타임(게임) 길이</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          {[20, 30, 40, 45, 60].map((v) => (
-            <Chip key={v} tone={Number(s.roundMinutes) === v ? 'green' : 'outline'} onPress={() => set('roundMinutes', v)}>{v}분</Chip>
-          ))}
-        </View>
-      </Card>
-
-      {rounds > 0 && (
-        <>
-          <SectionTitle>자동 계산된 타임표</SectionTitle>
-          <Card style={{ backgroundColor: C.ink, borderColor: C.green }}>
-            <Text style={{ color: C.lime, fontSize: 13, fontWeight: '700' }}>총 {rounds}타임 · 코트 {s.courts}면</Text>
-            <Text style={{ color: '#BFE3D3', fontSize: 11, marginTop: 2 }}>
-              한 타임에 최대 {s.courts * 4}명 출전 · 전체 {rounds * s.courts}경기
+        {rounds > 0 && (
+          <View style={{ marginTop: S.md, backgroundColor: C.fill, borderRadius: R.md, padding: 12 }}>
+            <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.green }}>
+              총 {rounds}타임 · 한 타임 최대 {s.courts * 4}명 (복식 기준)
             </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
               {times.map((t) => (
-                <View key={t.round} style={{ backgroundColor: C.green, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
-                  <Text style={{ color: C.lime, fontSize: 11, fontWeight: '700' }}>{t.round}타임 {t.start}~{t.end}</Text>
+                <View key={t.round} style={{ backgroundColor: C.surface, borderRadius: R.sm, paddingHorizontal: 7, paddingVertical: 3 }}>
+                  <Text style={{ fontSize: 10.5, fontWeight: '600', color: C.sub }}>{t.round}T {t.start}~{t.end}</Text>
                 </View>
               ))}
             </View>
-          </Card>
-        </>
-      )}
-
-      <SectionTitle>대진 편성 기본값</SectionTitle>
-      <Card>
-        <Pressable onPress={() => set('allowMixedDefault', !s.allowMixedDefault)}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: s.allowMixedDefault ? C.green : '#e7e5e4', alignItems: 'center', justifyContent: 'center' }}>
-            {s.allowMixedDefault && <Text style={{ color: C.lime, fontWeight: '700', fontSize: 13 }}>✓</Text>}
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: '700' }}>잡복 기본 허용</Text>
-            <Text style={{ fontSize: 11, color: C.faint }}>
-              체크하면 남3여1 같은 성비도 자동 편성합니다. 해제하면 남복·여복·혼복만 편성하고,
-              불가능할 때 확인창이 뜹니다(권장)
-            </Text>
-          </View>
-        </Pressable>
+        )}
       </Card>
 
+      {/* ---------- 대진 기본값은 대진 설정 한 곳으로 (이중 설정 제거) ---------- */}
+      <SectionTitle>대진 편성 기본값</SectionTitle>
+      <Card onPress={onOpenMatchConfig}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Icon name="matchcfg" size={18} color={C.green} />
+          <View style={{ flex: 1 }}>
+            <Text style={F.bodyBold}>[대진 설정]에서 관리합니다</Text>
+            <Text style={[F.caption, { marginTop: 2, lineHeight: 16 }]}>
+              잡복 허용 · 기본 타임 유형 · 실력 매칭 · 편성 우선순위.
+              같은 값이 두 곳에 있으면 어긋나기 쉬워 한 곳으로 모았습니다.
+            </Text>
+          </View>
+          <Icon name="forward" size={15} color={C.faint} />
+        </View>
+      </Card>
+
+      {/* ---------- 회비 ---------- */}
       <SectionTitle>회비</SectionTitle>
       <Card>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>월 회비(원)</Text>
-            <Field keyboardType="number-pad" value={String(s.feeAmount ?? '')} onChangeText={(v) => set('feeAmount', Number(v) || 0)} />
+            <Label>월 회비</Label>
+            <Field keyboardType="number-pad" suffix="원"
+              value={String(s.feeAmount ?? '')} onChangeText={(v) => set('feeAmount', Number(v) || 0)} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>게스트비(원)</Text>
-            <Field keyboardType="number-pad" value={String(s.guestFee ?? '')} onChangeText={(v) => set('guestFee', Number(v) || 0)} />
+            <Label>게스트비</Label>
+            <Field keyboardType="number-pad" suffix="원"
+              value={String(s.guestFee ?? '')} onChangeText={(v) => set('guestFee', Number(v) || 0)} />
           </View>
         </View>
-        <View style={{ marginTop: 8 }}>
-          <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>송금 링크 (선택)</Text>
-          <Field placeholder="https://…" value={s.payLink || ''} onChangeText={(v) => set('payLink', v)} />
+        <View style={{ marginTop: S.md }}>
+          <Label hint="선택">송금 링크</Label>
+          <Field placeholder="https://…" autoCapitalize="none" value={s.payLink || ''} onChangeText={(v) => set('payLink', v)} />
         </View>
       </Card>
 
-      <View style={{ marginTop: 16 }}>
+      <View style={{ marginTop: S.lg }}>
         <Btn full onPress={save}>설정 저장</Btn>
       </View>
     </View>

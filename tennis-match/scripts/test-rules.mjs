@@ -203,6 +203,33 @@ await T('운영진의 원포인트 영상 등록 허용',
 await T('회원의 원포인트 조회 허용',
   assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'tips', 't1'))));
 
+console.log('\n[구력 확인제도 — startedAt 잠금]');
+await T('비어 있을 때 본인이 처음 입력 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { startedAt: '2019-03-01' })));
+await T('기록된 구력을 본인이 변경 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { startedAt: '2024-01-01' })));
+await T('기록된 구력을 총무가 변경 거부(회장 아님)', (async () => {
+  // mem2 를 잠시 총무로 만들어 확인 후 복구
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'mem2'), { role: '총무' });
+  });
+  const r = assertFails(updateDoc(
+    doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'members', 'mem1'),
+    { startedAt: '2024-01-01' },
+  ));
+  await r;
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'mem2'), { role: '회원' });
+  });
+})());
+await T('회장의 구력 초기화 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem1'), { startedAt: '' })));
+await T('초기화 후 본인이 다시 입력 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { startedAt: '2019-03-01' })));
+await T('구력 잠금과 무관한 필드는 그대로 수정 가능',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { busu: '4부' })));
+// 뒤 테스트가 mem1 프로필을 쓰므로 startedAt 은 남겨둬도 무방
+
 console.log('\n[참가투표]');
 await env.withSecurityRulesDisabled(async (ctx) => {
   const db = ctx.firestore();

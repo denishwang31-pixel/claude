@@ -61,7 +61,7 @@ export default function Join() {
     if (!name.trim()) return setErr('이름을 입력하세요.');
     setErr(''); setBusy(true);
     try {
-      const profile = { name: name.trim(), gender, grade: 'B' };
+      const profile = { name: name.trim(), gender, grade: '' };
       await joinClubWithCode(club.clubId, uid, profile, code);
       await linkUserToClub(uid, club.clubId, profile);
       switchClub?.(club.clubId);

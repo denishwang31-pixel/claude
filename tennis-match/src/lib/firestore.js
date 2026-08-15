@@ -86,6 +86,24 @@ export const addMember = (clubId, memberId, data) =>
 export const updateClubSettings = (clubId, settings) =>
   updateDoc(doc(db, 'clubs', clubId), { settings });
 
+/** 클럽 이름·대표 이미지·가입 비밀번호 수정 + 공개 목록(clubDirectory) 동기화.
+ *  예전엔 클럽 생성 때만 넣을 수 있고 이후엔 못 바꿨고, 이름을 바꿔도
+ *  검색 목록에는 옛 이름이 남는 불일치가 있었다. */
+export const saveClubProfile = async (clubId, { name, image, joinPassword, region, memberCount }) => {
+  const patch = {};
+  if (name !== undefined) patch.name = name;
+  if (image !== undefined) patch.image = image;
+  if (joinPassword !== undefined) patch.joinPassword = joinPassword;
+  if (Object.keys(patch).length) await updateDoc(doc(db, 'clubs', clubId), patch);
+  await publishClubDirectory(clubId, {
+    name: name ?? '',
+    region: region ?? '',
+    image: image ?? '',
+    memberCount,
+    hasPassword: !!joinPassword,
+  });
+};
+
 /* ---- 코트장(venue) — 클럽이 여러 곳을 운영하는 경우 ----
    각 코트장마다 면수·운영시간·리드(담당자)를 따로 관리 */
 export const subVenues = (clubId, cb) =>

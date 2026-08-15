@@ -65,7 +65,14 @@ service cloud.firestore {
                         || isClubAdmin(clubId);
         // 본인/운영진은 자유 수정. 그 외 회원은 "그 사람에 대한 내 NTRP 투표"만 가능
         // role 필드를 바꾸려면 회장이어야 함
-        allow update: if (isClubAdmin(clubId)
+        // 구력 확인제도: startedAt 은 한 번 기록되면 회장만 바꿀 수 있다
+        //   (비어 있을 때 처음 넣는 것은 본인/운영진 모두 가능)
+        allow update: if (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['startedAt'])
+            || resource.data.get('startedAt', '') == ''
+            || isPresident(clubId)
+          ) && (
+          (isClubAdmin(clubId)
               && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
                   || isPresident(clubId)))
           || (request.auth.uid == memberId
@@ -76,7 +83,7 @@ service cloud.firestore {
             && request.resource.data.ntrpVotes.diff(
                  resource.data.get('ntrpVotes', {})
                ).affectedKeys().hasOnly([request.auth.uid])
-          );
+          ));
         allow delete: if isClubAdmin(clubId);
       }
 

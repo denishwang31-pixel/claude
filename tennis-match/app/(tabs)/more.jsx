@@ -49,7 +49,7 @@ const MENU_GROUPS = [
       ['rank', 'rank', '랭킹·기록', null],
       ['ntrp', 'ntrp', 'NTRP 등급', null],
       ['members', 'members', '회원', null],
-      ['courts', 'courts', '코트 검색', null],
+      ['courts', 'courts', '코트 검색', '주변 공공·사설 테니스장 찾기'],
     ],
   },
   {
@@ -61,7 +61,7 @@ const MENU_GROUPS = [
       ['attendance', 'attendance', '출석', null],
       ['fees', 'fees', '회비·지출', null],
       ['pairs', 'pairs', '커플·고정 페어', null],
-      ['venues', 'venues', '코트장 관리', null],
+      ['venues', 'venues', '코트장 관리', '우리 클럽이 정기적으로 쓰는 코트'],
       ['matchcfg', 'matchcfg', '대진 설정', null],
       ['settings', 'settings', '클럽 설정', null],
     ],
@@ -117,7 +117,13 @@ export default function More() {
       case 'ntrp': return <Ntrp {...{ clubId, members, me, meVal, isAdmin, flash }} />;
       case 'attendance': return <Attendance {...{ clubId, members, meetings, isAdmin, flash }} />;
       case 'pairs': return <Pairs {...{ clubId, members, pairs, isAdmin, flash }} />;
-      case 'settings': return <ClubSettings {...{ clubId, club, isAdmin, flash }} />;
+      case 'settings': return (
+        <ClubSettings
+          {...{ clubId, club, venues, members, isAdmin, flash }}
+          onOpenVenues={() => setSub('venues')}
+          onOpenMatchConfig={() => setSub('matchcfg')}
+        />
+      );
       case 'venues': return <Venues {...{ clubId, club, venues, members, isAdmin, flash }} />;
       case 'matchcfg': return <MatchConfig {...{ clubId, matchConfig, rules, isAdmin, flash }} />;
       case 'fees': return <Fees {...{ clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash }} />;

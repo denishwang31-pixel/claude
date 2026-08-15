@@ -106,7 +106,9 @@ export default function Match() {
     [attendees.length],
   );
 
-  const roundTypeOf = (r) => (meeting?.roundPlan?.[r]) || cfg.defaultRoundType;
+  /* 단식 모임이면 타임 유형을 전부 SINGLES 로 강제한다.
+     (예전엔 배지만 '단식'이고 실제 편성은 복식으로 돌던 불일치가 있었다) */
+  const roundTypeOf = (r) => (isSingles ? 'SINGLES' : (meeting?.roundPlan?.[r]) || cfg.defaultRoundType);
   const setRoundType = (r, key) => {
     const plan = { ...(meeting.roundPlan || {}) };
     if (key === cfg.defaultRoundType) delete plan[r]; else plan[r] = key;
@@ -125,8 +127,8 @@ export default function Match() {
         fixedPairs: bothHere(pairs?.fixedPairs),
         allowMixed,
         skillBalance: meeting.skillBalance ?? cfg.skillBalance,
-        defaultRoundType: cfg.defaultRoundType,
-        roundPlan: meeting.roundPlan || {},
+        defaultRoundType: isSingles ? 'SINGLES' : cfg.defaultRoundType,
+        roundPlan: isSingles ? {} : (meeting.roundPlan || {}),
         report,
       },
     );
@@ -153,6 +155,11 @@ export default function Match() {
   };
 
   const gen = () => {
+    if (isKdk && isSingles) {
+      return Alert.alert('KDK 는 복식 개인전입니다',
+        '이 모임은 단식으로 등록되어 있습니다.\n'
+        + 'KDK 를 쓰려면 일정에서 모임을 복식으로 바꾸거나, 일반 편성을 선택하세요.');
+    }
     if (isKdk) {
       if (attendees.length < 4) {
         return Alert.alert('인원이 부족합니다',
@@ -289,17 +296,23 @@ export default function Match() {
               <View style={{
                 marginTop: S.md, backgroundColor: C.fill, borderRadius: R.md, padding: 12, gap: 12,
               }}>
-                {DRAW_MODES.map((d) => (
-                  <CheckRow
-                    key={d.key}
-                    checked={drawMode === d.key}
-                    onToggle={() => setDrawMode(d.key)}
-                    label={d.label}
-                    hint={d.key === DRAW_MODE.KDK && kdkGroups.length
-                      ? `${d.hint}\n지금 인원이면 ${kdkGroups.join('명 + ')}명, ${kdkGroups.length}개 조로 나뉩니다.`
-                      : d.hint}
-                  />
-                ))}
+                {DRAW_MODES.map((d) => {
+                  const lockedBySingles = d.key === DRAW_MODE.KDK && isSingles;
+                  return (
+                    <CheckRow
+                      key={d.key}
+                      checked={drawMode === d.key}
+                      onToggle={() => {
+                        if (lockedBySingles) return flash('단식 모임에서는 KDK 를 쓸 수 없습니다 (복식 개인전)');
+                        return setDrawMode(d.key);
+                      }}
+                      label={lockedBySingles ? `${d.label} — 단식 모임에서는 사용 불가` : d.label}
+                      hint={d.key === DRAW_MODE.KDK && kdkGroups.length && !lockedBySingles
+                        ? `${d.hint}\n지금 인원이면 ${kdkGroups.join('명 + ')}명, ${kdkGroups.length}개 조로 나뉩니다.`
+                        : d.hint}
+                    />
+                  );
+                })}
               </View>
             )}
 
@@ -336,7 +349,15 @@ export default function Match() {
               </Text>
             </Card>
           )}
-          {isAdmin && showTools && !isKdk && (
+          {isAdmin && showTools && !isKdk && isSingles && (
+            <Card style={{ marginTop: S.sm }}>
+              <Text style={{ fontSize: 12.5, color: C.sub, lineHeight: 19 }}>
+                단식 모임이라 모든 타임이 1:1 단식으로 편성됩니다.
+                타임별 유형·커플 제약은 복식 모임에서만 쓸 수 있습니다.
+              </Text>
+            </Card>
+          )}
+          {isAdmin && showTools && !isKdk && !isSingles && (
             <>
               <SectionTitle right={
                 <Chip tone={(meeting.skillBalance ?? cfg.skillBalance) ? 'green' : 'outline'}
