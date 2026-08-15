@@ -3,18 +3,18 @@
    용품 데이터는 클럽이 아니라 앱 전체가 공유하는 루트 컬렉션(gear)에 저장됩니다. */
 import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, Image, Linking } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../_layout';
 import { useClub } from '../../src/hooks/useClub';
+import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { subGear, addGear, deleteGear } from '../../src/lib/firestore';
 import { GEAR_CATEGORIES } from '../../src/lib/constants';
+import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Label } from '../../src/components/pickers';
 import { Card, SectionTitle, Chip, Btn, Field } from '../../src/components/ui';
 import { C } from '../../src/lib/theme';
 
 export default function Gear() {
   const { clubId, me, viewMode, isAppAdmin } = useApp();
-  const insets = useSafeAreaInsets();
   useClub(clubId, me, { viewMode }); // 클럽 컨텍스트 유지(광고는 앱 공통)
 
   const [items, setItems] = useState([]);
@@ -26,6 +26,13 @@ export default function Gear() {
 
   React.useEffect(() => subGear(setItems), []);
 
+  /* 안드로이드 뒤로 = 등록 폼이 열려 있으면 폼부터 닫는다 */
+  useBackHandler(() => {
+    if (adding) { setAdding(false); return true; }
+    if (cat) { setCat(null); return true; }
+    return false;
+  });
+
   const list = useMemo(
     () => items.filter((x) => !cat || x.category === cat),
     [items, cat],
@@ -35,12 +42,12 @@ export default function Gear() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={{ backgroundColor: C.ink, paddingTop: insets.top + 8, paddingBottom: 12, paddingHorizontal: 16 }}>
-        <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>🛍 용품</Text>
-        <Text style={{ color: '#6ee7b7', fontSize: 11, marginTop: 2 }}>
-          라켓·의류·소모품 추천{isAppAdmin ? ' · 앱 관리자 모드' : ''}
-        </Text>
-      </View>
+      <ScreenHeader
+        title="🛍 용품"
+        subtitle={`라켓·의류·소모품 추천${isAppAdmin ? ' · 앱 관리자 모드' : ''}`}
+        onBack={adding ? () => setAdding(false) : undefined}
+        backLabel="용품"
+      />
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>

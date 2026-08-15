@@ -50,6 +50,12 @@ export const RSVP = { YES: 'yes', MAYBE: 'maybe', NO: 'no' };
 /** 게스트 신청 상태 */
 export const GUEST_STATUS = { APPLIED: 'applied', CONFIRMED: 'confirmed' };
 
+/** 클럽 가입 신청 상태 — 운영진이 승인해야 회원이 된다 */
+export const JOIN_STATUS = { PENDING: 'pending', APPROVED: 'approved', REJECTED: 'rejected' };
+export const JOIN_STATUS_LABEL = {
+  pending: '승인 대기', approved: '승인됨', rejected: '거절됨',
+};
+
 /** 실력 조(조 미사용 클럽을 위해 '선택 안함' 포함) */
 export const GRADES = ['A', 'B', 'C', 'D'];
 export const GRADE_NONE = '';   // 선택 안함

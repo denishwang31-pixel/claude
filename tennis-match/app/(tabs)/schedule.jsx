@@ -1,9 +1,10 @@
 /* 일정 / RSVP — 캘린더·시간 선택, 정기 모임 반복 등록, 참석 체크 */
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../_layout';
 import { useClub } from '../../src/hooks/useClub';
+import { useBackHandler } from '../../src/hooks/useBackHandler';
+import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { weatherFor } from '../../src/lib/weather';
 import { setRsvp, addMeeting, addMeetingsBatch, updateMeeting } from '../../src/lib/firestore';
 import {
@@ -19,7 +20,6 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export default function Schedule() {
   const { clubId, me, viewMode } = useApp();
-  const insets = useSafeAreaInsets();
   const { club, members, meetings, venues, isAdmin, nameOf } = useClub(clubId, me, { viewMode });
   const settings = { ...DEFAULT_SETTINGS, ...(club?.settings || {}) };
   const [nd, setNd] = useState(null);
@@ -47,6 +47,12 @@ export default function Schedule() {
 
   const upcoming = meetings.filter((m) => m.date >= today());
   const RSVP_OPTS = [[RSVP.YES, '참석'], [RSVP.MAYBE, '미정'], [RSVP.NO, '불참']];
+
+  /* 안드로이드 뒤로 = 등록 폼이 열려 있으면 폼부터 닫는다 */
+  useBackHandler(() => {
+    if (open) { setOpen(false); return true; }
+    return false;
+  });
 
   /* 등록 — 반복이면 기한까지 한 번에 생성 */
   const submit = () => {
@@ -87,7 +93,13 @@ export default function Schedule() {
     ? expandRecurrence(nd.date, nd.until, nd.repeat) : [];
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top }}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <ScreenHeader
+        title="📅 일정"
+        subtitle={`${club?.name || '테니스클럽'} · 예정 ${upcoming.length}건`}
+        onBack={open ? () => setOpen(false) : undefined}
+        backLabel="일정"
+      />
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
         {upcoming.map((mt) => {
           const w = weatherFor(mt.date, mt.forecast);

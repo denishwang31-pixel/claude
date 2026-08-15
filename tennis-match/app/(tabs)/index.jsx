@@ -7,9 +7,9 @@ import { useApp } from '../_layout';
 import { useClub } from '../../src/hooks/useClub';
 import { computeStats } from '../../src/lib/matchmaking';
 import { weatherFor } from '../../src/lib/weather';
-import { updateMeeting, subGear } from '../../src/lib/firestore';
+import { updateMeeting, subGear, subJoinRequests } from '../../src/lib/firestore';
 import { dowName } from '../../src/lib/schedule';
-import { RSVP, VIEW_MODES } from '../../src/lib/constants';
+import { RSVP, VIEW_MODES, JOIN_STATUS } from '../../src/lib/constants';
 import { AdBanner } from '../../src/components/AdBanner';
 import { VenuePicker } from '../../src/components/VenuePicker';
 import { Card, SectionTitle, Chip, Btn } from '../../src/components/ui';
@@ -18,7 +18,7 @@ import { C } from '../../src/lib/theme';
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default function Home() {
-  const { clubId, me, viewMode, setViewMode } = useApp();
+  const { clubId, me, viewMode, setViewMode, resetOnboarding } = useApp();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { club, members, meetings, posts, guestPosts, venues, meVal,
@@ -27,6 +27,15 @@ export default function Home() {
   const { stats } = useMemo(() => computeStats(members, meetings), [members, meetings]);
   const [ads, setAds] = useState([]);
   useEffect(() => subGear(setAds), []);
+
+  /* 운영진에게만: 승인 대기 중인 가입 신청 건수 */
+  const [pendingJoins, setPendingJoins] = useState(0);
+  useEffect(() => {
+    if (!clubId || !isAdmin) { setPendingJoins(0); return undefined; }
+    const unsub = subJoinRequests(clubId, (list) =>
+      setPendingJoins(list.filter((r) => r.status === JOIN_STATUS.PENDING).length));
+    return () => unsub && unsub();
+  }, [clubId, isAdmin]);
 
   /* 보기 모드에 따라 노출 범위가 달라진다
      운영진 = 전체 코트 / 리드 = 담당 코트 / 회원 = 소속 코트 + 게스트 확정 일정 */
@@ -59,6 +68,46 @@ export default function Home() {
     .slice(0, 3);
 
   const venueName = (id) => venues.find((v) => v.id === id)?.name;
+
+  /* ---------- 클럽 없이 둘러보는 중 ---------- */
+  if (!clubId) {
+    return (
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
+        <View style={{ backgroundColor: C.ink, paddingTop: insets.top + 8, paddingBottom: 14, paddingHorizontal: 16 }}>
+          <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>🎾 테니스매치</Text>
+          <Text style={{ color: '#6ee7b7', fontSize: 11, marginTop: 2 }}>클럽 없이 둘러보는 중</Text>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+          <Card style={{ backgroundColor: C.ink, borderColor: C.green, alignItems: 'center', paddingVertical: 26 }}>
+            <Text style={{ fontSize: 34 }}>🎾</Text>
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 10 }}>클럽에 들어가면 시작됩니다</Text>
+            <Text style={{ color: '#6ee7b7', fontSize: 12, textAlign: 'center', marginTop: 8, lineHeight: 18 }}>
+              일정·대진표·회비·랭킹은 클럽 단위로 운영됩니다.{'\n'}
+              클럽을 찾아 가입 신청하거나, 직접 만들어 보세요.
+            </Text>
+            <View style={{ marginTop: 18, width: '100%', gap: 8 }}>
+              <Btn full onPress={() => { resetOnboarding?.(); router.push('/onboarding'); }}>클럽 찾기</Btn>
+              <Btn full tone="ghost" onPress={() => router.push('/onboarding?mode=create')}>새 클럽 만들기</Btn>
+            </View>
+          </Card>
+
+          <AdBanner ads={ads} />
+
+          <Pressable onPress={() => router.push('/(tabs)/more')}>
+            <Card style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700' }}>🎾 게스트 모집 게시판</Text>
+                <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
+                  클럽 없이도 볼 수 있어요 · 공개 모집 {guestPosts.length}건
+                </Text>
+              </View>
+              <Chip tone="lime">더보기 →</Chip>
+            </Card>
+          </Pressable>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -200,6 +249,21 @@ export default function Home() {
               </Text>
             )}
           </Card>
+        )}
+
+        {/* 가입 신청 대기 — 운영진에게만 */}
+        {isAdmin && pendingJoins > 0 && (
+          <Pressable onPress={() => router.push('/(tabs)/more')}>
+            <Card style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderColor: C.lime2, borderWidth: 2 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800' }}>🙋 가입 신청 {pendingJoins}건 대기</Text>
+                <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
+                  더보기 → 가입 신청 에서 승인하세요
+                </Text>
+              </View>
+              <Chip tone="lime">승인하기 →</Chip>
+            </Card>
+          </Pressable>
         )}
 
         {/* 공개 게시판 바로가기 — 모집글이 있으면 건수까지 */}

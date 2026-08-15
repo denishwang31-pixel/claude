@@ -21,6 +21,9 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      /* 안드로이드 뒤로가기: 마지막에 있던 탭으로 되돌아간다.
+         (기본값 firstRoute 는 어느 탭에 있든 홈으로만 가서 되돌아가기가 끊긴다) */
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: C.green,

@@ -203,6 +203,57 @@ await T('운영진의 원포인트 영상 등록 허용',
 await T('회원의 원포인트 조회 허용',
   assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'tips', 't1'))));
 
+console.log('\n[공개 클럽 목록 / 가입 신청 승인]');
+await T('운영진의 공개 목록 등록 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubDirectory', CLUB),
+    { name: '테스트클럽', nameLower: '테스트클럽', region: '경기 과천시', memberCount: 3, searchable: true })));
+await T('비회원도 공개 목록 조회 허용(검색)',
+  assertSucceeds(getDoc(doc(outsider, 'clubDirectory', CLUB))));
+await T('비회원의 공개 목록 열거 허용(검색)',
+  assertSucceeds(getDocs(collection(outsider, 'clubDirectory'))));
+await T('비로그인 공개 목록 조회 거부',
+  assertFails(getDoc(doc(anon, 'clubDirectory', CLUB))));
+await T('타 클럽 사용자의 공개 목록 변조 거부',
+  assertFails(updateDoc(doc(outsider, 'clubDirectory', CLUB), { name: '탈취됨' })));
+await T('일반 회원의 공개 목록 변조 거부',
+  assertFails(updateDoc(doc(mem1, 'clubDirectory', CLUB), { memberCount: 999 })));
+
+await T('비회원의 가입 신청 생성 허용',
+  assertSucceeds(setDoc(doc(outsider, 'clubs', CLUB, 'joinRequests', 'other9'),
+    { name: '신청자', gender: 'M', status: 'pending' })));
+await T('남의 이름으로 가입 신청 거부',
+  assertFails(setDoc(doc(outsider, 'clubs', CLUB, 'joinRequests', 'someoneelse'),
+    { name: '사칭', status: 'pending' })));
+await T('처음부터 approved 로 신청 거부',
+  assertFails(setDoc(doc(joiner, 'clubs', CLUB, 'joinRequests', 'newbie'),
+    { name: '자가승인', status: 'approved' })));
+await T('신청에 role 끼워넣기 거부',
+  assertFails(setDoc(doc(joiner, 'clubs', CLUB, 'joinRequests', 'newbie'),
+    { name: '자가임명', status: 'pending', role: '회장' })));
+await T('신청자 본인의 신청 조회 허용',
+  assertSucceeds(getDoc(doc(outsider, 'clubs', CLUB, 'joinRequests', 'other9'))));
+await T('남의 신청 조회 거부',
+  assertFails(getDoc(doc(joiner, 'clubs', CLUB, 'joinRequests', 'other9'))));
+await T('운영진의 신청 목록 열람 허용',
+  assertSucceeds(getDocs(collection(owner, 'clubs', CLUB, 'joinRequests'))));
+await T('일반 회원의 신청 목록 열람 거부',
+  assertFails(getDocs(collection(mem1, 'clubs', CLUB, 'joinRequests'))));
+await T('신청자가 스스로 승인 처리 거부',
+  assertFails(updateDoc(doc(outsider, 'clubs', CLUB, 'joinRequests', 'other9'), { status: 'approved' })));
+await T('일반 회원의 승인 처리 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'joinRequests', 'other9'), { status: 'approved' })));
+await T('운영진의 승인 처리 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'joinRequests', 'other9'), { status: 'approved' })));
+await T('승인 후 운영진의 회원 등록 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'members', 'other9'),
+    { name: '신청자', gender: 'M', grade: 'B', role: '회원', status: '활동' })));
+await T('신청자 본인의 신청 취소(삭제) 허용',
+  assertSucceeds(deleteDoc(doc(outsider, 'clubs', CLUB, 'joinRequests', 'other9'))));
+// 원상 복구 — 뒤의 "비멤버" 테스트가 other9 를 외부인으로 가정한다
+await env.withSecurityRulesDisabled(async (ctx) => {
+  await deleteDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'other9'));
+});
+
 console.log('\n[용품 = 앱 운영자 전용(루트 /gear)]');
 const appAdmin = env.authenticatedContext('appboss').firestore();
 await T('앱 운영자의 용품 등록 허용',

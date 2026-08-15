@@ -80,6 +80,21 @@ service cloud.firestore {
         allow delete: if isClubAdmin(clubId);
       }
 
+      /* 가입 신청: 아직 회원이 아닌 사람이 직접 만든다.
+         - 생성: 본인 uid 문서만, 반드시 pending 상태로. (역할 지정 불가)
+         - 조회: 본인 것 또는 운영진. 목록 열람은 운영진만.
+         - 승인/거절(update)·정리(delete): 운영진. 신청 취소는 본인도 가능. */
+      match /joinRequests/{applicantUid} {
+        allow get: if signedIn() && (request.auth.uid == applicantUid || isClubAdmin(clubId));
+        allow list: if isClubAdmin(clubId);
+        allow create: if signedIn()
+          && request.auth.uid == applicantUid
+          && request.resource.data.status == 'pending'
+          && !request.resource.data.keys().hasAny(['role']);
+        allow update: if isClubAdmin(clubId);
+        allow delete: if isClubAdmin(clubId) || request.auth.uid == applicantUid;
+      }
+
       /* 모임: 생성/삭제 총무. 회원은 자기 RSVP 키만 변경 가능(FIX-03 S-2) */
       match /meetings/{meetingId} {
         allow read: if isClubMember(clubId);
@@ -138,6 +153,16 @@ service cloud.firestore {
         allow read: if isClubMember(clubId);
         allow write: if isClubAdmin(clubId);
       }
+    }
+
+    /* ---------- 공개 클럽 목록(루트) ----------
+       클럽 검색 → 가입 신청 흐름에 필요한 최소 정보만 공개한다.
+       (이름·지역·회원 수. 일정·회원 명단은 여전히 회원 전용)
+       - 읽기/검색: 로그인 사용자 전체
+       - 등록·수정: 해당 클럽 운영진. 클럽 생성 시점에 생성자는 이미 회장이다. */
+    match /clubDirectory/{clubId} {
+      allow read: if signedIn();
+      allow write: if isClubAdmin(clubId);
     }
 
     /* ---------- 앱 운영자 명단(루트) ----------

@@ -1,17 +1,23 @@
 /* 랭킹 — 클럽 랭킹 / 내 커리어(케미·H2H) / 시즌 결산 */
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { useApp } from '../_layout';
 import { useClub } from '../../src/hooks/useClub';
+import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { computeStats } from '../../src/lib/matchmaking';
+import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card, SectionTitle } from '../../src/components/ui';
 import { C } from '../../src/lib/theme';
 
 export default function Rank() {
   const { clubId, me, viewMode } = useApp();
-  const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { club, members, meetings, meVal, nameOf } = useClub(clubId, me, { viewMode });
+
+  /* 더보기에서 들어온 화면이므로 뒤로가기는 더보기로 */
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/more'));
+  useBackHandler(() => { goBack(); return true; });
   const [view, setView] = useState('rank');
 
   const year = new Date().getFullYear();
@@ -49,7 +55,8 @@ export default function Rank() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top }}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <ScreenHeader title="📈 랭킹·기록" subtitle={club?.name} onBack={goBack} backLabel="더보기" />
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
           <Tab v="rank" label="클럽 랭킹" />

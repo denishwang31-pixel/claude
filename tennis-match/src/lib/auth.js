@@ -52,17 +52,46 @@ export async function getMyClubId(uid) {
   return snap.exists() ? snap.data().clubId : null;
 }
 
+/** 온보딩 라우팅에 필요한 상태를 한 번에 —
+ *  clubId        : 소속 클럽(있으면 바로 앱으로)
+ *  pendingClubId : 승인 대기 중인 클럽(있으면 대기 화면)
+ *  skipped       : "나중에 하기"를 눌러 클럽 없이 둘러보는 중 */
+export async function getMySession(uid) {
+  const snap = await getDoc(doc(db, 'users', uid));
+  const d = snap.exists() ? snap.data() : {};
+  return {
+    clubId: d.clubId || null,
+    pendingClubId: d.pendingClubId || null,
+    skipped: !!d.skippedOnboarding,
+    profile: d.name ? { name: d.name, gender: d.gender, grade: d.grade, startedAt: d.startedAt } : null,
+  };
+}
+
+/** 승인 대기 상태 기록 — 앱을 껐다 켜도 대기 화면으로 돌아오게 */
+export async function markPendingClub(uid, clubId, profile) {
+  await setDoc(doc(db, 'users', uid),
+    { pendingClubId: clubId, ...(profile || {}), updatedAt: serverTimestamp() },
+    { merge: true });
+}
+
+/** "나중에 하기" — 클럽 없이 앱 둘러보기 */
+export async function skipOnboarding(uid, profile) {
+  await setDoc(doc(db, 'users', uid),
+    { skippedOnboarding: true, ...(profile || {}), updatedAt: serverTimestamp() },
+    { merge: true });
+}
+
 /** 게스트 신청 등에 쓰는 본인 프로필 */
 export async function getMyProfile(uid) {
   const snap = await getDoc(doc(db, 'users', uid));
   return snap.exists() ? snap.data() : null;
 }
 
-/** users/{uid} 에 소속 클럽 + 프로필 기록 */
+/** users/{uid} 에 소속 클럽 + 프로필 기록 (가입 확정 시 대기 상태는 지운다) */
 export async function linkUserToClub(uid, clubId, profile) {
   await setDoc(
     doc(db, 'users', uid),
-    { clubId, ...profile, createdAt: serverTimestamp() },
+    { clubId, ...profile, pendingClubId: null, skippedOnboarding: false, createdAt: serverTimestamp() },
     { merge: true },
   );
 }

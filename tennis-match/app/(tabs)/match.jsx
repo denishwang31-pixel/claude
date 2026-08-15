@@ -3,11 +3,12 @@
       이제 코트장(드롭다운) + 날짜(가로 스크롤)로 원하는 모임을 골라 편성/조회한다. */
 import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import DraggableFlatList from 'react-native-draggable-flatlist';
 import { useApp } from '../_layout';
 import { useClub } from '../../src/hooks/useClub';
+import { useBackHandler } from '../../src/hooks/useBackHandler';
+import { ScreenHeader } from '../../src/components/ScreenHeader';
 import {
   generateMatchesV5, collectPastPairs, diagnoseRoster, describeShortage, ROUND_TYPES,
 } from '../../src/lib/matchmaking';
@@ -25,7 +26,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 export default function Match() {
   const { clubId, me, viewMode } = useApp();
   const params = useLocalSearchParams();
-  const insets = useSafeAreaInsets();
+  const router = useRouter();
   const {
     club, members, meetings, venues, rules, pairs, matchConfig,
     isAdmin, scopeVenues, nameOf,
@@ -142,6 +143,20 @@ export default function Match() {
     }
     runGenerate(!!(cfg.allowMixed || club?.settings?.allowMixedDefault));
   };
+
+  /* 뒤로가기 우선순위: 스코어 입력 → 편성 설정 → (홈에서 들어왔으면) 홈으로 */
+  const fromHome = !!params?.meetingId;
+  const goBack = () => {
+    if (editing) { setEditing(null); return; }
+    if (showTools) { setShowTools(false); return; }
+    if (router.canGoBack()) router.back(); else router.replace('/(tabs)');
+  };
+  useBackHandler(() => {
+    if (editing) { setEditing(null); return true; }
+    if (showTools) { setShowTools(false); return true; }
+    if (fromHome) { goBack(); return true; }
+    return false;
+  });
 
   const saveSc = (mid) => {
     if (sc.a === '' || sc.b === '' || sc.a === sc.b) return flash('스코어 확인 (동점 불가)');
@@ -390,7 +405,15 @@ export default function Match() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top }}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <ScreenHeader
+        title="🎾 대진"
+        subtitle={meeting
+          ? `${meeting.date}(${dowName(meeting.date)}) ${meeting.time || ''} · 참석 ${attendees.length}명`
+          : (club?.name || '예정된 모임 없음')}
+        onBack={(editing || showTools || fromHome) ? goBack : undefined}
+        backLabel={editing ? '대진표' : showTools ? '대진표' : '홈'}
+      />
       <DraggableFlatList
         data={isAdmin && showTools && meeting ? rules : []}
         keyExtractor={(item) => item.key}

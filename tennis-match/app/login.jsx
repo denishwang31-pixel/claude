@@ -4,22 +4,26 @@
    그 역할을 하던 expo-firebase-recaptcha 가 지원 종료되어 1차에서는 제외. */
 import React, { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
-import { signInEmail, signUpEmail, signInAnon, getMyClubId } from '../src/lib/auth';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { signInEmail, signUpEmail, signInAnon, getMySession } from '../src/lib/auth';
 import { Card, Btn, Field } from '../src/components/ui';
 import { C } from '../src/lib/theme';
 
 export default function Login() {
   const router = useRouter();
-  const [mode, setMode] = useState('signin'); // signin | signup
+  const params = useLocalSearchParams();
+  const inviteCode = params?.code ? String(params.code).toUpperCase() : '';
+  const [mode, setMode] = useState(inviteCode ? 'signup' : 'signin'); // signin | signup
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
   const go = async (uid) => {
-    const clubId = await getMyClubId(uid);
-    router.replace(clubId ? '/(tabs)' : '/onboarding');
+    // 초대 링크를 타고 온 경우 로그인 후 그 초대로 되돌아간다
+    if (inviteCode) { router.replace({ pathname: '/join', params: { code: inviteCode } }); return; }
+    const s = await getMySession(uid);
+    router.replace(s.clubId || s.skipped ? '/(tabs)' : '/onboarding');
   };
 
   const messageOf = (e) => {
@@ -55,6 +59,15 @@ export default function Login() {
       <Text style={{ fontSize: 32, fontWeight: '900', color: '#fff', textAlign: 'center' }}>🎾</Text>
       <Text style={{ fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center', marginTop: 8 }}>테니스매치</Text>
       <Text style={{ fontSize: 13, color: '#6ee7b7', textAlign: 'center', marginTop: 4, marginBottom: 28 }}>클럽 운영을 한 곳에서</Text>
+
+      {!!inviteCode && (
+        <Card style={{ backgroundColor: C.green, borderColor: C.lime2, marginBottom: 12 }}>
+          <Text style={{ color: C.lime, fontSize: 12, fontWeight: '800' }}>초대 코드 {inviteCode}</Text>
+          <Text style={{ color: '#a7f3d0', fontSize: 11, marginTop: 3 }}>
+            로그인(또는 가입)하면 초대받은 클럽으로 바로 들어갑니다.
+          </Text>
+        </Card>
+      )}
 
       <Card>
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>

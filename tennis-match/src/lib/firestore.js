@@ -8,16 +8,18 @@
      clubs/{clubId}/fees/{yyyy-mm}          월별 회비
      clubs/{clubId}/courts/{courtId}        코트 DB
      clubs/{clubId}/meta/rules              편성 기준 우선순위(키 배열)
+     clubs/{clubId}/joinRequests/{uid}      가입 신청(비회원이 직접 생성, 운영진이 승인)
      inviteCodes/{CODE}                     초대코드 → clubId 조회(FIX-04, 루트)
+     clubDirectory/{clubId}                 공개 클럽 목록(이름 검색용, 루트)
      guestPosts/{postId}                    게스트 모집(공개, 루트) (FIX-05)
        └ applicants/{uid}                   신청자(본인만 작성)
    ============================================================ */
 import {
-  collection, doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc,
-  onSnapshot, query, where, orderBy, serverTimestamp, arrayUnion, runTransaction, deleteField, writeBatch,
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
+  onSnapshot, query, where, orderBy, limit, serverTimestamp, arrayUnion, runTransaction, deleteField, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
-import { ROLES, GUEST_STATUS } from './constants';
+import { ROLES, GUEST_STATUS, JOIN_STATUS } from './constants';
 
 const C = (clubId, sub) => collection(db, 'clubs', clubId, sub);
 const D = (clubId, sub, id) => doc(db, 'clubs', clubId, sub, id);
@@ -276,11 +278,14 @@ async function reserveInviteCode(clubId, clubName) {
 
 export const createClub = async (name, settings, owner) => {
   const { uid, ...ownerData } = owner;
+  const region = (settings?.region || '').trim();
   const ref = await addDoc(collection(db, 'clubs'), { name, settings, ownerId: uid, createdAt: serverTimestamp() });
   await setDoc(doc(db, 'clubs', ref.id, 'members', uid), { ...ownerData, role: ROLES.PRESIDENT, status: '활동' });
   const code = await reserveInviteCode(ref.id, name);
   await setDoc(doc(db, 'clubs', ref.id, 'meta', 'rules'), { order: null });
   await updateDoc(ref, { inviteCode: code }); // 총무 표시용
+  // 공개 목록에 등록 — 다른 사람이 이름으로 검색해 가입 신청할 수 있게
+  await publishClubDirectory(ref.id, { name, region, memberCount: 1 });
   return { clubId: ref.id, inviteCode: code };
 };
 
@@ -288,4 +293,103 @@ export const createClub = async (name, settings, owner) => {
 export const findClubByInviteCode = async (code) => {
   const snap = await getDoc(doc(db, 'inviteCodes', String(code).toUpperCase()));
   return snap.exists() ? snap.data() : null;
+};
+
+/* ============================================================
+   공개 클럽 목록(clubDirectory) — 이름으로 검색해서 가입 신청
+   · 클럽 상세(회원·일정)는 여전히 회원만 볼 수 있고,
+     여기엔 검색에 필요한 최소 정보(이름·지역·인원)만 공개한다.
+   · searchable = false 로 두면 목록에서 빠진다(초대코드로만 가입).
+   ============================================================ */
+const normalize = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, '');
+
+export const publishClubDirectory = (clubId, { name, region, memberCount, searchable = true }) =>
+  setDoc(doc(db, 'clubDirectory', clubId), {
+    name,
+    nameLower: normalize(name),
+    region: region || '',
+    regionLower: normalize(region),
+    memberCount: memberCount ?? 0,
+    searchable,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+
+/** 이름·지역 부분 문자열 검색.
+ *  Firestore 는 부분 문자열 검색을 지원하지 않으므로 공개 목록을 받아
+ *  클라이언트에서 거른다. where 한 개 + limit 만 써서 복합 색인이 필요 없다
+ *  (색인을 따로 만들지 않아도 배포 직후 바로 동작). */
+export const searchClubs = async (keyword, max = 40) => {
+  const snap = await getDocs(query(
+    collection(db, 'clubDirectory'),
+    where('searchable', '==', true),
+    limit(300),
+  ));
+  const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.memberCount || 0) - (a.memberCount || 0));
+  const q = normalize(keyword);
+  if (!q) return all.slice(0, max);
+  return all
+    .filter((c) => (c.nameLower || '').includes(q) || (c.regionLower || '').includes(q))
+    .slice(0, max);
+};
+
+export const getClubDirectory = async (clubId) => {
+  const snap = await getDoc(doc(db, 'clubDirectory', clubId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+};
+
+/* ============================================================
+   가입 신청 — 비회원이 직접 문서를 만들고, 운영진이 승인한다.
+   clubs/{clubId}/joinRequests/{uid}
+   승인 시점에 members/{uid} 문서를 운영진 권한으로 만들고,
+   신청 문서 상태를 approved 로 바꾼다. 신청자 앱은 자기 신청 문서를
+   구독하다가 approved 를 보면 users/{uid}.clubId 를 스스로 기록한다.
+   (users/{uid} 는 본인만 쓸 수 있으므로 이 순서가 필요하다)
+   ============================================================ */
+export const requestJoinClub = (clubId, uid, profile) =>
+  setDoc(doc(db, 'clubs', clubId, 'joinRequests', uid), {
+    ...profile,
+    status: JOIN_STATUS.PENDING,
+    createdAt: serverTimestamp(),
+  });
+
+/** 신청자 본인이 자기 신청 상태를 구독 */
+export const subMyJoinRequest = (clubId, uid, cb) =>
+  onSnapshot(doc(db, 'clubs', clubId, 'joinRequests', uid),
+    (d) => cb(d.exists() ? { id: d.id, ...d.data() } : null),
+    () => cb(null));
+
+/** 운영진이 대기 중 신청 목록을 구독 */
+export const subJoinRequests = (clubId, cb) =>
+  onSnapshot(collection(db, 'clubs', clubId, 'joinRequests'),
+    (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    () => cb([]));
+
+/** 운영진 승인 — 회원 문서 생성 + 신청 상태 갱신 */
+export const approveJoinRequest = async (clubId, uid, data) => {
+  const { status, createdAt, ...profile } = data || {};
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'clubs', clubId, 'members', uid), {
+    ...profile, role: ROLES.MEMBER, status: '활동',
+  });
+  batch.update(doc(db, 'clubs', clubId, 'joinRequests', uid), {
+    status: JOIN_STATUS.APPROVED, decidedAt: serverTimestamp(),
+  });
+  await batch.commit();
+};
+
+export const rejectJoinRequest = (clubId, uid) =>
+  updateDoc(doc(db, 'clubs', clubId, 'joinRequests', uid), {
+    status: JOIN_STATUS.REJECTED, decidedAt: serverTimestamp(),
+  });
+
+/** 신청자 본인이 신청 취소 */
+export const cancelJoinRequest = (clubId, uid) =>
+  deleteDoc(doc(db, 'clubs', clubId, 'joinRequests', uid));
+
+/** 초대코드로 즉시 가입(승인 불필요 — 코드 자체가 운영진의 초대) */
+export const joinClubWithCode = async (clubId, uid, profile, code) => {
+  await setDoc(doc(db, 'clubs', clubId, 'members', uid), {
+    ...profile, role: ROLES.MEMBER, status: '활동', joinCode: String(code).toUpperCase(),
+  });
 };

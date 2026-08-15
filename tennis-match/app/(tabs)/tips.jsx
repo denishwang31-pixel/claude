@@ -2,11 +2,12 @@
    영상은 링크로 등록하고, 누르면 유튜브 앱/브라우저로 열립니다. */
 import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Image, Linking } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../_layout';
 import { useClub } from '../../src/hooks/useClub';
+import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { subTips, addTip, deleteTip } from '../../src/lib/firestore';
 import { TIP_CATEGORIES } from '../../src/lib/constants';
+import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Label } from '../../src/components/pickers';
 import { Card, SectionTitle, Chip, Btn, Field } from '../../src/components/ui';
 import { C } from '../../src/lib/theme';
@@ -24,7 +25,6 @@ const thumbOf = (url) => {
 
 export default function Tips() {
   const { clubId, me, viewMode } = useApp();
-  const insets = useSafeAreaInsets();
   const { isAdmin } = useClub(clubId, me, { viewMode });
 
   const [items, setItems] = useState([]);
@@ -42,12 +42,21 @@ export default function Tips() {
   const list = useMemo(() => items.filter((x) => !cat || x.category === cat), [items, cat]);
   const open = (url) => { if (url) Linking.openURL(url).catch(() => flash('링크를 열 수 없습니다')); };
 
+  /* 안드로이드 뒤로 = 등록 폼 → 카테고리 필터 순으로 되돌린다 */
+  useBackHandler(() => {
+    if (adding) { setAdding(false); return true; }
+    if (cat) { setCat(null); return true; }
+    return false;
+  });
+
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={{ backgroundColor: C.ink, paddingTop: insets.top + 8, paddingBottom: 12, paddingHorizontal: 16 }}>
-        <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>🎯 원포인트</Text>
-        <Text style={{ color: '#6ee7b7', fontSize: 11, marginTop: 2 }}>영역별 레슨 영상 모음</Text>
-      </View>
+      <ScreenHeader
+        title="🎯 원포인트"
+        subtitle="영역별 레슨 영상 모음"
+        onBack={adding ? () => setAdding(false) : undefined}
+        backLabel="원포인트"
+      />
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
