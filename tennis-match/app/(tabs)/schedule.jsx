@@ -1,10 +1,10 @@
 /* 일정 / RSVP — 캘린더·시간 선택, 정기 모임 반복 등록, 참석 체크 */
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
 import { useApp } from '../_layout';
 import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
+import { useVenueScope } from '../../src/hooks/useVenueScope';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { weatherFor } from '../../src/lib/weather';
@@ -33,14 +33,13 @@ const today = () => new Date().toISOString().slice(0, 10);
 export default function Schedule() {
   const { clubId, me, viewMode } = useApp();
   const bottomPad = useBottomPad();
-  const params = useLocalSearchParams();
   const { club, members, meetings, venues, isAdmin, scopeVenues, nameOf } =
     useClub(clubId, me, { viewMode });
+  const { venueId, setVenueId } = useVenueScope(scopeVenues);
   const settings = { ...DEFAULT_SETTINGS, ...(club?.settings || {}) };
   const [nd, setNd] = useState(null);
   const [open, setOpen] = useState(false);   // 등록 폼 펼침
   const [editing, setEditing] = useState(null);  // 수정 중인 모임
-  const [venueId, setVenueId] = useState(null);  // 코트장 필터
   const [toast, setToast] = useState(null);
   const [ads, setAds] = useState([]);
   const sheet = useOptionSheet();
@@ -48,10 +47,8 @@ export default function Schedule() {
 
   useEffect(() => subGear(setAds), []);
 
-  /* 홈에서 코트를 고르고 들어왔으면 그 코트만 본다 */
-  useEffect(() => {
-    if (params?.venueId) setVenueId(String(params.venueId));
-  }, [params?.venueId]);
+  /* 보고 있는 코트장은 앱 상태(useApp)에서 온다 — 홈에서 고른 값이 그대로다.
+     라우터 파라미터로 넘기던 것을 옮긴 이유는 app/_layout.jsx 주석 참고. */
 
   const blank = () => ({
     date: '', time: settings.startTime, place: '',
@@ -81,10 +78,13 @@ export default function Schedule() {
     .filter((m) => (venueId ? m.venueId === venueId : true));
   const RSVP_OPTS = [[RSVP.YES, '참석'], [RSVP.MAYBE, '미정'], [RSVP.NO, '불참']];
 
-  /* 안드로이드 뒤로 = 등록 폼이 열려 있으면 폼부터 닫는다 */
+  /* 안드로이드 뒤로 = 등록 폼이 열려 있으면 폼부터 닫는다.
+
+     예전에는 여기서 코트 선택도 풀었는데(전체 코트로 되돌림), 그러면
+     "뒤로가기를 눌렀더니 홈이 아니라 전체 일정이 나온다"가 된다.
+     코트 선택은 홈에서 바꾸는 것이므로 뒤로가기가 건드리지 않는다. */
   useBackHandler(() => {
     if (open) { setOpen(false); setEditing(null); return true; }
-    if (venueId) { setVenueId(null); return true; }
     return false;
   });
 

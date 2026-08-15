@@ -26,6 +26,17 @@ export default function RootLayout() {
   const [loading, setLoading] = useState(true);
   /** 보기 모드: null = 실제 역할 그대로 / 'staff' | 'lead' | 'member' */
   const [viewMode, setViewMode] = useState(null);
+  /* 지금 보고 있는 코트장. null = 전체.
+
+     왜 라우터 파라미터가 아니라 여기에 두나
+       예전에는 홈에서 /(tabs)/match?venueId=… 처럼 파라미터로 넘겼다.
+       그런데 탭 화면은 파라미터만 다른 같은 화면이라, 뒤로가기를 누르면
+       홈이 아니라 "파라미터 없는 같은 화면"(=전체 코트)으로 돌아갔다.
+       또 파라미터가 라우트에 남아 있어서, 코트를 바꿔도 예전 코트가
+       다시 뜨는 일이 있었다.
+       코트 선택은 "지금 무엇을 보고 있는가"라는 앱 전체의 상태이므로
+       보기 모드와 같은 자리에 둔다. 화면들은 전부 이 값 하나만 본다. */
+  const [venueId, setVenueId] = useState(null);
   const router = useRouter();
   const segments = useSegments();
 
@@ -67,7 +78,11 @@ export default function RootLayout() {
   }, [loading, session, segments]);
 
   /** 클럽을 새로 만들거나 옮길 때 호출 */
-  const switchClub = (clubId) => setSession((s) => ({ ...s, clubId, skipped: false, pendingClubId: null }));
+  /* 클럽을 바꾸면 코트 선택도 초기화 — 다른 클럽의 코트장 id 가 남으면 안 된다 */
+  const switchClub = (clubId) => {
+    setVenueId(null);
+    setSession((s) => ({ ...s, clubId, skipped: false, pendingClubId: null }));
+  };
   /** 온보딩을 다시 밟게 한다(클럽 찾기/만들기 재진입) */
   const resetOnboarding = () => setSession((s) => ({ ...s, skipped: false }));
 
@@ -82,7 +97,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AppCtx.Provider value={{ ...session, viewMode, setViewMode, switchClub, resetOnboarding }}>
+        <AppCtx.Provider value={{ ...session, viewMode, setViewMode, venueId, setVenueId, switchClub, resetOnboarding }}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="login" />
             <Stack.Screen name="onboarding" />

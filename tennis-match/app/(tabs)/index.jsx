@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useApp } from '../_layout';
 import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
+import { useVenueScope } from '../../src/hooks/useVenueScope';
 import { computeStats } from '../../src/lib/matchmaking';
 import { weatherFor } from '../../src/lib/weather';
 import {
@@ -49,8 +50,8 @@ export default function Home() {
     club, members, meetings, posts, guestPosts, venues, meVal,
     isAdmin, realStaff, scopeVenues, seeAllVenues, realRole,
   } = useClub(clubId, me, { viewMode });
+  const { venueId, setVenueId } = useVenueScope(scopeVenues);
 
-  const [venueId, setVenueId] = useState(null);
   const [ads, setAds] = useState([]);
   const [pendingJoins, setPendingJoins] = useState(0);
   const [svc, setSvc] = useState(null);
@@ -98,17 +99,19 @@ export default function Home() {
   const myStat = stats[me];
   const venueName = (id) => venues.find((v) => v.id === id)?.name;
 
-  /* 홈에서 고른 코트를 다음 화면까지 끌고 간다.
-     예전엔 코트를 골라도 일정·대진표는 전체 코트를 보여줘 선택이 무의미했다. */
+  /* 화면 이동.
+
+     코트 선택은 라우터 파라미터로 넘기지 않는다. 파라미터로 넘기면
+     "같은 화면 + 다른 파라미터"가 히스토리에 쌓여서, 뒤로가기가 홈이 아니라
+     필터 없는 같은 화면으로 돌아간다. 코트는 앱 상태(useApp)에 있고
+     일정·대진 화면이 그걸 직접 본다. */
   const go = (target) => {
-    if (typeof target === 'string') {
-      const carries = target.includes('schedule') || target.includes('match');
-      return router.push(carries && venueId ? { pathname: target, params: { venueId } } : target);
-    }
+    if (typeof target === 'string') return router.push(target);
     return router.push({ pathname: '/(tabs)/more', params: { open: target.more } });
   };
 
-  /* 코트를 고르지 않았고 코트장이 여러 곳이면, 어느 코트를 볼지 먼저 묻는다 */
+  /* 코트를 고르지 않았고 코트장이 여러 곳이면, 어느 코트를 볼지 먼저 묻는다.
+     고른 값은 앱 상태에 저장되므로 홈의 드롭다운도 같이 바뀐다. */
   const goScoped = (path) => {
     if (venueId || scopeVenues.length < 2) return go(path);
     return sheet.open({
@@ -117,11 +120,21 @@ export default function Home() {
         { key: 'all', label: '전체 코트' },
         ...scopeVenues.map((v) => ({ key: v.id, label: `${v.name} · ${v.startTime || ''}` })),
       ],
-      onSelect: (o) => router.push(
-        o.key === 'all' ? path : { pathname: path, params: { venueId: o.key } },
-      ),
+      onSelect: (o) => {
+        setVenueId(o.key === 'all' ? null : o.key);
+        router.push(path);
+      },
     });
   };
+
+  /* 모임 하나를 콕 집어 대진으로.
+
+     코트 범위는 건드리지 않는다. 홈에서 고른 코트가 곧 대진 화면의 범위이고
+     (앱 상태를 공유하므로 그대로 따라간다), 홈이 '전체'면 대진도 전체다.
+     여기서 몰래 코트를 바꾸면 돌아왔을 때 홈의 선택이 달라져 있어 혼란스럽다. */
+  const goMeeting = (m) => (m
+    ? router.push({ pathname: '/(tabs)/match', params: { meetingId: m.id } })
+    : undefined);
 
   /* ---------- 클럽 없이 둘러보는 중 ---------- */
   if (!clubId) {
@@ -225,7 +238,7 @@ export default function Home() {
 
         {/* 다음 모임 — 눌러서 대진표로 */}
         <Pressable disabled={!meeting}
-          onPress={() => meeting && router.push({ pathname: '/(tabs)/match', params: { meetingId: meeting.id } })}
+          onPress={() => goMeeting(meeting)}
           style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}>
           <View style={[{ backgroundColor: C.ink, borderRadius: R.xl, padding: S.xl }, SHADOW.md]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -341,7 +354,7 @@ export default function Home() {
                 const enough = cnt >= (m.courts || 1) * per;
                 return (
                   <Pressable key={m.id}
-                    onPress={() => router.push({ pathname: '/(tabs)/match', params: { meetingId: m.id } })}
+                    onPress={() => goMeeting(m)}
                     style={({ pressed }) => ({
                       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       paddingVertical: 11, borderTopWidth: i ? 1 : 0, borderTopColor: C.border,

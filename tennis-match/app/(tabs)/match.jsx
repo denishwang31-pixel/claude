@@ -1,13 +1,14 @@
 /* 대진 — 코트장·모임 선택 → 편성 → 그리드로 한눈에 보기
    ⚠️ 이전 버전은 "가장 가까운 모임 1건"만 다뤄서 여러 일정 중 첫 경기만 보였음.
       이제 코트장(드롭다운) + 날짜(가로 스크롤)로 원하는 모임을 골라 편성/조회한다. */
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import DraggableFlatList from 'react-native-draggable-flatlist';
 import { useApp } from '../_layout';
 import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
+import { useVenueScope } from '../../src/hooks/useVenueScope';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import {
@@ -43,9 +44,9 @@ export default function Match() {
     club, members, meetings, venues, rules, pairs, matchConfig,
     isAdmin, scopeVenues, nameOf,
   } = useClub(clubId, me, { viewMode });
+  const { venueId, setVenueId } = useVenueScope(scopeVenues);
   const cfg = { ...DEFAULT_MATCH_CONFIG, ...(matchConfig || {}) };
 
-  const [venueId, setVenueId] = useState(null);   // null = 전체
   const [meetingId, setMeetingId] = useState(null);
   const [view, setView] = useState('grid');       // grid | list
   const [showTools, setShowTools] = useState(false);
@@ -66,15 +67,25 @@ export default function Match() {
       .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
   }, [meetings, scopeIds, venueId]);
 
-  /* 홈에서 특정 모임을 눌러 들어온 경우 그 모임을 연다 */
+  /* 홈에서 특정 모임을 눌러 들어온 경우 그 모임을 연다.
+     한 번 쓰고 파라미터를 비운다 — 남겨 두면 나중에 탭으로 다시 들어왔을 때
+     예전에 보던 모임이 계속 열린다. */
   useEffect(() => {
-    if (params?.meetingId) setMeetingId(String(params.meetingId));
+    if (!params?.meetingId) return;
+    setMeetingId(String(params.meetingId));
+    router.setParams({ meetingId: '' });
   }, [params?.meetingId]);
 
-  /* 홈에서 코트를 고르고 들어왔으면 그 코트만 본다 */
+  /* 코트장을 바꾸면 골라 둔 모임은 버린다 — 다른 코트의 모임이 남아 있으면
+     "수도공고로 바꿨는데 염곡 대진이 보인다"가 된다.
+     첫 렌더에서는 건너뛴다. 홈에서 모임을 콕 집어 들어온 경우
+     그 모임을 방금 세팅했는데 여기서 지워 버리면 안 되기 때문. */
+  const prevVenue = useRef(venueId);
   useEffect(() => {
-    if (params?.venueId) setVenueId(String(params.venueId));
-  }, [params?.venueId]);
+    if (prevVenue.current === venueId) return;
+    prevVenue.current = venueId;
+    setMeetingId(null);
+  }, [venueId]);
 
   /* 선택된 모임 (없으면 가장 가까운 것) */
   const meeting = useMemo(
@@ -229,18 +240,20 @@ export default function Match() {
     runGenerate(!!(cfg.allowMixed || club?.settings?.allowMixedDefault));
   };
 
-  /* 뒤로가기 우선순위: 스코어 입력 → 편성 설정 → (홈에서 들어왔으면) 홈으로 */
-  const fromHome = !!params?.meetingId;
+  /* 뒤로가기 우선순위: 스코어 입력 → 편성 설정 → 홈으로.
+
+     예전에는 홈에서 코트를 파라미터로 넘겼더니, 뒤로가기가 홈이 아니라
+     "파라미터 없는 같은 화면"(=전체 코트 대진)으로 돌아갔다.
+     이제 코트는 앱 상태에 있으므로 뒤로가기는 항상 홈으로 보낸다. */
   const goBack = () => {
     if (editing) { setEditing(null); return; }
     if (showTools) { setShowTools(false); return; }
-    if (router.canGoBack()) router.back(); else router.replace('/(tabs)');
+    router.replace('/(tabs)');
   };
   useBackHandler(() => {
     if (editing) { setEditing(null); return true; }
     if (showTools) { setShowTools(false); return true; }
-    if (fromHome) { goBack(); return true; }
-    return false;
+    return false;   // 최상위에서는 탭 기본 동작
   });
 
   const saveSc = (mid) => {
@@ -259,7 +272,7 @@ export default function Match() {
       {/* 코트장 드롭다운 */}
       {venues.length > 0 && (
         <View style={{ marginBottom: 10 }}>
-          <VenuePicker venues={scopeVenues} value={venueId} onChange={(v) => { setVenueId(v); setMeetingId(null); }} />
+          <VenuePicker venues={scopeVenues} value={venueId} onChange={setVenueId} />
         </View>
       )}
 
@@ -625,7 +638,7 @@ export default function Match() {
         subtitle={meeting
           ? `${meeting.date}(${dowName(meeting.date)}) ${meeting.time || ''} · 참석 ${attendees.length}명`
           : (club?.name || '예정된 모임 없음')}
-        onBack={(editing || showTools || fromHome) ? goBack : undefined}
+        onBack={goBack}
         backLabel={editing ? '대진표' : showTools ? '대진표' : '홈'}
       />
       <DraggableFlatList
