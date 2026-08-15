@@ -68,6 +68,39 @@ export const addMeeting = (clubId, data) =>
 
 export const updateMeeting = (clubId, id, patch) => updateDoc(D(clubId, 'meetings', id), patch);
 
+export const deleteMeeting = (clubId, id) => deleteDoc(D(clubId, 'meetings', id));
+
+/** 이 모임 이후(같은 코트장·같은 시리즈)의 일정을 한꺼번에 수정.
+ *
+ *  "어느 날부터 면수가 3면 → 2면으로 줄었다" 같은 상황에서, 지난 기록은
+ *  그대로 두고 그날 이후 일정만 바꾸기 위한 것. 전부 지우고 다시 만들면
+ *  이미 기록된 참석·대진이 날아가므로 그렇게 하지 않는다.
+ *
+ *  @param fromDate  이 날짜 포함 이후만 대상
+ *  @param scope     { venueId } 지정 시 같은 코트장 일정만
+ *  @returns 수정된 건수
+ */
+export const updateMeetingsFrom = async (clubId, fromDate, patch, scope = {}) => {
+  const snap = await getDocs(C(clubId, 'meetings'));
+  const targets = snap.docs.filter((d) => {
+    const m = d.data();
+    if ((m.date || '') < fromDate) return false;
+    if (m.canceled) return false;
+    if (scope.venueId !== undefined && (m.venueId || null) !== scope.venueId) return false;
+    return true;
+  });
+  if (!targets.length) return 0;
+
+  // 배치 한도(500)를 넘지 않게 나눠 쓴다
+  for (let i = 0; i < targets.length; i += 400) {
+    const batch = writeBatch(db);
+    targets.slice(i, i + 400).forEach((d) => batch.update(d.ref, patch));
+    // eslint-disable-next-line no-await-in-loop
+    await batch.commit();
+  }
+  return targets.length;
+};
+
 export const setRsvp = (clubId, meetingId, memberId, value) =>
   updateDoc(D(clubId, 'meetings', meetingId), { [`rsvp.${memberId}`]: value });
 

@@ -10,7 +10,7 @@ import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { computeStats } from '../../src/lib/matchmaking';
 import { logout } from '../../src/lib/auth';
 import { subJoinRequests } from '../../src/lib/firestore';
-import { JOIN_STATUS } from '../../src/lib/constants';
+import { JOIN_STATUS, normalizeRole } from '../../src/lib/constants';
 import { Board, Guest, Courts } from '../../src/components/MoreScreens';
 import { Members } from '../../src/components/MembersScreen';
 import { Fees } from '../../src/components/FeesScreen';
@@ -59,7 +59,7 @@ const MENU_GROUPS = [
       ['joinreq', 'joinreq', '가입 신청', '검색으로 들어온 신청을 승인'],
       ['invite', 'invite', '클럽 초대', '초대코드·링크 보내기'],
       ['attendance', 'attendance', '출석', null],
-      ['fees', 'fees', '회비·지출', null],
+      ['fees', 'fees', '회비·지출', '회장·총무만', 'fees'],
       ['pairs', 'pairs', '커플·고정 페어', null],
       ['venues', 'venues', '코트장 관리', '우리 클럽이 정기적으로 쓰는 코트'],
       ['matchcfg', 'matchcfg', '대진 설정', null],
@@ -91,6 +91,7 @@ export default function More() {
   const {
     club, members, meetings, posts, guestPosts, courts, fee, pairs, tournaments,
     venues, matchConfig, rules, polls, meVal, isAdmin, canAppoint, nameOf,
+    seeFees, seeAllVenues, myLeadVenues,
   } = useClub(clubId, me, { feeMonth, viewMode });
   const { stats } = useMemo(() => computeStats(members, meetings), [members, meetings]);
 
@@ -126,7 +127,12 @@ export default function More() {
       );
       case 'venues': return <Venues {...{ clubId, club, venues, members, isAdmin, flash }} />;
       case 'matchcfg': return <MatchConfig {...{ clubId, matchConfig, rules, isAdmin, flash }} />;
-      case 'fees': return <Fees {...{ clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash }} />;
+      case 'fees': return (
+        <Fees {...{
+          clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash,
+          venues, seeFees, seeAllVenues, myLeadVenues,
+        }} />
+      );
       case 'board': return <Board {...{ clubId, posts, meVal, me, isAdmin, flash }} />;
       case 'guest': return <Guest {...{ clubId, club, guestPosts, meetings, venues, me, meVal, isAdmin, flash }} />;
       case 'courts': return <Courts {...{ clubId, courts, isAdmin, flash }} />;
@@ -230,17 +236,19 @@ export default function More() {
               <View key={g.title}>
                 <SectionTitle>{g.title}</SectionTitle>
                 <Card style={{ paddingVertical: 4 }}>
-                  {g.items.map(([k, icon, label, subLabel], i) => (
-                    <ListRow
-                      key={k}
-                      first={i === 0}
-                      icon={icon}
-                      label={label}
-                      sub={subLabel}
-                      right={k === 'joinreq' && pendingCount > 0 ? <Badge count={pendingCount} /> : null}
-                      onPress={() => (k === 'rank' ? router.push('/(tabs)/rank') : setSub(k))}
-                    />
-                  ))}
+                  {g.items
+                    .filter(([, , , , gate]) => gate !== 'fees' || seeFees)
+                    .map(([k, icon, label, subLabel], i) => (
+                      <ListRow
+                        key={k}
+                        first={i === 0}
+                        icon={icon}
+                        label={label}
+                        sub={subLabel}
+                        right={k === 'joinreq' && pendingCount > 0 ? <Badge count={pendingCount} /> : null}
+                        onPress={() => (k === 'rank' ? router.push('/(tabs)/rank') : setSub(k))}
+                      />
+                    ))}
                 </Card>
               </View>
             ))}
@@ -249,7 +257,7 @@ export default function More() {
             <Card>
               <Text style={F.bodyBold}>{club?.name || '테니스클럽'}</Text>
               <Text style={[F.caption, { marginTop: 2 }]}>
-                내 역할 {meVal?.role || '회원'} · 회원 {members.length}명
+                내 역할 {normalizeRole(meVal?.role)} · 회원 {members.length}명
               </Text>
               <View style={{ marginTop: 12, gap: 8 }}>
                 <Btn full tone="ghost" onPress={newClub}>새 클럽 만들기</Btn>

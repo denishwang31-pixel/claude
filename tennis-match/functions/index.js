@@ -4,7 +4,9 @@
    배포: firebase deploy --only functions   (Blaze 요금제 필요 — 무료 쿼터 내 사용)
    시크릿: firebase functions:secrets:set KMA_SERVICE_KEY  (공공데이터포털 일반 인증키)
    ============================================================ */
-const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const {
+  onDocumentCreated, onDocumentUpdated, onDocumentDeleted, onDocumentWritten,
+} = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
@@ -210,5 +212,136 @@ exports.updateForecasts = onSchedule(
         } catch (e) { logger.error('forecast failed', club.id, mdoc.id, e); }
       }
     }
+  },
+);
+
+
+/* ============================================================
+   공개 클럽 목록 동기화 — 회원 수·남녀 비율
+
+   왜 서버에서 하나
+     회원이 가입해도 clubDirectory 는 운영진만 쓸 수 있어서, 새로 들어온
+     사람이 스스로 인원수를 고칠 수 없다. 그래서 검색 목록의 "회원 12명"이
+     한동안 옛날 값으로 남아 있었다. 회원 문서가 생기거나 지워질 때
+     서버가 대신 세어 준다.
+
+   FieldValue.increment 대신 실제로 세는 이유: 중간에 어긋난 값이 있어도
+   한 번 쓸 때마다 정확한 수로 맞춰지기 때문. 회원 수 규모(수십~수백)라
+   비용도 문제되지 않는다.
+   ============================================================ */
+async function syncClubDirectory(clubId) {
+  const [clubSnap, memberSnap] = await Promise.all([
+    db.collection('clubs').doc(clubId).get(),
+    db.collection('clubs').doc(clubId).collection('members').get(),
+  ]);
+  if (!clubSnap.exists) return;
+  const club = clubSnap.data();
+
+  let male = 0;
+  let female = 0;
+  memberSnap.docs.forEach((d) => {
+    const g = d.data().gender;
+    if (g === 'F') female += 1; else male += 1;
+  });
+
+  const name = club.name || '';
+  const region = club.settings?.region || '';
+  const normalize = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, '');
+
+  await db.collection('clubDirectory').doc(clubId).set({
+    name,
+    nameLower: normalize(name),
+    region,
+    regionLower: normalize(region),
+    image: club.image || '',
+    hasPassword: !!club.joinPassword,
+    memberCount: memberSnap.size,
+    maleCount: male,
+    femaleCount: female,
+    updatedAt: new Date(),
+  }, { merge: true });
+}
+
+/** 회원이 들어오거나 나갈 때 공개 목록을 다시 센다 */
+exports.onMemberWritten = onDocumentWritten(
+  { ...REGION, document: 'clubs/{clubId}/members/{memberId}' },
+  async (event) => {
+    const before = event.data?.before?.exists;
+    const after = event.data?.after?.exists;
+    // 인원수·성별이 바뀔 때만 — 이름·부수만 고친 경우는 건너뛴다
+    if (before && after) {
+      const b = event.data.before.data();
+      const a = event.data.after.data();
+      if (b.gender === a.gender) return;
+    }
+    try {
+      await syncClubDirectory(event.params.clubId);
+    } catch (e) {
+      logger.error('syncClubDirectory failed', event.params.clubId, e);
+    }
+  },
+);
+
+/** 클럽 이름·지역·비밀번호가 바뀌면 공개 목록도 따라간다 */
+exports.onClubUpdated = onDocumentUpdated(
+  { ...REGION, document: 'clubs/{clubId}' },
+  async (event) => {
+    const b = event.data.before.data();
+    const a = event.data.after.data();
+    const changed = b.name !== a.name
+      || b.image !== a.image
+      || !!b.joinPassword !== !!a.joinPassword
+      || (b.settings?.region || '') !== (a.settings?.region || '');
+    if (!changed) return;
+    try {
+      await syncClubDirectory(event.params.clubId);
+    } catch (e) {
+      logger.error('syncClubDirectory failed', event.params.clubId, e);
+    }
+  },
+);
+
+/* ---------------- 서비스 전체 현황 카운터 ----------------
+   온보딩·홈에 보여주는 "클럽 N개 · 회원 M명 · 누적 경기 K건".
+   클럽/회원이 생기거나 사라질 때 증감시킨다. */
+const { FieldValue } = require('firebase-admin/firestore');
+
+exports.onClubCreatedStat = onDocumentCreated(
+  { ...REGION, document: 'clubs/{clubId}' },
+  async () => {
+    await db.collection('stats').doc('service')
+      .set({ clubs: FieldValue.increment(1) }, { merge: true });
+  },
+);
+
+exports.onClubDeletedStat = onDocumentDeleted(
+  { ...REGION, document: 'clubs/{clubId}' },
+  async (event) => {
+    await db.collection('stats').doc('service')
+      .set({ clubs: FieldValue.increment(-1) }, { merge: true });
+    await db.collection('clubDirectory').doc(event.params.clubId).delete().catch(() => {});
+  },
+);
+
+exports.onMemberCountStat = onDocumentWritten(
+  { ...REGION, document: 'clubs/{clubId}/members/{memberId}' },
+  async (event) => {
+    const before = event.data?.before?.exists;
+    const after = event.data?.after?.exists;
+    if (before === after) return;               // 수정은 무시, 생성/삭제만
+    await db.collection('stats').doc('service')
+      .set({ members: FieldValue.increment(after ? 1 : -1) }, { merge: true });
+  },
+);
+
+/** 대진에 스코어가 기록되면 누적 경기 수를 올린다 */
+exports.onMatchesRecorded = onDocumentUpdated(
+  { ...REGION, document: 'clubs/{clubId}/meetings/{meetingId}' },
+  async (event) => {
+    const scored = (m) => (m.matches || []).filter((x) => x && x.score).length;
+    const delta = scored(event.data.after.data()) - scored(event.data.before.data());
+    if (delta <= 0) return;
+    await db.collection('stats').doc('service')
+      .set({ matches: FieldValue.increment(delta) }, { merge: true });
   },
 );

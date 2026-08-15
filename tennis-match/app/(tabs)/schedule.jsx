@@ -1,47 +1,61 @@
 /* 일정 / RSVP — 캘린더·시간 선택, 정기 모임 반복 등록, 참석 체크 */
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { useApp } from '../_layout';
 import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { weatherFor } from '../../src/lib/weather';
-import { setRsvp, addMeeting, addMeetingsBatch, updateMeeting, subGear } from '../../src/lib/firestore';
+import {
+  setRsvp, addMeeting, addMeetingsBatch, updateMeeting, updateMeetingsFrom,
+  deleteMeeting, subGear,
+} from '../../src/lib/firestore';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
 import {
   DEFAULT_SETTINGS, roundsFromSettings, describeSettings,
   REPEAT_TYPES, expandRecurrence, dowName,
 } from '../../src/lib/schedule';
-import {
-  RSVP, PLAY_MODE, PLAY_MODES, SURFACES, END_SCORES,
-} from '../../src/lib/constants';
+import { RSVP, SURFACES, END_SCORES } from '../../src/lib/constants';
 import { DateField, TimeField, Label } from '../../src/components/pickers';
+import { VenuePicker } from '../../src/components/VenuePicker';
+import { Icon } from '../../src/components/Icon';
+import { AppButton, Fab, useOptionSheet } from '../../src/components/native';
 import {
-  Card, SectionTitle, Btn, Field, Avatar, Chip, SegmentedControl, CheckRow,
+  Card, SectionTitle, Btn, Field, Avatar, Chip, CheckRow, EmptyState,
 } from '../../src/components/ui';
-import { C, S } from '../../src/lib/theme';
+import { C, S, R, F } from '../../src/lib/theme';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default function Schedule() {
   const { clubId, me, viewMode } = useApp();
-  const { club, members, meetings, venues, isAdmin, nameOf } = useClub(clubId, me, { viewMode });
+  const params = useLocalSearchParams();
+  const { club, members, meetings, venues, isAdmin, scopeVenues, nameOf } =
+    useClub(clubId, me, { viewMode });
   const settings = { ...DEFAULT_SETTINGS, ...(club?.settings || {}) };
   const [nd, setNd] = useState(null);
   const [open, setOpen] = useState(false);   // 등록 폼 펼침
+  const [editing, setEditing] = useState(null);  // 수정 중인 모임
+  const [venueId, setVenueId] = useState(null);  // 코트장 필터
   const [toast, setToast] = useState(null);
   const [ads, setAds] = useState([]);
+  const sheet = useOptionSheet();
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
 
   useEffect(() => subGear(setAds), []);
+
+  /* 홈에서 코트를 고르고 들어왔으면 그 코트만 본다 */
+  useEffect(() => {
+    if (params?.venueId) setVenueId(String(params.venueId));
+  }, [params?.venueId]);
 
   const blank = () => ({
     date: '', time: settings.startTime, place: '',
     courts: String(settings.courts),
     rounds: String(roundsFromSettings(settings)),
     venueId: null,
-    playMode: PLAY_MODE.DOUBLES,
     surface: '',
     endScore: 6,
     ranked: true,          // 랭킹 반영 여부
@@ -58,13 +72,110 @@ export default function Schedule() {
     });
   };
 
-  const upcoming = meetings.filter((m) => m.date >= today());
+  const scopeIds = scopeVenues.map((v) => v.id);
+  const upcoming = meetings
+    .filter((m) => m.date >= today())
+    .filter((m) => (!m.venueId ? true : scopeIds.includes(m.venueId)))
+    .filter((m) => (venueId ? m.venueId === venueId : true));
   const RSVP_OPTS = [[RSVP.YES, '참석'], [RSVP.MAYBE, '미정'], [RSVP.NO, '불참']];
 
   /* 안드로이드 뒤로 = 등록 폼이 열려 있으면 폼부터 닫는다 */
   useBackHandler(() => {
-    if (open) { setOpen(false); return true; }
+    if (open) { setOpen(false); setEditing(null); return true; }
+    if (venueId) { setVenueId(null); return true; }
     return false;
+  });
+
+  /* ---------- 모임 수정 ----------
+     "어느 날부터 면수·시간이 달라졌다"는 상황이 흔한데, 지금까진 취소하고
+     다시 만드는 수밖에 없었다(지난 기록까지 날아간다). 그래서
+       · 이 모임만 수정
+       · 이 날짜 이후 같은 코트장 일정 전부 수정
+     두 갈래를 준다. */
+  const startEdit = (mt) => {
+    setEditing(mt);
+    setNd({
+      date: mt.date,
+      time: mt.time || settings.startTime,
+      place: mt.place || '',
+      courts: String(mt.courts ?? settings.courts),
+      rounds: String(mt.rounds ?? roundsFromSettings(settings)),
+      venueId: mt.venueId || null,
+      surface: mt.surface || '',
+      endScore: mt.endScore || 6,
+      ranked: mt.ranked !== false,
+      repeat: 'none',
+      until: '',
+    });
+    setOpen(true);
+  };
+
+  const editPatch = () => ({
+    time: nd.time,
+    place: nd.place,
+    courts: Math.max(1, +nd.courts || 1),
+    rounds: Math.max(1, +nd.rounds || 1),
+    venueId: nd.venueId || null,
+    surface: nd.surface || '',
+    endScore: nd.endScore || 6,
+    ranked: nd.ranked !== false,
+  });
+
+  const saveEditOne = async () => {
+    await updateMeeting(clubId, editing.id, { ...editPatch(), date: nd.date });
+    setOpen(false); setEditing(null); setNd(blank());
+    flash('이 모임만 수정했습니다');
+  };
+
+  const saveEditForward = () => {
+    const patch = editPatch();          // 날짜는 옮기지 않는다 — 이후 일정의 날짜는 그대로
+    const label = editing.venueId
+      ? `${venues.find((v) => v.id === editing.venueId)?.name || '이 코트장'} 일정`
+      : '코트장 미지정 일정';
+    Alert.alert(
+      '이후 일정 일괄 수정',
+      `${editing.date}부터의 ${label}에 이번 변경(면수·시간·타임 등)을 적용합니다.\n`
+      + '지난 일정과 이미 기록된 참석·대진은 그대로 남습니다.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '적용',
+          onPress: async () => {
+            const n = await updateMeetingsFrom(clubId, editing.date, patch, { venueId: editing.venueId || null });
+            setOpen(false); setEditing(null); setNd(blank());
+            flash(`${n}건의 일정을 수정했습니다`);
+          },
+        },
+      ],
+    );
+  };
+
+  /* 모임 카드의 ⋯ 메뉴 */
+  const meetingMenu = (mt) => sheet.open({
+    title: `${mt.date} ${mt.time || ''}`,
+    options: [
+      { key: 'edit', label: '이 모임 수정', icon: '✏️' },
+      { key: 'cancel', label: mt.canceled ? '취소 해제' : '우천/사정 취소', icon: '🌧' },
+      { key: 'delete', label: '모임 삭제', icon: '🗑', destructive: true },
+    ],
+    destructiveIndex: 2,
+    onSelect: (o) => {
+      if (o.key === 'edit') return startEdit(mt);
+      if (o.key === 'cancel') {
+        updateMeeting(clubId, mt.id, { canceled: !mt.canceled });
+        return flash(mt.canceled ? '취소를 해제했습니다' : '모임을 취소했습니다');
+      }
+      return Alert.alert('모임 삭제',
+        '이 모임과 기록된 참석·대진이 함께 지워집니다. 되돌릴 수 없습니다.',
+        [
+          { text: '취소', style: 'cancel' },
+          {
+            text: '삭제',
+            style: 'destructive',
+            onPress: () => { deleteMeeting(clubId, mt.id); flash('삭제했습니다'); },
+          },
+        ]);
+    },
   });
 
   /* 등록 — 반복이면 기한까지 한 번에 생성 */
@@ -75,7 +186,6 @@ export default function Schedule() {
       courts: Math.max(1, +nd.courts || 1),
       rounds: Math.max(1, +nd.rounds || 1),
       venueId: nd.venueId || null,
-      playMode: nd.playMode || PLAY_MODE.DOUBLES,
       surface: nd.surface || '',
       endScore: nd.endScore || 6,
       ranked: nd.ranked !== false,
@@ -112,12 +222,21 @@ export default function Schedule() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenHeader
-        title="일정"
-        subtitle={`${club?.name || '테니스클럽'} · 예정 ${upcoming.length}건`}
-        onBack={open ? () => setOpen(false) : undefined}
+        title={editing ? '모임 수정' : open ? '새 모임 등록' : '일정'}
+        subtitle={editing
+          ? `${editing.date} 기준`
+          : `${venueId ? (venues.find((v) => v.id === venueId)?.name || '') : club?.name || '테니스클럽'} · 예정 ${upcoming.length}건`}
+        onBack={open ? () => { setOpen(false); setEditing(null); } : undefined}
         backLabel="일정"
       />
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 90 }}>
+        {/* 코트장 필터 — 여러 곳을 운영하는 클럽 */}
+        {!open && scopeVenues.length > 1 && (
+          <View style={{ marginBottom: S.md, zIndex: 20 }}>
+            <VenuePicker venues={scopeVenues} value={venueId} onChange={setVenueId} />
+          </View>
+        )}
+
         <AdBanner ads={ads} slot={AD_SLOTS.SCHEDULE} variant="strip" style={{ marginBottom: S.md }} />
 
         {upcoming.map((mt) => {
@@ -133,8 +252,7 @@ export default function Schedule() {
                     {mt.date}({dowName(mt.date)}) {mt.time} {mt.canceled ? '· 우천취소' : ''}
                   </Text>
                   <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
-                    {mt.place} · {mt.playMode === PLAY_MODE.SINGLES ? '단식' : '복식'}
-                    {' · '}코트 {mt.courts}면 · {mt.rounds}타임
+                    {mt.place} · 코트 {mt.courts}면 · {mt.rounds}타임
                     {mt.surface ? ` · ${mt.surface}` : ''}
                     {mt.endScore ? ` · ${mt.endScore}게임` : ''}
                     {mt.ranked === false ? ' · 랭킹 미반영' : ''}
@@ -146,6 +264,12 @@ export default function Schedule() {
                     <Text style={{ fontSize: 22 }}>{w.icon}</Text>
                     <Text style={{ fontSize: 11, color: C.sub }}>{w.temp}°/{w.rain}%</Text>
                   </View>
+                )}
+                {isAdmin && (
+                  <Pressable onPress={() => meetingMenu(mt)} hitSlop={10}
+                    style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginLeft: 4 }}>
+                    <Text style={{ fontSize: 18, color: C.faint }}>⋯</Text>
+                  </Pressable>
                 )}
               </View>
 
@@ -201,7 +325,6 @@ export default function Schedule() {
                           flash('전원 참석 처리');
                         }}>전원 참석</Btn>
                         <Btn small tone="ghost" onPress={() => { updateMeeting(clubId, mt.id, { rsvp: {} }); flash('참석 초기화'); }}>초기화</Btn>
-                        <Btn small tone="danger" onPress={() => { updateMeeting(clubId, mt.id, { canceled: true }); flash('모임 취소됨'); }}>모임 취소</Btn>
                       </View>
                     </View>
                   )}
@@ -210,18 +333,18 @@ export default function Schedule() {
             </Card>
           );
         })}
-        {upcoming.length === 0 && <Card><Text style={{ color: C.sub }}>예정된 모임이 없습니다.</Text></Card>}
+        {upcoming.length === 0 && !open && (
+          <EmptyState
+            icon="📅"
+            title={venueId ? '이 코트장에 예정된 모임이 없습니다' : '예정된 모임이 없습니다'}
+            body={isAdmin
+              ? '오른쪽 아래 [＋ 새 모임] 버튼으로 등록하세요. 정기 모임이면 기한까지 한 번에 만들 수 있습니다.'
+              : '운영진이 일정을 등록하면 여기에 표시됩니다.'}
+          />
+        )}
 
         {isAdmin && nd && (
           <>
-            <SectionTitle right={
-              <Chip tone={open ? 'green' : 'outline'} onPress={() => setOpen(!open)}>
-                {open ? '닫기' : '+ 새 모임'}
-              </Chip>
-            }>
-              새 모임 등록
-            </SectionTitle>
-
             {open && (
               <Card>
                 <Text style={{ fontSize: 11, color: C.faint, marginBottom: 10 }}>
@@ -242,21 +365,11 @@ export default function Schedule() {
                   </View>
                 )}
 
-                {/* 복식/단식 — 한 코트에 몇 명이 들어가는지가 달라진다 */}
-                <View style={{ marginBottom: 12 }}>
-                  <Label hint="복식은 코트당 4명, 단식은 2명">경기 방식</Label>
-                  <SegmentedControl
-                    options={PLAY_MODES.map((p) => ({ key: p.key, label: p.label }))}
-                    value={nd.playMode}
-                    onChange={(v) => setNd({ ...nd, playMode: v })}
-                  />
-                </View>
-
-                <Label hint="📅 를 누르면 캘린더">날짜</Label>
+                <Label>날짜</Label>
                 <DateField value={nd.date} onChange={(v) => setNd({ ...nd, date: v })} minDate={today()} />
 
                 <View style={{ marginTop: 12 }}>
-                  <Label hint="🕐 를 누르면 시간 목록">시작 시간</Label>
+                  <Label>시작 시간</Label>
                   <TimeField value={nd.time} onChange={(v) => setNd({ ...nd, time: v })} />
                 </View>
 
@@ -307,7 +420,8 @@ export default function Schedule() {
                   <Field placeholder="예: 올림픽공원 테니스장" value={nd.place} onChangeText={(t) => setNd({ ...nd, place: t })} />
                 </View>
 
-                <View style={{ marginTop: 14, borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingTop: 12 }}>
+                {!editing && (
+                <View style={{ marginTop: 14, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 12 }}>
                   <Label hint="정기 모임이면 기한까지 한 번에 등록">반복</Label>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                     {REPEAT_TYPES.map((r) => (
@@ -333,21 +447,51 @@ export default function Schedule() {
                     </View>
                   )}
                 </View>
+                )}
 
-                <View style={{ marginTop: 16 }}>
-                  <Btn full disabled={!nd.date} onPress={submit}>
-                    {nd.repeat === 'none' ? '모임 등록' : `정기 모임 등록${preview.length ? ` (${preview.length}회)` : ''}`}
-                  </Btn>
-                </View>
+                {editing ? (
+                  <View style={{ marginTop: S.lg, gap: 8 }}>
+                    <AppButton full onPress={saveEditOne}>이 모임만 수정</AppButton>
+                    <AppButton full variant="tonal" onPress={saveEditForward}>
+                      {editing.date} 이후 일정 전부 수정
+                    </AppButton>
+                    <Text style={{ fontSize: 11, color: C.faint, marginTop: 4, lineHeight: 16 }}>
+                      "이후 일정 전부"는 같은 코트장의 {editing.date} 이후 모임에만 적용됩니다.
+                      지난 일정과 이미 기록된 참석·대진은 건드리지 않습니다.
+                    </Text>
+                    <AppButton full variant="text"
+                      onPress={() => { setOpen(false); setEditing(null); setNd(blank()); }}>취소</AppButton>
+                  </View>
+                ) : (
+                  <View style={{ marginTop: S.lg }}>
+                    <AppButton full disabled={!nd.date} onPress={submit}>
+                      {nd.repeat === 'none' ? '모임 등록' : `정기 모임 등록${preview.length ? ` (${preview.length}회)` : ''}`}
+                    </AppButton>
+                  </View>
+                )}
               </Card>
             )}
           </>
         )}
       </ScrollView>
 
+      {/* 새 모임 — 목록 맨 아래가 아니라 항상 손 닿는 자리에 */}
+      {isAdmin && !open && (
+        <Fab icon="＋" label="새 모임" onPress={() => {
+          setEditing(null);
+          setNd({ ...blank(), venueId: venueId || null });
+          setOpen(true);
+        }} />
+      )}
+
+      {sheet.node}
+
       {toast && (
-        <View style={{ position: 'absolute', bottom: 20, alignSelf: 'center', backgroundColor: C.ink, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, maxWidth: 340 }}>
-          <Text style={{ color: C.lime, fontSize: 12, fontWeight: '700', textAlign: 'center' }}>{toast}</Text>
+        <View style={{
+          position: 'absolute', bottom: 96, alignSelf: 'center', backgroundColor: C.ink,
+          paddingHorizontal: 16, paddingVertical: 11, borderRadius: R.md, maxWidth: 340,
+        }}>
+          <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '600', textAlign: 'center' }}>{toast}</Text>
         </View>
       )}
     </View>

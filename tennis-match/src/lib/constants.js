@@ -3,40 +3,99 @@
    역할 문자열은 firestore.rules 와 반드시 동일하게 유지할 것.
    ============================================================ */
 
-/** 클럽 역할. 운영진(회장·총무·책임리더)은 인원 제한 없음.
- *  임명 권한은 회장에게만 있다. */
+/* ============================================================
+   역할 5단계 — 위로 갈수록 권한이 넓다.
+
+     회장   클럽의 최종 책임자. 역할 임명은 회장만 할 수 있다.
+     총무   회비·지출을 다룬다. 그 밖의 운영 권한은 운영진과 같다.
+     운영진 일정·대진·회원 등 일상 운영. 회비는 볼 수 없다.
+     리드   자기가 맡은 코트장의 일정·대진만 다룬다.
+     회원   조회와 본인 참석 체크.
+
+   ⚠️ 이 문자열은 firestore.rules 와 반드시 같아야 한다.
+   ('책임리더'는 예전 이름 — 데이터에 남아 있을 수 있어 리드와 같게 취급한다)
+   ============================================================ */
 export const ROLES = {
   PRESIDENT: '회장',
   MANAGER: '총무',
-  LEADER: '책임리더',
+  STAFF: '운영진',
+  LEAD: '리드',
   MEMBER: '회원',
 };
 
-/** 운영진 = 회장·총무·책임리더 */
-export const STAFF_ROLES = [ROLES.PRESIDENT, ROLES.MANAGER, ROLES.LEADER];
+/** 예전 이름 → 현재 이름 */
+export const LEGACY_ROLE = { 책임리더: ROLES.LEAD };
+export const normalizeRole = (role) => LEGACY_ROLE[role] || role || ROLES.MEMBER;
 
-/** 임명 가능한 역할 목록(회장이 부여) */
-export const ASSIGNABLE_ROLES = [ROLES.PRESIDENT, ROLES.MANAGER, ROLES.LEADER, ROLES.MEMBER];
+/** 운영 권한을 가진 역할 (회원 제외 전부) */
+export const STAFF_ROLES = [ROLES.PRESIDENT, ROLES.MANAGER, ROLES.STAFF, ROLES.LEAD];
 
-/** 운영진 여부 */
-export const isStaffRole = (role) => STAFF_ROLES.includes(role);
+/** 임명 가능한 역할 (회장이 부여) */
+export const ASSIGNABLE_ROLES = [ROLES.PRESIDENT, ROLES.MANAGER, ROLES.STAFF, ROLES.LEAD, ROLES.MEMBER];
 
-/** 하위호환: 기존 코드가 쓰던 이름 (총무/운영진 → 운영진 전체) */
-export const isAdminRole = (role) => isStaffRole(role) || role === '운영진';
+/** 역할 설명 — 회원 관리 화면에서 보여준다 */
+export const ROLE_DESC = {
+  [ROLES.PRESIDENT]: '모든 권한 + 역할 임명',
+  [ROLES.MANAGER]: '운영 전반 + 회비·지출',
+  [ROLES.STAFF]: '일정·대진·회원 운영 (회비 제외)',
+  [ROLES.LEAD]: '내가 맡은 코트장만 운영',
+  [ROLES.MEMBER]: '조회 · 본인 참석 체크',
+};
+
+/** 운영 권한 여부 */
+export const isStaffRole = (role) => STAFF_ROLES.includes(normalizeRole(role));
+
+/** 회비·지출을 볼 수 있는 역할 — 회장·총무만 */
+export const canSeeFees = (role) => [ROLES.PRESIDENT, ROLES.MANAGER].includes(normalizeRole(role));
+
+/** 모든 코트를 볼 수 있는 역할 — 리드는 자기 코트만 */
+export const canSeeAllVenues = (role) =>
+  [ROLES.PRESIDENT, ROLES.MANAGER, ROLES.STAFF].includes(normalizeRole(role));
+
+/** 하위호환 */
+export const isAdminRole = (role) => isStaffRole(role);
 
 /** 역할 임명 권한 — 회장만 */
-export const canAppointRole = (role) => role === ROLES.PRESIDENT;
+export const canAppointRole = (role) => normalizeRole(role) === ROLES.PRESIDENT;
 
-/** 보기 모드 — 운영진이 다른 입장에서 화면을 확인할 때 사용 */
+/** 보기 모드 — 회장이 각 역할의 화면을 그대로 확인할 때 사용 */
 export const VIEW_MODES = [
   { key: null, label: '내 역할' },
+  { key: 'president', label: '회장' },
+  { key: 'manager', label: '총무' },
   { key: 'staff', label: '운영진' },
   { key: 'lead', label: '리드' },
   { key: 'member', label: '회원' },
 ];
 
+/** 역할 서열 — 숫자가 작을수록 권한이 넓다 */
+export const ROLE_RANK = {
+  [ROLES.PRESIDENT]: 0, [ROLES.MANAGER]: 1, [ROLES.STAFF]: 2, [ROLES.LEAD]: 3, [ROLES.MEMBER]: 4,
+};
+export const roleRank = (role) => ROLE_RANK[normalizeRole(role)] ?? 4;
+
+/** 보기 모드 → 그 모드가 흉내내는 역할 */
+export const VIEW_MODE_ROLE = {
+  president: ROLES.PRESIDENT,
+  manager: ROLES.MANAGER,
+  staff: ROLES.STAFF,
+  lead: ROLES.LEAD,
+  member: ROLES.MEMBER,
+};
+
+/** 내 역할로 미리볼 수 있는 보기 모드 — 나보다 위 역할은 흉내낼 수 없다 */
+export const viewModesFor = (role) => {
+  const mine = roleRank(role);
+  return VIEW_MODES.filter(({ key }) => !key || roleRank(VIEW_MODE_ROLE[key]) >= mine);
+};
+
 /** 역할 배지 색상 키 */
-export const roleTone = (role) => (role === ROLES.PRESIDENT ? 'lime' : isStaffRole(role) ? 'green' : 'outline');
+export const roleTone = (role) => {
+  const r = normalizeRole(role);
+  if (r === ROLES.PRESIDENT) return 'green';
+  if (r === ROLES.MANAGER) return 'soft';
+  return isStaffRole(r) ? 'outline' : 'default';
+};
 
 /** 참석자/전적에서 게스트 ID 접두사 (뒤에 uid 가 붙음: 'g:<uid>') */
 export const GUEST_PREFIX = 'g:';
@@ -56,11 +115,18 @@ export const JOIN_STATUS_LABEL = {
   pending: '승인 대기', approved: '승인됨', rejected: '거절됨',
 };
 
-/** 경기 방식 — 모임 단위로 정한다 */
-export const PLAY_MODE = { DOUBLES: 'doubles', SINGLES: 'singles' };
+/* ============================================================
+   경기 방식 — 대진표를 만들 때 정한다.
+
+   모임 등록 때 못박지 않는 이유: 같은 모임 안에서도 "1~2타임 복식,
+   3타임 단식"처럼 섞어 돌리는 경우가 흔하다. 그래서 대진 화면에서
+   복식 / 단식 / 혼합 중 고르고, 혼합이면 타임별로 체크한다.
+   ============================================================ */
+export const PLAY_MODE = { DOUBLES: 'doubles', SINGLES: 'singles', MIXED: 'mixed' };
 export const PLAY_MODES = [
-  { key: PLAY_MODE.DOUBLES, label: '복식', hint: '한 코트 4명' },
-  { key: PLAY_MODE.SINGLES, label: '단식', hint: '한 코트 2명' },
+  { key: PLAY_MODE.DOUBLES, label: '복식', hint: '모든 타임 복식 (코트당 4명)' },
+  { key: PLAY_MODE.SINGLES, label: '단식', hint: '모든 타임 단식 (코트당 2명)' },
+  { key: PLAY_MODE.MIXED, label: '혼합', hint: '타임마다 복식/단식을 직접 지정' },
 ];
 
 /** 대진 편성 방식 */

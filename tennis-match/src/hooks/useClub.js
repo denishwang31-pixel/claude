@@ -16,7 +16,10 @@ import {
   subPolls,
 } from '../lib/firestore';
 import { DEFAULT_RULES } from '../lib/matchmaking';
-import { isStaffRole, canAppointRole, isGuestId, guestUid, ROLES } from '../lib/constants';
+import {
+  isStaffRole, canAppointRole, isGuestId, guestUid, ROLES,
+  normalizeRole, canSeeFees, canSeeAllVenues, VIEW_MODE_ROLE,
+} from '../lib/constants';
 
 const RULE_BY_KEY = Object.fromEntries(DEFAULT_RULES.map((r) => [r.key, r]));
 
@@ -88,14 +91,23 @@ export function useClub(clubId, me, opts = {}) {
     [members, me],
   );
   /* 권한 —
-     realStaff  : 실제 역할 기준 운영진(회장·총무·책임리더) 여부
+     realStaff  : 실제 역할 기준 운영 담당(회장·총무·운영진·리드) 여부
      isAdmin    : 화면에서 쓰는 값. 보기 모드가 켜져 있으면 그 모드를 따름
      canAppoint : 역할 임명(회장 전용) */
-  const realStaff = !!meVal && isStaffRole(meVal.role);
-  const isAdmin = viewMode === 'member' ? false
-    : (viewMode === 'staff' || viewMode === 'lead') ? true : realStaff;
-  const canAppoint = !!meVal && canAppointRole(meVal.role) && !viewMode;
-  const isPresident = meVal?.role === ROLES.PRESIDENT;
+  const realRole = normalizeRole(meVal?.role);
+  const realStaff = !!meVal && isStaffRole(realRole);
+
+  /* 보기 모드가 켜져 있으면 그 역할인 척한다.
+     실제 역할보다 넓은 권한은 절대 주지 않는다 — 회원이 회장 모드를 켜도
+     아무것도 열리지 않게. (규칙에서도 막히지만 화면에서 먼저 거른다) */
+  const viewRole = viewMode ? VIEW_MODE_ROLE[viewMode] : null;
+  const effectiveRole = viewRole && realStaff ? viewRole : realRole;
+
+  const isAdmin = isStaffRole(effectiveRole);
+  const seeFees = canSeeFees(effectiveRole) && canSeeFees(realRole);
+  const seeAllVenues = canSeeAllVenues(effectiveRole);
+  const canAppoint = canAppointRole(realRole) && !viewMode;
+  const isPresident = realRole === ROLES.PRESIDENT;
 
   /* 내가 리드로 지정된 코트장 / 내가 소속(정기 운동)된 코트장 */
   const myLeadVenues = useMemo(
@@ -113,11 +125,12 @@ export function useClub(clubId, me, opts = {}) {
      member : 내가 소속된 코트장
      null   : 실제 역할대로 */
   const scopeVenues = useMemo(() => {
-    const mode = viewMode || (realStaff ? 'staff' : 'member');
-    if (mode === 'staff') return venues;
-    if (mode === 'lead') return myLeadVenues.length ? myLeadVenues : venues;
-    return myVenues;
-  }, [viewMode, realStaff, venues, myLeadVenues, myVenues]);
+    if (seeAllVenues) return venues;                    // 회장·총무·운영진
+    if (effectiveRole === ROLES.LEAD) {                 // 리드 — 내가 맡은 코트장
+      return myLeadVenues.length ? myLeadVenues : venues;
+    }
+    return myVenues;                                    // 회원 — 내가 속한 코트장
+  }, [seeAllVenues, effectiveRole, venues, myLeadVenues, myVenues]);
 
   // 게스트 ID('g:<uid>')는 저장된 표시명을 우선 사용(타 클럽 회원일 수 있음)
   const nameOf = useMemo(() => {
@@ -140,5 +153,6 @@ export function useClub(clubId, me, opts = {}) {
     pairs, tournaments, venues, matchConfig, polls, meVal,
     isAdmin, realStaff, canAppoint, isPresident, viewMode, nameOf, loading,
     myLeadVenues, myVenues, scopeVenues,
+    realRole, effectiveRole, seeFees, seeAllVenues,
   };
 }

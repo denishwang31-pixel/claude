@@ -174,11 +174,30 @@ await T('총무의 타임유형 변경 허용',
 console.log('\n[역할 임명 / 지출 / 용품·원포인트]');
 // mem2 로 임명 테스트(뒤 테스트가 쓰는 mem1 은 일반 회원으로 유지)
 await T('회장의 역할 임명 허용',
-  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem2'), { role: '책임리더' })));
-await T('임명된 책임리더도 운영진 권한 보유',
-  assertSucceeds(getDoc(doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'fees', '2026-07'))));
-await T('책임리더는 역할 임명 불가(회장 전용)',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem2'), { role: '리드' })));
+await T('임명된 리드도 운영 권한 보유(일정 수정)',
+  assertSucceeds(updateDoc(doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'meetings', 'mt1'), { courts: 3 })));
+await T('리드는 회비 조회 거부(회장·총무 전용)',
+  assertFails(getDoc(doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'fees', '2026-07'))));
+await T('리드는 지출 등록 거부(회장·총무 전용)',
+  assertFails(setDoc(doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'expenses', 'e9'),
+    { date: '2099-02-01', category: '기타', amount: 1000 })));
+await T('리드는 역할 임명 불가(회장 전용)',
   assertFails(updateDoc(doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'members', 'mem1'), { role: '총무' })));
+// 예전 이름 '책임리더' 도 리드와 같게 인정되는지
+await env.withSecurityRulesDisabled(async (ctx) => {
+  await updateDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'mem2'), { role: '책임리더' });
+});
+await T('예전 역할명 책임리더도 운영 권한 인정',
+  assertSucceeds(updateDoc(doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'meetings', 'mt1'), { courts: 2 })));
+// '운영진' 역할도 운영 권한은 있으나 회비는 못 본다
+await env.withSecurityRulesDisabled(async (ctx) => {
+  await updateDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'mem2'), { role: '운영진' });
+});
+await T('운영진의 일정 수정 허용',
+  assertSucceeds(updateDoc(doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'meetings', 'mt1'), { courts: 4 })));
+await T('운영진의 회비 조회 거부(회장·총무 전용)',
+  assertFails(getDoc(doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'fees', '2026-07'))));
 // 원상 복구 — 이후 테스트가 mem2 를 일반 회원으로 가정
 await env.withSecurityRulesDisabled(async (ctx) => {
   await updateDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'mem2'), { role: '회원' });
@@ -191,12 +210,15 @@ await T('회원 본인 프로필(성별) 수정 허용',
   assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { gender: 'M', grade: '' })));
 await T('운영진의 회원 삭제 허용',
   assertSucceeds(deleteDoc(doc(owner, 'clubs', CLUB, 'members', 'local:abc'))));
-await T('운영진의 지출 등록 허용',
+await T('회장의 지출 등록 허용',
   assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'expenses', 'e1'),
-    { date: '2099-01-05', category: '코트 대관', amount: 120000 })));
-await T('일반 회원의 지출 조회 거부(운영진 전용)',
+    { date: '2099-01-05', category: '코트 대관', amount: 120000, venueId: null })));
+await T('코트장별 지출 등록 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'expenses', 'e2'),
+    { date: '2099-01-06', category: '코트 대관', amount: 80000, venueId: 'v1' })));
+await T('일반 회원의 지출 조회 거부(회장·총무 전용)',
   assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'expenses', 'e1'))));
-await T('일반 회원의 회비 조회 거부(운영진 전용)',
+await T('일반 회원의 회비 조회 거부(회장·총무 전용)',
   assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'fees', '2026-07'))));
 await T('운영진의 원포인트 영상 등록 허용',
   assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'tips', 't1'), { title: '포핸드', category: '포핸드', url: 'https://youtu.be/abc' })));

@@ -18,11 +18,12 @@ import {
   updateMeeting, subGear, subJoinRequests, subServiceStats,
 } from '../../src/lib/firestore';
 import { dowName } from '../../src/lib/schedule';
-import { RSVP, VIEW_MODES, JOIN_STATUS } from '../../src/lib/constants';
+import { RSVP, viewModesFor, roleTone, JOIN_STATUS } from '../../src/lib/constants';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
 import { VenuePicker } from '../../src/components/VenuePicker';
 import { Icon } from '../../src/components/Icon';
+import { useOptionSheet } from '../../src/components/native';
 import {
   Card, SectionTitle, Chip, Btn, IconTile, StatCard, EmptyState, Badge,
 } from '../../src/components/ui';
@@ -44,13 +45,14 @@ export default function Home() {
   const router = useRouter();
   const {
     club, members, meetings, posts, guestPosts, venues, meVal,
-    isAdmin, realStaff, scopeVenues,
+    isAdmin, realStaff, scopeVenues, seeAllVenues, realRole,
   } = useClub(clubId, me, { viewMode });
 
   const [venueId, setVenueId] = useState(null);
   const [ads, setAds] = useState([]);
   const [pendingJoins, setPendingJoins] = useState(0);
   const [svc, setSvc] = useState(null);
+  const sheet = useOptionSheet();
 
   useEffect(() => subServiceStats(setSvc), []);
   useEffect(() => subGear(setAds), []);
@@ -65,12 +67,18 @@ export default function Home() {
   }, [clubId, isAdmin]);
 
   /* 보기 모드에 따라 노출 범위가 달라진다 */
+  const myViewModes = useMemo(() => viewModesFor(realRole), [realRole]);
+  /* 역할이 내려가면 예전에 골라둔 보기 모드는 풀어 준다 */
+  useEffect(() => {
+    if (viewMode && !myViewModes.some((v) => v.key === viewMode)) setViewMode(null);
+  }, [viewMode, myViewModes]);
   const scopeIds = useMemo(() => scopeVenues.map((v) => v.id), [scopeVenues]);
   const mode = viewMode || (realStaff ? 'staff' : 'member');
   const visible = useMemo(() => {
     const upcoming = meetings.filter((m) => !m.canceled && m.date >= today());
     const inScope = upcoming.filter((m) => {
-      if (mode === 'staff') return true;
+      /* 회장·총무·운영진은 전 코트장의 일정을 본다. 리드는 맡은 코트장만 */
+      if (seeAllVenues) return true;
       const mineGroup = m.venueId ? scopeIds.includes(m.venueId) : scopeIds.length === 0;
       const asGuest = (m.guests || []).some((g) => g.uid === me);
       const invited = m.rsvp?.[me] !== undefined;
@@ -78,7 +86,7 @@ export default function Home() {
     });
     const list = venueId ? inScope.filter((m) => m.venueId === venueId) : inScope;
     return [...list].sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
-  }, [meetings, mode, scopeIds, venueId, me]);
+  }, [meetings, seeAllVenues, scopeIds, venueId, me]);
 
   const meeting = visible[0];
   const w = meeting ? weatherFor(meeting.date, meeting.forecast) : null;
@@ -88,9 +96,29 @@ export default function Home() {
   const myStat = stats[me];
   const venueName = (id) => venues.find((v) => v.id === id)?.name;
 
+  /* 홈에서 고른 코트를 다음 화면까지 끌고 간다.
+     예전엔 코트를 골라도 일정·대진표는 전체 코트를 보여줘 선택이 무의미했다. */
   const go = (target) => {
-    if (typeof target === 'string') router.push(target);
-    else router.push({ pathname: '/(tabs)/more', params: { open: target.more } });
+    if (typeof target === 'string') {
+      const carries = target.includes('schedule') || target.includes('match');
+      return router.push(carries && venueId ? { pathname: target, params: { venueId } } : target);
+    }
+    return router.push({ pathname: '/(tabs)/more', params: { open: target.more } });
+  };
+
+  /* 코트를 고르지 않았고 코트장이 여러 곳이면, 어느 코트를 볼지 먼저 묻는다 */
+  const goScoped = (path) => {
+    if (venueId || scopeVenues.length < 2) return go(path);
+    return sheet.open({
+      title: path.includes('schedule') ? '어느 코트 일정을 볼까요?' : '어느 코트 대진표를 볼까요?',
+      options: [
+        { key: 'all', label: '전체 코트' },
+        ...scopeVenues.map((v) => ({ key: v.id, label: `${v.name} · ${v.startTime || ''}` })),
+      ],
+      onSelect: (o) => router.push(
+        o.key === 'all' ? path : { pathname: path, params: { venueId: o.key } },
+      ),
+    });
   };
 
   /* ---------- 클럽 없이 둘러보는 중 ---------- */
@@ -154,14 +182,18 @@ export default function Home() {
           <Text style={F.h2} numberOfLines={1}>{club?.name || '테니스클럽'}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={{ fontSize: 12, color: C.sub }}>{meVal?.name}</Text>
-            <Chip tone="soft">{meVal?.role || '회원'}</Chip>
+            <Chip tone={roleTone(realRole)}>{realRole}</Chip>
           </View>
         </View>
 
-        {/* 보기 모드 — 운영진에게만 */}
-        {realStaff && (
-          <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
-            {VIEW_MODES.map(({ key: v, label }) => (
+        {/* 보기 모드 — 운영 담당에게만. 나보다 위 역할은 미리볼 수 없다 */}
+        {realStaff && myViewModes.length > 1 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ flexDirection: 'row', gap: 6, marginTop: 10 }}
+          >
+            {myViewModes.map(({ key: v, label }) => (
               <Pressable key={label} onPress={() => { setViewMode(v); setVenueId(null); }}
                 style={{
                   paddingHorizontal: 11, paddingVertical: 6, borderRadius: R.pill,
@@ -172,15 +204,20 @@ export default function Home() {
                 </Text>
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
         )}
       </View>
 
       <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: 60 }}>
-        {/* 코트장 드롭다운 */}
+        {/* 코트장 드롭다운 — 여기서 고른 코트가 일정·대진표까지 이어진다 */}
         {scopeVenues.length > 1 && (
           <View style={{ marginBottom: S.md, zIndex: 20 }}>
             <VenuePicker venues={scopeVenues} value={venueId} onChange={setVenueId} />
+            <Text style={[F.caption, { marginTop: 5 }]}>
+              {venueId
+                ? '아래 일정·대진표도 이 코트만 보여줍니다.'
+                : '전체 코트 기준입니다. 일정·대진표를 누르면 코트를 고를 수 있습니다.'}
+            </Text>
           </View>
         )}
 
@@ -192,7 +229,7 @@ export default function Home() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: C.lime, fontSize: 11.5, fontWeight: '600', letterSpacing: 0.3 }}>
-                  {mode === 'staff' ? '다음 모임 · 전체 코트' : mode === 'lead' ? '다음 모임 · 담당 코트' : '내 다음 모임'}
+                  {seeAllVenues ? '다음 모임 · 전체 코트' : mode === 'lead' ? '다음 모임 · 담당 코트' : '내 다음 모임'}
                 </Text>
                 {meeting ? (
                   <>
@@ -247,7 +284,8 @@ export default function Home() {
         <Card style={{ marginTop: S.md, paddingVertical: S.lg }}>
           <View style={{ flexDirection: 'row' }}>
             {QUICK.map(([key, label, target]) => (
-              <IconTile key={key} icon={key} label={label} width="25%" onPress={() => go(target)} />
+              <IconTile key={key} icon={key} label={label} width="25%"
+                onPress={() => (typeof target === 'string' ? goScoped(target) : go(target))} />
             ))}
           </View>
         </Card>
@@ -291,7 +329,7 @@ export default function Home() {
         {isAdmin && visible.length > 0 && (
           <>
             <SectionTitle right={<Chip tone="outline">{visible.length}건</Chip>}>
-              {mode === 'lead' ? '담당 코트 일정' : '전체 코트 일정'}
+              {seeAllVenues ? '전체 코트 일정' : '담당 코트 일정'}
             </SectionTitle>
             <Card style={{ paddingVertical: 4 }}>
               {visible.slice(0, 6).map((m, i) => {
@@ -328,7 +366,7 @@ export default function Home() {
         )}
 
         {/* 회원/리드: 내 코트 안내 */}
-        {mode !== 'staff' && (
+        {!seeAllVenues && (
           <>
             <SectionTitle>{mode === 'lead' ? '내가 담당하는 코트' : '내 정기 운동 그룹'}</SectionTitle>
             <Card>
@@ -382,6 +420,7 @@ export default function Home() {
         {/* 광고 */}
         <AdBanner ads={ads} slot={AD_SLOTS.HOME} />
       </ScrollView>
+      {sheet.node}
     </View>
   );
 }

@@ -17,12 +17,15 @@ import {
 } from '../../src/lib/kdk';
 import { DEFAULT_MATCH_CONFIG, roundTimes, dowName } from '../../src/lib/schedule';
 import { effectiveNtrp } from '../../src/lib/ntrp';
-import { RSVP, DRAW_MODE, DRAW_MODES, PLAY_MODE } from '../../src/lib/constants';
+import {
+  RSVP, DRAW_MODE, DRAW_MODES, PLAY_MODE, PLAY_MODES,
+} from '../../src/lib/constants';
 import { setRules, setRestScore, saveMatches, updateMeeting, subGear } from '../../src/lib/firestore';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
 import { VenuePicker } from '../../src/components/VenuePicker';
 import { MatchGrid, AttendanceGrid } from '../../src/components/MatchGrid';
+import { Segmented } from '../../src/components/native';
 import {
   Card, SectionTitle, Chip, Btn, Field, Avatar, CheckRow,
 } from '../../src/components/ui';
@@ -66,6 +69,11 @@ export default function Match() {
     if (params?.meetingId) setMeetingId(String(params.meetingId));
   }, [params?.meetingId]);
 
+  /* 홈에서 코트를 고르고 들어왔으면 그 코트만 본다 */
+  useEffect(() => {
+    if (params?.venueId) setVenueId(String(params.venueId));
+  }, [params?.venueId]);
+
   /* 선택된 모임 (없으면 가장 가까운 것) */
   const meeting = useMemo(
     () => candidates.find((m) => m.id === meetingId) || candidates[0] || null,
@@ -97,8 +105,25 @@ export default function Match() {
   /* 모임에 저장된 값이 있으면 그걸 쓰고, 없으면 일반 편성 */
   const drawMode = meeting?.drawMode || DRAW_MODE.AUTO;
   const isKdk = drawMode === DRAW_MODE.KDK;
-  const isSingles = meeting?.playMode === PLAY_MODE.SINGLES;
   const setDrawMode = (key) => meeting && updateMeeting(clubId, meeting.id, { drawMode: key });
+
+  /* 경기 방식은 대진을 짤 때 정한다 (모임 등록 때가 아니라).
+     복식 / 단식 / 혼합 — 혼합이면 타임마다 따로 지정한다. */
+  const playMode = meeting?.playMode || PLAY_MODE.DOUBLES;
+  const isSingles = playMode === PLAY_MODE.SINGLES;
+  const isMixedPlay = playMode === PLAY_MODE.MIXED;
+  const setPlayMode = (key) => meeting && updateMeeting(clubId, meeting.id, { playMode: key });
+
+  /** 타임별 단식 여부 — 혼합일 때만 쓴다 */
+  const singlesAt = (r) => !!(meeting?.singlesRounds || {})[r];
+  const toggleSinglesAt = (r) => {
+    const next = { ...(meeting.singlesRounds || {}) };
+    if (next[r]) delete next[r]; else next[r] = true;
+    updateMeeting(clubId, meeting.id, { singlesRounds: next });
+  };
+
+  /** 이 타임이 단식으로 돌아가는가 */
+  const roundIsSingles = (r) => (isSingles ? true : isMixedPlay ? singlesAt(r) : false);
 
   /* KDK 로 돌리면 몇 개 조가 되는지 미리 계산해 보여준다 */
   const kdkGroups = useMemo(
@@ -106,9 +131,9 @@ export default function Match() {
     [attendees.length],
   );
 
-  /* 단식 모임이면 타임 유형을 전부 SINGLES 로 강제한다.
-     (예전엔 배지만 '단식'이고 실제 편성은 복식으로 돌던 불일치가 있었다) */
-  const roundTypeOf = (r) => (isSingles ? 'SINGLES' : (meeting?.roundPlan?.[r]) || cfg.defaultRoundType);
+  /* 타임 유형 — 단식으로 지정된 타임은 SINGLES, 나머지는 클럽 기본/개별 설정 */
+  const roundTypeOf = (r) =>
+    (roundIsSingles(r) ? 'SINGLES' : (meeting?.roundPlan?.[r]) || cfg.defaultRoundType);
   const setRoundType = (r, key) => {
     const plan = { ...(meeting.roundPlan || {}) };
     if (key === cfg.defaultRoundType) delete plan[r]; else plan[r] = key;
@@ -128,7 +153,11 @@ export default function Match() {
         allowMixed,
         skillBalance: meeting.skillBalance ?? cfg.skillBalance,
         defaultRoundType: isSingles ? 'SINGLES' : cfg.defaultRoundType,
-        roundPlan: isSingles ? {} : (meeting.roundPlan || {}),
+        // 타임마다 실제로 쓸 유형을 계산해 넘긴다 (혼합이면 단식 타임만 SINGLES)
+        roundPlan: Object.fromEntries(
+          Array.from({ length: meeting.rounds || 0 }, (_, i) => i + 1)
+            .map((r) => [r, roundTypeOf(r)]),
+        ),
         report,
       },
     );
@@ -155,10 +184,10 @@ export default function Match() {
   };
 
   const gen = () => {
-    if (isKdk && isSingles) {
+    if (isKdk && playMode !== PLAY_MODE.DOUBLES) {
       return Alert.alert('KDK 는 복식 개인전입니다',
-        '이 모임은 단식으로 등록되어 있습니다.\n'
-        + 'KDK 를 쓰려면 일정에서 모임을 복식으로 바꾸거나, 일반 편성을 선택하세요.');
+        '지금 경기 방식이 복식이 아닙니다.\n'
+        + '위 [경기 방식]을 복식으로 바꾸거나, 편성 방식을 일반 편성으로 선택하세요.');
     }
     if (isKdk) {
       if (attendees.length < 4) {
@@ -280,7 +309,9 @@ export default function Match() {
               {venueOf(meeting) ? ` · ${venueOf(meeting).name}` : (meeting.place ? ` · ${meeting.place}` : '')}
             </Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
-              <Chip tone={isSingles ? 'warn' : 'soft'}>{isSingles ? '단식' : '복식'}</Chip>
+              <Chip tone={playMode === PLAY_MODE.DOUBLES ? 'soft' : 'warn'}>
+                {PLAY_MODES.find((p) => p.key === playMode)?.label || '복식'}
+              </Chip>
               {isKdk && <Chip tone="lime">KDK</Chip>}
               {!!meeting.surface && <Chip tone="outline">{meeting.surface}</Chip>}
               {!!meeting.endScore && <Chip tone="outline">{meeting.endScore}게임</Chip>}
@@ -291,22 +322,58 @@ export default function Match() {
               참석 {attendees.length}명 (남 {nM} · 여 {attendees.length - nM})
             </Text>
 
+            {/* 경기 방식 — 대진을 짤 때 정한다 */}
+            {isAdmin && (
+              <View style={{ marginTop: S.md }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: C.sub, marginBottom: 6 }}>경기 방식</Text>
+                <Segmented
+                  options={PLAY_MODES.map((p) => ({ key: p.key, label: p.label }))}
+                  value={playMode}
+                  onChange={setPlayMode}
+                />
+                <Text style={{ fontSize: 11.5, color: C.faint, marginTop: 6 }}>
+                  {PLAY_MODES.find((p) => p.key === playMode)?.hint}
+                </Text>
+
+                {/* 혼합 — 타임마다 단식 여부를 체크 */}
+                {isMixedPlay && (
+                  <View style={{ marginTop: S.md, backgroundColor: C.fill, borderRadius: R.md, padding: 12 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: C.sub, marginBottom: 8 }}>
+                      단식으로 진행할 타임
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {Array.from({ length: meeting.rounds || 0 }, (_, i) => i + 1).map((r) => (
+                        <Chip key={r} tone={singlesAt(r) ? 'green' : 'outline'}
+                          onPress={() => toggleSinglesAt(r)}>
+                          {r}타임 {singlesAt(r) ? '단식' : '복식'}
+                        </Chip>
+                      ))}
+                    </View>
+                    <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 16 }}>
+                      누르면 그 타임만 단식으로 바뀝니다.
+                      단식 타임은 코트당 2명, 복식 타임은 4명이 들어갑니다.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
             {/* 편성 방식 — KDK 체크박스 */}
             {isAdmin && (
               <View style={{
                 marginTop: S.md, backgroundColor: C.fill, borderRadius: R.md, padding: 12, gap: 12,
               }}>
                 {DRAW_MODES.map((d) => {
-                  const lockedBySingles = d.key === DRAW_MODE.KDK && isSingles;
+                  const lockedBySingles = d.key === DRAW_MODE.KDK && playMode !== PLAY_MODE.DOUBLES;
                   return (
                     <CheckRow
                       key={d.key}
                       checked={drawMode === d.key}
                       onToggle={() => {
-                        if (lockedBySingles) return flash('단식 모임에서는 KDK 를 쓸 수 없습니다 (복식 개인전)');
+                        if (lockedBySingles) return flash('KDK 는 복식에서만 쓸 수 있습니다');
                         return setDrawMode(d.key);
                       }}
-                      label={lockedBySingles ? `${d.label} — 단식 모임에서는 사용 불가` : d.label}
+                      label={lockedBySingles ? `${d.label} — 복식일 때만 사용 가능` : d.label}
                       hint={d.key === DRAW_MODE.KDK && kdkGroups.length && !lockedBySingles
                         ? `${d.hint}\n지금 인원이면 ${kdkGroups.join('명 + ')}명, ${kdkGroups.length}개 조로 나뉩니다.`
                         : d.hint}
@@ -352,8 +419,8 @@ export default function Match() {
           {isAdmin && showTools && !isKdk && isSingles && (
             <Card style={{ marginTop: S.sm }}>
               <Text style={{ fontSize: 12.5, color: C.sub, lineHeight: 19 }}>
-                단식 모임이라 모든 타임이 1:1 단식으로 편성됩니다.
-                타임별 유형·커플 제약은 복식 모임에서만 쓸 수 있습니다.
+                모든 타임을 1:1 단식으로 편성합니다.
+                타임별 유형(혼복·남복 등)과 커플 제약은 복식 타임에만 적용됩니다.
               </Text>
             </Card>
           )}

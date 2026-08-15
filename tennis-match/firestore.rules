@@ -12,11 +12,20 @@ service cloud.firestore {
     function clubRole(clubId) {
       return get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role;
     }
-    /** 운영진 = 회장·총무·책임리더 (구 '운영진' 값도 하위호환 인정) */
+    /** 운영 권한 = 회장·총무·운영진·리드
+        ('책임리더'는 예전 이름 — 기존 데이터 호환을 위해 리드와 같게 인정한다.
+         src/lib/constants.js 의 STAFF_ROLES 와 반드시 같아야 한다) */
     function isClubAdmin(clubId) {
       return isClubMember(clubId) && (
         clubRole(clubId) == '회장' || clubRole(clubId) == '총무' ||
-        clubRole(clubId) == '책임리더' || clubRole(clubId) == '운영진'
+        clubRole(clubId) == '운영진' || clubRole(clubId) == '리드' ||
+        clubRole(clubId) == '책임리더'
+      );
+    }
+    /** 회비·지출을 다룰 수 있는 역할 = 회장·총무 (constants.js canSeeFees 와 동일) */
+    function canSeeFees(clubId) {
+      return isClubMember(clubId) && (
+        clubRole(clubId) == '회장' || clubRole(clubId) == '총무'
       );
     }
     /** 역할 임명 권한은 회장만 */
@@ -159,9 +168,9 @@ service cloud.firestore {
         allow write: if isClubAdmin(clubId);
       }
 
-      // 지출: 운영진 전용(읽기도 운영진만 — 회비 메뉴는 운영진 전용)
+      // 지출: 회장·총무 전용 (운영진·리드는 읽지도 못한다)
       match /expenses/{expenseId} {
-        allow read, write: if isClubAdmin(clubId);
+        allow read, write: if canSeeFees(clubId);
       }
 
       // 원포인트 영상: 읽기 멤버 전체, 등록은 운영진
@@ -171,9 +180,9 @@ service cloud.firestore {
         allow write: if isClubAdmin(clubId);
       }
 
-      // 회비: 운영진만 조회·수정
+      // 회비: 회장·총무만 조회·수정
       match /fees/{monthKey} {
-        allow read, write: if isClubAdmin(clubId);
+        allow read, write: if canSeeFees(clubId);
       }
       match /courts/{courtId} {
         allow read: if isClubMember(clubId);

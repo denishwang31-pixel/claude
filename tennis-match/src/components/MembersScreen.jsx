@@ -10,7 +10,8 @@ import {
   updateMemberProfile, addMember, deleteMember, setMemberRole,
 } from '../lib/firestore';
 import {
-  ROLES, ASSIGNABLE_ROLES, GRADES, BUSU, BUSU_KEYS, roleTone, isStaffRole,
+  ROLES, ASSIGNABLE_ROLES, ROLE_DESC, GRADES, BUSU, BUSU_KEYS,
+  roleTone, isStaffRole, normalizeRole,
 } from '../lib/constants';
 import { effectiveNtrp, careerText } from '../lib/ntrp';
 import { Label, MonthField } from './pickers';
@@ -100,7 +101,7 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
   };
 
   const appoint = (m, role) => {
-    if (m.id === me && m.role === ROLES.PRESIDENT && role !== ROLES.PRESIDENT) {
+    if (m.id === me && normalizeRole(m.role) === ROLES.PRESIDENT && role !== ROLES.PRESIDENT) {
       return Alert.alert('확인', '본인의 회장 권한을 내려놓으면 다시 임명할 수 없습니다. 먼저 다른 회원을 회장으로 임명하세요.');
     }
     setMemberRole(clubId, m.id, role);
@@ -113,13 +114,35 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
     <View>
       {/* 운영진 요약 */}
       <Card>
-        <Text style={{ fontSize: 12, fontWeight: '700', marginBottom: 6 }}>운영진 ({staff.length}명)</Text>
+        <Text style={{ fontSize: 12, fontWeight: '700', marginBottom: 6 }}>운영 담당 ({staff.length}명)</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          {staff.map((m) => <Chip key={m.id} tone={roleTone(m.role)}>{m.name} · {m.role}</Chip>)}
-          {staff.length === 0 && <Text style={{ fontSize: 11, color: C.faint }}>지정된 운영진이 없습니다.</Text>}
+          {staff.map((m) => (
+            <Chip key={m.id} tone={roleTone(m.role)}>{m.name} · {normalizeRole(m.role)}</Chip>
+          ))}
+          {staff.length === 0 && <Text style={{ fontSize: 11, color: C.faint }}>지정된 운영 담당이 없습니다.</Text>}
         </View>
         <Text style={{ fontSize: 10, color: C.faint, marginTop: 8 }}>
-          회장·총무·책임리더는 인원 제한이 없습니다. 임명은 <Text style={{ fontWeight: '700' }}>회장</Text>만 할 수 있습니다.
+          임명은 <Text style={{ fontWeight: '700' }}>회장</Text>만 할 수 있습니다. 인원 제한은 없습니다.
+        </Text>
+      </Card>
+
+      {/* 역할이 뭘 할 수 있는지 — 임명하기 전에 확인 */}
+      <SectionTitle>역할별 권한</SectionTitle>
+      <Card>
+        {ASSIGNABLE_ROLES.map((r, i) => (
+          <View
+            key={r}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7,
+              borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4',
+            }}
+          >
+            <View style={{ width: 54 }}><Chip tone={roleTone(r)}>{r}</Chip></View>
+            <Text style={{ flex: 1, fontSize: 11, color: C.sub, lineHeight: 16 }}>{ROLE_DESC[r]}</Text>
+          </View>
+        ))}
+        <Text style={{ fontSize: 10, color: C.faint, marginTop: 8, lineHeight: 15 }}>
+          회비·지출 내역은 회장·총무만 볼 수 있습니다. 리드는 배정된 코트장의 일정·대진만 다룹니다.
         </Text>
       </Card>
 
@@ -266,9 +289,16 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                       <Label hint="회장만 변경 가능">역할</Label>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                         {ASSIGNABLE_ROLES.map((r) => (
-                          <Chip key={r} tone={m.role === r ? 'green' : 'outline'} onPress={() => appoint(m, r)}>{r}</Chip>
+                          <Chip
+                            key={r}
+                            tone={normalizeRole(m.role) === r ? 'green' : 'outline'}
+                            onPress={() => appoint(m, r)}
+                          >{r}</Chip>
                         ))}
                       </View>
+                      <Text style={{ fontSize: 10, color: C.faint, marginTop: 6, lineHeight: 15 }}>
+                        {ROLE_DESC[normalizeRole(m.role)]}
+                      </Text>
                     </View>
                   )}
 
