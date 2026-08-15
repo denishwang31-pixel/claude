@@ -23,6 +23,8 @@ import { Venues } from '../../src/components/VenuesScreen';
 import { MatchConfig } from '../../src/components/MatchConfigScreen';
 import { JoinRequests } from '../../src/components/JoinRequestsScreen';
 import { Invite } from '../../src/components/InviteScreen';
+import { Polls } from '../../src/components/PollScreen';
+import { Chat } from '../../src/components/ChatScreen';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card, SectionTitle, Chip, Btn } from '../../src/components/ui';
 import { C } from '../../src/lib/theme';
@@ -30,6 +32,8 @@ import { C } from '../../src/lib/theme';
 /** [키, 라벨, 운영진 전용 여부] */
 const MENU = [
   ['guest', '🎾 게스트 모집 (공개 게시판)', false],
+  ['chat', '💬 클럽 채팅', false],
+  ['polls', '🗳 참가투표', false],
   ['tournament', '🏆 대회', false],
   ['rank', '📈 랭킹·기록', false],
   ['ntrp', '📊 NTRP 등급', false],
@@ -63,7 +67,7 @@ export default function More() {
 
   const {
     club, members, meetings, posts, guestPosts, courts, fee, pairs, tournaments,
-    venues, matchConfig, rules, meVal, isAdmin, canAppoint, nameOf,
+    venues, matchConfig, rules, polls, meVal, isAdmin, canAppoint, nameOf,
   } = useClub(clubId, me, { feeMonth, viewMode });
   const { stats } = useMemo(() => computeStats(members, meetings), [members, meetings]);
 
@@ -101,6 +105,7 @@ export default function More() {
       case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, flash }} />;
       case 'joinreq': return <JoinRequests {...{ clubId, club, members, isAdmin, flash }} />;
       case 'invite': return <Invite {...{ clubId, club, members, isAdmin, flash }} />;
+      case 'polls': return <Polls {...{ clubId, polls, members, me, isAdmin, flash }} />;
       default: return null;
     }
   };
@@ -150,6 +155,29 @@ export default function More() {
             </Pressable>
           </View>
         </ScrollView>
+      </View>
+    );
+  }
+
+  /* 채팅은 입력창이 화면 하단에 붙어야 해서 스크롤뷰 밖에서 전체 높이로 그린다 */
+  if (sub === 'chat') {
+    return (
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
+        <ScreenHeader
+          title="💬 클럽 채팅"
+          subtitle={`${club?.name || ''} · 회원 ${members.length}명`}
+          onBack={goBack}
+          backLabel="더보기"
+        />
+        <Chat {...{ clubId, me, meVal, members, isAdmin, flash }} />
+        {toast && (
+          <View style={{
+            position: 'absolute', bottom: 84, alignSelf: 'center', backgroundColor: C.ink,
+            paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12,
+          }}>
+            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>{toast}</Text>
+          </View>
+        )}
       </View>
     );
   }

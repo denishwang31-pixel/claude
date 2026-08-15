@@ -88,6 +88,98 @@ export const END_SCORES = [4, 6, 8, 9];
 export const GRADES = ['A', 'B', 'C', 'D'];
 export const GRADE_NONE = '';   // 선택 안함
 
+/* ============================================================
+   부수(급수) — 한국 동호회가 실제로 쓰는 실력 단위.
+   대회 참가 자격이 대부분 "3부 이하", "오픈부" 처럼 부수로 걸려 있어서
+   NTRP 보다 이쪽이 먼저 통한다. NTRP 는 참고 지표로 함께 보여준다.
+   ============================================================ */
+export const BUSU = [
+  { key: '1부', label: '1부', desc: '선수 출신·상위 입상권', ntrp: [4.5, 7.0] },
+  { key: '2부', label: '2부', desc: '전국 대회 입상권', ntrp: [4.0, 4.5] },
+  { key: '3부', label: '3부', desc: '지역 대회 상위권', ntrp: [3.5, 4.0] },
+  { key: '4부', label: '4부', desc: '동호회 중상위·게임 운영 가능', ntrp: [3.0, 3.5] },
+  { key: '5부', label: '5부', desc: '동호회 입문~중급', ntrp: [2.0, 3.0] },
+  { key: '오픈부', label: '오픈부', desc: '부수 구분 없이 참가', ntrp: [0, 7.0] },
+];
+export const BUSU_KEYS = BUSU.map((b) => b.key);
+export const BUSU_NONE = '';
+
+/** 부수 → 대략적인 NTRP 중앙값 (실력 매칭 보조용) */
+export const busuToNtrp = (busu) => {
+  const b = BUSU.find((x) => x.key === busu);
+  if (!b || busu === '오픈부') return null;
+  return (b.ntrp[0] + b.ntrp[1]) / 2;
+};
+
+/** 부수는 숫자가 작을수록 상위 — 정렬용 순위값 */
+export const busuRank = (busu) => {
+  const i = BUSU_KEYS.indexOf(busu);
+  return i < 0 ? 99 : i;
+};
+
+/* ============================================================
+   대회 형식
+   ============================================================ */
+export const TOURNAMENT_FORMAT = {
+  GROUP_BRACKET: 'group_bracket',  // 예선 조별리그 → 본선 토너먼트 (기존)
+  KDK: 'kdk',                      // 개인전 KDK
+  TEAM_BLUE_WHITE: 'blue_white',   // 청백전 — 클럽을 두 팀으로 나눠 단체전
+  TEAM_CLUB: 'club_match',         // 클럽교류전 — 우리 클럽 vs 상대 클럽
+};
+
+export const TOURNAMENT_FORMATS = [
+  {
+    key: TOURNAMENT_FORMAT.GROUP_BRACKET,
+    label: '조별리그 + 토너먼트',
+    icon: '🏆',
+    desc: '예선에서 조별로 돌린 뒤 상위 팀이 본선 토너먼트로 올라갑니다.',
+  },
+  {
+    key: TOURNAMENT_FORMAT.KDK,
+    label: 'KDK 개인전',
+    icon: '🎯',
+    desc: '4~8명 조에서 파트너를 바꿔가며 전원 같은 경기 수를 뜁니다. 개인 승수로 순위를 냅니다.',
+  },
+  {
+    key: TOURNAMENT_FORMAT.TEAM_BLUE_WHITE,
+    label: '청백전',
+    icon: '🔵',
+    desc: '클럽 회원을 청팀·백팀으로 나눠 단체전을 합니다. 이긴 경기 수를 합산해 팀 승부를 가립니다.',
+  },
+  {
+    key: TOURNAMENT_FORMAT.TEAM_CLUB,
+    label: '클럽 교류전',
+    icon: '🤝',
+    desc: '다른 클럽과 맞붙습니다. 상대 클럽 선수를 등록하면 우리 선수와 교차로 대진이 짜입니다.',
+  },
+];
+
+/** 단체전(청백전·교류전) 팀 이름 기본값 */
+export const TEAM_SIDES = {
+  [TOURNAMENT_FORMAT.TEAM_BLUE_WHITE]: [
+    { key: 'A', name: '청팀', color: '#1d4ed8', bg: '#eff6ff' },
+    { key: 'B', name: '백팀', color: '#334155', bg: '#f8fafc' },
+  ],
+  [TOURNAMENT_FORMAT.TEAM_CLUB]: [
+    { key: 'A', name: '우리 클럽', color: '#0d7a5f', bg: '#e7f6f1' },
+    { key: 'B', name: '상대 클럽', color: '#be123c', bg: '#fff1f2' },
+  ],
+};
+
+/* ============================================================
+   참가투표 — 일정 RSVP 와 별개로, 아무 주제나 물어보는 투표
+   (회식 날짜, 유니폼 색, 대회 참가 의사 등)
+   ============================================================ */
+export const POLL_TYPE = {
+  ATTEND: 'attend',   // 참가 여부 (참석/미정/불참)
+  CHOICE: 'choice',   // 선택지 투표
+};
+export const POLL_ATTEND_OPTIONS = [
+  { key: 'yes', label: '참가' },
+  { key: 'maybe', label: '미정' },
+  { key: 'no', label: '불참' },
+];
+
 /** 회비 납부 주기 */
 export const FEE_CYCLE = { MONTHLY: 'monthly', YEARLY: 'yearly' };
 

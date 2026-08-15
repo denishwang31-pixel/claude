@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   subClub, subMembers, subMeetings, subPosts, subGuestPosts,
   subCourts, subRules, subFee, subPairs, subTournaments, subVenues, subMatchConfig,
+  subPolls,
 } from '../lib/firestore';
 import { DEFAULT_RULES } from '../lib/matchmaking';
 import { isStaffRole, canAppointRole, isGuestId, guestUid, ROLES } from '../lib/constants';
@@ -51,6 +52,7 @@ export function useClub(clubId, me, opts = {}) {
   const [tournaments, setTournaments] = useState([]);
   const [venues, setVenues] = useState([]);
   const [matchConfig, setMatchConfig] = useState(null);
+  const [polls, setPolls] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -68,6 +70,7 @@ export function useClub(clubId, me, opts = {}) {
       subTournaments(clubId, setTournaments),
       subVenues(clubId, setVenues),
       subMatchConfig(clubId, setMatchConfig),
+      subPolls(clubId, setPolls),
     ];
     return () => unsubs.forEach((u) => u && u());
   }, [clubId, feeMonth]);
@@ -134,7 +137,7 @@ export function useClub(clubId, me, opts = {}) {
 
   return {
     club, members, meetings, posts, guestPosts, courts, rules, fee,
-    pairs, tournaments, venues, matchConfig, meVal,
+    pairs, tournaments, venues, matchConfig, polls, meVal,
     isAdmin, realStaff, canAppoint, isPresident, viewMode, nameOf, loading,
     myLeadVenues, myVenues, scopeVenues,
   };

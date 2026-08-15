@@ -13,7 +13,9 @@ import { useApp } from '../_layout';
 import { useClub } from '../../src/hooks/useClub';
 import { computeStats } from '../../src/lib/matchmaking';
 import { weatherFor } from '../../src/lib/weather';
-import { updateMeeting, subGear, subJoinRequests } from '../../src/lib/firestore';
+import {
+  updateMeeting, subGear, subJoinRequests, subServiceStats,
+} from '../../src/lib/firestore';
 import { dowName } from '../../src/lib/schedule';
 import { RSVP, VIEW_MODES, JOIN_STATUS } from '../../src/lib/constants';
 import { AD_SLOTS } from '../../src/lib/ads';
@@ -31,6 +33,8 @@ const TILES = [
   ['schedule', '📅', '일정', false, '/(tabs)/schedule'],
   ['match', '🎾', '대진표', false, '/(tabs)/match'],
   ['guest', '🙋', '게스트 모집', false, { more: 'guest' }],
+  ['chat', '💬', '채팅', false, { more: 'chat' }],
+  ['polls', '🗳', '참가투표', false, { more: 'polls' }],
   ['rank', '📈', '랭킹', false, '/(tabs)/rank'],
   ['tournament', '🏆', '대회', false, { more: 'tournament' }],
   ['ntrp', '📊', 'NTRP', false, { more: 'ntrp' }],
@@ -58,6 +62,9 @@ export default function Home() {
   const [venueId, setVenueId] = useState(null);
   const [ads, setAds] = useState([]);
   const [pendingJoins, setPendingJoins] = useState(0);
+  const [svc, setSvc] = useState(null);   // 서비스 전체 현황
+
+  useEffect(() => subServiceStats(setSvc), []);
 
   const { stats } = useMemo(() => computeStats(members, meetings), [members, meetings]);
 
@@ -122,6 +129,17 @@ export default function Home() {
               </View>
             )}
           />
+          {!!svc && (svc.clubs > 0 || svc.members > 0) && (
+            <Card style={{ marginTop: S.md }}>
+              <Text style={[F.label, { marginBottom: 10 }]}>테니스매치와 함께하는 중</Text>
+              <View style={{ flexDirection: 'row', gap: S.sm }}>
+                <StatCard value={(svc.clubs || 0).toLocaleString()} label="클럽" />
+                <StatCard value={(svc.members || 0).toLocaleString()} label="회원" />
+                <StatCard value={(svc.matches || 0).toLocaleString()} label="누적 경기" />
+              </View>
+            </Card>
+          )}
+
           <AdBanner ads={ads} slot={AD_SLOTS.HOME} />
           <Card style={{ marginTop: S.md }} onPress={() => router.push({ pathname: '/(tabs)/more', params: { open: 'guest' } })}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>

@@ -1,4 +1,4 @@
-/* 대회 — 개설(예선/토너먼트/시드) · 진행 · 기록 보관 */
+/* 대회 — 형식 4종(조별+토너먼트 · KDK · 청백전 · 클럽교류전) 개설 · 진행 · 기록 보관 */
 import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import {
@@ -8,16 +8,36 @@ import {
   buildGroups, groupStandings, qualifiers, buildBracket, applyResult,
   championOf, roundName, autoTeams, orderBySeed, assignSkillGroups, moveMemberToGroup,
 } from '../lib/tournament';
+import { generateKdk, kdkStandingsByGroup, splitKdkGroups } from '../lib/kdk';
+import {
+  TOURNAMENT_FORMAT, TOURNAMENT_FORMATS, BUSU_KEYS, busuToNtrp,
+} from '../lib/constants';
 import { effectiveNtrp } from '../lib/ntrp';
-import { Card, SectionTitle, Chip, Btn, Field } from './ui';
-import { C } from '../lib/theme';
+import { TeamMatch } from './TeamMatchScreen';
+import { MatchGrid } from './MatchGrid';
+import { DateField, Label } from './pickers';
+import { AppButton, Touchable, Segmented, useOptionSheet } from './native';
+import { Card, SectionTitle, Chip, Btn, Field, EmptyState, Divider } from './ui';
+import { C, S, R, F } from '../lib/theme';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+/** 목록·상세에 보여줄 형식 요약 */
+function formatLabel(t) {
+  const f = TOURNAMENT_FORMATS.find((x) => x.key === t.format);
+  if (t.stage === 'team') return `${f?.icon || ''} ${f?.label || '단체전'} · ${(t.roster || []).length}명`;
+  if (t.stage === 'kdk') return `🎯 KDK · ${(t.roster || []).length}명`;
+  if (t.stage === 'skillGroups' || t.mode === 'skillGroups') return `${t.skillGroups?.length || 0}개 실력 그룹`;
+  return `${t.entries?.length || 0}팀 · ${t.useGroupStage ? '예선 + 토너먼트' : '토너먼트'}`;
+}
+
 /* ---------------- 대회 개설 ---------------- */
 function CreateTournament({ clubId, members, onDone, flash }) {
+  const [format, setFormat] = useState(TOURNAMENT_FORMAT.GROUP_BRACKET);
   const [name, setName] = useState('');
   const [date, setDate] = useState(today());
+  const [courts, setCourts] = useState('2');
+  const [busuLimit, setBusuLimit] = useState('');   // 참가 자격(부수 제한)
   const [useGroup, setUseGroup] = useState(true);
   const [groupCount, setGroupCount] = useState('4');
   const [advance, setAdvance] = useState('2');
@@ -50,6 +70,50 @@ function CreateTournament({ clubId, members, onDone, flash }) {
   };
 
   const create = () => {
+    const base = {
+      name: name || `${date} 클럽대회`,
+      date,
+      format,
+      courts: Math.max(1, Number(courts) || 1),
+      busuLimit,
+      status: 'ongoing',
+    };
+
+    /* 단체전 — 청백전 / 클럽교류전 */
+    if (format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE || format === TOURNAMENT_FORMAT.TEAM_CLUB) {
+      if (pickedList.length < 4) return flash('참가자를 4명 이상 선택하세요');
+      addTournament(clubId, {
+        ...base,
+        stage: 'team',
+        roster: pickedList.map((m) => ({
+          id: m.id, name: m.name, gender: m.gender, busu: m.busu || '',
+          grade: m.grade || '', ntrp: effectiveNtrp(m).value ?? null,
+        })),
+        team: null,
+        entries: [], groups: [], bracket: null,
+      });
+      flash(format === TOURNAMENT_FORMAT.TEAM_CLUB ? '클럽 교류전이 개설되었습니다' : '청백전이 개설되었습니다');
+      return onDone();
+    }
+
+    /* KDK 개인전 */
+    if (format === TOURNAMENT_FORMAT.KDK) {
+      if (pickedList.length < 4) return flash('KDK 는 4명 이상이 필요합니다');
+      const roster = pickedList.map((m) => ({
+        id: m.id, name: m.name, gender: m.gender, busu: m.busu || '',
+        ntrp: effectiveNtrp(m).value ?? null,
+      }));
+      addTournament(clubId, {
+        ...base,
+        stage: 'kdk',
+        roster,
+        matches: generateKdk(roster, Math.max(1, Number(courts) || 1)),
+        entries: [], groups: [], bracket: null,
+      });
+      flash('KDK 대회가 개설되었습니다');
+      return onDone();
+    }
+
     if (useSkillGroups) {
       if (!skillGroups?.length) return flash('먼저 [자동 배정]을 실행하세요');
       addTournament(clubId, {
@@ -83,16 +147,85 @@ function CreateTournament({ clubId, members, onDone, flash }) {
     onDone();
   };
 
+  const isTeam = format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE || format === TOURNAMENT_FORMAT.TEAM_CLUB;
+  const isKdkFormat = format === TOURNAMENT_FORMAT.KDK;
+  const isBracket = !isTeam && !isKdkFormat;
+
   return (
     <View>
+      {/* 대회 형식 */}
+      <SectionTitle hint="형식에 따라 다음 화면이 달라집니다.">대회 형식</SectionTitle>
+      <Card style={{ paddingVertical: 6 }}>
+        {TOURNAMENT_FORMATS.map((f, i) => {
+          const on = format === f.key;
+          return (
+            <Touchable key={f.key} onPress={() => setFormat(f.key)}
+              style={{
+                flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+                paddingVertical: 12,
+                borderTopWidth: i ? 1 : 0, borderTopColor: C.border,
+              }}>
+              <View style={{
+                width: 22, height: 22, borderRadius: 11, marginTop: 1,
+                borderWidth: on ? 7 : 2, borderColor: on ? C.green : C.border,
+                backgroundColor: C.surface,
+              }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14.5, fontWeight: '800', color: on ? C.green : C.text }}>
+                  {f.icon} {f.label}
+                </Text>
+                <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 3, lineHeight: 17 }}>{f.desc}</Text>
+              </View>
+            </Touchable>
+          );
+        })}
+      </Card>
+
+      <SectionTitle>대회 정보</SectionTitle>
       <Card>
-        <Text style={{ fontSize: 13, fontWeight: '700', marginBottom: 6 }}>대회 정보</Text>
-        <Field placeholder="대회명 (예: 2026 봄 클럽챔피언십)" value={name} onChangeText={setName} />
-        <View style={{ marginTop: 8 }}>
-          <Field placeholder="날짜 (YYYY-MM-DD)" value={date} onChangeText={setDate} />
+        <Label>대회명</Label>
+        <Field placeholder="예: 2026 봄 클럽챔피언십" value={name} onChangeText={setName} />
+        <View style={{ marginTop: S.md }}>
+          <Label>날짜</Label>
+          <DateField value={date} onChange={setDate} />
+        </View>
+        <View style={{ marginTop: S.md }}>
+          <Label hint="동시에 쓸 코트 수">코트</Label>
+          <Field keyboardType="number-pad" value={courts} onChangeText={setCourts} suffix="면" />
+        </View>
+        <View style={{ marginTop: S.md }}>
+          <Label hint="선택 · 참가 자격을 부수로 제한할 때">참가 자격</Label>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+            <Chip tone={!busuLimit ? 'green' : 'outline'} onPress={() => setBusuLimit('')}>제한 없음</Chip>
+            {BUSU_KEYS.filter((b) => b !== '오픈부').map((b) => (
+              <Chip key={b} tone={busuLimit === b ? 'green' : 'outline'}
+                onPress={() => setBusuLimit(busuLimit === b ? '' : b)}>{b} 이하</Chip>
+            ))}
+          </View>
         </View>
       </Card>
 
+      {isKdkFormat && pickedList.length >= 4 && (
+        <Card style={{ marginTop: S.md, backgroundColor: C.greenSoft }}>
+          <Text style={{ fontSize: 12.5, color: C.green, fontWeight: '700' }}>
+            지금 인원이면 {splitKdkGroups(pickedList.length).join('명 + ')}명 ·
+            {' '}{splitKdkGroups(pickedList.length).length}개 조로 나뉩니다.
+          </Text>
+        </Card>
+      )}
+
+      {isTeam && (
+        <Card style={{ marginTop: S.md, backgroundColor: C.greenSoft }}>
+          <Text style={{ fontSize: 12.5, color: C.green, lineHeight: 19 }}>
+            {format === TOURNAMENT_FORMAT.TEAM_CLUB
+              ? '참가자를 고르면 우리 클럽 팀이 됩니다. 상대 클럽 선수는 개설 후 다음 화면에서 등록합니다.'
+              : '참가자를 고르면 실력과 성별이 고르게 청팀·백팀으로 자동 분할됩니다. 개설 후 손으로 조정할 수 있습니다.'}
+          </Text>
+        </Card>
+      )}
+
+      {isBracket && (
+      <>
       <SectionTitle>진행 방식</SectionTitle>
       <Card>
         <Pressable onPress={() => setUseGroup(!useGroup)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -118,8 +251,19 @@ function CreateTournament({ clubId, members, onDone, flash }) {
           </View>
         )}
       </Card>
+      </>
+      )}
 
-      <SectionTitle>참가자 선택 ({pickedList.length}명)</SectionTitle>
+      <SectionTitle right={
+        <Chip tone="soft" onPress={() => {
+          const all = {};
+          const eligible = busuLimit
+            ? members.filter((m) => !m.busu || BUSU_KEYS.indexOf(m.busu) >= BUSU_KEYS.indexOf(busuLimit))
+            : members;
+          eligible.forEach((m) => { all[m.id] = true; });
+          setPicked(all);
+        }}>전원 선택</Chip>
+      }>참가자 선택 ({pickedList.length}명)</SectionTitle>
       <Card>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {members.map((m) => (
@@ -131,6 +275,8 @@ function CreateTournament({ clubId, members, onDone, flash }) {
         </View>
       </Card>
 
+      {isBracket && (
+      <>
       <SectionTitle>실력(NTRP) 그룹 나누기</SectionTitle>
       <Card>
         <Pressable onPress={() => setUseSkillGroups(!useSkillGroups)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -216,10 +362,23 @@ function CreateTournament({ clubId, members, onDone, flash }) {
           </View>
         )}
       </Card>}
+      </>
+      )}
 
-      <View style={{ marginTop: 12 }}>
-        <Btn full disabled={useSkillGroups ? !skillGroups?.length : teams.length < 2} onPress={create}>대회 개설</Btn>
+      <View style={{ marginTop: S.lg }}>
+        <AppButton full
+          disabled={isBracket
+            ? (useSkillGroups ? !skillGroups?.length : teams.length < 2)
+            : pickedList.length < 4}
+          onPress={create}>
+          대회 개설
+        </AppButton>
       </View>
+      {!isBracket && pickedList.length < 4 && (
+        <Text style={{ fontSize: 11.5, color: C.faint, textAlign: 'center', marginTop: 8 }}>
+          참가자를 4명 이상 선택해야 개설할 수 있습니다.
+        </Text>
+      )}
     </View>
   );
 }
@@ -420,6 +579,89 @@ function SkillGroupsView({ clubId, t, members, isAdmin, flash }) {
 }
 
 /* ---------------- 메인 ---------------- */
+/* ---------------- KDK 대회 진행 ---------------- */
+function KdkView({ clubId, t, isAdmin, flash }) {
+  const roster = t.roster || [];
+  const matches = t.matches || [];
+  const sheet = useOptionSheet();
+  const nameOf = (id) => roster.find((p) => p.id === id)?.name || '?';
+
+  const record = (m) => {
+    if (!isAdmin) return;
+    sheet.open({
+      title: `${m.round}타임 코트${m.court}`,
+      options: [
+        { key: '6:0', label: '앞팀 6:0' }, { key: '6:2', label: '앞팀 6:2' }, { key: '6:4', label: '앞팀 6:4' },
+        { key: '4:6', label: '뒷팀 6:4' }, { key: '2:6', label: '뒷팀 6:2' }, { key: '0:6', label: '뒷팀 6:0' },
+        { key: 'clear', label: '기록 지우기' },
+      ],
+      onSelect: (o) => {
+        const next = matches.map((x) => {
+          if (x.id !== m.id) return x;
+          if (o.key === 'clear') return { ...x, score: null };
+          const [a, b] = o.key.split(':').map(Number);
+          return { ...x, score: { a, b } };
+        });
+        updateTournament(clubId, t.id, { matches: next });
+      },
+    });
+  };
+
+  const regen = () => {
+    updateTournament(clubId, t.id, { matches: generateKdk(roster, t.courts || 1) });
+    flash('대진을 다시 생성했습니다');
+  };
+
+  return (
+    <View>
+      <SectionTitle
+        hint={isAdmin ? '경기를 누르면 스코어를 기록합니다.' : undefined}
+        right={isAdmin ? <Chip tone="soft" onPress={regen}>다시 생성</Chip> : undefined}>
+        대진표
+      </SectionTitle>
+      {matches.length ? (
+        <Card style={{ padding: 10 }}>
+          <MatchGrid matches={matches} nameOf={nameOf} onPressMatch={record} />
+        </Card>
+      ) : (
+        <EmptyState icon="🎯" title="대진이 없습니다"
+          body={isAdmin ? '[다시 생성]을 눌러 대진을 만드세요.' : '운영진이 편성하면 표시됩니다.'} />
+      )}
+
+      <SectionTitle hint="승수 → 득실차 순">조별 개인 순위</SectionTitle>
+      {kdkStandingsByGroup(roster, matches).map(({ group, rows }) => (
+        <Card key={group} style={{ marginBottom: S.sm, paddingVertical: 6 }}>
+          <Text style={{ fontSize: 11, fontWeight: '800', color: C.green, marginVertical: 6 }}>
+            {String.fromCharCode(65 + group)}조
+          </Text>
+          {rows.map((r, i) => (
+            <View key={r.id} style={{
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+              paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.border,
+            }}>
+              <View style={{
+                width: 22, height: 22, borderRadius: 11,
+                backgroundColor: i === 0 ? C.lime : C.fill,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Text style={{ fontSize: 10.5, fontWeight: '900', color: i === 0 ? C.ink : C.sub }}>{i + 1}</Text>
+              </View>
+              <Text style={[F.bodyBold, { flex: 1 }]} numberOfLines={1}>{r.name}</Text>
+              <Text style={{ fontSize: 12, color: C.sub }}>{r.games}경기</Text>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: C.green, width: 34, textAlign: 'right' }}>{r.wins}승</Text>
+              <Text style={{
+                fontSize: 11, width: 40, textAlign: 'right',
+                color: r.diff > 0 ? C.green2 : r.diff < 0 ? C.danger : C.faint,
+              }}>{r.diff > 0 ? '+' : ''}{r.diff}</Text>
+            </View>
+          ))}
+        </Card>
+      ))}
+      {sheet.node}
+    </View>
+  );
+}
+
 export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
   const [view, setView] = useState('list'); // list | create | detail
   const [openId, setOpenId] = useState(null);
@@ -449,14 +691,27 @@ export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
         <Card>
           <Text style={{ fontSize: 16, fontWeight: '900' }}>{t.name}</Text>
           <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
-            {t.date} · {t.mode === 'skillGroups'
-              ? `${t.skillGroups?.length || 0}개 실력 그룹`
-              : `${t.entries?.length || 0}팀 · ${t.useGroupStage ? '예선 + 토너먼트' : '토너먼트'}`}
+            {t.date} · {formatLabel(t)}
+            {t.busuLimit ? ` · ${t.busuLimit} 이하` : ''}
             {t.status === 'finished' ? ' · 종료' : ' · 진행 중'}
           </Text>
         </Card>
 
-        {t.stage === 'skillGroups' ? (
+        {t.stage === 'team' ? (
+          <TeamMatch
+            key={t.id}
+            format={t.format}
+            attendees={t.roster || []}
+            courts={t.courts || 1}
+            rounds={4}
+            saved={t.team}
+            isAdmin={isAdmin}
+            flash={flash}
+            onSave={(payload) => updateTournament(clubId, t.id, { team: payload })}
+          />
+        ) : t.stage === 'kdk' ? (
+          <KdkView clubId={clubId} t={t} isAdmin={isAdmin} flash={flash} />
+        ) : t.stage === 'skillGroups' ? (
           <SkillGroupsView clubId={clubId} t={t} members={members} isAdmin={isAdmin} flash={flash} />
         ) : t.stage === 'group' ? (
           <GroupStage clubId={clubId} t={t} isAdmin={isAdmin} nameOfEntry={nameOfEntry} flash={flash} />
@@ -484,7 +739,7 @@ export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: '700' }}>{x.name}</Text>
             <Text style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
-              {x.date} · {x.mode === 'skillGroups' ? `${x.skillGroups?.length || 0}개 그룹` : `${x.entries?.length || 0}팀`}
+              {x.date} · {formatLabel(x)}
               {x.championId ? ` · 🏆 ${x.entries?.find((e) => e.id === x.championId)?.name || ''}` : ''}
             </Text>
           </View>
@@ -497,8 +752,11 @@ export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
   return (
     <View>
       {isAdmin && (
-        <View style={{ marginBottom: 12 }}>
-          <Btn full onPress={() => setView('create')}>+ 새 대회 개설</Btn>
+        <View style={{ marginBottom: S.md }}>
+          <AppButton full icon="＋" onPress={() => setView('create')}>새 대회 개설</AppButton>
+          <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 16 }}>
+            조별리그+토너먼트 · KDK 개인전 · 청백전 · 클럽 교류전 중에서 고를 수 있습니다.
+          </Text>
         </View>
       )}
       {ongoing.length > 0 && <SectionTitle>진행 중</SectionTitle>}
@@ -506,7 +764,10 @@ export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
       {finished.length > 0 && <SectionTitle>지난 대회 기록</SectionTitle>}
       {finished.map((x) => <Row key={x.id} x={x} />)}
       {tournaments.length === 0 && (
-        <Card><Text style={{ fontSize: 12, color: C.sub }}>등록된 대회가 없습니다.{isAdmin ? ' 위 버튼으로 개설하세요.' : ''}</Text></Card>
+        <EmptyState icon="🏆" title="등록된 대회가 없습니다"
+          body={isAdmin
+            ? '월례대회는 KDK, 팀 단위 행사는 청백전이나 클럽 교류전을 골라보세요.'
+            : '운영진이 대회를 개설하면 여기에 표시됩니다.'} />
       )}
     </View>
   );

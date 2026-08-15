@@ -11,9 +11,13 @@
     "test:tournament": "node scripts/test-tournament.mjs",
     "test:schedule": "node scripts/test-schedule.mjs && node scripts/test-recurrence.mjs",
     "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-rules.mjs\"",
-    "test:kdk": "node scripts/test-kdk.mjs"
+    "test:kdk": "node scripts/test-kdk.mjs",
+    "test:team": "node scripts/test-team.mjs",
+    "test:all": "npm run test:engine && npm run test:kdk && npm run test:team && npm run test:tournament && npm run test:schedule"
   },
   "dependencies": {
+    "@react-native-community/datetimepicker": "^8.0.1",
+    "@react-native-segmented-control/segmented-control": "^2.5.2",
     "expo": "~51.0.39",
     "expo-clipboard": "~6.0.3",
     "expo-constants": "~16.0.2",

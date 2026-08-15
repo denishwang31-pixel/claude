@@ -95,6 +95,29 @@ service cloud.firestore {
         allow delete: if isClubAdmin(clubId) || request.auth.uid == applicantUid;
       }
 
+      /* 참가투표: 개설·마감·삭제는 운영진. 회원은 자기 표(votes.{uid})만 바꾼다. */
+      match /polls/{pollId} {
+        allow read: if isClubMember(clubId);
+        allow create, delete: if isClubAdmin(clubId);
+        allow update: if isClubAdmin(clubId) || (
+          isClubMember(clubId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes']) &&
+          request.resource.data.votes.diff(resource.data.get('votes', {}))
+            .affectedKeys().hasOnly([request.auth.uid]) &&
+          resource.data.get('closed', false) == false
+        );
+      }
+
+      /* 채팅: 회원이면 읽기·쓰기. 수정은 막고(내용 바꿔치기 방지),
+         삭제는 본인 글 또는 운영진. */
+      match /messages/{messageId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubMember(clubId)
+          && request.resource.data.authorId == request.auth.uid;
+        allow update: if false;
+        allow delete: if isClubAdmin(clubId) || resource.data.authorId == request.auth.uid;
+      }
+
       /* 모임: 생성/삭제 총무. 회원은 자기 RSVP 키만 변경 가능(FIX-03 S-2) */
       match /meetings/{meetingId} {
         allow read: if isClubMember(clubId);
@@ -180,6 +203,16 @@ service cloud.firestore {
     match /gear/{gearId} {
       allow read: if signedIn();
       allow write: if isAppAdmin();
+    }
+
+    /* ---------- 서비스 전체 현황(루트) ----------
+       "클럽 N개 · 회원 M명"을 보여주기 위한 카운터. 개인 정보는 없다.
+       누구나(로그인 사용자) 올릴 수 있게 두되, 값을 임의로 덮어쓰지 못하도록
+       증가 연산만 허용한다. */
+    match /stats/{docId} {
+      allow read: if true;
+      allow create, update: if signedIn();
+      allow delete: if false;
     }
 
     /* ---------- 광고 노출·클릭 집계(루트) ----------

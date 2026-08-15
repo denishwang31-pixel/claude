@@ -18,7 +18,7 @@ import {
 } from '../../src/lib/constants';
 import { DateField, TimeField, Label } from '../../src/components/pickers';
 import {
-  Card, SectionTitle, Btn, Field, Avatar, Chip, SegmentedControl,
+  Card, SectionTitle, Btn, Field, Avatar, Chip, SegmentedControl, CheckRow,
 } from '../../src/components/ui';
 import { C, S } from '../../src/lib/theme';
 
@@ -44,6 +44,7 @@ export default function Schedule() {
     playMode: PLAY_MODE.DOUBLES,
     surface: '',
     endScore: 6,
+    ranked: true,          // 랭킹 반영 여부
     repeat: 'none',
     until: '',
   });
@@ -77,6 +78,7 @@ export default function Schedule() {
       playMode: nd.playMode || PLAY_MODE.DOUBLES,
       surface: nd.surface || '',
       endScore: nd.endScore || 6,
+      ranked: nd.ranked !== false,
     };
     if (nd.repeat === 'none') {
       addMeeting(clubId, { ...base, date: nd.date });
@@ -135,6 +137,7 @@ export default function Schedule() {
                     {' · '}코트 {mt.courts}면 · {mt.rounds}타임
                     {mt.surface ? ` · ${mt.surface}` : ''}
                     {mt.endScore ? ` · ${mt.endScore}게임` : ''}
+                    {mt.ranked === false ? ' · 랭킹 미반영' : ''}
                     {mt.recurring ? ' · 정기' : ''}
                   </Text>
                 </View>
@@ -272,11 +275,20 @@ export default function Schedule() {
                 <View style={{ marginTop: 12 }}>
                   <Label hint="한 경기를 몇 게임까지 하는지">경기 종료 점수</Label>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
-                    {END_SCORES.map((s) => (
-                      <Chip key={s} tone={nd.endScore === s ? 'green' : 'outline'}
-                        onPress={() => setNd({ ...nd, endScore: s })}>{s}게임</Chip>
+                    {END_SCORES.map((sc) => (
+                      <Chip key={sc} tone={nd.endScore === sc ? 'green' : 'outline'}
+                        onPress={() => setNd({ ...nd, endScore: sc })}>{sc}게임</Chip>
                     ))}
                   </View>
+                </View>
+
+                <View style={{ marginTop: 14 }}>
+                  <CheckRow
+                    checked={nd.ranked !== false}
+                    onToggle={() => setNd({ ...nd, ranked: nd.ranked === false })}
+                    label="랭킹에 반영"
+                    hint="끄면 이 모임의 경기 결과가 클럽 랭킹·전적에 들어가지 않습니다. 친선 경기나 연습 모임에 쓰세요."
+                  />
                 </View>
 
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>

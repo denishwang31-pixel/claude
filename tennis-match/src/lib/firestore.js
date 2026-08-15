@@ -16,7 +16,8 @@
    ============================================================ */
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
-  onSnapshot, query, where, orderBy, limit, serverTimestamp, arrayUnion, runTransaction, deleteField, writeBatch,
+  onSnapshot, query, where, orderBy, limit, serverTimestamp, arrayUnion,
+  runTransaction, deleteField, writeBatch, increment,
 } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { ROLES, GUEST_STATUS, JOIN_STATUS } from './constants';
@@ -144,6 +145,46 @@ export const subTips = (clubId, cb) =>
 
 export const addTip = (clubId, data) => addDoc(C(clubId, 'tips'), { ...data, createdAt: serverTimestamp() });
 export const deleteTip = (clubId, id) => deleteDoc(D(clubId, 'tips', id));
+
+/* ============================================================
+   참가투표 — 일정 RSVP 와 별개. 회식 날짜, 대회 참가 의사처럼
+   "물어보고 집계"가 필요한 모든 것을 담는다.
+   votes 는 { uid: 선택키 } 맵이라 회원이 자기 키만 바꾸도록 규칙을 걸 수 있다.
+   ============================================================ */
+export const subPolls = (clubId, cb) =>
+  onSnapshot(C(clubId, 'polls'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))));
+
+export const addPoll = (clubId, data) =>
+  addDoc(C(clubId, 'polls'), { ...data, votes: {}, closed: false, createdAt: serverTimestamp() });
+
+export const votePoll = (clubId, pollId, uid, choice) =>
+  updateDoc(D(clubId, 'polls', pollId), { [`votes.${uid}`]: choice });
+
+export const unvotePoll = (clubId, pollId, uid) =>
+  updateDoc(D(clubId, 'polls', pollId), { [`votes.${uid}`]: deleteField() });
+
+export const closePoll = (clubId, pollId, closed = true) =>
+  updateDoc(D(clubId, 'polls', pollId), { closed });
+
+export const deletePoll = (clubId, pollId) => deleteDoc(D(clubId, 'polls', pollId));
+
+/* ============================================================
+   클럽 채팅 — 최근 메시지만 실시간으로 받는다.
+   전체를 구독하면 오래된 클럽일수록 앱이 무거워지므로 200개로 자른다.
+   ============================================================ */
+export const subMessages = (clubId, cb, max = 200) =>
+  onSnapshot(
+    query(C(clubId, 'messages'), orderBy('createdAt', 'desc'), limit(max)),
+    (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() })).reverse()),
+    () => cb([]),
+  );
+
+export const sendMessage = (clubId, data) =>
+  addDoc(C(clubId, 'messages'), { ...data, createdAt: serverTimestamp() });
+
+export const deleteMessage = (clubId, id) => deleteDoc(D(clubId, 'messages', id));
 
 /* ---- 여러 모임 한번에 생성(정기 모임 반복 등록) ---- */
 export const addMeetingsBatch = async (clubId, list) => {
@@ -276,18 +317,55 @@ async function reserveInviteCode(clubId, clubName) {
   throw new Error('초대코드 생성 실패(충돌)');
 }
 
-export const createClub = async (name, settings, owner) => {
+export const createClub = async (name, settings, owner, extra = {}) => {
   const { uid, ...ownerData } = owner;
   const region = (settings?.region || '').trim();
-  const ref = await addDoc(collection(db, 'clubs'), { name, settings, ownerId: uid, createdAt: serverTimestamp() });
+  const ref = await addDoc(collection(db, 'clubs'), {
+    name,
+    settings,
+    ownerId: uid,
+    image: extra.image || '',
+    joinPassword: extra.joinPassword || '',   // 있으면 검색 가입 시 이 값을 물어본다
+    createdAt: serverTimestamp(),
+  });
   await setDoc(doc(db, 'clubs', ref.id, 'members', uid), { ...ownerData, role: ROLES.PRESIDENT, status: '활동' });
   const code = await reserveInviteCode(ref.id, name);
   await setDoc(doc(db, 'clubs', ref.id, 'meta', 'rules'), { order: null });
   await updateDoc(ref, { inviteCode: code }); // 총무 표시용
   // 공개 목록에 등록 — 다른 사람이 이름으로 검색해 가입 신청할 수 있게
-  await publishClubDirectory(ref.id, { name, region, memberCount: 1 });
+  await publishClubDirectory(ref.id, {
+    name,
+    region,
+    memberCount: 1,
+    image: extra.image || '',
+    maleCount: ownerData.gender === 'F' ? 0 : 1,
+    femaleCount: ownerData.gender === 'F' ? 1 : 0,
+    hasPassword: !!extra.joinPassword,
+  });
+  bumpServiceStat('clubs');
+  bumpServiceStat('members');
   return { clubId: ref.id, inviteCode: code };
 };
+
+/** 클럽 가입 비밀번호 확인 — 맞으면 승인 없이 바로 가입시킨다.
+ *  옐로우홀처럼 "클럽명 검색 → 비밀번호 입력" 경로를 지원하기 위한 것. */
+export const checkClubPassword = async (clubId, password) => {
+  try {
+    const snap = await getDoc(doc(db, 'clubs', clubId));
+    if (!snap.exists()) return false;
+    const saved = snap.data().joinPassword || '';
+    return !!saved && saved === String(password).trim();
+  } catch (e) {
+    // 비회원은 클럽 문서를 읽을 수 없다 → 신청 경로로 안내
+    return false;
+  }
+};
+
+export const setClubJoinPassword = (clubId, password) =>
+  updateDoc(doc(db, 'clubs', clubId), { joinPassword: password || '' });
+
+export const setClubImage = (clubId, image) =>
+  updateDoc(doc(db, 'clubs', clubId), { image: image || '' });
 
 /** 초대코드 → {clubId, clubName} (없으면 null) */
 export const findClubByInviteCode = async (code) => {
@@ -303,16 +381,38 @@ export const findClubByInviteCode = async (code) => {
    ============================================================ */
 const normalize = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, '');
 
-export const publishClubDirectory = (clubId, { name, region, memberCount, searchable = true }) =>
+export const publishClubDirectory = (clubId, {
+  name, region, memberCount, searchable = true, image, maleCount, femaleCount, hasPassword,
+}) =>
   setDoc(doc(db, 'clubDirectory', clubId), {
     name,
     nameLower: normalize(name),
     region: region || '',
     regionLower: normalize(region),
     memberCount: memberCount ?? 0,
+    maleCount: maleCount ?? 0,
+    femaleCount: femaleCount ?? 0,
+    image: image || '',
+    hasPassword: !!hasPassword,
     searchable,
     updatedAt: serverTimestamp(),
   }, { merge: true });
+
+/* ============================================================
+   서비스 전체 현황 — "클럽 5,301개 · 회원 50,110명"처럼 규모를 보여준다.
+   집계 문서를 따로 두고 클럽/회원이 늘 때 카운터를 올린다.
+   (컬렉션 전체를 세면 문서 수만큼 읽기 비용이 나가므로 쓰지 않는다)
+   ============================================================ */
+export const subServiceStats = (cb) =>
+  onSnapshot(doc(db, 'stats', 'service'),
+    (d) => cb(d.exists() ? d.data() : null),
+    () => cb(null));
+
+export const bumpServiceStat = async (field, by = 1) => {
+  try {
+    await setDoc(doc(db, 'stats', 'service'), { [field]: increment(by) }, { merge: true });
+  } catch (e) { /* 집계 실패가 사용자 흐름을 막지 않도록 무시 */ }
+};
 
 /** 이름·지역 부분 문자열 검색.
  *  Firestore 는 부분 문자열 검색을 지원하지 않으므로 공개 목록을 받아
@@ -376,6 +476,7 @@ export const approveJoinRequest = async (clubId, uid, data) => {
     status: JOIN_STATUS.APPROVED, decidedAt: serverTimestamp(),
   });
   await batch.commit();
+  bumpServiceStat('members');
 };
 
 export const rejectJoinRequest = (clubId, uid) =>
@@ -392,4 +493,5 @@ export const joinClubWithCode = async (clubId, uid, profile, code) => {
   await setDoc(doc(db, 'clubs', clubId, 'members', uid), {
     ...profile, role: ROLES.MEMBER, status: '활동', joinCode: String(code).toUpperCase(),
   });
+  bumpServiceStat('members');
 };

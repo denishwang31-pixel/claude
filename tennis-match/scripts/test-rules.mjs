@@ -203,6 +203,73 @@ await T('운영진의 원포인트 영상 등록 허용',
 await T('회원의 원포인트 조회 허용',
   assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'tips', 't1'))));
 
+console.log('\n[참가투표]');
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  await setDoc(doc(db, 'clubs', CLUB, 'polls', 'pl1'),
+    { type: 'choice', title: '유니폼 색', options: ['빨강', '파랑'], votes: {}, closed: false });
+  await setDoc(doc(db, 'clubs', CLUB, 'polls', 'pl2'),
+    { type: 'attend', title: '마감된 투표', votes: {}, closed: true });
+});
+await T('회원의 투표 조회 허용',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'polls', 'pl1'))));
+await T('회원이 자기 표 던지기 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'polls', 'pl1'), { 'votes.mem1': '0' })));
+await T('남의 표 조작 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'polls', 'pl1'), { 'votes.mem2': '1' })));
+await T('회원의 투표 제목 변경 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'polls', 'pl1'), { title: '바꿔치기' })));
+await T('회원의 투표 마감 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'polls', 'pl1'), { closed: true })));
+await T('마감된 투표에 표 던지기 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'polls', 'pl2'), { 'votes.mem1': 'yes' })));
+await T('회원의 투표 개설 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'polls', 'pl3'), { title: '맘대로', votes: {} })));
+await T('운영진의 투표 개설 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'polls', 'pl3'),
+    { type: 'attend', title: '회식', votes: {}, closed: false })));
+await T('운영진의 투표 마감 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'polls', 'pl3'), { closed: true })));
+await T('회원의 투표 삭제 거부',
+  assertFails(deleteDoc(doc(mem1, 'clubs', CLUB, 'polls', 'pl3'))));
+await T('운영진의 투표 삭제 허용',
+  assertSucceeds(deleteDoc(doc(owner, 'clubs', CLUB, 'polls', 'pl3'))));
+await T('비멤버의 투표 조회 거부',
+  assertFails(getDoc(doc(outsider, 'clubs', CLUB, 'polls', 'pl1'))));
+
+console.log('\n[클럽 채팅]');
+await T('회원의 메시지 작성 허용',
+  assertSucceeds(setDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg1'),
+    { body: '안녕하세요', authorId: 'mem1', author: '회원1' })));
+await T('남의 이름으로 메시지 작성 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg2'),
+    { body: '사칭', authorId: 'owner1' })));
+await T('회원의 메시지 조회 허용',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg1'))));
+await T('비멤버의 메시지 조회 거부',
+  assertFails(getDoc(doc(outsider, 'clubs', CLUB, 'messages', 'msg1'))));
+await T('메시지 내용 수정 거부(본인이어도)',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg1'), { body: '바꿔치기' })));
+await T('남의 메시지 삭제 거부',
+  assertFails(deleteDoc(doc(joiner, 'clubs', CLUB, 'messages', 'msg1'))));
+await T('본인 메시지 삭제 허용',
+  assertSucceeds(deleteDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg1'))));
+await T('운영진의 메시지 삭제 허용', (async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'clubs', CLUB, 'messages', 'msg3'),
+      { body: '신고된 글', authorId: 'mem2' });
+  });
+  return assertSucceeds(deleteDoc(doc(owner, 'clubs', CLUB, 'messages', 'msg3')));
+})());
+
+console.log('\n[서비스 현황 카운터]');
+await T('로그인 사용자의 카운터 증가 허용',
+  assertSucceeds(setDoc(doc(mem1, 'stats', 'service'), { clubs: 1 }, { merge: true })));
+await T('비로그인 카운터 증가 거부',
+  assertFails(setDoc(doc(anon, 'stats', 'service'), { clubs: 99 }, { merge: true })));
+await T('카운터 삭제 거부(운영진도)',
+  assertFails(deleteDoc(doc(owner, 'stats', 'service'))));
+
 console.log('\n[공개 클럽 목록 / 가입 신청 승인]');
 await T('운영진의 공개 목록 등록 허용',
   assertSucceeds(setDoc(doc(owner, 'clubDirectory', CLUB),

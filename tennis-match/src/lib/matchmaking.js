@@ -538,7 +538,9 @@ export function computeStats(members, meetings) {
     id.startsWith('g:') ? id.slice(2) + '(G)' : (members.find((m) => m.id === id)?.name || '?');
   const ensure = (id) => stats[id] || (stats[id] = { games: 0, wins: 0, partners: {}, opps: {} });
   (meetings || []).forEach((mt) =>
-    (mt.matches || []).forEach((m) => {
+    // ranked === false 인 모임(친선·연습)은 랭킹·전적에서 제외한다.
+    // 값이 없는 예전 모임은 기존대로 반영한다.
+    (mt.ranked === false ? [] : (mt.matches || [])).forEach((m) => {
       if (!m.score) return;
       const aWin = m.score.a > m.score.b;
       const proc = (team, opp, win) => {

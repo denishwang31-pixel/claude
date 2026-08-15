@@ -10,21 +10,24 @@
    승인 대기 중에는 대기 화면이 뜨고, 운영진이 승인하는 즉시 자동 입장한다.
    ============================================================ */
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { auth } from '../firebaseConfig';
 import {
   createClub, findClubByInviteCode, searchClubs, getClubDirectory,
   requestJoinClub, subMyJoinRequest, cancelJoinRequest, joinClubWithCode,
+  checkClubPassword, subServiceStats,
 } from '../src/lib/firestore';
 import { seedClub } from '../src/lib/seed';
 import { linkUserToClub, markPendingClub, skipOnboarding, getMySession, logout } from '../src/lib/auth';
-import { JOIN_STATUS } from '../src/lib/constants';
+import { JOIN_STATUS, BUSU_KEYS } from '../src/lib/constants';
 import { DEFAULT_SETTINGS, roundsFromSettings } from '../src/lib/schedule';
-import { DateField, Label } from '../src/components/pickers';
+import { MonthField, Label } from '../src/components/pickers';
+import { RegionPicker } from '../src/components/RegionPicker';
 import { useBackHandler } from '../src/hooks/useBackHandler';
-import { Card, Btn, Field, Chip, SectionTitle } from '../src/components/ui';
-import { C } from '../src/lib/theme';
+import { AppButton, Segmented, Touchable } from '../src/components/native';
+import { Card, Btn, Field, Chip, SectionTitle, StatCard } from '../src/components/ui';
+import { C, S, R, F } from '../src/lib/theme';
 
 const TABS = [
   ['find', '클럽 찾기'],
@@ -45,6 +48,9 @@ export default function Onboarding() {
   const [myName, setMyName] = useState('');
   const [gender, setGender] = useState('M');
   const [startedAt, setStartedAt] = useState('');
+  const [busu, setBusu] = useState('');
+  const [myRegion, setMyRegion] = useState('');
+  const [svc, setSvc] = useState(null);
 
   /* 클럽 찾기 */
   const [kw, setKw] = useState('');
@@ -54,10 +60,15 @@ export default function Onboarding() {
 
   /* 승인 대기 */
   const [pending, setPending] = useState(null);   // { clubId, clubName, status }
+  /* 비밀번호로 가입하는 중인 클럽 */
+  const [pwClub, setPwClub] = useState(null);
+  const [pwInput, setPwInput] = useState('');
 
   /* 클럽 만들기 */
   const [clubName, setClubName] = useState('');
   const [region, setRegion] = useState('');
+  const [clubImage, setClubImage] = useState('');
+  const [joinPw, setJoinPw] = useState('');
   const [courts, setCourts] = useState('2');
   const [startTime, setStartTime] = useState('10:00');
   const [endTime, setEndTime] = useState('13:00');
@@ -76,6 +87,8 @@ export default function Onboarding() {
           setMyName(s.profile.name);
           if (s.profile.gender) setGender(s.profile.gender);
           if (s.profile.startedAt) setStartedAt(s.profile.startedAt);
+          if (s.profile.busu) setBusu(s.profile.busu);
+          if (s.profile.region) setMyRegion(s.profile.region);
         }
         if (s.pendingClubId) {
           const dir = await getClubDirectory(s.pendingClubId);
@@ -86,6 +99,8 @@ export default function Onboarding() {
     })();
     return () => { alive = false; };
   }, [uid]);
+
+  useEffect(() => subServiceStats(setSvc), []);
 
   /* 딥링크(초대 링크)로 들어온 코드 자동 입력 */
   useEffect(() => {
@@ -115,8 +130,14 @@ export default function Onboarding() {
   });
 
   const buildProfile = () => {
-    const p = { name: myName.trim(), gender, grade: 'B' };
-    const s = startedAt.trim();
+    const p = {
+      name: myName.trim(),
+      gender,
+      grade: '',
+      busu: busu || '',
+      region: myRegion || '',
+    };
+    const s = (startedAt || '').trim();
     if (s) {
       const norm = /^\d{4}-\d{2}$/.test(s) ? `${s}-01` : s;
       if (!Number.isNaN(new Date(norm).getTime())) p.startedAt = norm;
@@ -159,6 +180,28 @@ export default function Onboarding() {
     setBusy(false);
   };
 
+  /* ---------------- 비밀번호로 즉시 가입 ---------------- */
+  const doJoinByPassword = async () => {
+    if (!uid || !pwClub) return;
+    if (!myName.trim()) return setErr('이름을 먼저 입력하세요.');
+    setErr(''); setBusy(true);
+    try {
+      const ok = await checkClubPassword(pwClub.id, pwInput);
+      if (!ok) {
+        setErr('비밀번호가 맞지 않습니다. 운영진에게 확인하거나 [가입 신청]을 이용하세요.');
+        setBusy(false);
+        return;
+      }
+      const profile = buildProfile();
+      await joinClubWithCode(pwClub.id, uid, profile, '');
+      await linkUserToClub(uid, pwClub.id, profile);
+      router.replace('/(tabs)');
+    } catch (e) {
+      setErr('가입에 실패했습니다. [가입 신청]을 이용해 주세요.');
+    }
+    setBusy(false);
+  };
+
   /* ---------------- 가입 신청(승인 대기) ---------------- */
   const doRequest = async (club) => {
     if (!uid) return setErr('로그인이 필요합니다.');
@@ -194,7 +237,10 @@ export default function Onboarding() {
         courts: Math.max(1, Math.min(20, Number(courts) || 2)),
         startTime, endTime, roundMinutes, region: region.trim(),
       };
-      const { clubId } = await createClub(clubName.trim(), settings, { uid, ...profile });
+      const { clubId } = await createClub(
+        clubName.trim(), settings, { uid, ...profile },
+        { image: clubImage.trim(), joinPassword: joinPw.trim() },
+      );
       await seedClub(clubId, withDemo);
       await linkUserToClub(uid, clubId, profile);
       router.replace('/(tabs)');
@@ -257,19 +303,40 @@ export default function Onboarding() {
       </Text>
 
       {/* 내 프로필 */}
-      <Card style={{ marginTop: 16 }}>
+      <Card style={{ marginTop: S.lg }}>
         <Label>내 이름</Label>
         <Field placeholder="이름" value={myName} onChangeText={setMyName} />
-        <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
-          {['M', 'F'].map((g) => (
-            <Chip key={g} tone={gender === g ? 'green' : 'outline'} onPress={() => setGender(g)}>
-              {g === 'M' ? '남' : '여'}
-            </Chip>
-          ))}
+
+        <View style={{ marginTop: S.md }}>
+          <Label>성별</Label>
+          <Segmented
+            options={[{ key: 'M', label: '남' }, { key: 'F', label: '여' }]}
+            value={gender}
+            onChange={setGender}
+          />
         </View>
-        <View style={{ marginTop: 12 }}>
-          <Label hint="선택 · 구력 계산에 쓰입니다">테니스 시작일</Label>
-          <DateField value={startedAt} onChange={setStartedAt} placeholder="예: 2019-03-01" />
+
+        <View style={{ marginTop: S.md }}>
+          <Label hint="선택 · 대회 참가 자격 기준">부수</Label>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+            <Chip tone={!busu ? 'green' : 'outline'} onPress={() => setBusu('')}>모름</Chip>
+            {BUSU_KEYS.map((b) => (
+              <Chip key={b} tone={busu === b ? 'green' : 'outline'} onPress={() => setBusu(b)}>{b}</Chip>
+            ))}
+          </View>
+        </View>
+
+        <View style={{ marginTop: S.md }}>
+          <Label hint="선택 · 가까운 클럽과 게스트 모집을 찾는 기준">활동 지역</Label>
+          <RegionPicker value={myRegion} onChange={setMyRegion} labels={false} />
+        </View>
+
+        <View style={{ marginTop: S.md }}>
+          <Label hint="선택 · 한 번 저장하면 변경할 수 없습니다">테니스 시작 년월</Label>
+          <MonthField value={startedAt} onChange={setStartedAt} />
+          <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 5, lineHeight: 15 }}>
+            공정한 대회 운영을 위한 구력 확인제도입니다. 잘못 넣으면 회장만 초기화할 수 있으니 신중히 입력하세요.
+          </Text>
         </View>
       </Card>
 
@@ -310,27 +377,83 @@ export default function Onboarding() {
               }>검색 결과 {results.length}곳</SectionTitle>
 
               {results.map((c) => (
-                <Card key={c.id} style={{ marginBottom: 8 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ fontSize: 15, fontWeight: '800', flex: 1 }}>{c.name}</Text>
-                    {c.byCode && <Chip tone="lime">초대코드 확인됨</Chip>}
-                  </View>
-                  {!c.byCode && (
-                    <Text style={{ fontSize: 11, color: C.sub, marginTop: 3 }}>
-                      {c.region ? `${c.region} · ` : ''}회원 {c.memberCount || 0}명
-                    </Text>
-                  )}
-                  <View style={{ marginTop: 10 }}>
-                    {c.byCode ? (
-                      <Btn full disabled={busy || !myName.trim()} onPress={() => doJoinByCode(c)}>
-                        {busy ? '가입 중…' : '바로 가입하기'}
-                      </Btn>
+                <Card key={c.id} style={{ marginBottom: S.sm }}>
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    {c.image ? (
+                      <Image source={{ uri: c.image }} style={{ width: 56, height: 56, borderRadius: R.md }} />
                     ) : (
-                      <Btn full tone="ghost" disabled={busy || !myName.trim()} onPress={() => doRequest(c)}>
-                        {busy ? '신청 중…' : '가입 신청'}
-                      </Btn>
+                      <View style={{
+                        width: 56, height: 56, borderRadius: R.md, backgroundColor: C.greenSoft,
+                        alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <Text style={{ fontSize: 24 }}>🎾</Text>
+                      </View>
                     )}
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                        <Text style={{ fontSize: 15, fontWeight: '800' }}>{c.name}</Text>
+                        {c.byCode && <Chip tone="lime">초대코드 확인됨</Chip>}
+                        {!c.byCode && c.hasPassword && <Chip tone="outline">🔒 비밀번호</Chip>}
+                      </View>
+                      {!c.byCode && (
+                        <>
+                          <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 3 }}>
+                            {c.region || '지역 미등록'}
+                          </Text>
+                          <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                            <Text style={{ fontSize: 11.5, color: C.male, fontWeight: '700' }}>
+                              남 {c.maleCount || 0}
+                            </Text>
+                            <Text style={{ fontSize: 11.5, color: C.female, fontWeight: '700' }}>
+                              여 {c.femaleCount || 0}
+                            </Text>
+                            <Text style={{ fontSize: 11.5, color: C.faint }}>
+                              총 {c.memberCount || 0}명
+                            </Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
                   </View>
+
+                  {/* 비밀번호 입력창 — 이 클럽을 고른 경우에만 */}
+                  {pwClub?.id === c.id && (
+                    <View style={{ marginTop: S.md }}>
+                      <Label hint="운영진에게 받은 클럽 비밀번호">비밀번호</Label>
+                      <Field secureTextEntry placeholder="비밀번호" value={pwInput} onChangeText={setPwInput} />
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: S.sm }}>
+                        <View style={{ flex: 1 }}>
+                          <AppButton full disabled={busy || !pwInput} onPress={doJoinByPassword}>
+                            {busy ? '확인 중…' : '입장'}
+                          </AppButton>
+                        </View>
+                        <AppButton variant="text" onPress={() => { setPwClub(null); setPwInput(''); }}>취소</AppButton>
+                      </View>
+                    </View>
+                  )}
+
+                  {pwClub?.id !== c.id && (
+                    <View style={{ marginTop: S.md, gap: 8 }}>
+                      {c.byCode ? (
+                        <AppButton full disabled={busy || !myName.trim()} onPress={() => doJoinByCode(c)}>
+                          {busy ? '가입 중…' : '바로 가입하기'}
+                        </AppButton>
+                      ) : (
+                        <>
+                          {c.hasPassword && (
+                            <AppButton full variant="tonal" disabled={!myName.trim()}
+                              onPress={() => { setPwClub(c); setPwInput(''); setErr(''); }}>
+                              🔒 비밀번호로 바로 입장
+                            </AppButton>
+                          )}
+                          <AppButton full variant="outlined" disabled={busy || !myName.trim()}
+                            onPress={() => doRequest(c)}>
+                            {busy ? '신청 중…' : '가입 신청 (운영진 승인)'}
+                          </AppButton>
+                        </>
+                      )}
+                    </View>
+                  )}
                 </Card>
               ))}
 
@@ -351,9 +474,23 @@ export default function Onboarding() {
           <Label>클럽 이름</Label>
           <Field placeholder="예: 그린스매시 테니스클럽" value={clubName} onChangeText={setClubName} />
 
-          <View style={{ marginTop: 10 }}>
-            <Label hint="다른 사람이 검색할 때 쓰입니다">지역</Label>
-            <Field placeholder="예: 경기 과천시" value={region} onChangeText={setRegion} />
+          <View style={{ marginTop: S.md }}>
+            <Label hint="다른 사람이 검색할 때 쓰입니다">활동 지역</Label>
+            <RegionPicker value={region} onChange={setRegion} labels={false} />
+          </View>
+
+          <View style={{ marginTop: S.md }}>
+            <Label hint="선택 · 클럽 검색 결과에 표시됩니다">대표 이미지 URL</Label>
+            <Field placeholder="https://..." autoCapitalize="none" value={clubImage} onChangeText={setClubImage} />
+          </View>
+
+          <View style={{ marginTop: S.md }}>
+            <Label hint="선택 · 아는 사람은 승인 없이 바로 입장">클럽 가입 비밀번호</Label>
+            <Field placeholder="비워두면 승인제로만 운영" value={joinPw} onChangeText={setJoinPw} />
+            <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 5, lineHeight: 15 }}>
+              비밀번호를 정해두면 회원이 클럽을 검색해 바로 들어올 수 있습니다.
+              비워두면 가입 신청 → 운영진 승인 경로만 열립니다.
+            </Text>
           </View>
 
           <View style={{ marginTop: 14 }}>
@@ -416,7 +553,18 @@ export default function Onboarding() {
         </Text>
       </View>
 
-      <View style={{ marginTop: 28, alignItems: 'center' }}>
+      {!!svc && (svc.clubs > 0 || svc.members > 0) && (
+        <Card style={{ marginTop: S.xl }}>
+          <Text style={[F.label, { marginBottom: 10, textAlign: 'center' }]}>테니스매치와 함께하는 중</Text>
+          <View style={{ flexDirection: 'row', gap: S.sm }}>
+            <StatCard value={(svc.clubs || 0).toLocaleString()} label="클럽" />
+            <StatCard value={(svc.members || 0).toLocaleString()} label="회원" />
+            <StatCard value={(svc.matches || 0).toLocaleString()} label="누적 경기" />
+          </View>
+        </Card>
+      )}
+
+      <View style={{ marginTop: S.xxl, alignItems: 'center' }}>
         <Pressable onPress={logout} hitSlop={10}>
           <Text style={{ fontSize: 12, color: C.faint }}>다른 계정으로 로그인</Text>
         </Pressable>

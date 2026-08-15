@@ -1,16 +1,23 @@
-/* 회원 관리 — 프로필 수정(성별·조·구력), 역할 임명(회장 전용), 소속 코트장, 삭제 */
+/* 회원 관리 — 프로필 수정(성별·부수·조·지역·구력), 역할 임명(회장 전용), 소속 코트장, 삭제
+
+   구력 확인제도
+     테니스 시작 년월은 한 번 저장되면 본인도 못 바꾼다. 대회 참가 자격이
+     "구력 3년 이하부"처럼 걸려 있어서, 대회 앞두고 슬쩍 늦추는 걸 막기 위한
+     장치다. 잘못 넣었으면 회장만 풀어 줄 수 있다. */
 import React, { useState } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
 import {
   updateMemberProfile, addMember, deleteMember, setMemberRole,
 } from '../lib/firestore';
 import {
-  ROLES, ASSIGNABLE_ROLES, GRADES, roleTone, isStaffRole,
+  ROLES, ASSIGNABLE_ROLES, GRADES, BUSU, BUSU_KEYS, roleTone, isStaffRole,
 } from '../lib/constants';
 import { effectiveNtrp, careerText } from '../lib/ntrp';
-import { Label } from './pickers';
-import { Card, SectionTitle, Chip, Btn, Field } from './ui';
-import { C } from '../lib/theme';
+import { Label, MonthField } from './pickers';
+import { RegionPicker } from './RegionPicker';
+import { Segmented, AppButton, Touchable } from './native';
+import { Card, SectionTitle, Chip, Btn, Field, Divider } from './ui';
+import { C, S, R, F } from '../lib/theme';
 
 const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
@@ -18,7 +25,7 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
   const [openId, setOpenId] = useState(null);
   const [d, setD] = useState({});
   const [adding, setAdding] = useState(false);
-  const [nm, setNm] = useState({ name: '', gender: 'M', grade: '', startedAt: '' });
+  const [nm, setNm] = useState({ name: '', gender: 'M', busu: '', grade: '', region: '', startedAt: '' });
 
   const openEdit = (m) => {
     if (openId === m.id) return setOpenId(null);
@@ -26,7 +33,9 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
     setD({
       name: m.name || '',
       gender: m.gender || 'M',
+      busu: m.busu || '',
       grade: m.grade || '',
+      region: m.region || '',
       startedAt: m.startedAt || '',
       venueIds: m.venueIds || [],
       status: m.status || '활동',
@@ -37,19 +46,42 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
     const patch = {
       name: d.name.trim() || m.name,
       gender: d.gender,
+      busu: d.busu,            // '' = 부수 미입력
       grade: d.grade,          // '' = 조 선택 안함
+      region: d.region || '',
       venueIds: d.venueIds,
       status: d.status,
     };
-    const s = (d.startedAt || '').trim();
-    if (s) {
-      const norm = /^\d{4}-\d{2}$/.test(s) ? `${s}-01` : s;
-      if (Number.isNaN(new Date(norm).getTime())) return flash('시작일 형식을 확인하세요 (YYYY-MM-DD)');
+    // 구력 확인제도 — 이미 기록돼 있으면 덮어쓰지 않는다(회장이 초기화한 경우만 다시 받음)
+    const startLocked = !!m.startedAt;
+    const v = (d.startedAt || '').trim();
+    if (!startLocked && v) {
+      const norm = /^\d{4}-\d{2}$/.test(v) ? `${v}-01` : v;
+      if (Number.isNaN(new Date(norm).getTime())) return flash('시작일 형식을 확인하세요');
       patch.startedAt = norm;
     }
     updateMemberProfile(clubId, m.id, patch);
     setOpenId(null);
-    flash('저장되었습니다');
+    return flash('저장되었습니다');
+  };
+
+  /** 회장만 — 잘못 입력된 구력을 풀어 준다 */
+  const unlockCareer = (m) => {
+    Alert.alert('구력 초기화',
+      `${m.name} 님의 테니스 시작 년월을 지웁니다.\n`
+      + '다시 입력하면 그때부터 또 잠깁니다. 대회 자격과 직결되니 신중히 처리하세요.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '초기화',
+          style: 'destructive',
+          onPress: () => {
+            updateMemberProfile(clubId, m.id, { startedAt: '' });
+            setD({ ...d, startedAt: '' });
+            flash('구력을 초기화했습니다');
+          },
+        },
+      ]);
   };
 
   const remove = (m) => {
@@ -109,12 +141,14 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                       <Text style={{ fontSize: 14, fontWeight: '700' }}>{m.name}</Text>
                       {isStaffRole(m.role) && <Chip tone={roleTone(m.role)}>{m.role}</Chip>}
-                      {eff.value != null && <Chip tone="outline">{eff.value.toFixed(1)}</Chip>}
+                      {!!m.busu && <Chip tone="soft">{m.busu}</Chip>}
+                      {eff.value != null && <Chip tone="outline">NTRP {eff.value.toFixed(1)}</Chip>}
                     </View>
-                    <Text style={{ fontSize: 10, color: C.faint, marginTop: 1 }}>
+                    <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 2 }}>
                       {m.gender === 'M' ? '남' : '여'}
                       {m.grade ? ` · ${m.grade}조` : ''}
                       {m.startedAt ? ` · 구력 ${careerText(m.startedAt)}` : ''}
+                      {m.region ? ` · ${m.region}` : ''}
                       {m.status && m.status !== '활동' ? ` · ${m.status}` : ''}
                     </Text>
                   </View>
@@ -129,18 +163,33 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                   <Label>이름</Label>
                   <Field value={d.name} onChangeText={(v) => setD({ ...d, name: v })} />
 
-                  <View style={{ marginTop: 10 }}>
+                  <View style={{ marginTop: S.md }}>
                     <Label>성별</Label>
-                    <View style={{ flexDirection: 'row', gap: 6 }}>
-                      {[['M', '남'], ['F', '여']].map(([g, label]) => (
-                        <Chip key={g} tone={d.gender === g ? 'green' : 'outline'} onPress={() => setD({ ...d, gender: g })}>{label}</Chip>
-                      ))}
-                    </View>
+                    <Segmented
+                      options={[{ key: 'M', label: '남' }, { key: 'F', label: '여' }]}
+                      value={d.gender}
+                      onChange={(v) => setD({ ...d, gender: v })}
+                    />
                   </View>
 
-                  <View style={{ marginTop: 10 }}>
-                    <Label hint="조를 쓰지 않는 클럽은 '선택 안함'">조</Label>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  <View style={{ marginTop: S.md }}>
+                    <Label hint="대회 참가 자격의 기준이 됩니다">부수</Label>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                      <Chip tone={!d.busu ? 'green' : 'outline'} onPress={() => setD({ ...d, busu: '' })}>미입력</Chip>
+                      {BUSU_KEYS.map((b) => (
+                        <Chip key={b} tone={d.busu === b ? 'green' : 'outline'} onPress={() => setD({ ...d, busu: b })}>{b}</Chip>
+                      ))}
+                    </View>
+                    {!!d.busu && (
+                      <Text style={{ fontSize: 11, color: C.green2, marginTop: 5 }}>
+                        {BUSU.find((b) => b.key === d.busu)?.desc}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={{ marginTop: S.md }}>
+                    <Label hint="조를 쓰지 않는 클럽은 '선택 안함'">클럽 내부 조</Label>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
                       <Chip tone={!d.grade ? 'green' : 'outline'} onPress={() => setD({ ...d, grade: '' })}>선택 안함</Chip>
                       {GRADES.map((g) => (
                         <Chip key={g} tone={d.grade === g ? 'lime' : 'outline'} onPress={() => setD({ ...d, grade: g })}>{g}조</Chip>
@@ -148,9 +197,36 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                     </View>
                   </View>
 
-                  <View style={{ marginTop: 10 }}>
-                    <Label hint="YYYY-MM 또는 YYYY-MM-DD">테니스 시작일(구력)</Label>
-                    <Field placeholder="2019-03" value={d.startedAt} onChangeText={(v) => setD({ ...d, startedAt: v })} />
+                  <View style={{ marginTop: S.md }}>
+                    <Label hint="게스트 모집·클럽 검색에 쓰입니다">활동 지역</Label>
+                    <RegionPicker value={d.region} onChange={(v) => setD({ ...d, region: v })} labels={false} />
+                  </View>
+
+                  <View style={{ marginTop: S.md }}>
+                    <Label hint={m.startedAt ? '한 번 입력하면 변경할 수 없습니다' : '입력 후에는 변경할 수 없습니다'}>
+                      테니스 시작 년월 (구력)
+                    </Label>
+                    {m.startedAt ? (
+                      <View style={{
+                        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        backgroundColor: C.fill, borderRadius: R.md, paddingHorizontal: 14, paddingVertical: 12,
+                      }}>
+                        <Text style={{ fontSize: 15, color: C.text }}>
+                          🔒 {m.startedAt.slice(0, 7)} · 구력 {careerText(m.startedAt)}
+                        </Text>
+                        {canAppoint && (
+                          <Touchable onPress={() => unlockCareer(m)} hitSlop={8}>
+                            <Text style={{ fontSize: 12, color: C.danger, fontWeight: '700' }}>초기화</Text>
+                          </Touchable>
+                        )}
+                      </View>
+                    ) : (
+                      <MonthField value={d.startedAt} onChange={(v) => setD({ ...d, startedAt: v })} />
+                    )}
+                    <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 5, lineHeight: 15 }}>
+                      공정한 대회 운영을 위한 구력 확인제도입니다.
+                      {canAppoint ? ' 잘못 입력된 경우 회장이 초기화할 수 있습니다.' : ' 잘못 입력했다면 회장에게 문의하세요.'}
+                    </Text>
                   </View>
 
                   {isAdmin && venues.length > 0 && (
@@ -221,17 +297,30 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
             <Card>
               <Label>이름</Label>
               <Field value={nm.name} onChangeText={(v) => setNm({ ...nm, name: v })} />
-              <View style={{ marginTop: 10 }}>
+              <View style={{ marginTop: S.md }}>
                 <Label>성별</Label>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  {[['M', '남'], ['F', '여']].map(([g, label]) => (
-                    <Chip key={g} tone={nm.gender === g ? 'green' : 'outline'} onPress={() => setNm({ ...nm, gender: g })}>{label}</Chip>
+                <Segmented
+                  options={[{ key: 'M', label: '남' }, { key: 'F', label: '여' }]}
+                  value={nm.gender}
+                  onChange={(v) => setNm({ ...nm, gender: v })}
+                />
+              </View>
+              <View style={{ marginTop: S.md }}>
+                <Label hint="대회 참가 자격 기준">부수</Label>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                  <Chip tone={!nm.busu ? 'green' : 'outline'} onPress={() => setNm({ ...nm, busu: '' })}>미입력</Chip>
+                  {BUSU_KEYS.map((b) => (
+                    <Chip key={b} tone={nm.busu === b ? 'green' : 'outline'} onPress={() => setNm({ ...nm, busu: b })}>{b}</Chip>
                   ))}
                 </View>
               </View>
-              <View style={{ marginTop: 10 }}>
-                <Label>조</Label>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              <View style={{ marginTop: S.md }}>
+                <Label hint="선택">활동 지역</Label>
+                <RegionPicker value={nm.region} onChange={(v) => setNm({ ...nm, region: v })} labels={false} />
+              </View>
+              <View style={{ marginTop: S.md }}>
+                <Label>클럽 내부 조</Label>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
                   <Chip tone={!nm.grade ? 'green' : 'outline'} onPress={() => setNm({ ...nm, grade: '' })}>선택 안함</Chip>
                   {GRADES.map((g) => (
                     <Chip key={g} tone={nm.grade === g ? 'lime' : 'outline'} onPress={() => setNm({ ...nm, grade: g })}>{g}조</Chip>
@@ -244,11 +333,14 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
               </View>
               <View style={{ marginTop: 12 }}>
                 <Btn full disabled={!nm.name} onPress={() => {
-                  const data = { name: nm.name.trim(), gender: nm.gender, grade: nm.grade };
+                  const data = {
+                    name: nm.name.trim(), gender: nm.gender, grade: nm.grade,
+                    busu: nm.busu || '', region: nm.region || '',
+                  };
                   const s = (nm.startedAt || '').trim();
                   if (s) data.startedAt = /^\d{4}-\d{2}$/.test(s) ? `${s}-01` : s;
                   addMember(clubId, 'local:' + rid(), data);
-                  setNm({ name: '', gender: 'M', grade: '', startedAt: '' });
+                  setNm({ name: '', gender: 'M', busu: '', grade: '', region: '', startedAt: '' });
                   flash('회원이 추가되었습니다');
                 }}>추가</Btn>
               </View>
