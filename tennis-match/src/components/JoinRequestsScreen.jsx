@@ -74,10 +74,10 @@ export function JoinRequests({ clubId, club, members, isAdmin, flash }) {
   return (
     <View>
       <Card style={{ backgroundColor: C.ink, borderColor: C.green }}>
-        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900' }}>
+        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>
           {pending.length > 0 ? `승인 대기 ${pending.length}건` : '대기 중인 신청이 없습니다'}
         </Text>
-        <Text style={{ color: '#6ee7b7', fontSize: 11, marginTop: 4, lineHeight: 16 }}>
+        <Text style={{ color: '#BFE3D3', fontSize: 11, marginTop: 4, lineHeight: 16 }}>
           클럽 검색으로 들어온 신청입니다. 승인하면 바로 회원 명단에 추가되고,
           신청한 분의 앱에서도 즉시 입장됩니다.{'\n'}
           초대코드로 들어온 분은 승인 없이 바로 가입되므로 여기 표시되지 않습니다.
@@ -92,7 +92,7 @@ export function JoinRequests({ clubId, club, members, isAdmin, flash }) {
               backgroundColor: r.gender === 'F' ? C.femaleBg : C.maleBg,
               alignItems: 'center', justifyContent: 'center',
             }}>
-              <Text style={{ fontSize: 13, fontWeight: '900', color: r.gender === 'F' ? C.female : C.male }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: r.gender === 'F' ? C.female : C.male }}>
                 {(r.name || '?').slice(0, 1)}
               </Text>
             </View>

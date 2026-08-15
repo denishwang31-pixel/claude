@@ -272,11 +272,11 @@ export default function Onboarding() {
       <View style={{ flex: 1, backgroundColor: C.bg, justifyContent: 'center', padding: 24 }}>
         <Card style={{ backgroundColor: C.ink, borderColor: C.green, alignItems: 'center', paddingVertical: 28 }}>
           <Text style={{ fontSize: 40 }}>{rejected ? '🙏' : '⏳'}</Text>
-          <Text style={{ color: '#fff', fontSize: 17, fontWeight: '900', marginTop: 10 }}>
+          <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', marginTop: 10 }}>
             {rejected ? '가입이 거절되었습니다' : '가입 승인을 기다리는 중'}
           </Text>
           <Text style={{ color: C.lime, fontSize: 14, fontWeight: '800', marginTop: 6 }}>{pending.clubName}</Text>
-          <Text style={{ color: '#6ee7b7', fontSize: 12, textAlign: 'center', marginTop: 12, lineHeight: 18 }}>
+          <Text style={{ color: '#BFE3D3', fontSize: 12, textAlign: 'center', marginTop: 12, lineHeight: 18 }}>
             {rejected
               ? '다른 클럽을 찾아보거나, 클럽 운영진에게 직접 문의해 보세요.'
               : '클럽 운영진이 승인하면 이 화면에서 자동으로 입장합니다.\n앱을 껐다 켜도 됩니다.'}
@@ -297,7 +297,7 @@ export default function Onboarding() {
   /* ================= 일반 온보딩 ================= */
   return (
     <ScrollView style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={{ padding: 24, paddingTop: 56, paddingBottom: 48 }}>
-      <Text style={{ fontSize: 22, fontWeight: '900', color: C.ink }}>시작하기</Text>
+      <Text style={{ fontSize: 22, fontWeight: '700', color: C.ink }}>시작하기</Text>
       <Text style={{ fontSize: 12, color: C.sub, marginTop: 4 }}>
         클럽은 나중에 정해도 됩니다. 우선 이름만 알려주세요.
       </Text>
@@ -522,7 +522,7 @@ export default function Onboarding() {
           <Pressable onPress={() => setWithDemo(!withDemo)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 }}>
             <View style={{ width: 20, height: 20, borderRadius: 5, backgroundColor: withDemo ? C.green : '#e7e5e4', alignItems: 'center', justifyContent: 'center' }}>
-              {withDemo && <Text style={{ color: C.lime, fontWeight: '900', fontSize: 12 }}>✓</Text>}
+              {withDemo && <Text style={{ color: C.lime, fontWeight: '700', fontSize: 12 }}>✓</Text>}
             </View>
             <Text style={{ fontSize: 12, color: C.sub }}>데모 회원·모임 데이터로 시작 (체험용)</Text>
           </Pressable>

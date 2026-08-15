@@ -26,29 +26,50 @@ import { Invite } from '../../src/components/InviteScreen';
 import { Polls } from '../../src/components/PollScreen';
 import { Chat } from '../../src/components/ChatScreen';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
-import { Card, SectionTitle, Chip, Btn } from '../../src/components/ui';
-import { C } from '../../src/lib/theme';
+import { Card, SectionTitle, Chip, Btn, ListRow, Badge } from '../../src/components/ui';
+import { C, F } from '../../src/lib/theme';
 
-/** [키, 라벨, 운영진 전용 여부] */
-const MENU = [
-  ['guest', '🎾 게스트 모집 (공개 게시판)', false],
-  ['chat', '💬 클럽 채팅', false],
-  ['polls', '🗳 참가투표', false],
-  ['tournament', '🏆 대회', false],
-  ['rank', '📈 랭킹·기록', false],
-  ['ntrp', '📊 NTRP 등급', false],
-  ['board', '📢 클럽 공지·자유글', false],
-  ['courts', '📍 코트 검색', false],
-  ['members', '👥 회원', false],
-  ['invite', '✉️ 클럽 초대 (초대코드·링크)', true],
-  ['joinreq', '🙋 가입 신청', true],
-  ['attendance', '✅ 출석', true],
-  ['fees', '💳 회비·지출', true],
-  ['pairs', '💑 커플·고정 페어', true],
-  ['venues', '🏟 코트장 관리', true],
-  ['matchcfg', '🎯 대진 설정', true],
-  ['settings', '⚙️ 클럽 설정', true],
+/** 그룹 → [키, 아이콘, 라벨, 부제] — 운영 기능은 "클럽 운영" 한 묶음으로 */
+const MENU_GROUPS = [
+  {
+    title: '커뮤니티',
+    staffOnly: false,
+    items: [
+      ['guest', 'guest', '게스트 모집', '모든 클럽이 함께 보는 공개 게시판'],
+      ['chat', 'chat', '클럽 채팅', null],
+      ['polls', 'polls', '참가투표', '회식·대회 참가 의사를 물어보세요'],
+      ['board', 'board', '공지·자유글', null],
+    ],
+  },
+  {
+    title: '경기·기록',
+    staffOnly: false,
+    items: [
+      ['tournament', 'tournament', '대회', 'KDK · 청백전 · 클럽 교류전'],
+      ['rank', 'rank', '랭킹·기록', null],
+      ['ntrp', 'ntrp', 'NTRP 등급', null],
+      ['members', 'members', '회원', null],
+      ['courts', 'courts', '코트 검색', null],
+    ],
+  },
+  {
+    title: '클럽 운영',
+    staffOnly: true,
+    items: [
+      ['joinreq', 'joinreq', '가입 신청', '검색으로 들어온 신청을 승인'],
+      ['invite', 'invite', '클럽 초대', '초대코드·링크 보내기'],
+      ['attendance', 'attendance', '출석', null],
+      ['fees', 'fees', '회비·지출', null],
+      ['pairs', 'pairs', '커플·고정 페어', null],
+      ['venues', 'venues', '코트장 관리', null],
+      ['matchcfg', 'matchcfg', '대진 설정', null],
+      ['settings', 'settings', '클럽 설정', null],
+    ],
+  },
 ];
+
+/** 서브화면 제목 검색용 평탄화 */
+const MENU_FLAT = MENU_GROUPS.flatMap((g) => g.items.map(([k, , label]) => [k, label]));
 
 export default function More() {
   const { clubId, me, viewMode, resetOnboarding } = useApp();
@@ -56,9 +77,11 @@ export default function More() {
   const params = useLocalSearchParams();
   const [sub, setSub] = useState(null);
 
-  /* 홈 아이콘에서 바로 들어온 경우 해당 화면을 연다 */
+  /* 홈에서 바로 들어온 경우 해당 화면을 연다. 'manage' 는 루트 목록(운영 그룹) */
   useEffect(() => {
-    if (params?.open) setSub(String(params.open));
+    if (!params?.open) return;
+    const k = String(params.open);
+    setSub(k === 'manage' ? null : k);
   }, [params?.open]);
   const [feeMonth, setFeeMonth] = useState(new Date().toISOString().slice(0, 7));
   const [toast, setToast] = useState(null);
@@ -86,8 +109,7 @@ export default function More() {
     return false; // 최상위에서는 OS 기본 동작(앱 종료)
   });
 
-  const visibleMenu = MENU.filter(([, , staffOnly]) => !staffOnly || isAdmin);
-  const title = MENU.find(([k]) => k === sub)?.[1] || '더보기';
+  const title = MENU_FLAT.find(([k]) => k === sub)?.[1] || '더보기';
 
   const renderSub = () => {
     switch (sub) {
@@ -129,17 +151,17 @@ export default function More() {
       <View style={{ flex: 1, backgroundColor: C.bg }}>
         <ScreenHeader title="더보기" subtitle="클럽 없이 둘러보는 중" />
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
-          <Card style={{ backgroundColor: C.ink, borderColor: C.green }}>
-            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>아직 클럽에 속해 있지 않습니다</Text>
-            <Text style={{ color: '#6ee7b7', fontSize: 12, marginTop: 6, lineHeight: 18 }}>
+          <Card style={{ backgroundColor: C.ink }}>
+            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>아직 클럽에 속해 있지 않습니다</Text>
+            <Text style={{ color: C.lime2, fontSize: 12, marginTop: 6, lineHeight: 18 }}>
               클럽에 들어가면 일정·대진표·회비·랭킹을 함께 쓸 수 있습니다.
               지금은 게스트 모집 게시판과 용품만 볼 수 있어요.
             </Text>
           </Card>
 
           <View style={{ marginTop: 12, gap: 8 }}>
-            <Btn full onPress={findClub}>🔎 클럽 찾아 가입 신청</Btn>
-            <Btn full tone="ghost" onPress={() => router.push('/onboarding?mode=create')}>+ 새 클럽 만들기</Btn>
+            <Btn full onPress={findClub}>클럽 찾아 가입 신청</Btn>
+            <Btn full tone="ghost" onPress={() => router.push('/onboarding?mode=create')}>새 클럽 만들기</Btn>
           </View>
 
           <Card style={{ marginTop: 16 }}>
@@ -164,7 +186,7 @@ export default function More() {
     return (
       <View style={{ flex: 1, backgroundColor: C.bg }}>
         <ScreenHeader
-          title="💬 클럽 채팅"
+          title="클럽 채팅"
           subtitle={`${club?.name || ''} · 회원 ${members.length}명`}
           onBack={goBack}
           backLabel="더보기"
@@ -189,66 +211,51 @@ export default function More() {
         onBack={sub ? goBack : undefined}
         backLabel="더보기"
         right={!sub && viewMode ? (
-          <View style={{ backgroundColor: C.lime, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: C.ink }}>
-              {viewMode === 'staff' ? '운영진 모드' : viewMode === 'lead' ? '리드 모드' : '회원 모드'}
-            </Text>
-          </View>
+          <Chip tone="soft">
+            {viewMode === 'staff' ? '운영진 모드' : viewMode === 'lead' ? '리드 모드' : '회원 모드'}
+          </Chip>
         ) : null}
       />
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
         {!sub ? (
           <>
-            <Card>
-              {visibleMenu.map(([k, label], i) => (
-                <Pressable key={k}
-                  onPress={() => (k === 'rank' ? router.push('/(tabs)/rank') : setSub(k))}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
-                  <Text style={{ fontSize: 15, fontWeight: '600' }}>{label}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    {k === 'joinreq' && pendingCount > 0 && (
-                      <View style={{ backgroundColor: C.danger, borderRadius: 999, minWidth: 20, paddingHorizontal: 6, paddingVertical: 2, alignItems: 'center' }}>
-                        <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>{pendingCount}</Text>
-                      </View>
-                    )}
-                    <Text style={{ color: C.faint }}>›</Text>
-                  </View>
-                </Pressable>
-              ))}
-            </Card>
+            {MENU_GROUPS.filter((g) => !g.staffOnly || isAdmin).map((g) => (
+              <View key={g.title}>
+                <SectionTitle>{g.title}</SectionTitle>
+                <Card style={{ paddingVertical: 4 }}>
+                  {g.items.map(([k, icon, label, subLabel], i) => (
+                    <ListRow
+                      key={k}
+                      first={i === 0}
+                      icon={icon}
+                      label={label}
+                      sub={subLabel}
+                      right={k === 'joinreq' && pendingCount > 0 ? <Badge count={pendingCount} /> : null}
+                      onPress={() => (k === 'rank' ? router.push('/(tabs)/rank') : setSub(k))}
+                    />
+                  ))}
+                </Card>
+              </View>
+            ))}
 
-            {isAdmin && club?.inviteCode && (
-              <>
-                <SectionTitle right={<Chip tone="green" onPress={() => setSub('invite')}>초대 보내기 →</Chip>}>
-                  클럽 초대코드
-                </SectionTitle>
-                <Pressable onPress={() => setSub('invite')}>
-                  <Card style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 22, fontWeight: '900', letterSpacing: 3, color: C.ink }}>{club.inviteCode}</Text>
-                    <Text style={{ fontSize: 11, color: C.sub }}>링크로 바로 보내기 ›</Text>
-                  </Card>
-                </Pressable>
-              </>
-            )}
-
-            <SectionTitle>클럽</SectionTitle>
+            <SectionTitle>내 클럽</SectionTitle>
             <Card>
-              <Text style={{ fontSize: 13, fontWeight: '700' }}>{club?.name || '테니스클럽'}</Text>
-              <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
-                내 역할: {meVal?.role || '회원'} · 회원 {members.length}명
+              <Text style={F.bodyBold}>{club?.name || '테니스클럽'}</Text>
+              <Text style={[F.caption, { marginTop: 2 }]}>
+                내 역할 {meVal?.role || '회원'} · 회원 {members.length}명
               </Text>
               <View style={{ marginTop: 12, gap: 8 }}>
-                <Btn full tone="ghost" onPress={newClub}>+ 새 클럽 만들기</Btn>
-                <Btn full tone="ghost" onPress={findClub}>🔎 다른 클럽 찾기</Btn>
+                <Btn full tone="ghost" onPress={newClub}>새 클럽 만들기</Btn>
+                <Btn full tone="ghost" onPress={findClub}>다른 클럽 찾기</Btn>
               </View>
-              <Text style={{ fontSize: 10, color: C.faint, marginTop: 8 }}>
+              <Text style={[F.caption, { marginTop: 8 }]}>
                 초대코드를 받았다면 [다른 클럽 찾기] 검색창에 코드를 그대로 넣으세요.
               </Text>
             </Card>
 
             <View style={{ marginTop: 24, alignItems: 'center' }}>
-              <Pressable onPress={logout}><Text style={{ color: C.danger, fontSize: 13, fontWeight: '700' }}>로그아웃</Text></Pressable>
+              <Pressable onPress={logout}><Text style={{ color: C.danger, fontSize: 13, fontWeight: '600' }}>로그아웃</Text></Pressable>
               <Text style={{ color: C.faint, fontSize: 11, marginTop: 8 }}>{meVal?.name} · {meVal?.role}</Text>
             </View>
           </>
@@ -257,7 +264,7 @@ export default function More() {
 
       {toast && (
         <View style={{ position: 'absolute', bottom: 20, alignSelf: 'center', backgroundColor: C.ink, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, maxWidth: 340 }}>
-          <Text style={{ color: C.lime, fontSize: 12, fontWeight: '700', textAlign: 'center' }}>{toast}</Text>
+          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600', textAlign: 'center' }}>{toast}</Text>
         </View>
       )}
     </View>

@@ -14,7 +14,7 @@ import { C } from '../lib/theme';
 const Toggle = ({ on, onPress, title, desc }) => (
   <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8 }}>
     <View style={{ width: 22, height: 22, borderRadius: 6, marginTop: 1, backgroundColor: on ? C.green : '#e7e5e4', alignItems: 'center', justifyContent: 'center' }}>
-      {on && <Text style={{ color: C.lime, fontWeight: '900', fontSize: 13 }}>✓</Text>}
+      {on && <Text style={{ color: C.lime, fontWeight: '700', fontSize: 13 }}>✓</Text>}
     </View>
     <View style={{ flex: 1 }}>
       <Text style={{ fontSize: 14, fontWeight: '700' }}>{title}</Text>
@@ -106,7 +106,7 @@ export function MatchConfig({ clubId, matchConfig, rules, isAdmin, flash }) {
         {order.map((r, i) => (
           <View key={r.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
             <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: C.lime, fontSize: 11, fontWeight: '900' }}>{i + 1}</Text>
+              <Text style={{ color: C.lime, fontSize: 11, fontWeight: '700' }}>{i + 1}</Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 13, fontWeight: '700' }}>{r.name}</Text>
@@ -115,10 +115,10 @@ export function MatchConfig({ clubId, matchConfig, rules, isAdmin, flash }) {
             {!readOnly && (
               <View style={{ flexDirection: 'row', gap: 4 }}>
                 <Pressable onPress={() => move(i, -1)} style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontWeight: '900', color: i === 0 ? '#d6d3d1' : C.sub }}>▲</Text>
+                  <Text style={{ fontWeight: '700', color: i === 0 ? '#d6d3d1' : C.sub }}>▲</Text>
                 </Pressable>
                 <Pressable onPress={() => move(i, 1)} style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontWeight: '900', color: i === order.length - 1 ? '#d6d3d1' : C.sub }}>▼</Text>
+                  <Text style={{ fontWeight: '700', color: i === order.length - 1 ? '#d6d3d1' : C.sub }}>▼</Text>
                 </Pressable>
               </View>
             )}

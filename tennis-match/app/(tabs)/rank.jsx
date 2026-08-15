@@ -49,14 +49,14 @@ export default function Rank() {
 
   const StatBox = ({ v, label, dark }) => (
     <View style={{ flex: 1, backgroundColor: dark ? C.green : '#f5f5f4', borderRadius: 12, padding: 10, alignItems: 'center' }}>
-      <Text style={{ fontSize: 18, fontWeight: '900', color: dark ? C.lime : C.text }}>{v}</Text>
-      <Text style={{ fontSize: 10, color: dark ? '#6ee7b7' : C.sub }}>{label}</Text>
+      <Text style={{ fontSize: 18, fontWeight: '700', color: dark ? C.lime : C.text }}>{v}</Text>
+      <Text style={{ fontSize: 10, color: dark ? '#BFE3D3' : C.sub }}>{label}</Text>
     </View>
   );
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScreenHeader title="📈 랭킹·기록" subtitle={club?.name} onBack={goBack} backLabel="더보기" />
+      <ScreenHeader title="랭킹·기록" subtitle={club?.name} onBack={goBack} backLabel="더보기" />
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
           <Tab v="rank" label="클럽 랭킹" />
@@ -70,12 +70,12 @@ export default function Rank() {
               <View key={s.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: i < 3 ? C.lime : '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 11, fontWeight: '900', color: i < 3 ? C.ink : C.sub }}>{i + 1}</Text>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: i < 3 ? C.ink : C.sub }}>{i + 1}</Text>
                   </View>
                   <Text style={{ fontSize: 14, fontWeight: '700' }}>{nameOf(s.id)}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 14, fontWeight: '900', color: C.green }}>{s.wins}승 {s.games - s.wins}패</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: C.green }}>{s.wins}승 {s.games - s.wins}패</Text>
                   <Text style={{ fontSize: 10, color: C.faint }}>승률 {Math.round(s.wr * 100)}%</Text>
                 </View>
               </View>
@@ -88,8 +88,8 @@ export default function Rank() {
           <View>
             <Card style={{ backgroundColor: C.ink, borderColor: C.green }}>
               <Text style={{ color: C.lime, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>MY CAREER</Text>
-              <Text style={{ color: '#fff', fontSize: 22, fontWeight: '900', marginTop: 4 }}>
-                {meVal?.name} <Text style={{ fontSize: 13, color: '#6ee7b7' }}>{meVal?.grade}조 · {meVal?.gender === 'M' ? '남' : '여'}</Text>
+              <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700', marginTop: 4 }}>
+                {meVal?.name} <Text style={{ fontSize: 13, color: '#BFE3D3' }}>{meVal?.grade}조 · {meVal?.gender === 'M' ? '남' : '여'}</Text>
               </Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
                 <StatBox dark v={my?.games || 0} label="경기" />
@@ -127,9 +127,9 @@ export default function Rank() {
 
         {view === 'wrap' && (
           <Card style={{ backgroundColor: C.ink, borderColor: C.green, paddingVertical: 32, alignItems: 'center' }}>
-            <Text style={{ color: C.lime, fontSize: 11, fontWeight: '900', letterSpacing: 1 }}>{year} SEASON WRAPPED</Text>
-            <Text style={{ color: '#fff', fontSize: 28, fontWeight: '900', marginTop: 8 }}>{meVal?.name}</Text>
-            <Text style={{ color: '#6ee7b7', fontSize: 11, marginTop: 4 }}>{club?.name || '테니스클럽'}</Text>
+            <Text style={{ color: C.lime, fontSize: 11, fontWeight: '700', letterSpacing: 1 }}>{year} SEASON WRAPPED</Text>
+            <Text style={{ color: '#fff', fontSize: 28, fontWeight: '700', marginTop: 8 }}>{meVal?.name}</Text>
+            <Text style={{ color: '#BFE3D3', fontSize: 11, marginTop: 4 }}>{club?.name || '테니스클럽'}</Text>
             <View style={{ width: '100%', marginTop: 20, gap: 8 }}>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <StatBox dark v={myYear?.games || 0} label="올해 경기 수" />
@@ -137,16 +137,16 @@ export default function Rank() {
               </View>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <View style={{ flex: 1, backgroundColor: C.green, borderRadius: 12, padding: 10 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '900', color: C.lime }}>{bestP ? nameOf(bestP.pid) : '-'}</Text>
-                  <Text style={{ fontSize: 10, color: '#6ee7b7' }}>최고 케미{bestP ? ` (${Math.round(bestP.wr * 100)}%)` : ''}</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: C.lime }}>{bestP ? nameOf(bestP.pid) : '-'}</Text>
+                  <Text style={{ fontSize: 10, color: '#BFE3D3' }}>최고 케미{bestP ? ` (${Math.round(bestP.wr * 100)}%)` : ''}</Text>
                 </View>
                 <View style={{ flex: 1, backgroundColor: C.green, borderRadius: 12, padding: 10 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '900', color: C.lime }}>{rival ? nameOf(rival.pid) : '-'}</Text>
-                  <Text style={{ fontSize: 10, color: '#6ee7b7' }}>최대 라이벌{rival ? ` (${rival.g}회)` : ''}</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: C.lime }}>{rival ? nameOf(rival.pid) : '-'}</Text>
+                  <Text style={{ fontSize: 10, color: '#BFE3D3' }}>최대 라이벌{rival ? ` (${rival.g}회)` : ''}</Text>
                 </View>
               </View>
             </View>
-            <Text style={{ color: '#34d399', fontSize: 10, marginTop: 20 }}>이 카드를 캡처해 카톡방에 자랑하세요 🏆</Text>
+            <Text style={{ color: '#8FD6B8', fontSize: 10, marginTop: 20 }}>이 카드를 캡처해 카톡방에 자랑하세요 🏆</Text>
           </Card>
         )}
       </ScrollView>

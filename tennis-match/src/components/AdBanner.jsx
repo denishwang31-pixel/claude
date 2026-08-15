@@ -46,7 +46,7 @@ export function AdBanner({ ads, slot = AD_SLOTS.HOME, interval = 5000, variant =
           <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '700', color: C.text }}>{ad.title}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
             {!!ad.price && (
-              <Text style={{ fontSize: 14, fontWeight: '900', color: C.info }}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: C.info }}>
                 {Number(ad.price).toLocaleString()}원
               </Text>
             )}
@@ -84,7 +84,7 @@ export function AdBanner({ ads, slot = AD_SLOTS.HOME, interval = 5000, variant =
           {!!ad.desc && <Text numberOfLines={1} style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>{ad.desc}</Text>}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
             {!!ad.price && (
-              <Text style={{ fontSize: 14, fontWeight: '900', color: C.green }}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: C.green }}>
                 {Number(ad.price).toLocaleString()}원
               </Text>
             )}

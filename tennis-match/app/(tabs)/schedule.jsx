@@ -112,7 +112,7 @@ export default function Schedule() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenHeader
-        title="📅 일정"
+        title="일정"
         subtitle={`${club?.name || '테니스클럽'} · 예정 ${upcoming.length}건`}
         onBack={open ? () => setOpen(false) : undefined}
         backLabel="일정"
@@ -129,7 +129,7 @@ export default function Schedule() {
             <Card key={mt.id} style={{ marginBottom: 12, opacity: mt.canceled ? 0.5 : 1 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '900', fontSize: 15 }}>
+                  <Text style={{ fontWeight: '700', fontSize: 15 }}>
                     {mt.date}({dowName(mt.date)}) {mt.time} {mt.canceled ? '· 우천취소' : ''}
                   </Text>
                   <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>

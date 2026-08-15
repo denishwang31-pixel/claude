@@ -27,13 +27,13 @@ export function VenuePicker({ venues, value, onChange, allowAll = true, dark = f
           backgroundColor: bg, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9,
         }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-          <Text style={{ fontSize: 11, color: dark ? '#6ee7b7' : C.faint, fontWeight: '700' }}>{label}</Text>
+          <Text style={{ fontSize: 11, color: dark ? '#BFE3D3' : C.faint, fontWeight: '700' }}>{label}</Text>
           <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '800', color: fg, flex: 1 }}>
             {title}
-            {current ? <Text style={{ fontSize: 11, fontWeight: '600', color: dark ? '#a7f3d0' : C.sub }}>  {current.startTime}~{current.endTime} · {current.courts}면</Text> : null}
+            {current ? <Text style={{ fontSize: 11, fontWeight: '600', color: dark ? '#BFE3D3' : C.sub }}>  {current.startTime}~{current.endTime} · {current.courts}면</Text> : null}
           </Text>
         </View>
-        {!single && <Text style={{ fontSize: 12, color: dark ? '#a7f3d0' : C.sub }}>{open ? '▲' : '▼'}</Text>}
+        {!single && <Text style={{ fontSize: 12, color: dark ? '#BFE3D3' : C.sub }}>{open ? '▲' : '▼'}</Text>}
       </Pressable>
 
       {open && (

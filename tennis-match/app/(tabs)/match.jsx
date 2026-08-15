@@ -240,7 +240,7 @@ export default function Match() {
                   <Text style={{ fontSize: 12, fontWeight: '800', color: on ? C.lime : C.ink }}>
                     {m.date.slice(5)}({dowName(m.date)})
                   </Text>
-                  <Text style={{ fontSize: 9, color: on ? '#a7f3d0' : C.faint, marginTop: 1 }}>
+                  <Text style={{ fontSize: 9, color: on ? '#BFE3D3' : C.faint, marginTop: 1 }}>
                     {m.time} · {cnt}명{m.matches?.length ? ' ✓' : ''}
                   </Text>
                 </Pressable>
@@ -366,9 +366,9 @@ export default function Match() {
                     return (
                       <View key={p.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fafaf9', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
                         <Text style={{ fontSize: 12, fontWeight: '600' }}>{p.name}</Text>
-                        <Pressable onPress={() => setRestScore(clubId, meeting.id, p.id, Math.max(0, v - 1))}><Text style={{ fontWeight: '900', paddingHorizontal: 4 }}>−</Text></Pressable>
-                        <Text style={{ fontSize: 12, fontWeight: '900', width: 12, textAlign: 'center', color: v ? C.green2 : '#d6d3d1' }}>{v}</Text>
-                        <Pressable onPress={() => setRestScore(clubId, meeting.id, p.id, Math.min(9, v + 1))}><Text style={{ fontWeight: '900', paddingHorizontal: 4 }}>＋</Text></Pressable>
+                        <Pressable onPress={() => setRestScore(clubId, meeting.id, p.id, Math.max(0, v - 1))}><Text style={{ fontWeight: '700', paddingHorizontal: 4 }}>−</Text></Pressable>
+                        <Text style={{ fontSize: 12, fontWeight: '700', width: 12, textAlign: 'center', color: v ? C.green2 : '#d6d3d1' }}>{v}</Text>
+                        <Pressable onPress={() => setRestScore(clubId, meeting.id, p.id, Math.min(9, v + 1))}><Text style={{ fontWeight: '700', paddingHorizontal: 4 }}>＋</Text></Pressable>
                       </View>
                     );
                   })}
@@ -410,7 +410,7 @@ export default function Match() {
             <View>
               {[...new Set(matches.map((m) => m.round))].sort((a, b) => a - b).map((r) => (
                 <View key={r}>
-                  <Text style={{ fontSize: 12, fontWeight: '900', color: C.ink, marginTop: 10, marginBottom: 4 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: C.ink, marginTop: 10, marginBottom: 4 }}>
                     {r}타임 {times.find((t) => t.round === r) ? `(${times.find((t) => t.round === r).start}~${times.find((t) => t.round === r).end})` : ''}
                   </Text>
                   {matches.filter((m) => m.round === r).map((m) => (
@@ -421,7 +421,7 @@ export default function Match() {
                           <Chip tone={m.type === '혼복' ? 'green' : 'default'}>{m.type}</Chip>
                         </View>
                         {m.score ? (
-                          <Text style={{ fontWeight: '900', color: C.green }}>{m.score.a} : {m.score.b}</Text>
+                          <Text style={{ fontWeight: '700', color: C.green }}>{m.score.a} : {m.score.b}</Text>
                         ) : isAdmin ? (
                           <Btn small tone="ghost" onPress={() => { setEditing(m.id); setSc({ a: '', b: '' }); }}>스코어</Btn>
                         ) : null}
@@ -430,7 +430,7 @@ export default function Match() {
                         <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
                           {m.teamA.map((id) => <Avatar key={id} id={id} nameOf={nameOf} members={members} />)}
                         </View>
-                        <Text style={{ fontSize: 11, fontWeight: '900', color: C.faint }}>VS</Text>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: C.faint }}>VS</Text>
                         <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
                           {m.teamB.map((id) => <Avatar key={id} id={id} nameOf={nameOf} members={members} />)}
                         </View>
@@ -455,7 +455,7 @@ export default function Match() {
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Field placeholder="앞팀" keyboardType="number-pad" value={sc.a} onChangeText={(t) => setSc({ ...sc, a: t })} style={{ flex: 1 }} />
-                      <Text style={{ fontWeight: '900', color: C.faint }}>:</Text>
+                      <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
                       <Field placeholder="뒷팀" keyboardType="number-pad" value={sc.b} onChangeText={(t) => setSc({ ...sc, b: t })} style={{ flex: 1 }} />
                       <Btn small onPress={() => saveSc(m.id)}>저장</Btn>
                       <Btn small tone="ghost" onPress={() => setEditing(null)}>닫기</Btn>
@@ -492,11 +492,11 @@ export default function Match() {
                         backgroundColor: i === 0 ? C.lime : C.fill,
                         alignItems: 'center', justifyContent: 'center',
                       }}>
-                        <Text style={{ fontSize: 10.5, fontWeight: '900', color: i === 0 ? C.ink : C.sub }}>{i + 1}</Text>
+                        <Text style={{ fontSize: 10.5, fontWeight: '700', color: i === 0 ? C.ink : C.sub }}>{i + 1}</Text>
                       </View>
                       <Text style={[F.bodyBold, { flex: 1 }]} numberOfLines={1}>{r.name}</Text>
                       <Text style={{ fontSize: 12, color: C.sub }}>{r.games}경기</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '900', color: C.green, width: 34, textAlign: 'right' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: C.green, width: 34, textAlign: 'right' }}>
                         {r.wins}승
                       </Text>
                       <Text style={{
@@ -530,7 +530,7 @@ export default function Match() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenHeader
-        title="🎾 대진"
+        title="대진"
         subtitle={meeting
           ? `${meeting.date}(${dowName(meeting.date)}) ${meeting.time || ''} · 참석 ${attendees.length}명`
           : (club?.name || '예정된 모임 없음')}
@@ -548,7 +548,7 @@ export default function Match() {
               marginBottom: 4, backgroundColor: isActive ? '#ecfccb' : '#fafaf9',
             }}>
             <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: C.lime, fontSize: 11, fontWeight: '900' }}>{getIndex() + 1}</Text>
+              <Text style={{ color: C.lime, fontSize: 11, fontWeight: '700' }}>{getIndex() + 1}</Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 12, fontWeight: '700' }}>{item.name}</Text>

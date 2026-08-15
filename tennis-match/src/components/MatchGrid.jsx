@@ -55,7 +55,7 @@ export function MatchGrid({ matches, nameOf, roundTimes = [], onPressMatch }) {
               borderTopRightRadius: c === courts[courts.length - 1] ? 10 : 0,
               borderLeftWidth: c === courts[0] ? 0 : 1, borderLeftColor: 'rgba(255,255,255,0.15)',
             }}>
-              <Text style={{ color: C.lime, fontSize: 12, fontWeight: '900' }}>코트 {c}</Text>
+              <Text style={{ color: C.lime, fontSize: 12, fontWeight: '700' }}>코트 {c}</Text>
             </View>
           ))}
         </View>
@@ -71,8 +71,8 @@ export function MatchGrid({ matches, nameOf, roundTimes = [], onPressMatch }) {
                 backgroundColor: C.green, paddingVertical: 8,
                 borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.15)',
               }}>
-                <Text style={{ color: C.lime, fontSize: 12, fontWeight: '900' }}>{r}T</Text>
-                {t && <Text style={{ color: '#6ee7b7', fontSize: 8, marginTop: 1 }}>{t.start}</Text>}
+                <Text style={{ color: C.lime, fontSize: 12, fontWeight: '700' }}>{r}T</Text>
+                {t && <Text style={{ color: '#BFE3D3', fontSize: 8, marginTop: 1 }}>{t.start}</Text>}
               </View>
 
               {courts.map((c) => {
@@ -101,7 +101,7 @@ export function MatchGrid({ matches, nameOf, roundTimes = [], onPressMatch }) {
                         <Text style={{ fontSize: 9, fontWeight: '800', color: tone.fg }}>{m.type}</Text>
                       </View>
                       {m.score
-                        ? <Text style={{ fontSize: 10, fontWeight: '900', color: C.green }}>{m.score.a}:{m.score.b}</Text>
+                        ? <Text style={{ fontSize: 10, fontWeight: '700', color: C.green }}>{m.score.a}:{m.score.b}</Text>
                         : <Text style={{ fontSize: 9, color: C.faint }}>기록전</Text>}
                     </View>
                     <View style={{ marginTop: 4 }}>
@@ -153,7 +153,7 @@ export function AttendanceGrid({ attendees, matches, roundTimes = [] }) {
               const t = roundTimes.find((x) => x.round === r);
               return (
                 <View key={r} style={{ width: COL_W, alignItems: 'center', paddingBottom: 4 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '900', color: C.ink }}>{r}T</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: C.ink }}>{r}T</Text>
                   {t && <Text style={{ fontSize: 7, color: C.faint }}>{t.start}</Text>}
                 </View>
               );
@@ -187,7 +187,7 @@ export function AttendanceGrid({ attendees, matches, roundTimes = [] }) {
                           width: 22, height: 22, borderRadius: 11, backgroundColor: C.green,
                           alignItems: 'center', justifyContent: 'center',
                         }}>
-                          <Text style={{ fontSize: 10, fontWeight: '900', color: C.lime }}>{court}</Text>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: C.lime }}>{court}</Text>
                         </View>
                       ) : (
                         <View style={{
@@ -203,7 +203,7 @@ export function AttendanceGrid({ attendees, matches, roundTimes = [] }) {
 
                 <View style={{ width: 38, alignItems: 'center' }}>
                   <Text style={{
-                    fontSize: 12, fontWeight: '900',
+                    fontSize: 12, fontWeight: '700',
                     color: n === maxGames && maxGames !== minGames ? C.green2
                       : n === minGames && maxGames !== minGames ? '#b45309' : C.sub,
                   }}>{n}</Text>

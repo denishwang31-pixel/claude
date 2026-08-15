@@ -138,11 +138,11 @@ function GuestPostCard({ post, clubId, meetings, me, meVal, isAdmin, flash }) {
         flexDirection: 'row', alignItems: 'center', gap: 8,
         backgroundColor: left > 0 ? C.ink : '#57534e', paddingHorizontal: 12, paddingVertical: 8,
       }}>
-        <Text style={{ color: C.lime, fontSize: 13, fontWeight: '900' }}>{dateLabel(post.date)}</Text>
-        {!!post.time && <Text style={{ color: '#6ee7b7', fontSize: 11 }}>{post.time}</Text>}
-        <Text style={{ color: '#6ee7b7', fontSize: 10 }}>{dday(post.date)}</Text>
+        <Text style={{ color: C.lime, fontSize: 13, fontWeight: '700' }}>{dateLabel(post.date)}</Text>
+        {!!post.time && <Text style={{ color: '#BFE3D3', fontSize: 11 }}>{post.time}</Text>}
+        <Text style={{ color: '#BFE3D3', fontSize: 10 }}>{dday(post.date)}</Text>
         <View style={{ marginLeft: 'auto', backgroundColor: left > 0 ? C.lime : '#a8a29e', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
-          <Text style={{ fontSize: 10, fontWeight: '900', color: C.ink }}>
+          <Text style={{ fontSize: 10, fontWeight: '700', color: C.ink }}>
             {left > 0 ? `${left}자리 남음` : '모집 완료'}
           </Text>
         </View>
@@ -150,7 +150,7 @@ function GuestPostCard({ post, clubId, meetings, me, meVal, isAdmin, flash }) {
 
       <View style={{ padding: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <Text style={{ fontWeight: '900', fontSize: 14 }}>{post.clubName || '이름 없는 클럽'}</Text>
+          <Text style={{ fontWeight: '700', fontSize: 14 }}>{post.clubName || '이름 없는 클럽'}</Text>
           {isMyClub && <Chip tone="outline">우리 클럽</Chip>}
           {fits && <Chip tone="lime">내 조건 맞음</Chip>}
         </View>
@@ -246,8 +246,8 @@ export function Guest({ clubId, club, guestPosts, meetings, venues, me, meVal, i
   return (
     <View>
       <Card style={{ backgroundColor: C.ink, borderColor: C.green }}>
-        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900' }}>공개 게시판</Text>
-        <Text style={{ color: '#6ee7b7', fontSize: 11, marginTop: 4, lineHeight: 16 }}>
+        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>공개 게시판</Text>
+        <Text style={{ color: '#BFE3D3', fontSize: 11, marginTop: 4, lineHeight: 16 }}>
           여기 올라온 모집글은 앱을 쓰는 모든 클럽·회원에게 보입니다.
           신청 후 모집 클럽 운영진이 확정하면 그 클럽 대진에 자동으로 들어가고,
           게스트로 뛴 경기 기록은 내 계정에 그대로 쌓입니다.
@@ -387,7 +387,7 @@ export function Courts({ clubId, courts, isAdmin, flash }) {
               <Text style={{ fontSize: 9, color: C.lime, fontWeight: '700' }}>{c.name.slice(0, 8)}</Text>
             </View>
           ))}
-          <Text style={{ position: 'absolute', bottom: 6, right: 8, fontSize: 9, color: '#34d399' }}>{sido || '전국'}{gu ? ` · ${gu}` : ''} · {list.length}개</Text>
+          <Text style={{ position: 'absolute', bottom: 6, right: 8, fontSize: 9, color: '#8FD6B8' }}>{sido || '전국'}{gu ? ` · ${gu}` : ''} · {list.length}개</Text>
         </Card>
       )}
 
@@ -399,7 +399,7 @@ export function Courts({ clubId, courts, isAdmin, flash }) {
           </View>
           {c.link ? (
             <Pressable onPress={() => Linking.openURL(c.link)} style={{ backgroundColor: C.lime, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}>
-              <Text style={{ fontSize: 12, fontWeight: '900', color: C.ink }}>예약 사이트 →</Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: C.ink }}>예약 사이트 →</Text>
             </Pressable>
           ) : null}
           {isAdmin && (

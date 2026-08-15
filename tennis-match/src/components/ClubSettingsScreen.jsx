@@ -57,14 +57,14 @@ export function ClubSettings({ clubId, club, isAdmin, flash }) {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <Pressable onPress={() => set('courts', Math.max(1, (Number(s.courts) || 1) - 1))}
             style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 20, fontWeight: '900', color: C.sub }}>−</Text>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: C.sub }}>−</Text>
           </Pressable>
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 28, fontWeight: '900', color: C.ink }}>{s.courts}<Text style={{ fontSize: 14, color: C.sub }}>면</Text></Text>
+            <Text style={{ fontSize: 28, fontWeight: '700', color: C.ink }}>{s.courts}<Text style={{ fontSize: 14, color: C.sub }}>면</Text></Text>
           </View>
           <Pressable onPress={() => set('courts', Math.min(20, (Number(s.courts) || 1) + 1))}
             style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: C.lime, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 20, fontWeight: '900', color: C.ink }}>＋</Text>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: C.ink }}>＋</Text>
           </Pressable>
         </View>
         <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, textAlign: 'center' }}>
@@ -101,8 +101,8 @@ export function ClubSettings({ clubId, club, isAdmin, flash }) {
         <>
           <SectionTitle>자동 계산된 타임표</SectionTitle>
           <Card style={{ backgroundColor: C.ink, borderColor: C.green }}>
-            <Text style={{ color: C.lime, fontSize: 13, fontWeight: '900' }}>총 {rounds}타임 · 코트 {s.courts}면</Text>
-            <Text style={{ color: '#6ee7b7', fontSize: 11, marginTop: 2 }}>
+            <Text style={{ color: C.lime, fontSize: 13, fontWeight: '700' }}>총 {rounds}타임 · 코트 {s.courts}면</Text>
+            <Text style={{ color: '#BFE3D3', fontSize: 11, marginTop: 2 }}>
               한 타임에 최대 {s.courts * 4}명 출전 · 전체 {rounds * s.courts}경기
             </Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
@@ -121,7 +121,7 @@ export function ClubSettings({ clubId, club, isAdmin, flash }) {
         <Pressable onPress={() => set('allowMixedDefault', !s.allowMixedDefault)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: s.allowMixedDefault ? C.green : '#e7e5e4', alignItems: 'center', justifyContent: 'center' }}>
-            {s.allowMixedDefault && <Text style={{ color: C.lime, fontWeight: '900', fontSize: 13 }}>✓</Text>}
+            {s.allowMixedDefault && <Text style={{ color: C.lime, fontWeight: '700', fontSize: 13 }}>✓</Text>}
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: '700' }}>잡복 기본 허용</Text>

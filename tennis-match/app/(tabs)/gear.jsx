@@ -62,7 +62,7 @@ export default function Gear() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenHeader
-        title="🛍 용품"
+        title="용품"
         subtitle={isAppAdmin ? '앱 관리자 모드 · 등록/삭제 가능' : '라켓·의류·소모품 추천'}
         onBack={adding ? () => setAdding(false) : undefined}
         backLabel="용품"
@@ -157,7 +157,7 @@ export default function Gear() {
                     )}
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
                       {!!it.price && (
-                        <Text style={{ fontSize: 15, fontWeight: '900', color: C.green }}>
+                        <Text style={{ fontSize: 15, fontWeight: '700', color: C.green }}>
                           {Number(it.price).toLocaleString()}원
                         </Text>
                       )}

@@ -56,14 +56,14 @@ export default function Login() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.ink, justifyContent: 'center', padding: 24 }}>
-      <Text style={{ fontSize: 32, fontWeight: '900', color: '#fff', textAlign: 'center' }}>🎾</Text>
-      <Text style={{ fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center', marginTop: 8 }}>테니스매치</Text>
-      <Text style={{ fontSize: 13, color: '#6ee7b7', textAlign: 'center', marginTop: 4, marginBottom: 28 }}>클럽 운영을 한 곳에서</Text>
+      <Text style={{ fontSize: 32, fontWeight: '700', color: '#fff', textAlign: 'center' }}>🎾</Text>
+      <Text style={{ fontSize: 22, fontWeight: '700', color: '#fff', textAlign: 'center', marginTop: 8 }}>테니스매치</Text>
+      <Text style={{ fontSize: 13, color: '#BFE3D3', textAlign: 'center', marginTop: 4, marginBottom: 28 }}>클럽 운영을 한 곳에서</Text>
 
       {!!inviteCode && (
         <Card style={{ backgroundColor: C.green, borderColor: C.lime2, marginBottom: 12 }}>
           <Text style={{ color: C.lime, fontSize: 12, fontWeight: '800' }}>초대 코드 {inviteCode}</Text>
-          <Text style={{ color: '#a7f3d0', fontSize: 11, marginTop: 3 }}>
+          <Text style={{ color: '#BFE3D3', fontSize: 11, marginTop: 3 }}>
             로그인(또는 가입)하면 초대받은 클럽으로 바로 들어갑니다.
           </Text>
         </Card>
@@ -105,9 +105,9 @@ export default function Login() {
 
       <View style={{ alignItems: 'center', marginTop: 20 }}>
         <Pressable disabled={busy} onPress={demo}>
-          <Text style={{ color: '#6ee7b7', fontSize: 13, fontWeight: '700' }}>계정 없이 체험해보기 →</Text>
+          <Text style={{ color: '#BFE3D3', fontSize: 13, fontWeight: '700' }}>계정 없이 체험해보기 →</Text>
         </Pressable>
-        <Text style={{ color: '#34d399', fontSize: 10, marginTop: 6, textAlign: 'center' }}>
+        <Text style={{ color: '#8FD6B8', fontSize: 10, marginTop: 6, textAlign: 'center' }}>
           체험 모드는 앱을 삭제하면 데이터가 사라집니다. 실제 클럽 운영은 이메일 가입을 권장합니다.
         </Text>
       </View>

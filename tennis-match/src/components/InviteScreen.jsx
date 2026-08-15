@@ -72,13 +72,13 @@ export function Invite({ clubId, club, members, isAdmin, flash }) {
     <View>
       {/* 코드 카드 */}
       <Card style={{ backgroundColor: C.ink, borderColor: C.green, alignItems: 'center', paddingVertical: 22 }}>
-        <Text style={{ color: '#6ee7b7', fontSize: 11, fontWeight: '700', letterSpacing: 1 }}>초대코드</Text>
+        <Text style={{ color: '#BFE3D3', fontSize: 11, fontWeight: '700', letterSpacing: 1 }}>초대코드</Text>
         <Pressable onPress={() => { copyCode(code); flash('코드를 복사했습니다'); }} hitSlop={10}>
-          <Text style={{ color: C.lime, fontSize: 34, fontWeight: '900', letterSpacing: 8, marginTop: 8 }}>
+          <Text style={{ color: C.lime, fontSize: 34, fontWeight: '700', letterSpacing: 8, marginTop: 8 }}>
             {code}
           </Text>
         </Pressable>
-        <Text style={{ color: '#34d399', fontSize: 10, marginTop: 6 }}>코드를 누르면 복사됩니다</Text>
+        <Text style={{ color: '#8FD6B8', fontSize: 10, marginTop: 6 }}>코드를 누르면 복사됩니다</Text>
       </Card>
 
       {/* 보내기 */}

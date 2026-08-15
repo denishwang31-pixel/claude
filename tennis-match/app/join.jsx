@@ -85,7 +85,7 @@ export default function Join() {
     return (
       <View style={{ flex: 1, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={C.lime} />
-        <Text style={{ color: '#6ee7b7', fontSize: 12, marginTop: 12 }}>초대 코드를 확인하는 중…</Text>
+        <Text style={{ color: '#BFE3D3', fontSize: 12, marginTop: 12 }}>초대 코드를 확인하는 중…</Text>
       </View>
     );
   }
@@ -95,7 +95,7 @@ export default function Join() {
       <View style={{ flex: 1, backgroundColor: C.bg, justifyContent: 'center', padding: 24 }}>
         <Card style={{ alignItems: 'center', paddingVertical: 28 }}>
           <Text style={{ fontSize: 36 }}>🔗</Text>
-          <Text style={{ fontSize: 16, fontWeight: '900', marginTop: 10 }}>초대 링크가 유효하지 않습니다</Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', marginTop: 10 }}>초대 링크가 유효하지 않습니다</Text>
           <Text style={{ fontSize: 12, color: C.sub, textAlign: 'center', marginTop: 8, lineHeight: 18 }}>
             {code ? `코드 "${code}" 를 찾을 수 없습니다.` : '초대 코드가 링크에 없습니다.'}{'\n'}
             링크가 잘렸을 수 있으니 초대해 준 분께 다시 요청하거나,{'\n'}
@@ -113,8 +113,8 @@ export default function Join() {
     <View style={{ flex: 1, backgroundColor: C.bg, justifyContent: 'center', padding: 24 }}>
       <Card style={{ backgroundColor: C.ink, borderColor: C.green, alignItems: 'center', paddingVertical: 24 }}>
         <Text style={{ fontSize: 34 }}>🎾</Text>
-        <Text style={{ color: '#6ee7b7', fontSize: 12, marginTop: 8 }}>초대를 받았습니다</Text>
-        <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900', marginTop: 4 }}>{club?.clubName || '테니스클럽'}</Text>
+        <Text style={{ color: '#BFE3D3', fontSize: 12, marginTop: 8 }}>초대를 받았습니다</Text>
+        <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 4 }}>{club?.clubName || '테니스클럽'}</Text>
         <Text style={{ color: C.lime, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginTop: 6 }}>{code}</Text>
       </Card>
 

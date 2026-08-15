@@ -169,16 +169,16 @@ export function TeamMatch({
               <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '700' }}>
                 {isClubMatch ? '우리 클럽' : sides[0].name}
               </Text>
-              <Text style={{ color: score.winner === 'A' ? C.lime : '#fff', fontSize: 40, fontWeight: '900' }}>
+              <Text style={{ color: score.winner === 'A' ? C.lime : '#fff', fontSize: 40, fontWeight: '700' }}>
                 {score.a}
               </Text>
             </View>
-            <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 18, fontWeight: '900' }}>:</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 18, fontWeight: '700' }}>:</Text>
             <View style={{ flex: 1, alignItems: 'center' }}>
               <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '700' }} numberOfLines={1}>
                 {isClubMatch ? (oppClub || '상대 클럽') : sides[1].name}
               </Text>
-              <Text style={{ color: score.winner === 'B' ? C.lime : '#fff', fontSize: 40, fontWeight: '900' }}>
+              <Text style={{ color: score.winner === 'B' ? C.lime : '#fff', fontSize: 40, fontWeight: '700' }}>
                 {score.b}
               </Text>
             </View>
@@ -316,7 +316,7 @@ export function TeamMatch({
                     <Text style={{ fontSize: 16 }}>{['🥇', '🥈', '🥉'][i]}</Text>
                     <Text style={[F.bodyBold, { flex: 1 }]}>{r.name}</Text>
                     <Text style={{ fontSize: 12, color: C.sub }}>{r.games}경기</Text>
-                    <Text style={{ fontSize: 13.5, fontWeight: '900', color: C.green }}>{r.wins}승</Text>
+                    <Text style={{ fontSize: 13.5, fontWeight: '700', color: C.green }}>{r.wins}승</Text>
                   </View>
                 ))}
               </Card>

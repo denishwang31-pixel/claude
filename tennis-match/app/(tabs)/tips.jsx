@@ -52,7 +52,7 @@ export default function Tips() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenHeader
-        title="🎯 원포인트"
+        title="원포인트"
         subtitle="영역별 레슨 영상 모음"
         onBack={adding ? () => setAdding(false) : undefined}
         backLabel="원포인트"

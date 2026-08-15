@@ -112,10 +112,10 @@ export function Fees({ clubId, club, members, fee, feeMonth, setFeeMonth, isAdmi
       <Card style={{ marginTop: 10, backgroundColor: C.ink, borderColor: C.green }}>
         <Text style={{ color: C.lime, fontSize: 11, fontWeight: '800' }}>{periodKey} 정산</Text>
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-          {[['수입', income, '#6ee7b7'], ['지출', spent, '#fca5a5'], ['잔액', income - spent, C.lime]].map(([label, v, col]) => (
+          {[['수입', income, '#BFE3D3'], ['지출', spent, '#fca5a5'], ['잔액', income - spent, C.lime]].map(([label, v, col]) => (
             <View key={label} style={{ flex: 1, backgroundColor: C.green, borderRadius: 12, padding: 8, alignItems: 'center' }}>
-              <Text style={{ color: col, fontSize: 14, fontWeight: '900' }}>{Number(v).toLocaleString()}</Text>
-              <Text style={{ color: '#6ee7b7', fontSize: 10 }}>{label}</Text>
+              <Text style={{ color: col, fontSize: 14, fontWeight: '700' }}>{Number(v).toLocaleString()}</Text>
+              <Text style={{ color: '#BFE3D3', fontSize: 10 }}>{label}</Text>
             </View>
           ))}
         </View>
@@ -224,7 +224,7 @@ export function Fees({ clubId, club, members, fee, feeMonth, setFeeMonth, isAdmi
                   {!!e.memo && <Text style={{ fontSize: 12, color: C.sub, marginTop: 3 }}>{e.memo}</Text>}
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 14, fontWeight: '900', color: C.danger }}>-{Number(e.amount).toLocaleString()}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: C.danger }}>-{Number(e.amount).toLocaleString()}</Text>
                   <Pressable onPress={() => Alert.alert('지출 삭제', `${e.category} ${Number(e.amount).toLocaleString()}원을 삭제할까요?`, [
                     { text: '취소', style: 'cancel' },
                     { text: '삭제', style: 'destructive', onPress: () => { deleteExpense(clubId, e.id); flash('삭제됨'); } },

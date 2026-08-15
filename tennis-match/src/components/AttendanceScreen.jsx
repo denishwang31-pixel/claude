@@ -140,7 +140,7 @@ export function Attendance({ clubId, members, meetings, isAdmin, flash }) {
               <View key={m.id} style={{ paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Text style={{ fontSize: 14, fontWeight: '600' }}>{m.name}</Text>
-                  <Text style={{ fontSize: 13, fontWeight: '900', color: m.s.rate == null ? C.faint : m.s.rate >= 70 ? C.green : m.s.rate >= 40 ? '#a16207' : C.danger }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: m.s.rate == null ? C.faint : m.s.rate >= 70 ? C.green : m.s.rate >= 40 ? '#a16207' : C.danger }}>
                     {m.s.rate == null ? '기록 없음' : `${m.s.rate}%`}
                   </Text>
                 </View>

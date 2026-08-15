@@ -14,6 +14,7 @@ import React from 'react';
 import { View, Text, Pressable, TextInput, ScrollView } from 'react-native';
 import { C, S, R, F, SHADOW } from '../lib/theme';
 import { isGuestId } from '../lib/constants';
+import { Icon } from './Icon';
 
 /* ---------------- Card ---------------- */
 export const Card = ({ children, style, flat, onPress }) => {
@@ -56,7 +57,7 @@ const CHIP_TONES = {
   default: { bg: C.fill, fg: C.sub },
   green: { bg: C.green, fg: '#fff' },
   soft: { bg: C.greenSoft, fg: C.green },
-  lime: { bg: C.lime, fg: C.ink },
+  lime: { bg: C.greenSoft, fg: C.green },
   red: { bg: C.dangerBg, fg: C.danger },
   warn: { bg: C.warnBg, fg: C.warn },
   outline: { bg: 'transparent', fg: C.sub, border: C.border },
@@ -95,7 +96,7 @@ export const Badge = ({ count, tone = 'danger' }) => {
       backgroundColor: bg, borderRadius: R.pill, minWidth: 20,
       paddingHorizontal: 6, paddingVertical: 2, alignItems: 'center',
     }}>
-      <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>{count > 99 ? '99+' : count}</Text>
+      <Text style={{ fontSize: 10, fontWeight: '700', color: '#fff' }}>{count > 99 ? '99+' : count}</Text>
     </View>
   );
 };
@@ -104,7 +105,7 @@ export const Badge = ({ count, tone = 'danger' }) => {
 const BTN_TONES = {
   primary: { bg: C.green, fg: '#fff' },
   soft: { bg: C.greenSoft, fg: C.green },
-  lime: { bg: C.lime, fg: C.ink },
+  lime: { bg: C.greenSoft, fg: C.green },
   ghost: { bg: C.fill, fg: C.text },
   outline: { bg: 'transparent', fg: C.green, border: C.green },
   danger: { bg: C.danger, fg: '#fff' },
@@ -124,7 +125,7 @@ export const Btn = ({ children, onPress, tone = 'primary', full, small, disabled
         alignSelf: full ? 'stretch' : 'flex-start',
         opacity: disabled ? 0.35 : pressed ? 0.82 : 1,
       }, style])}>
-      <Text style={{ color: t.fg, fontWeight: '800', fontSize: small ? 13 : 15 }}>{children}</Text>
+      <Text style={{ color: t.fg, fontWeight: '600', fontSize: small ? 13 : 15 }}>{children}</Text>
     </Pressable>
   );
 };
@@ -149,23 +150,23 @@ export const Field = ({ style, error, suffix, ...props }) => (
   </View>
 );
 
-/* ---------------- IconTile — 홈 아이콘 그리드 ---------------- */
-export const IconTile = ({ icon, label, onPress, badge, tone = 'soft', width }) => (
+/* ---------------- IconTile — 기능 바로가기 ---------------- */
+export const IconTile = ({ icon, label, onPress, badge, width }) => (
   <Pressable onPress={onPress}
-    style={({ pressed }) => ({ width, alignItems: 'center', opacity: pressed ? 0.6 : 1 })}>
+    style={({ pressed }) => ({ width, alignItems: 'center', opacity: pressed ? 0.55 : 1 })}>
     <View style={{
-      width: 56, height: 56, borderRadius: 18,
-      backgroundColor: tone === 'soft' ? C.greenSoft : C.fill,
+      width: 50, height: 50, borderRadius: R.lg,
+      backgroundColor: C.fill,
       alignItems: 'center', justifyContent: 'center',
     }}>
-      <Text style={{ fontSize: 24 }}>{icon}</Text>
+      <Icon name={icon} size={22} color={C.text} />
       {!!badge && (
         <View style={{ position: 'absolute', top: -4, right: -4 }}>
           <Badge count={badge} />
         </View>
       )}
     </View>
-    <Text numberOfLines={1} style={{ fontSize: 11.5, fontWeight: '700', color: C.text, marginTop: 6 }}>
+    <Text numberOfLines={1} style={{ fontSize: 11.5, fontWeight: '500', color: C.sub, marginTop: 6 }}>
       {label}
     </Text>
   </Pressable>
@@ -179,7 +180,7 @@ export const StatCard = ({ value, label, tone = 'default', style }) => (
     borderRadius: R.md,
   }, style]}>
     <Text style={{
-      fontSize: 19, fontWeight: '900', letterSpacing: -0.5,
+      fontSize: 19, fontWeight: '700', letterSpacing: -0.5,
       color: tone === 'dark' ? '#fff' : C.ink,
     }}>{value}</Text>
     <Text style={{
@@ -198,13 +199,17 @@ export const ListRow = ({ icon, label, sub, right, onPress, first }) => (
       borderTopWidth: first ? 0 : 1, borderTopColor: C.border,
       opacity: pressed ? 0.6 : 1,
     })}>
-    {!!icon && <Text style={{ fontSize: 17, width: 24, textAlign: 'center' }}>{icon}</Text>}
+    {!!icon && (
+      <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: C.fill, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={icon} size={16} color={C.text} />
+      </View>
+    )}
     <View style={{ flex: 1 }}>
       <Text style={{ fontSize: 15, fontWeight: '600', color: C.text }}>{label}</Text>
       {!!sub && <Text style={[F.caption, { marginTop: 2 }]}>{sub}</Text>}
     </View>
     {right}
-    <Text style={{ color: C.faint, fontSize: 16 }}>›</Text>
+    <Icon name="forward" size={16} color={C.faint} />
   </Pressable>
 );
 
@@ -270,7 +275,7 @@ export const CheckRow = ({ checked, onToggle, label, hint }) => (
       borderWidth: checked ? 0 : 1.5, borderColor: C.border,
       alignItems: 'center', justifyContent: 'center',
     }}>
-      {checked && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900' }}>✓</Text>}
+      {checked && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</Text>}
     </View>
     <View style={{ flex: 1 }}>
       <Text style={{ fontSize: 14, fontWeight: '700', color: C.text }}>{label}</Text>

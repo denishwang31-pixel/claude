@@ -51,15 +51,15 @@ export function Ntrp({ clubId, members, me, meVal, isAdmin, flash }) {
         <View>
           <Card style={{ backgroundColor: C.ink, borderColor: C.green }}>
             <Text style={{ color: C.lime, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>MY NTRP</Text>
-            <Text style={{ color: '#fff', fontSize: 30, fontWeight: '900', marginTop: 4 }}>
+            <Text style={{ color: '#fff', fontSize: 30, fontWeight: '700', marginTop: 4 }}>
               {myEff.value != null ? myEff.value.toFixed(1) : '—'}
-              {myEff.value != null && <Text style={{ fontSize: 13, color: '#6ee7b7' }}>  {levelInfo(myEff.value)?.short || ''}</Text>}
+              {myEff.value != null && <Text style={{ fontSize: 13, color: '#BFE3D3' }}>  {levelInfo(myEff.value)?.short || ''}</Text>}
             </Text>
-            <Text style={{ color: '#6ee7b7', fontSize: 11, marginTop: 4 }}>
+            <Text style={{ color: '#BFE3D3', fontSize: 11, marginTop: 4 }}>
               산정 근거: {myEff.label}
               {meVal?.startedAt ? ` · 구력 ${careerText(meVal.startedAt)}` : ''}
             </Text>
-            <Text style={{ color: '#34d399', fontSize: 10, marginTop: 8 }}>
+            <Text style={{ color: '#8FD6B8', fontSize: 10, marginTop: 8 }}>
               우선순위: 운영진 인증 &gt; 회원 투표(중앙값) &gt; 셀프 평가
             </Text>
           </Card>
@@ -81,7 +81,7 @@ export function Ntrp({ clubId, members, me, meVal, isAdmin, flash }) {
           <Card>
             {Object.keys(meVal?.ntrpVotes || {}).length ? (
               <>
-                <Text style={{ fontSize: 22, fontWeight: '900', color: C.green }}>
+                <Text style={{ fontSize: 22, fontWeight: '700', color: C.green }}>
                   {voteMedian(meVal.ntrpVotes)?.toFixed(1)}
                   <Text style={{ fontSize: 12, color: C.sub, fontWeight: '600' }}>  (중앙값 · {Object.keys(meVal.ntrpVotes).length}명 참여)</Text>
                 </Text>
@@ -149,7 +149,7 @@ export function Ntrp({ clubId, members, me, meVal, isAdmin, flash }) {
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: m.gender === 'F' ? C.femaleBg : C.maleBg, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 12, fontWeight: '900', color: m.gender === 'F' ? C.female : C.male }}>{m.name?.[0]}</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: m.gender === 'F' ? C.female : C.male }}>{m.name?.[0]}</Text>
                     </View>
                     <View>
                       <Text style={{ fontSize: 14, fontWeight: '700' }}>{m.name}</Text>
@@ -159,7 +159,7 @@ export function Ntrp({ clubId, members, me, meVal, isAdmin, flash }) {
                     </View>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={{ fontSize: 18, fontWeight: '900', color: eff.value != null ? C.green : C.faint }}>
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: eff.value != null ? C.green : C.faint }}>
                       {eff.value != null ? eff.value.toFixed(1) : '—'}
                     </Text>
                     {eff.source === 'certified' && <Text style={{ fontSize: 9, color: C.green2 }}>✓인증</Text>}

@@ -230,7 +230,7 @@ function CreateTournament({ clubId, members, onDone, flash }) {
       <Card>
         <Pressable onPress={() => setUseGroup(!useGroup)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: useGroup ? C.green : '#e7e5e4', alignItems: 'center', justifyContent: 'center' }}>
-            {useGroup && <Text style={{ color: C.lime, fontWeight: '900', fontSize: 13 }}>✓</Text>}
+            {useGroup && <Text style={{ color: C.lime, fontWeight: '700', fontSize: 13 }}>✓</Text>}
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: '700' }}>예선 조별리그 진행</Text>
@@ -281,7 +281,7 @@ function CreateTournament({ clubId, members, onDone, flash }) {
       <Card>
         <Pressable onPress={() => setUseSkillGroups(!useSkillGroups)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: useSkillGroups ? C.green : '#e7e5e4', alignItems: 'center', justifyContent: 'center' }}>
-            {useSkillGroups && <Text style={{ color: C.lime, fontWeight: '900', fontSize: 13 }}>✓</Text>}
+            {useSkillGroups && <Text style={{ color: C.lime, fontWeight: '700', fontSize: 13 }}>✓</Text>}
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: '700' }}>수준별 그룹으로 진행</Text>
@@ -420,7 +420,7 @@ function GroupStage({ clubId, t, isAdmin, nameOfEntry, flash }) {
                 <View key={s.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: i < (t.advancePerGroup || 2) ? C.lime : '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 10, fontWeight: '900', color: i < (t.advancePerGroup || 2) ? C.ink : C.sub }}>{i + 1}</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: i < (t.advancePerGroup || 2) ? C.ink : C.sub }}>{i + 1}</Text>
                     </View>
                     <Text style={{ fontSize: 13, fontWeight: '600' }}>{nameOfEntry(s.id)}</Text>
                   </View>
@@ -433,7 +433,7 @@ function GroupStage({ clubId, t, isAdmin, nameOfEntry, flash }) {
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Text style={{ fontSize: 12, flex: 1 }}>{nameOfEntry(m.a)} vs {nameOfEntry(m.b)}</Text>
                       {m.score ? (
-                        <Text style={{ fontSize: 12, fontWeight: '900', color: C.green }}>{m.score.a} : {m.score.b}</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: C.green }}>{m.score.a} : {m.score.b}</Text>
                       ) : isAdmin ? (
                         <Btn small tone="ghost" onPress={() => { setEdit(m.id); setSc({ a: '', b: '' }); }}>입력</Btn>
                       ) : <Text style={{ fontSize: 11, color: C.faint }}>미진행</Text>}
@@ -441,7 +441,7 @@ function GroupStage({ clubId, t, isAdmin, nameOfEntry, flash }) {
                     {edit === m.id && (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
                         <Field keyboardType="number-pad" placeholder="A" value={sc.a} onChangeText={(v) => setSc({ ...sc, a: v })} style={{ flex: 1 }} />
-                        <Text style={{ fontWeight: '900', color: C.faint }}>:</Text>
+                        <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
                         <Field keyboardType="number-pad" placeholder="B" value={sc.b} onChangeText={(v) => setSc({ ...sc, b: v })} style={{ flex: 1 }} />
                         <Btn small onPress={() => saveScore(g.id, m.id)}>저장</Btn>
                       </View>
@@ -490,8 +490,8 @@ function Knockout({ clubId, t, isAdmin, nameOfEntry, flash }) {
     <View>
       {champion && (
         <Card style={{ backgroundColor: C.ink, borderColor: C.green, alignItems: 'center', paddingVertical: 20 }}>
-          <Text style={{ color: C.lime, fontSize: 11, fontWeight: '900', letterSpacing: 1 }}>CHAMPION</Text>
-          <Text style={{ color: '#fff', fontSize: 22, fontWeight: '900', marginTop: 6 }}>🏆 {nameOfEntry(champion)}</Text>
+          <Text style={{ color: C.lime, fontSize: 11, fontWeight: '700', letterSpacing: 1 }}>CHAMPION</Text>
+          <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700', marginTop: 6 }}>🏆 {nameOfEntry(champion)}</Text>
         </Card>
       )}
       {bracket.rounds.map((round, ri) => (
@@ -511,7 +511,7 @@ function Knockout({ clubId, t, isAdmin, nameOfEntry, flash }) {
                     </Text>
                   </View>
                   {m.score ? (
-                    <Text style={{ fontSize: 14, fontWeight: '900', color: C.green }}>{m.score.a} : {m.score.b}</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: C.green }}>{m.score.a} : {m.score.b}</Text>
                   ) : bye ? (
                     <Chip tone="default">부전승</Chip>
                   ) : isAdmin && m.a && m.b ? (
@@ -521,7 +521,7 @@ function Knockout({ clubId, t, isAdmin, nameOfEntry, flash }) {
                 {edit === m.id && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
                     <Field keyboardType="number-pad" placeholder="위" value={sc.a} onChangeText={(v) => setSc({ ...sc, a: v })} style={{ flex: 1 }} />
-                    <Text style={{ fontWeight: '900', color: C.faint }}>:</Text>
+                    <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
                     <Field keyboardType="number-pad" placeholder="아래" value={sc.b} onChangeText={(v) => setSc({ ...sc, b: v })} style={{ flex: 1 }} />
                     <Btn small onPress={() => save(m.id)}>저장</Btn>
                   </View>
@@ -644,11 +644,11 @@ function KdkView({ clubId, t, isAdmin, flash }) {
                 backgroundColor: i === 0 ? C.lime : C.fill,
                 alignItems: 'center', justifyContent: 'center',
               }}>
-                <Text style={{ fontSize: 10.5, fontWeight: '900', color: i === 0 ? C.ink : C.sub }}>{i + 1}</Text>
+                <Text style={{ fontSize: 10.5, fontWeight: '700', color: i === 0 ? C.ink : C.sub }}>{i + 1}</Text>
               </View>
               <Text style={[F.bodyBold, { flex: 1 }]} numberOfLines={1}>{r.name}</Text>
               <Text style={{ fontSize: 12, color: C.sub }}>{r.games}경기</Text>
-              <Text style={{ fontSize: 13, fontWeight: '900', color: C.green, width: 34, textAlign: 'right' }}>{r.wins}승</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: C.green, width: 34, textAlign: 'right' }}>{r.wins}승</Text>
               <Text style={{
                 fontSize: 11, width: 40, textAlign: 'right',
                 color: r.diff > 0 ? C.green2 : r.diff < 0 ? C.danger : C.faint,
@@ -689,7 +689,7 @@ export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
           <Text style={{ color: C.green2, fontSize: 13, marginBottom: 8 }}>‹ 목록으로</Text>
         </Pressable>
         <Card>
-          <Text style={{ fontSize: 16, fontWeight: '900' }}>{t.name}</Text>
+          <Text style={{ fontSize: 16, fontWeight: '700' }}>{t.name}</Text>
           <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
             {t.date} · {formatLabel(t)}
             {t.busuLimit ? ` · ${t.busuLimit} 이하` : ''}
