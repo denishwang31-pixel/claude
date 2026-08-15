@@ -6,15 +6,21 @@ import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { weatherFor } from '../../src/lib/weather';
-import { setRsvp, addMeeting, addMeetingsBatch, updateMeeting } from '../../src/lib/firestore';
+import { setRsvp, addMeeting, addMeetingsBatch, updateMeeting, subGear } from '../../src/lib/firestore';
+import { AD_SLOTS } from '../../src/lib/ads';
+import { AdBanner } from '../../src/components/AdBanner';
 import {
   DEFAULT_SETTINGS, roundsFromSettings, describeSettings,
   REPEAT_TYPES, expandRecurrence, dowName,
 } from '../../src/lib/schedule';
-import { RSVP } from '../../src/lib/constants';
+import {
+  RSVP, PLAY_MODE, PLAY_MODES, SURFACES, END_SCORES,
+} from '../../src/lib/constants';
 import { DateField, TimeField, Label } from '../../src/components/pickers';
-import { Card, SectionTitle, Btn, Field, Avatar, Chip } from '../../src/components/ui';
-import { C } from '../../src/lib/theme';
+import {
+  Card, SectionTitle, Btn, Field, Avatar, Chip, SegmentedControl,
+} from '../../src/components/ui';
+import { C, S } from '../../src/lib/theme';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -25,13 +31,19 @@ export default function Schedule() {
   const [nd, setNd] = useState(null);
   const [open, setOpen] = useState(false);   // 등록 폼 펼침
   const [toast, setToast] = useState(null);
+  const [ads, setAds] = useState([]);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
+
+  useEffect(() => subGear(setAds), []);
 
   const blank = () => ({
     date: '', time: settings.startTime, place: '',
     courts: String(settings.courts),
     rounds: String(roundsFromSettings(settings)),
     venueId: null,
+    playMode: PLAY_MODE.DOUBLES,
+    surface: '',
+    endScore: 6,
     repeat: 'none',
     until: '',
   });
@@ -62,6 +74,9 @@ export default function Schedule() {
       courts: Math.max(1, +nd.courts || 1),
       rounds: Math.max(1, +nd.rounds || 1),
       venueId: nd.venueId || null,
+      playMode: nd.playMode || PLAY_MODE.DOUBLES,
+      surface: nd.surface || '',
+      endScore: nd.endScore || 6,
     };
     if (nd.repeat === 'none') {
       addMeeting(clubId, { ...base, date: nd.date });
@@ -101,6 +116,8 @@ export default function Schedule() {
         backLabel="일정"
       />
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+        <AdBanner ads={ads} slot={AD_SLOTS.SCHEDULE} variant="strip" style={{ marginBottom: S.md }} />
+
         {upcoming.map((mt) => {
           const w = weatherFor(mt.date, mt.forecast);
           const counts = { yes: 0, no: 0, maybe: 0 };
@@ -114,7 +131,10 @@ export default function Schedule() {
                     {mt.date}({dowName(mt.date)}) {mt.time} {mt.canceled ? '· 우천취소' : ''}
                   </Text>
                   <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
-                    {mt.place} · 코트 {mt.courts}면 · {mt.rounds}타임
+                    {mt.place} · {mt.playMode === PLAY_MODE.SINGLES ? '단식' : '복식'}
+                    {' · '}코트 {mt.courts}면 · {mt.rounds}타임
+                    {mt.surface ? ` · ${mt.surface}` : ''}
+                    {mt.endScore ? ` · ${mt.endScore}게임` : ''}
                     {mt.recurring ? ' · 정기' : ''}
                   </Text>
                 </View>
@@ -219,12 +239,44 @@ export default function Schedule() {
                   </View>
                 )}
 
+                {/* 복식/단식 — 한 코트에 몇 명이 들어가는지가 달라진다 */}
+                <View style={{ marginBottom: 12 }}>
+                  <Label hint="복식은 코트당 4명, 단식은 2명">경기 방식</Label>
+                  <SegmentedControl
+                    options={PLAY_MODES.map((p) => ({ key: p.key, label: p.label }))}
+                    value={nd.playMode}
+                    onChange={(v) => setNd({ ...nd, playMode: v })}
+                  />
+                </View>
+
                 <Label hint="📅 를 누르면 캘린더">날짜</Label>
                 <DateField value={nd.date} onChange={(v) => setNd({ ...nd, date: v })} minDate={today()} />
 
                 <View style={{ marginTop: 12 }}>
                   <Label hint="🕐 를 누르면 시간 목록">시작 시간</Label>
                   <TimeField value={nd.time} onChange={(v) => setNd({ ...nd, time: v })} />
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Label hint="선택">코트 표면</Label>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                      {SURFACES.map((s) => (
+                        <Chip key={s} tone={nd.surface === s ? 'green' : 'outline'}
+                          onPress={() => setNd({ ...nd, surface: nd.surface === s ? '' : s })}>{s}</Chip>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+
+                <View style={{ marginTop: 12 }}>
+                  <Label hint="한 경기를 몇 게임까지 하는지">경기 종료 점수</Label>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                    {END_SCORES.map((s) => (
+                      <Chip key={s} tone={nd.endScore === s ? 'green' : 'outline'}
+                        onPress={() => setNd({ ...nd, endScore: s })}>{s}게임</Chip>
+                    ))}
+                  </View>
                 </View>
 
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>

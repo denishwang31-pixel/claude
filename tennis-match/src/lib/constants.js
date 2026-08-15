@@ -56,6 +56,34 @@ export const JOIN_STATUS_LABEL = {
   pending: '승인 대기', approved: '승인됨', rejected: '거절됨',
 };
 
+/** 경기 방식 — 모임 단위로 정한다 */
+export const PLAY_MODE = { DOUBLES: 'doubles', SINGLES: 'singles' };
+export const PLAY_MODES = [
+  { key: PLAY_MODE.DOUBLES, label: '복식', hint: '한 코트 4명' },
+  { key: PLAY_MODE.SINGLES, label: '단식', hint: '한 코트 2명' },
+];
+
+/** 대진 편성 방식 */
+export const DRAW_MODE = { AUTO: 'auto', KDK: 'kdk' };
+export const DRAW_MODES = [
+  {
+    key: DRAW_MODE.AUTO,
+    label: '일반 편성',
+    hint: '잡복 금지·커플·실력 매칭 등 클럽 규칙을 그대로 적용합니다.',
+  },
+  {
+    key: DRAW_MODE.KDK,
+    label: 'KDK (개인전)',
+    hint: '4~8명 조로 나눠 파트너를 매 경기 바꿉니다. 전원 같은 경기 수를 뛰고 개인 승수로 순위를 냅니다.',
+  },
+];
+
+/** 코트 표면 */
+export const SURFACES = ['하드', '클레이', '인조잔디', '실내'];
+
+/** 한 경기 종료 점수(게임 수) */
+export const END_SCORES = [4, 6, 8, 9];
+
 /** 실력 조(조 미사용 클럽을 위해 '선택 안함' 포함) */
 export const GRADES = ['A', 'B', 'C', 'D'];
 export const GRADE_NONE = '';   // 선택 안함

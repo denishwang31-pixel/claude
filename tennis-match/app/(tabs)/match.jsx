@@ -12,14 +12,21 @@ import { ScreenHeader } from '../../src/components/ScreenHeader';
 import {
   generateMatchesV5, collectPastPairs, diagnoseRoster, describeShortage, ROUND_TYPES,
 } from '../../src/lib/matchmaking';
+import {
+  generateKdk, splitKdkGroups, kdkStandingsByGroup, kdkQuality,
+} from '../../src/lib/kdk';
 import { DEFAULT_MATCH_CONFIG, roundTimes, dowName } from '../../src/lib/schedule';
 import { effectiveNtrp } from '../../src/lib/ntrp';
-import { RSVP } from '../../src/lib/constants';
-import { setRules, setRestScore, saveMatches, updateMeeting } from '../../src/lib/firestore';
+import { RSVP, DRAW_MODE, DRAW_MODES, PLAY_MODE } from '../../src/lib/constants';
+import { setRules, setRestScore, saveMatches, updateMeeting, subGear } from '../../src/lib/firestore';
+import { AD_SLOTS } from '../../src/lib/ads';
+import { AdBanner } from '../../src/components/AdBanner';
 import { VenuePicker } from '../../src/components/VenuePicker';
 import { MatchGrid, AttendanceGrid } from '../../src/components/MatchGrid';
-import { Card, SectionTitle, Chip, Btn, Field, Avatar } from '../../src/components/ui';
-import { C } from '../../src/lib/theme';
+import {
+  Card, SectionTitle, Chip, Btn, Field, Avatar, CheckRow,
+} from '../../src/components/ui';
+import { C, S, R, F } from '../../src/lib/theme';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -40,7 +47,10 @@ export default function Match() {
   const [editing, setEditing] = useState(null);
   const [sc, setSc] = useState({ a: '', b: '' });
   const [toast, setToast] = useState(null);
+  const [ads, setAds] = useState([]);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2400); };
+
+  useEffect(() => subGear(setAds), []);
 
   /* 내가 볼 수 있는 코트장 범위 안의 모임만 */
   const scopeIds = useMemo(() => scopeVenues.map((v) => v.id), [scopeVenues]);
@@ -84,6 +94,18 @@ export default function Match() {
   }, [meeting, venues, club]);
 
   /* ---------------- 편성 ---------------- */
+  /* 모임에 저장된 값이 있으면 그걸 쓰고, 없으면 일반 편성 */
+  const drawMode = meeting?.drawMode || DRAW_MODE.AUTO;
+  const isKdk = drawMode === DRAW_MODE.KDK;
+  const isSingles = meeting?.playMode === PLAY_MODE.SINGLES;
+  const setDrawMode = (key) => meeting && updateMeeting(clubId, meeting.id, { drawMode: key });
+
+  /* KDK 로 돌리면 몇 개 조가 되는지 미리 계산해 보여준다 */
+  const kdkGroups = useMemo(
+    () => (attendees.length >= 4 ? splitKdkGroups(attendees.length) : []),
+    [attendees.length],
+  );
+
   const roundTypeOf = (r) => (meeting?.roundPlan?.[r]) || cfg.defaultRoundType;
   const setRoundType = (r, key) => {
     const plan = { ...(meeting.roundPlan || {}) };
@@ -119,7 +141,30 @@ export default function Match() {
     flash(parts.join(' · '));
   };
 
+  /* KDK — 개인전. 잡복/커플 같은 클럽 규칙 대신 파트너 로테이션이 규칙이다 */
+  const runKdk = () => {
+    const matches = generateKdk(attendees, meeting.courts);
+    if (!matches.length) return flash('KDK 는 최소 4명이 필요합니다');
+    saveMatches(clubId, meeting.id, matches);
+    const q = kdkQuality(attendees, matches);
+    const groups = [...new Set(matches.map((m) => m.group))].length;
+    flash(`KDK ${groups}개 조 · ${matches.length}경기 · 1인 ${q.minGames}경기`
+      + (q.repeatedPartners ? ` · 파트너 중복 ${q.repeatedPartners}` : ' · 파트너 중복 없음'));
+  };
+
   const gen = () => {
+    if (isKdk) {
+      if (attendees.length < 4) {
+        return Alert.alert('인원이 부족합니다',
+          `참석 ${attendees.length}명\nKDK 는 최소 4명부터 진행할 수 있습니다.`);
+      }
+      return Alert.alert('KDK 대진 생성',
+        `참석 ${attendees.length}명 → ${kdkGroups.join('명 + ')}명 (${kdkGroups.length}개 조)\n\n`
+        + '조마다 파트너를 바꿔가며 전원 같은 경기 수를 뜁니다.\n'
+        + '순위는 개인 승수 → 득실차로 매겨집니다.',
+        [{ text: '취소', style: 'cancel' }, { text: '생성', onPress: runKdk }]);
+    }
+
     const d = diagnoseRoster(attendees, meeting.courts, roundTypeOf(1));
     if (!d.canPlayMixed) {
       return Alert.alert('대진표를 만들 수 없습니다',
@@ -227,12 +272,39 @@ export default function Match() {
               {meeting.date}({dowName(meeting.date)}) {meeting.time}
               {venueOf(meeting) ? ` · ${venueOf(meeting).name}` : (meeting.place ? ` · ${meeting.place}` : '')}
             </Text>
-            <Text style={{ fontSize: 12, color: C.sub, marginTop: 3 }}>
-              참석 {attendees.length}명 (남{nM} 여{attendees.length - nM}) · 코트 {meeting.courts}면 · {meeting.rounds}타임
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
+              <Chip tone={isSingles ? 'warn' : 'soft'}>{isSingles ? '단식' : '복식'}</Chip>
+              {isKdk && <Chip tone="lime">KDK</Chip>}
+              {!!meeting.surface && <Chip tone="outline">{meeting.surface}</Chip>}
+              {!!meeting.endScore && <Chip tone="outline">{meeting.endScore}게임</Chip>}
+              <Chip tone="outline">코트 {meeting.courts}면</Chip>
+              <Chip tone="outline">{meeting.rounds}타임</Chip>
+            </View>
+            <Text style={{ fontSize: 12, color: C.sub, marginTop: 7 }}>
+              참석 {attendees.length}명 (남 {nM} · 여 {attendees.length - nM})
             </Text>
 
-            {/* 편성 가능 여부 진단 */}
-            {attendees.length > 0 && (() => {
+            {/* 편성 방식 — KDK 체크박스 */}
+            {isAdmin && (
+              <View style={{
+                marginTop: S.md, backgroundColor: C.fill, borderRadius: R.md, padding: 12, gap: 12,
+              }}>
+                {DRAW_MODES.map((d) => (
+                  <CheckRow
+                    key={d.key}
+                    checked={drawMode === d.key}
+                    onToggle={() => setDrawMode(d.key)}
+                    label={d.label}
+                    hint={d.key === DRAW_MODE.KDK && kdkGroups.length
+                      ? `${d.hint}\n지금 인원이면 ${kdkGroups.join('명 + ')}명, ${kdkGroups.length}개 조로 나뉩니다.`
+                      : d.hint}
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* 편성 가능 여부 진단 — 일반 편성일 때만 의미가 있다 */}
+            {!isKdk && attendees.length > 0 && (() => {
               const d = diagnoseRoster(attendees, meeting.courts, roundTypeOf(1));
               const full = d.strictCourts >= meeting.courts;
               return (
@@ -255,8 +327,16 @@ export default function Match() {
             )}
           </Card>
 
-          {/* 편성 설정(타임 유형·실력매칭·휴식점수·우선순위) */}
-          {isAdmin && showTools && (
+          {/* 편성 설정(타임 유형·실력매칭·휴식점수·우선순위) — KDK 는 자체 규칙이라 감춘다 */}
+          {isAdmin && showTools && isKdk && (
+            <Card style={{ marginTop: S.sm }}>
+              <Text style={{ fontSize: 12.5, color: C.sub, lineHeight: 19 }}>
+                KDK 는 파트너 로테이션이 곧 규칙이라 타임별 유형·실력 매칭·휴식 점수를
+                따로 쓰지 않습니다. 일반 편성으로 바꾸면 그 설정들이 다시 나타납니다.
+              </Text>
+            </Card>
+          )}
+          {isAdmin && showTools && !isKdk && (
             <>
               <SectionTitle right={
                 <Chip tone={(meeting.skillBalance ?? cfg.skillBalance) ? 'green' : 'outline'}
@@ -390,6 +470,49 @@ export default function Match() {
           <Card style={{ padding: 10 }}>
             <AttendanceGrid attendees={attendees} matches={matches} roundTimes={times} />
           </Card>
+
+          {/* KDK 개인 순위 — 조별 */}
+          {isKdk && (
+            <>
+              <SectionTitle hint="승수 → 득실차 → 총 득점 순. 스코어를 넣을수록 채워집니다.">
+                KDK 개인 순위
+              </SectionTitle>
+              {kdkStandingsByGroup(attendees, matches).map(({ group, rows }) => (
+                <Card key={group} style={{ marginBottom: S.sm, paddingVertical: 6 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.green, marginVertical: 6 }}>
+                    {String.fromCharCode(65 + group)}조
+                  </Text>
+                  {rows.map((r, i) => (
+                    <View key={r.id} style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 8,
+                      paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.border,
+                    }}>
+                      <View style={{
+                        width: 22, height: 22, borderRadius: 11,
+                        backgroundColor: i === 0 ? C.lime : C.fill,
+                        alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <Text style={{ fontSize: 10.5, fontWeight: '900', color: i === 0 ? C.ink : C.sub }}>{i + 1}</Text>
+                      </View>
+                      <Text style={[F.bodyBold, { flex: 1 }]} numberOfLines={1}>{r.name}</Text>
+                      <Text style={{ fontSize: 12, color: C.sub }}>{r.games}경기</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '900', color: C.green, width: 34, textAlign: 'right' }}>
+                        {r.wins}승
+                      </Text>
+                      <Text style={{
+                        fontSize: 11, width: 40, textAlign: 'right',
+                        color: r.diff > 0 ? C.green2 : r.diff < 0 ? C.danger : C.faint,
+                      }}>
+                        {r.diff > 0 ? '+' : ''}{r.diff}
+                      </Text>
+                    </View>
+                  ))}
+                </Card>
+              ))}
+            </>
+          )}
+
+          <AdBanner ads={ads} slot={AD_SLOTS.MATCH} />
         </>
       )}
 

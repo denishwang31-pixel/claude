@@ -182,6 +182,16 @@ service cloud.firestore {
       allow write: if isAppAdmin();
     }
 
+    /* ---------- 광고 노출·클릭 집계(루트) ----------
+       상품별 카운터만 쌓는다. 개인 정보는 담지 않는다.
+       로그인 사용자면 올릴 수 있게 두되(집계 실패가 사용자 흐름을 막으면 안 되므로),
+       읽기는 앱 운영자만 — 다른 클럽이 남의 광고 성과를 볼 이유가 없다. */
+    match /adStats/{adId} {
+      allow read: if isAppAdmin();
+      allow create, update: if signedIn();
+      allow delete: if isAppAdmin();
+    }
+
     /* ---------- 게스트 모집(루트 공개, FIX-05) ----------
        - 읽기: 로그인 사용자 전체(공개 게시판)
        - 모집글 생성/수정/삭제: 해당 클럽 총무

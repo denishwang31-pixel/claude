@@ -3,7 +3,7 @@
    서브화면을 열면 안드로이드 뒤로가기와 화면 안 [‹ 뒤로] 가 같은 동작을 합니다. */
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useApp } from '../_layout';
 import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
@@ -49,7 +49,13 @@ const MENU = [
 export default function More() {
   const { clubId, me, viewMode, resetOnboarding } = useApp();
   const router = useRouter();
+  const params = useLocalSearchParams();
   const [sub, setSub] = useState(null);
+
+  /* 홈 아이콘에서 바로 들어온 경우 해당 화면을 연다 */
+  useEffect(() => {
+    if (params?.open) setSub(String(params.open));
+  }, [params?.open]);
   const [feeMonth, setFeeMonth] = useState(new Date().toISOString().slice(0, 7));
   const [toast, setToast] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);

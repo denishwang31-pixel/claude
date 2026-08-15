@@ -281,6 +281,20 @@ await T('앱 운영자 명단 자가 등록 거부(콘솔 전용)',
 await T('앱 운영자도 명단 추가 거부(콘솔 전용)',
   assertFails(setDoc(doc(appAdmin, 'appAdmins', 'mem1'), { note: '승격' })));
 
+console.log('\n[광고 집계(루트 /adStats)]');
+await T('회원의 노출/클릭 집계 기록 허용',
+  assertSucceeds(setDoc(doc(mem1, 'adStats', 'g1'), { impressions: 1 }, { merge: true })));
+await T('타 클럽 사용자도 집계 기록 허용',
+  assertSucceeds(setDoc(doc(outsider, 'adStats', 'g1'), { clicks: 1 }, { merge: true })));
+await T('비로그인 집계 기록 거부',
+  assertFails(setDoc(doc(anon, 'adStats', 'g1'), { clicks: 1 }, { merge: true })));
+await T('회원의 광고 성과 조회 거부(앱 운영자 전용)',
+  assertFails(getDoc(doc(mem1, 'adStats', 'g1'))));
+await T('앱 운영자의 광고 성과 조회 허용',
+  assertSucceeds(getDoc(doc(appAdmin, 'adStats', 'g1'))));
+await T('회원의 집계 삭제 거부',
+  assertFails(deleteDoc(doc(mem1, 'adStats', 'g1'))));
+
 console.log('\n[회비/기타]');
 await T('회원 회비 쓰기 거부',
   assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'fees', '2026-07'), { paid: { mem1: true } })));
