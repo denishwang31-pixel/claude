@@ -112,17 +112,116 @@ exports.onApplicantConfirmed = onDocumentUpdated({ ...REGION, document: 'guestPo
 });
 
 /* ---------------- 4) 매월 1일 회비 리마인드 ---------------- */
-exports.monthlyFeeReminder = onSchedule({ ...REGION, schedule: '0 9 1 * *', timeZone: 'Asia/Seoul' }, async () => {
-  const month = new Date().toISOString().slice(0, 7);
-  const clubs = await db.collection('clubs').get();
-  for (const club of clubs.docs) {
-    const feeDoc = await club.ref.collection('fees').doc(month).get();
-    const paid = feeDoc.exists ? feeDoc.data().paid || {} : {};
-    const amount = (feeDoc.exists && feeDoc.data().amount) || club.data().settings?.feeAmount || 30000;
-    const tokens = await clubTokens(club.id, (m) => m.status === '활동' && !paid[m.id]);
-    await sendPush(tokens, '💳 회비 안내', `${month} 회비 ${amount.toLocaleString()}원 납부 부탁드립니다.`, { type: 'fee', month });
+/* ================= 회비 독촉 =================
+   총무가 "형, 회비요..." 를 보내지 않아도 되게 하는 것이 목적이다.
+   매일 09시에 돌면서 오늘이 어느 단계인지 보고, 해당하는 사람에게만 보낸다.
+
+   지키는 규칙 (src/lib/dunning.js 와 동일해야 한다)
+     1. 발신은 클럽 이름으로. 총무 개인 이름을 넣지 않는다.
+     2. 미납자 본인에게만 개별 발송. 단체 공지로 명단이 나가지 않는다.
+     3. 마지막 단계(D+10)는 자동 발송하지 않는다 — 총무가 앱에서 직접 보낸다.
+     4. 같은 단계는 한 번만. meta/dunning 에 발송 기록을 남겨 중복을 막는다.  */
+
+const DUN_STAGES = [
+  { key: 'pre', offset: -3, audience: 'all', auto: true, label: '사전 안내' },
+  { key: 'first', offset: 1, audience: 'unpaid', auto: true, label: '1차 알림' },
+  { key: 'second', offset: 5, audience: 'unpaid', auto: true, label: '2차 알림' },
+  { key: 'final', offset: 10, audience: 'unpaid', auto: false, label: '최종 안내' },
+];
+
+const pad = (n) => String(n).padStart(2, '0');
+const seoulToday = () =>
+  new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+
+function dueDateOf(monthKey, dueDay) {
+  const [y, m] = String(monthKey).split('-');
+  const year = Number(y), month = Number(m);
+  const last = new Date(year, month, 0).getDate();
+  return `${year}-${pad(month)}-${pad(Math.min(Math.max(1, dueDay), last))}`;
+}
+
+const daysBetween = (a, b) =>
+  Math.round((new Date(`${b}T00:00:00Z`) - new Date(`${a}T00:00:00Z`)) / 86400000);
+
+function dunMessage(stageKey, clubName, monthKey, amount, dueDate, account) {
+  const p = `${Number(String(monthKey).split('-')[1])}월`;
+  const won = `${Number(amount || 0).toLocaleString()}원`;
+  const acc = account ? `\n입금: ${account}` : '';
+  const club = clubName || '클럽';
+  if (stageKey === 'pre') {
+    return { title: `${club} ${p} 회비 안내`, body: `${p} 회비 ${won} 납부일은 ${dueDate}입니다.${acc}` };
   }
-});
+  if (stageKey === 'first') {
+    return { title: `${club} ${p} 회비`, body: `${p} 회비 ${won}가 아직 확인되지 않았습니다.${acc}` };
+  }
+  return {
+    title: `${club} ${p} 회비 미납`,
+    body: `${p} 회비 ${won}가 미납 상태입니다. 납부 후에는 자동으로 확인됩니다.${acc}`,
+  };
+}
+
+exports.dailyFeeDunning = onSchedule(
+  { ...REGION, schedule: '0 9 * * *', timeZone: 'Asia/Seoul' },
+  async () => {
+    const today = seoulToday();
+    const month = today.slice(0, 7);
+    const clubs = await db.collection('clubs').get();
+
+    for (const club of clubs.docs) {
+      try {
+        const settings = club.data().settings || {};
+        const dueDay = Number(settings.feeDueDay) || 10;
+        const account = settings.feeAccount || '';
+        const due = dueDateOf(month, dueDay);
+        const stage = DUN_STAGES.find((s) => s.offset === daysBetween(due, today));
+        // 오늘이 발송일이 아니거나, 사람이 확인해야 하는 단계면 건너뛴다
+        if (!stage || !stage.auto) continue;
+
+        // 이미 보낸 단계는 다시 보내지 않는다
+        const logRef = club.ref.collection('meta').doc('dunning');
+        const logDoc = await logRef.get();
+        const sent = logDoc.exists ? (logDoc.data().sent || {}) : {};
+        if (sent[month] && sent[month][stage.key]) continue;
+
+        const feeDoc = await club.ref.collection('fees').doc(month).get();
+        const paid = feeDoc.exists ? (feeDoc.data().paid || {}) : {};
+        const amount = (feeDoc.exists && feeDoc.data().amount)
+          || settings.feeAmount || 30000;
+
+        const tokens = await clubTokens(club.id, (m) => {
+          const active = !m.status || m.status === '활동';
+          if (!active) return false;
+          return stage.audience === 'all' ? true : !paid[m.id];
+        });
+        if (!tokens.length) continue;
+
+        const msg = dunMessage(stage.key, club.data().name, month, amount, due, account);
+        await sendPush(tokens, msg.title, msg.body, { type: 'fee', month, stage: stage.key });
+        await logRef.set(
+          { sent: { [month]: { [stage.key]: today } } },
+          { merge: true },
+        );
+
+        // 2차 단계에서는 총무에게 현황을 요약해 준다
+        if (stage.key === 'second') {
+          const staffTokens = await clubTokens(club.id,
+            (m) => m.role === '회장' || m.role === '총무');
+          const unpaidCount = tokens.length;
+          if (staffTokens.length) {
+            await sendPush(
+              staffTokens,
+              `${club.data().name || '클럽'} ${Number(month.split('-')[1])}월 회비 현황`,
+              `미납 ${unpaidCount}명 · ${(unpaidCount * amount).toLocaleString()}원 남았습니다.`,
+              { type: 'fee-summary', month },
+            );
+          }
+        }
+      } catch (e) {
+        console.error('dunning failed for club', club.id, e);
+      }
+    }
+  },
+);
 
 /* ================= PHASE 4 — 기상청 단기예보 =================
    12시간마다: 3일 내 모임 → 장소를 코트 DB와 매칭해 좌표 획득 → 격자 변환 →

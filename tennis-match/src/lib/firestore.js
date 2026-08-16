@@ -320,6 +320,59 @@ export const addComment = (clubId, postId, comment) =>
 export const setFeePaid = (clubId, monthKey, paidMap, amount) =>
   setDoc(D(clubId, 'fees', monthKey), { paid: paidMap, amount }, { merge: true });
 
+/* ---- 총무 도구: 입금 대사 · 독촉 · 결산 ---- */
+
+/** 입금자명 별칭 — 총무가 고쳐 준 매칭을 기억한다 ("김철수부인" → 김철수) */
+export const subFeeAliases = (clubId, cb) =>
+  onSnapshot(D(clubId, 'meta', 'feeAliases'), (d) => cb(d.exists() ? (d.data().map || {}) : {}));
+
+export const saveFeeAliases = (clubId, map) =>
+  setDoc(D(clubId, 'meta', 'feeAliases'), { map, updatedAt: serverTimestamp() }, { merge: true });
+
+/** 독촉 발송 기록 — { '2026-08': { first: '2026-08-11', ... } } */
+export const subDunningLog = (clubId, cb) =>
+  onSnapshot(D(clubId, 'meta', 'dunning'), (d) => cb(d.exists() ? (d.data().sent || {}) : {}));
+
+export const markDunningSent = (clubId, monthKey, stageKey, today) =>
+  setDoc(D(clubId, 'meta', 'dunning'), {
+    sent: { [monthKey]: { [stageKey]: today } },
+  }, { merge: true });
+
+/** 회비 설정(납부일·입금계좌) — 클럽 settings 안에 둔다 */
+export const saveFeePolicy = (clubId, { dueDay, account }) =>
+  updateDoc(doc(db, 'clubs', clubId), {
+    'settings.feeDueDay': Number(dueDay) || 10,
+    'settings.feeAccount': account || '',
+  });
+
+/** 결산에 쓸 회비 기록 전체 (기간 필터는 화면에서) */
+export const loadAllFees = async (clubId) => {
+  const snap = await getDocs(C(clubId, 'fees'));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
+
+/** 결산 수기 수입(게스트비·대회 등) */
+export const subIncomes = (clubId, cb) =>
+  onSnapshot(C(clubId, 'incomes'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+export const addIncome = (clubId, data) => addDoc(C(clubId, 'incomes'), data);
+export const deleteIncome = (clubId, id) => deleteDoc(D(clubId, 'incomes', id));
+
+/** 총무 인수인계 — 새 총무 임명 + 전임자는 열람 권한(운영진)으로 */
+export const handOverManager = async (clubId, fromId, toId) => {
+  const batch = writeBatch(db);
+  batch.update(D(clubId, 'members', toId), { role: ROLES.MANAGER });
+  if (fromId && fromId !== toId) {
+    batch.update(D(clubId, 'members', fromId), { role: ROLES.STAFF });
+  }
+  batch.set(D(clubId, 'meta', 'handover'), {
+    history: arrayUnion({ from: fromId || '', to: toId, at: new Date().toISOString() }),
+  }, { merge: true });
+  await batch.commit();
+};
+
+export const subHandoverHistory = (clubId, cb) =>
+  onSnapshot(D(clubId, 'meta', 'handover'), (d) => cb(d.exists() ? (d.data().history || []) : []));
+
 export const addCourt = (clubId, data) => addDoc(C(clubId, 'courts'), data);
 export const deleteCourt = (clubId, id) => deleteDoc(D(clubId, 'courts', id));
 

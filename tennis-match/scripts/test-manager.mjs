@@ -1,0 +1,195 @@
+/* 총무 기능 테스트 — 독촉 규칙과 결산 집계 */
+import {
+  DUN_STAGE, DUN_STAGES, dueDateOf, daysBetween, stageFor,
+  unpaidMembers, recipientsFor, messageFor, canSend, planAutoSend, periodLabel,
+} from '../src/lib/dunning.js';
+import {
+  settle, compare, previousPeriod, deltaText, toPlainText, won,
+} from '../src/lib/settlement.js';
+
+let pass = 0, fail = 0;
+const ok = (c, m) => { if (c) pass++; else { fail++; console.log('  ✗', m); } };
+
+const MEMBERS = [
+  { id: 'a', name: '김철수', status: '활동' },
+  { id: 'b', name: '이영희', status: '활동' },
+  { id: 'c', name: '박민수', status: '활동' },
+  { id: 'd', name: '휴면회원', status: '휴면' },
+  { id: 'e', name: '탈퇴회원', status: '탈퇴' },
+];
+
+console.log('[납부 기한]');
+ok(dueDateOf('2026-08', 10) === '2026-08-10', '기본');
+ok(dueDateOf('2026-02', 31) === '2026-02-28', '2월에 31일 → 말일로 보정');
+ok(dueDateOf('2026-01', 0) === '2026-01-01', '0일 → 1일로 보정');
+ok(daysBetween('2026-08-10', '2026-08-11') === 1, '하루 차이');
+ok(daysBetween('2026-08-10', '2026-08-07') === -3, '3일 전');
+
+console.log('[단계 선택]');
+ok(stageFor('2026-08', '2026-08-07', 10)?.key === DUN_STAGE.PRE, 'D-3 사전 안내');
+ok(stageFor('2026-08', '2026-08-11', 10)?.key === DUN_STAGE.FIRST, 'D+1 1차');
+ok(stageFor('2026-08', '2026-08-15', 10)?.key === DUN_STAGE.SECOND, 'D+5 2차');
+ok(stageFor('2026-08', '2026-08-20', 10)?.key === DUN_STAGE.FINAL, 'D+10 최종');
+ok(stageFor('2026-08', '2026-08-13', 10) === null, '해당 없는 날은 안 보낸다');
+ok(stageFor('2026-08', '2026-08-10', 10) === null, '기한 당일은 안 보낸다');
+
+console.log('[규칙 1 — 총무 이름을 넣지 않는다]');
+DUN_STAGES.forEach((s) => {
+  const m = messageFor(s, {
+    clubName: '테스트클럽', monthKey: '2026-08', amount: 30000,
+    dueDate: '2026-08-10', account: '신한 110-123',
+  });
+  ok(!/총무|매니저/.test(m.title + m.body), `${s.label}: 총무 언급 없음`);
+  ok(m.title.includes('테스트클럽'), `${s.label}: 클럽 이름으로 발신`);
+  ok(m.body.includes('30,000원'), `${s.label}: 금액 표시`);
+});
+
+console.log('[규칙 2·3 — 미납자 본인에게만]');
+{
+  const paid = { a: true };
+  const unpaid = unpaidMembers(MEMBERS, paid);
+  ok(unpaid.length === 2, `활동 미납자 2명 (${unpaid.length})`);
+  ok(!unpaid.some((m) => m.id === 'a'), '납부자는 제외');
+  ok(!unpaid.some((m) => m.status === '휴면'), '휴면 회원은 독촉하지 않는다');
+  ok(!unpaid.some((m) => m.status === '탈퇴'), '탈퇴 회원은 독촉하지 않는다');
+
+  const pre = recipientsFor(DUN_STAGES[0], MEMBERS, paid);
+  ok(pre.length === 3, `사전 안내는 활동 회원 전체 (${pre.length})`);
+  const first = recipientsFor(DUN_STAGES[1], MEMBERS, paid);
+  ok(first.length === 2, `1차는 미납자만 (${first.length})`);
+  ok(first.every((m) => !paid[m.id]), '납부자에게 안 간다');
+}
+
+console.log('[규칙 4 — 최종 단계는 자동 발송 금지]');
+{
+  const finalStage = DUN_STAGES.find((s) => s.key === DUN_STAGE.FINAL);
+  ok(finalStage.auto === false, '최종 단계는 auto=false');
+  const plan = planAutoSend({
+    clubName: 'C', monthKey: '2026-08', today: '2026-08-20', dueDay: 10,
+    amount: 30000, members: MEMBERS, paidMap: {}, sent: {},
+  });
+  ok(plan.recipients.length === 0, '자동 발송 대상 없음');
+  ok(plan.needsApproval === true, '총무 승인 필요로 표시');
+}
+
+console.log('[규칙 5 — 같은 단계는 한 번만]');
+{
+  const stage = DUN_STAGES.find((s) => s.key === DUN_STAGE.FIRST);
+  ok(canSend(stage, '2026-08', {}).ok, '처음은 보낼 수 있다');
+  const sent = { '2026-08': { first: '2026-08-11' } };
+  ok(!canSend(stage, '2026-08', sent).ok, '이미 보냈으면 막힌다');
+  ok(canSend(stage, '2026-09', sent).ok, '다음 달은 다시 보낼 수 있다');
+  const plan = planAutoSend({
+    clubName: 'C', monthKey: '2026-08', today: '2026-08-11', dueDay: 10,
+    amount: 30000, members: MEMBERS, paidMap: {}, sent,
+  });
+  ok(plan.recipients.length === 0, '중복 발송 계획이 서지 않는다');
+}
+
+console.log('[자동 발송 계획]');
+{
+  const plan = planAutoSend({
+    clubName: '테스트클럽', monthKey: '2026-08', today: '2026-08-11', dueDay: 10,
+    amount: 30000, members: MEMBERS, paidMap: { a: true }, sent: {}, account: '신한 110',
+  });
+  ok(plan.stage.key === DUN_STAGE.FIRST, '1차 단계');
+  ok(plan.recipients.length === 2, `미납자 2명에게 (${plan.recipients.length})`);
+  ok(plan.message.body.includes('30,000원'), '금액 포함');
+  ok(plan.message.body.includes('신한 110'), '입금 계좌 안내 포함');
+}
+{
+  const plan = planAutoSend({
+    clubName: 'C', monthKey: '2026-08', today: '2026-08-11', dueDay: 10,
+    amount: 30000, members: MEMBERS, paidMap: { a: true, b: true, c: true }, sent: {},
+  });
+  ok(plan.recipients.length === 0, '전원 납부면 아무도 안 받는다');
+}
+
+console.log('[결산 집계]');
+const FEES = [
+  { id: '2026-01', amount: 30000, paid: { a: true, b: true, c: true } },
+  { id: '2026-02', amount: 30000, paid: { a: true, b: true } },
+  { id: '2026-03', amount: 30000, paid: { a: true } },
+  { id: '2025-12', amount: 30000, paid: { a: true, b: true, c: true } },  // 전년
+];
+const EXPENSES = [
+  { date: '2026-01-05', category: '코트 대관', amount: 120000 },
+  { date: '2026-02-10', category: '코트 대관', amount: 120000 },
+  { date: '2026-02-15', category: '공·소모품', amount: 40000 },
+  { date: '2026-03-20', category: '회식', amount: 200000 },
+  { date: '2025-11-01', category: '코트 대관', amount: 100000 },  // 전년
+];
+{
+  const s = settle('2026', {
+    fees: FEES, expenses: EXPENSES, members: MEMBERS,
+    carryOver: 500000,
+    extraIncome: [{ label: '게스트비', amount: 60000 }],
+  });
+  ok(s.feeIncome === 180000, `회비 수입 180,000 (${s.feeIncome})`);
+  ok(s.extraSum === 60000, '기타 수입 합산');
+  ok(s.income === 240000, `수입 합계 240,000 (${s.income})`);
+  ok(s.spent === 480000, `지출 480,000 (${s.spent})`);
+  ok(s.net === -240000, `당기 수지 (${s.net})`);
+  ok(s.balance === 260000, `이월금 포함 잔액 260,000 (${s.balance})`);
+  ok(!s.monthly.some((m) => m.month.startsWith('2025')), '전년 데이터가 안 섞인다');
+
+  ok(s.byCategory[0].category === '코트 대관', '지출 1위는 코트 대관');
+  ok(s.byCategory[0].amount === 240000, '코트 대관 합산');
+  ok(Math.abs(s.byCategory.reduce((t, c) => t + c.ratio, 0) - 1) < 0.001, '비율 합 100%');
+
+  ok(s.monthly.length === 3, `월별 3개월 (${s.monthly.length})`);
+  ok(s.monthly[0].month === '2026-01', '월 정렬');
+
+  const kim = s.roster.find((r) => r.name === '김철수');
+  ok(kim.paidCount === 3 && kim.rate === 1, '김철수 전액 납부');
+  ok(kim.owed === 0, '김철수 미납 0');
+  const park = s.roster.find((r) => r.name === '박민수');
+  ok(park.paidCount === 1, '박민수 1회 납부');
+  ok(park.owed === 60000, `박민수 미납 60,000 (${park.owed})`);
+  ok(s.roster[0].rate <= s.roster[s.roster.length - 1].rate, '납부율 낮은 순 정렬');
+  ok(!s.roster.some((r) => r.name === '탈퇴회원'), '탈퇴 회원은 명세에서 제외');
+  ok(s.arrearsTotal === 90000, `미납 총액 90,000 (${s.arrearsTotal})`);
+}
+{
+  const s = settle('2026-02', { fees: FEES, expenses: EXPENSES, members: MEMBERS });
+  ok(s.feeIncome === 60000, `2월만 집계 (${s.feeIncome})`);
+  ok(s.spent === 160000, `2월 지출 (${s.spent})`);
+}
+{
+  const empty = settle('2030', { fees: [], expenses: [], members: MEMBERS });
+  ok(empty.income === 0 && empty.spent === 0, '데이터 없는 기간도 안전');
+  ok(empty.byCategory.length === 0, '빈 항목');
+  ok(empty.paidRate === 0, '납부율 0');
+}
+
+console.log('[전기 대비]');
+{
+  ok(previousPeriod('2026') === '2025', '연간 전기');
+  ok(previousPeriod('2026-08') === '2025-08', '월간 전기');
+  const cur = settle('2026', { fees: FEES, expenses: EXPENSES, members: MEMBERS });
+  const prev = settle('2025', { fees: FEES, expenses: EXPENSES, members: MEMBERS });
+  const c = compare(cur, prev);
+  ok(c.income.now === cur.income && c.income.before === prev.income, '수입 비교');
+  ok(c.spent.delta === cur.spent - prev.spent, '지출 증감');
+  ok(compare(cur, null) === null, '전기 자료 없으면 null');
+  ok(deltaText(c.income).length > 0, '증감 문구 생성');
+}
+
+console.log('[총회 자료 텍스트]');
+{
+  const s = settle('2026', {
+    fees: FEES, expenses: EXPENSES, members: MEMBERS, carryOver: 500000,
+    extraIncome: [{ label: '게스트비', amount: 60000 }],
+  });
+  const t = toPlainText(s, '테스트클럽');
+  ok(t.includes('테스트클럽'), '클럽 이름');
+  ok(t.includes('[수입]') && t.includes('[지출]') && t.includes('[수지]'), '항목 구성');
+  ok(t.includes('코트 대관'), '지출 항목 포함');
+  ok(t.includes('240,000원'), '금액 포맷');
+  ok(t.split('\n').length > 10, '여러 줄 보고서');
+  ok(won(30000) === '30,000원', '금액 표기');
+  ok(periodLabel('2026-08') === '8월' && periodLabel('2026') === '2026년', '기간 표기');
+}
+
+console.log(`\n총무 기능 테스트: ${pass} 통과 / ${fail} 실패`);
+if (fail) process.exit(1);

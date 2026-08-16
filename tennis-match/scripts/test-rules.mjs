@@ -430,6 +430,29 @@ await T('앱 운영자의 광고 성과 조회 허용',
 await T('회원의 집계 삭제 거부',
   assertFails(deleteDoc(doc(mem1, 'adStats', 'g1'))));
 
+console.log('\n[총무 도구 — 회비 관련 문서는 회장·총무만]');
+await T('회장의 입금자명 별칭 저장 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'meta', 'feeAliases'), { map: { 김철수부인: 'mem1' } })));
+await T('일반 회원의 별칭 조회 거부',
+  assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'meta', 'feeAliases'))));
+await T('일반 회원의 별칭 저장 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'meta', 'feeAliases'), { map: {} })));
+await T('회장의 독촉 기록 저장 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'meta', 'dunning'), { sent: { '2026-08': { first: '2026-08-11' } } })));
+await T('일반 회원의 독촉 기록 조회 거부',
+  assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'meta', 'dunning'))));
+await T('회장의 회비 외 수입 등록 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'incomes', 'i1'),
+    { label: '게스트비', amount: 60000, date: '2026-01-01' })));
+await T('일반 회원의 수입 조회 거부',
+  assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'incomes', 'i1'))));
+await T('인수인계 이력은 회원도 조회 가능(누가 총무인지)',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'meta', 'handover'))));
+await T('일반 회원의 인수인계 이력 수정 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'meta', 'handover'), { history: [] })));
+await T('편성 규칙은 회원도 조회 가능',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'meta', 'rules'))));
+
 console.log('\n[회비/기타]');
 await T('회원 회비 쓰기 거부',
   assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'fees', '2026-07'), { paid: { mem1: true } })));

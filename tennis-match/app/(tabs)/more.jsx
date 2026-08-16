@@ -10,11 +10,18 @@ import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { computeStats } from '../../src/lib/matchmaking';
 import { logout } from '../../src/lib/auth';
-import { subJoinRequests } from '../../src/lib/firestore';
+import {
+  subJoinRequests, subFeeAliases, subDunningLog, subExpenses,
+  subHandoverHistory, loadAllFees,
+} from '../../src/lib/firestore';
 import { JOIN_STATUS, normalizeRole } from '../../src/lib/constants';
 import { Board, Guest, Courts } from '../../src/components/MoreScreens';
 import { Members } from '../../src/components/MembersScreen';
 import { Fees } from '../../src/components/FeesScreen';
+import { Reconcile } from '../../src/components/ReconcileScreen';
+import { Dunning } from '../../src/components/DunningScreen';
+import { Settlement } from '../../src/components/SettlementScreen';
+import { Handover } from '../../src/components/HandoverScreen';
 import { Ntrp } from '../../src/components/NtrpScreen';
 import { Tournaments } from '../../src/components/TournamentScreen';
 import { Attendance } from '../../src/components/AttendanceScreen';
@@ -61,6 +68,10 @@ const MENU_GROUPS = [
       ['invite', 'invite', '클럽 초대', '초대코드·링크 보내기'],
       ['attendance', 'attendance', '출석', null],
       ['fees', 'fees', '회비·지출', '회장·총무만', 'fees'],
+      ['reconcile', 'fees', '입금 대사', '거래내역 붙여넣기 → 자동 확인', 'fees'],
+      ['dunning', 'polls', '회비 알림', '미납자에게 개별 발송', 'fees'],
+      ['settlement', 'rank', '결산·회계보고', '총회 자료 자동 생성', 'fees'],
+      ['handover', 'members', '총무 인수인계', '권한만 넘기면 기록은 남습니다', 'fees'],
       ['pairs', 'pairs', '커플·고정 페어', null],
       ['venues', 'venues', '코트장 관리', '우리 클럽이 정기적으로 쓰는 코트'],
       ['matchcfg', 'matchcfg', '대진 설정', null],
@@ -101,6 +112,12 @@ export default function More() {
   const [feeMonth, setFeeMonth] = useState(new Date().toISOString().slice(0, 7));
   const [toast, setToast] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
+  /* 총무 도구용 자료 — 회비 메뉴를 볼 수 있는 사람만 구독한다 */
+  const [feeAliases, setFeeAliases] = useState({});
+  const [dunningLog, setDunningLog] = useState({});
+  const [expenses, setExpenses] = useState([]);
+  const [allFees, setAllFees] = useState([]);
+  const [handoverLog, setHandoverLog] = useState([]);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
 
   const {
@@ -117,6 +134,24 @@ export default function More() {
       setPendingCount(list.filter((r) => r.status === JOIN_STATUS.PENDING).length));
     return () => unsub && unsub();
   }, [clubId, isAdmin]);
+
+  /* 총무 도구 자료 구독 — 권한 없는 사람은 아예 읽지 않는다(규칙에서도 막힌다) */
+  useEffect(() => {
+    if (!clubId || !seeFees) {
+      setFeeAliases({}); setDunningLog({}); setExpenses([]); setAllFees([]);
+      return undefined;
+    }
+    const u1 = subFeeAliases(clubId, setFeeAliases);
+    const u2 = subDunningLog(clubId, setDunningLog);
+    const u3 = subExpenses(clubId, setExpenses);
+    loadAllFees(clubId).then(setAllFees).catch(() => setAllFees([]));
+    return () => { u1 && u1(); u2 && u2(); u3 && u3(); };
+  }, [clubId, seeFees]);
+
+  useEffect(() => {
+    if (!clubId) return undefined;
+    return subHandoverHistory(clubId, setHandoverLog);
+  }, [clubId]);
 
   /* 안드로이드 하드웨어 뒤로 = 화면 안 [‹ 뒤로] 와 동일 동작 */
   const goBack = () => setSub(null);
@@ -142,6 +177,28 @@ export default function More() {
       );
       case 'venues': return <Venues {...{ clubId, club, venues, members, isAdmin, flash }} />;
       case 'matchcfg': return <MatchConfig {...{ clubId, matchConfig, rules, isAdmin, flash }} />;
+      case 'reconcile': return (
+        <Reconcile {...{
+          clubId, club, members, fee, periodKey: feeMonth, aliases: feeAliases, flash,
+          amount: fee.amount || club?.settings?.feeAmount || 30000,
+        }} />
+      );
+      case 'dunning': return (
+        <Dunning {...{
+          clubId, club, members, fee, periodKey: feeMonth, sentLog: dunningLog, flash,
+          amount: fee.amount || club?.settings?.feeAmount || 30000,
+          isAdmin: seeFees,
+        }} />
+      );
+      case 'settlement': return (
+        <Settlement {...{ clubId, club, members, expenses, flash, isAdmin: seeFees }} />
+      );
+      case 'handover': return (
+        <Handover {...{
+          clubId, club, members, meetings, fees: allFees, history: handoverLog,
+          canAppoint, me, flash,
+        }} />
+      );
       case 'fees': return (
         <Fees {...{
           clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash,

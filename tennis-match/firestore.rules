@@ -195,9 +195,27 @@ service cloud.firestore {
         allow read: if isClubMember(clubId);
         allow write: if isClubAdmin(clubId);
       }
+      /* 회비 외 수입(게스트비·대회 등) — 결산에 들어가므로 회장·총무만 */
+      match /incomes/{incomeId} {
+        allow read, write: if canSeeFees(clubId);
+      }
+
+      /* meta 는 대체로 회원 공용(편성 규칙·인수인계 이력)이지만,
+         회비 도구 문서는 회장·총무만 본다.
+         규칙은 OR 로 평가되므로 일반 규칙에서 먼저 제외해야 실제로 막힌다. */
       match /meta/{docId} {
-        allow read: if isClubMember(clubId);
-        allow write: if isClubAdmin(clubId);
+        allow read: if isClubMember(clubId)
+          && !(docId in ['feeAliases', 'dunning']);
+        allow write: if isClubAdmin(clubId)
+          && !(docId in ['feeAliases', 'dunning']);
+      }
+      /* 입금자명 별칭 — 누가 어느 계좌로 내는지가 드러난다 */
+      match /meta/feeAliases {
+        allow read, write: if canSeeFees(clubId);
+      }
+      /* 독촉 발송 기록 — 미납 관련 정보 */
+      match /meta/dunning {
+        allow read, write: if canSeeFees(clubId);
       }
     }
 
