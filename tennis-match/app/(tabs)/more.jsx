@@ -12,7 +12,7 @@ import { computeStats } from '../../src/lib/matchmaking';
 import { logout } from '../../src/lib/auth';
 import {
   subJoinRequests, subFeeAliases, subDunningLog, subExpenses,
-  subHandoverHistory, loadAllFees,
+  subHandoverHistory, loadAllFees, subFeeClaims,
 } from '../../src/lib/firestore';
 import { JOIN_STATUS, normalizeRole } from '../../src/lib/constants';
 import { Board, Guest, Courts } from '../../src/components/MoreScreens';
@@ -22,6 +22,7 @@ import { Reconcile } from '../../src/components/ReconcileScreen';
 import { Dunning } from '../../src/components/DunningScreen';
 import { Settlement } from '../../src/components/SettlementScreen';
 import { Handover } from '../../src/components/HandoverScreen';
+import { MyFees } from '../../src/components/MyFeesScreen';
 import { Ntrp } from '../../src/components/NtrpScreen';
 import { Tournaments } from '../../src/components/TournamentScreen';
 import { Attendance } from '../../src/components/AttendanceScreen';
@@ -56,6 +57,7 @@ const MENU_GROUPS = [
       ['tournament', 'tournament', '대회', 'KDK · 청백전 · 클럽 교류전'],
       ['rank', 'rank', '랭킹·기록', null],
       ['ntrp', 'ntrp', 'NTRP 등급', null],
+      ['myfees', 'fees', '내 회비', '내 납부 현황 확인'],
       ['members', 'members', '회원', null],
       ['courts', 'courts', '코트 검색', '주변 공공·사설 테니스장 찾기'],
     ],
@@ -118,6 +120,7 @@ export default function More() {
   const [expenses, setExpenses] = useState([]);
   const [allFees, setAllFees] = useState([]);
   const [handoverLog, setHandoverLog] = useState([]);
+  const [feeClaims, setFeeClaims] = useState([]);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
 
   const {
@@ -138,14 +141,15 @@ export default function More() {
   /* 총무 도구 자료 구독 — 권한 없는 사람은 아예 읽지 않는다(규칙에서도 막힌다) */
   useEffect(() => {
     if (!clubId || !seeFees) {
-      setFeeAliases({}); setDunningLog({}); setExpenses([]); setAllFees([]);
+      setFeeAliases({}); setDunningLog({}); setExpenses([]); setAllFees([]); setFeeClaims([]);
       return undefined;
     }
     const u1 = subFeeAliases(clubId, setFeeAliases);
     const u2 = subDunningLog(clubId, setDunningLog);
     const u3 = subExpenses(clubId, setExpenses);
+    const u4 = subFeeClaims(clubId, setFeeClaims);
     loadAllFees(clubId).then(setAllFees).catch(() => setAllFees([]));
-    return () => { u1 && u1(); u2 && u2(); u3 && u3(); };
+    return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); };
   }, [clubId, seeFees]);
 
   useEffect(() => {
@@ -177,6 +181,7 @@ export default function More() {
       );
       case 'venues': return <Venues {...{ clubId, club, venues, members, isAdmin, flash }} />;
       case 'matchcfg': return <MatchConfig {...{ clubId, matchConfig, rules, isAdmin, flash }} />;
+      case 'myfees': return <MyFees {...{ clubId, club, me, meVal, flash }} />;
       case 'reconcile': return (
         <Reconcile {...{
           clubId, club, members, fee, periodKey: feeMonth, aliases: feeAliases, flash,
@@ -187,7 +192,7 @@ export default function More() {
         <Dunning {...{
           clubId, club, members, fee, periodKey: feeMonth, sentLog: dunningLog, flash,
           amount: fee.amount || club?.settings?.feeAmount || 30000,
-          isAdmin: seeFees,
+          isAdmin: seeFees, claims: feeClaims,
         }} />
       );
       case 'settlement': return (

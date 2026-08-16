@@ -317,8 +317,83 @@ export const addPost = (clubId, data) =>
 export const addComment = (clubId, postId, comment) =>
   updateDoc(D(clubId, 'posts', postId), { comments: arrayUnion(comment) });
 
-export const setFeePaid = (clubId, monthKey, paidMap, amount) =>
-  setDoc(D(clubId, 'fees', monthKey), { paid: paidMap, amount }, { merge: true });
+/* ---- 회비 납부 기록 ----
+
+   두 곳에 쓴다.
+     fees/{기간}            총무용 전체 명단. 회장·총무만 읽는다.
+     memberFees/{회원id}    회원 개인용 사본. 본인과 회장·총무만 읽는다.
+
+   왜 사본을 두나
+     전체 명단을 회원에게 열어 주면 누가 안 냈는지 서로 다 보게 된다.
+     그렇다고 아예 막으면 본인도 자기 납부 여부를 확인할 수 없어서,
+     "냈는데 미납으로 되어 있다"를 발견할 방법이 없다.
+     그래서 본인 몫만 떼어 개인 문서로 내려 준다.
+
+   바뀐 사람만 쓴다 — 체크 하나 누를 때마다 30명 문서를 다시 쓰지 않는다. */
+export const setFeePaid = async (clubId, monthKey, paidMap, amount, prevPaid = null) => {
+  const ref = D(clubId, 'fees', monthKey);
+
+  let before = prevPaid;
+  if (!before) {
+    const snap = await getDoc(ref);
+    before = snap.exists() ? (snap.data().paid || {}) : {};
+  }
+
+  await setDoc(ref, { paid: paidMap, amount }, { merge: true });
+
+  const ids = new Set([...Object.keys(before || {}), ...Object.keys(paidMap || {})]);
+  const changed = [...ids].filter((id) => !!before?.[id] !== !!paidMap?.[id]);
+  if (!changed.length) return;
+
+  const at = new Date().toISOString();
+  for (let i = 0; i < changed.length; i += 400) {
+    const batch = writeBatch(db);
+    changed.slice(i, i + 400).forEach((id) => {
+      batch.set(D(clubId, 'memberFees', id), {
+        periods: { [monthKey]: { paid: !!paidMap[id], amount: Number(amount) || 0, at } },
+      }, { merge: true });
+    });
+    await batch.commit();
+  }
+};
+
+/** 내 납부 내역 — 회원 본인이 본다 */
+export const subMyFees = (clubId, memberId, cb) =>
+  onSnapshot(D(clubId, 'memberFees', memberId), (d) =>
+    cb(d.exists() ? d.data() : { periods: {}, claims: {} }));
+
+/** "냈는데 미납으로 되어 있어요" — 회원이 확인을 요청한다.
+    회원은 claims 만 건드릴 수 있다(보안 규칙에서 강제). */
+export const fileFeeClaim = (clubId, memberId, monthKey, note) =>
+  setDoc(D(clubId, 'memberFees', memberId), {
+    claims: {
+      [monthKey]: { note: note || '', at: new Date().toISOString(), resolved: false },
+    },
+  }, { merge: true });
+
+/** 회원이 요청을 스스로 취소 */
+export const cancelFeeClaim = (clubId, memberId, monthKey) =>
+  setDoc(D(clubId, 'memberFees', memberId), {
+    claims: { [monthKey]: deleteField() },
+  }, { merge: true });
+
+/** 확인 요청 목록 — 회장·총무가 본다 */
+export const subFeeClaims = (clubId, cb) =>
+  onSnapshot(C(clubId, 'memberFees'), (s) => {
+    const out = [];
+    s.docs.forEach((d) => {
+      Object.entries(d.data().claims || {}).forEach(([period, c]) => {
+        if (c && !c.resolved) out.push({ memberId: d.id, period, ...c });
+      });
+    });
+    cb(out.sort((a, b) => String(b.at).localeCompare(String(a.at))));
+  });
+
+/** 총무가 확인 요청을 처리 완료로 표시 */
+export const resolveFeeClaim = (clubId, memberId, monthKey) =>
+  setDoc(D(clubId, 'memberFees', memberId), {
+    claims: { [monthKey]: { resolved: true } },
+  }, { merge: true });
 
 /* ---- 총무 도구: 입금 대사 · 독촉 · 결산 ---- */
 

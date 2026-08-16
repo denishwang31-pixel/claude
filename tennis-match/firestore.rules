@@ -195,6 +195,27 @@ service cloud.firestore {
         allow read: if isClubMember(clubId);
         allow write: if isClubAdmin(clubId);
       }
+      /* 회원 개인 납부 내역 — 본인과 회장·총무만.
+
+         전체 명단(fees)을 회원에게 열면 누가 안 냈는지 서로 다 보게 되고,
+         아예 막으면 본인도 "냈는데 미납으로 되어 있다"를 확인할 수 없다.
+         그래서 본인 몫만 개인 문서로 내려 준다.
+
+         쓰기는 회장·총무만. 단 본인은 claims(확인 요청)만 남길 수 있다 —
+         자기 납부 여부를 스스로 체크하면 회비 관리가 무너진다. */
+      match /memberFees/{memberId} {
+        allow read: if canSeeFees(clubId)
+          || (isClubMember(clubId) && request.auth.uid == memberId);
+        allow write: if canSeeFees(clubId);
+        // 본인의 확인 요청 — claims 외의 필드는 건드릴 수 없다
+        allow create: if isClubMember(clubId)
+          && request.auth.uid == memberId
+          && request.resource.data.keys().hasOnly(['claims']);
+        allow update: if isClubMember(clubId)
+          && request.auth.uid == memberId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['claims']);
+      }
+
       /* 회비 외 수입(게스트비·대회 등) — 결산에 들어가므로 회장·총무만 */
       match /incomes/{incomeId} {
         allow read, write: if canSeeFees(clubId);

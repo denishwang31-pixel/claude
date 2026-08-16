@@ -71,14 +71,15 @@ export function Fees({
 
   const togglePaid = (id) => {
     const next = { ...paidMap, [id]: !paidMap[id] };
-    setFeePaid(clubId, periodKey, next, amount);
+    // 이전 상태를 같이 넘긴다 — 바뀐 사람만 개인 문서에 반영하기 위해
+    setFeePaid(clubId, periodKey, next, amount, paidMap);
   };
 
   const runMatch = () => {
     let hit = 0;
     const next = { ...paidMap };
     active.forEach((m) => { if (m.name && paste.includes(m.name)) { next[m.id] = true; hit++; } });
-    setFeePaid(clubId, periodKey, next, amount);
+    setFeePaid(clubId, periodKey, next, amount, paidMap);
     setPaste('');
     flash(`${hit}명 입금자명 매칭 완료`);
   };

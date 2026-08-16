@@ -430,6 +430,36 @@ await T('앱 운영자의 광고 성과 조회 허용',
 await T('회원의 집계 삭제 거부',
   assertFails(deleteDoc(doc(mem1, 'adStats', 'g1'))));
 
+console.log('\n[회원 개인 납부 내역 — 본인은 보되 고칠 수는 없다]');
+await T('회장의 개인 납부 기록 작성 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'memberFees', 'mem1'),
+    { periods: { '2026-08': { paid: true, amount: 30000 } } })));
+await T('본인의 납부 내역 조회 허용',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'memberFees', 'mem1'))));
+await T('남의 납부 내역 조회 거부',
+  assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'memberFees', 'mem2'))));
+await T('본인이 자기 납부 여부를 바꾸는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'memberFees', 'mem1'),
+    { periods: { '2026-09': { paid: true, amount: 30000 } } })));
+await T('본인이 미납을 납부로 뒤집는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'memberFees', 'mem1'),
+    { 'periods.2026-08.paid': false })));
+await T('본인의 확인 요청(claims) 작성 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'memberFees', 'mem1'),
+    { claims: { '2026-08': { note: '8/1 이체했습니다', resolved: false } } })));
+await T('claims 와 함께 periods 를 바꾸는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'memberFees', 'mem1'),
+    { claims: { '2026-09': {} }, periods: { '2026-09': { paid: true } } })));
+await T('남의 확인 요청 작성 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'memberFees', 'mem2'),
+    { claims: { '2026-08': { note: '가짜' } } })));
+await T('회장은 확인 요청을 처리할 수 있다',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'memberFees', 'mem1'),
+    { claims: { '2026-08': { resolved: true } } }, { merge: true })));
+await T('비회원의 개인 납부 내역 조회 거부',
+  assertFails(getDoc(doc(env.authenticatedContext('outsider').firestore(),
+    'clubs', CLUB, 'memberFees', 'mem1'))));
+
 console.log('\n[총무 도구 — 회비 관련 문서는 회장·총무만]');
 await T('회장의 입금자명 별칭 저장 허용',
   assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'meta', 'feeAliases'), { map: { 김철수부인: 'mem1' } })));

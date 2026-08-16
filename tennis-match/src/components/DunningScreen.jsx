@@ -6,12 +6,12 @@
      · 마지막 단계는 자동으로 안 나간다. 총무가 보고 누른다.
      · 같은 단계는 한 번만. 이미 보냈으면 버튼이 막힌다. */
 import React, { useMemo, useState } from 'react';
-import { View, Text, Alert } from 'react-native';
+import { View, Text, Alert, Pressable } from 'react-native';
 import {
   DUN_STAGES, DUN_STAGE, dueDateOf, stageFor, unpaidMembers, recipientsFor,
   messageFor, canSend, periodLabel,
 } from '../lib/dunning';
-import { markDunningSent, saveFeePolicy } from '../lib/firestore';
+import { markDunningSent, saveFeePolicy, resolveFeeClaim, setFeePaid } from '../lib/firestore';
 import { Field, Label } from './pickers';
 import { Card, SectionTitle, Chip, Btn, StatCard } from './ui';
 import { C, S, R, F } from '../lib/theme';
@@ -20,7 +20,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const won = (n) => `${Number(n || 0).toLocaleString()}원`;
 
 export function Dunning({
-  clubId, club, members, fee, periodKey, amount, sentLog = {}, isAdmin, flash,
+  clubId, club, members, fee, periodKey, amount, sentLog = {}, claims = [], isAdmin, flash,
 }) {
   const dueDay = club?.settings?.feeDueDay || 10;
   const account = club?.settings?.feeAccount || '';
@@ -89,6 +89,60 @@ export function Dunning({
           {todayStage ? ` · 오늘은 "${todayStage.label}" 발송일입니다` : ''}
         </Text>
       </Card>
+
+      {claims.length > 0 && (
+        <>
+          <SectionTitle hint="회원이 직접 보낸 요청입니다">
+            확인 요청 {claims.length}건
+          </SectionTitle>
+          {claims.map((c) => {
+            const who = members.find((m) => m.id === c.memberId);
+            return (
+              <Card key={`${c.memberId}-${c.period}`} style={{ marginTop: 8, backgroundColor: '#FFF7ED' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={F.bodyBold}>
+                      {who?.name || '(탈퇴 회원)'} · {c.period}
+                    </Text>
+                    {!!c.note && (
+                      <Text style={{ fontSize: 12, color: C.sub, marginTop: 4, lineHeight: 17 }}>
+                        {c.note}
+                      </Text>
+                    )}
+                    <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 4 }}>
+                      {String(c.at || '').slice(0, 10)}
+                    </Text>
+                  </View>
+                  <View style={{ gap: 6 }}>
+                    <Btn small onPress={() => Alert.alert(
+                      '납부 처리',
+                      `${who?.name || '회원'}님의 ${c.period} 회비를 납부 완료로 표시할까요?`,
+                      [
+                        { text: '취소', style: 'cancel' },
+                        {
+                          text: '납부 처리',
+                          onPress: async () => {
+                            const next = { ...(fee?.paid || {}), [c.memberId]: true };
+                            await setFeePaid(clubId, c.period, next, amount, fee?.paid || {});
+                            await resolveFeeClaim(clubId, c.memberId, c.period);
+                            flash('납부 처리했습니다');
+                          },
+                        },
+                      ],
+                    )}>납부 처리</Btn>
+                    <Pressable onPress={() => {
+                      resolveFeeClaim(clubId, c.memberId, c.period);
+                      flash('확인 완료로 표시했습니다');
+                    }}>
+                      <Text style={{ fontSize: 11, color: C.faint, textAlign: 'center' }}>확인만</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </Card>
+            );
+          })}
+        </>
+      )}
 
       <SectionTitle hint="총무 이름이 아니라 클럽 이름으로 나갑니다">알림 단계</SectionTitle>
       {DUN_STAGES.map((stage) => {

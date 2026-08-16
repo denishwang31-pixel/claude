@@ -93,7 +93,7 @@ export function Reconcile({
           onPress: async () => {
             const next = { ...paid };
             applied.ids.forEach((id) => { next[id] = true; });
-            await setFeePaid(clubId, periodKey, next, amount);
+            await setFeePaid(clubId, periodKey, next, amount, paid);
             if (Object.keys(applied.newAliases).length) {
               await saveFeeAliases(clubId, { ...aliases, ...applied.newAliases });
             }
