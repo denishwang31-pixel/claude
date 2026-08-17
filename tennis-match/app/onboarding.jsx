@@ -16,7 +16,7 @@ import { auth } from '../firebaseConfig';
 import {
   createClub, findClubByInviteCode, searchClubs, getClubDirectory,
   requestJoinClub, subMyJoinRequest, cancelJoinRequest, joinClubWithCode,
-  checkClubPassword, subServiceStats,
+  checkClubPassword, subServiceStats, getMyMember,
 } from '../src/lib/firestore';
 import { seedClub } from '../src/lib/seed';
 import { linkUserToClub, markPendingClub, skipOnboarding, getMySession, logout } from '../src/lib/auth';
@@ -43,6 +43,10 @@ export default function Onboarding() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [booting, setBooting] = useState(true);
+  /* 이미 클럽이 있는데 "다른 클럽 찾기"로 들어온 경우.
+     이 사람에게 "시작하기 / 내 정보"를 다시 물으면 안 된다 — 이미 다 있다.
+     프로필은 기존 클럽의 내 회원 정보에서 가져오고, 화면은 검색만 보여 준다. */
+  const [switching, setSwitching] = useState(false);
 
   /* 공통 프로필 */
   const [myName, setMyName] = useState('');
@@ -83,6 +87,22 @@ export default function Onboarding() {
       try {
         const s = await getMySession(uid);
         if (!alive) return;
+        if (s.clubId) {
+          setSwitching(true);
+          /* users 문서에 이름이 없을 수도 있다(예전 가입 경로).
+             그때는 지금 소속 클럽의 내 회원 문서에서 채운다 — 이게 비어 있으면
+             가입 신청 버튼이 전부 비활성이라 "검색이 안 되는" 것처럼 보인다. */
+          try {
+            const me = await getMyMember(s.clubId, uid);
+            if (alive && me?.name) {
+              setMyName(me.name);
+              if (me.gender) setGender(me.gender);
+              if (me.startedAt) setStartedAt(me.startedAt);
+              if (me.busu) setBusu(me.busu);
+              if (me.region) setMyRegion(me.region);
+            }
+          } catch (e) { /* 못 읽어도 아래 users 프로필로 대체 */ }
+        }
         if (s.profile?.name) {
           setMyName(s.profile.name);
           if (s.profile.gender) setGender(s.profile.gender);
@@ -297,13 +317,17 @@ export default function Onboarding() {
   /* ================= 일반 온보딩 ================= */
   return (
     <ScrollView style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={{ padding: 24, paddingTop: 56, paddingBottom: 48 }}>
-      <Text style={{ fontSize: 22, fontWeight: '700', color: C.ink }}>시작하기</Text>
+      <Text style={{ fontSize: 22, fontWeight: '700', color: C.ink }}>
+        {switching ? '클럽 옮기기' : '시작하기'}
+      </Text>
       <Text style={{ fontSize: 12, color: C.sub, marginTop: 4 }}>
-        클럽은 나중에 정해도 됩니다. 우선 이름만 알려주세요.
+        {switching
+          ? `${myName ? `${myName}님, ` : ''}가입할 클럽을 찾아보세요. 지금 클럽은 그대로 유지됩니다.`
+          : '클럽은 나중에 정해도 됩니다. 우선 이름만 알려주세요.'}
       </Text>
 
-      {/* 내 프로필 */}
-      <Card style={{ marginTop: S.lg }}>
+      {/* 내 프로필 — 이미 클럽이 있는 사람에게는 다시 묻지 않는다 */}
+      <Card style={{ marginTop: S.lg, display: switching ? 'none' : 'flex' }}>
         <Label>내 이름</Label>
         <Field placeholder="이름" value={myName} onChangeText={setMyName} />
 

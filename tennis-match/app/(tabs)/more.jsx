@@ -23,7 +23,6 @@ import { Dunning } from '../../src/components/DunningScreen';
 import { Settlement } from '../../src/components/SettlementScreen';
 import { Handover } from '../../src/components/HandoverScreen';
 import { MyFees } from '../../src/components/MyFeesScreen';
-import { DuesPools } from '../../src/components/DuesPoolScreen';
 import { Ntrp } from '../../src/components/NtrpScreen';
 import { Tournaments } from '../../src/components/TournamentScreen';
 import { Attendance } from '../../src/components/AttendanceScreen';
@@ -39,28 +38,42 @@ import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card, SectionTitle, Chip, Btn, ListRow, Badge } from '../../src/components/ui';
 import { C, F } from '../../src/lib/theme';
 
-/** 그룹 → [키, 아이콘, 라벨, 부제] — 운영 기능은 "클럽 운영" 한 묶음으로 */
+/* 메뉴 분류 — [키, 아이콘, 라벨, 부제, 권한]
+
+   분류 기준은 "누구의 것인가"다.
+     내 활동   나 개인의 기록·회비. 남과 공유되지 않는다.
+     클럽 활동 회원이 함께 보는 것 — 대회·공지·채팅·회원 명단
+     찾아보기  클럽 밖을 보는 것 — 게스트 모집(공개 게시판)·코트 검색
+     클럽 운영 운영진만. 회비·지출은 여기 하나로 모았다(일회성 정산 포함).
+
+   예전에는 '경기·기록'에 내 회비·정산·회원·코트 검색이 섞여 있었다.
+   성격이 다 달라서 어디를 눌러야 할지 알 수 없었다. */
 const MENU_GROUPS = [
   {
-    title: '커뮤니티',
+    title: '내 활동',
     staffOnly: false,
     items: [
-      ['guest', 'guest', '게스트 모집', '모든 클럽이 함께 보는 공개 게시판'],
-      ['chat', 'chat', '클럽 채팅', null],
-      ['polls', 'polls', '참가투표', '회식·대회 참가 의사를 물어보세요'],
-      ['board', 'board', '공지·자유글', null],
+      ['myfees', 'fees', '내 회비', '납부 현황 확인 · 기록이 다르면 문의'],
+      ['rank', 'rank', '내 기록·랭킹', null],
+      ['ntrp', 'ntrp', 'NTRP 등급', null],
     ],
   },
   {
-    title: '경기·기록',
+    title: '클럽 활동',
     staffOnly: false,
     items: [
       ['tournament', 'tournament', '대회', 'KDK · 청백전 · 클럽 교류전'],
-      ['rank', 'rank', '랭킹·기록', null],
-      ['ntrp', 'ntrp', 'NTRP 등급', null],
-      ['myfees', 'fees', '내 회비', '내 납부 현황 확인'],
-      ['duespool', 'fees', '일회성 정산', '대회 · 캠프 · 회식 나눠내기'],
-      ['members', 'members', '회원', null],
+      ['polls', 'polls', '참가투표', '회식·대회 참가 의사를 물어보세요'],
+      ['board', 'board', '공지·자유글', null],
+      ['chat', 'chat', '클럽 채팅', null],
+      ['members', 'members', '회원 목록', null],
+    ],
+  },
+  {
+    title: '찾아보기',
+    staffOnly: false,
+    items: [
+      ['guest', 'guest', '게스트 모집', '모든 클럽이 함께 보는 공개 게시판'],
       ['courts', 'courts', '코트 검색', '주변 공공·사설 테니스장 찾기'],
     ],
   },
@@ -71,13 +84,13 @@ const MENU_GROUPS = [
       ['joinreq', 'joinreq', '가입 신청', '검색으로 들어온 신청을 승인'],
       ['invite', 'invite', '클럽 초대', '초대코드·링크 보내기'],
       ['attendance', 'attendance', '출석', null],
-      ['fees', 'fees', '정기 회비·지출', '매달 걷는 회비', 'fees'],
+      ['fees', 'fees', '회비·지출', '정기 회비 · 지출 · 일회성 정산', 'fees'],
       ['reconcile', 'fees', '입금 대사', '거래내역 붙여넣기 → 자동 확인', 'fees'],
       ['dunning', 'polls', '회비 알림', '미납자에게 개별 발송', 'fees'],
       ['settlement', 'rank', '결산·회계보고', '총회 자료 자동 생성', 'fees'],
       ['handover', 'members', '총무 인수인계', '권한만 넘기면 기록은 남습니다', 'fees'],
-      ['pairs', 'pairs', '커플·고정 페어', null],
       ['venues', 'venues', '코트장 관리', '우리 클럽이 정기적으로 쓰는 코트'],
+      ['pairs', 'pairs', '커플·고정 페어', null],
       ['matchcfg', 'matchcfg', '대진 설정', null],
       ['settings', 'settings', '클럽 설정', null],
     ],
@@ -100,18 +113,25 @@ export default function More() {
      open 값은 한 번 쓰고 즉시 비운다. 남겨 두면
        (1) 탭을 떠났다 돌아와도 그 화면이 계속 열려 있고,
        (2) 같은 화면을 다시 열려 해도 값이 안 바뀌어 effect 가 안 돈다. */
+  /* 어디서 이 화면을 열었는가. 뒤로가기가 갈 곳을 정한다.
+     홈의 [회원]을 눌러 들어왔으면 뒤로가기는 홈으로 가야 한다.
+     더보기 목록으로 돌아가면 "누른 적 없는 화면"으로 가는 셈이라 어색하다. */
+  const [cameFrom, setCameFrom] = useState(null);
+
   useEffect(() => {
     if (!params?.open) return;
     const k = String(params.open);
     setSub(k === 'manage' ? null : k);
-    router.setParams({ open: '' });
+    setCameFrom(params?.from ? String(params.from) : null);
+    router.setParams({ open: '', from: '' });
   }, [params?.open]);
 
   /* 하단 [더보기] 탭을 누르면 언제나 메뉴 목록으로 — 마지막으로 봤던
      서브화면(채팅 등)이 열리면 "더보기를 눌렀는데 채팅이 뜬다"가 된다. */
   useEffect(() => navigation.addListener?.('tabPress', () => {
     setSub(null);
-    router.setParams({ open: '' });
+    setCameFrom(null);
+    router.setParams({ open: '', from: '' });
   }), [navigation]);
   const [feeMonth, setFeeMonth] = useState(new Date().toISOString().slice(0, 7));
   const [toast, setToast] = useState(null);
@@ -166,8 +186,17 @@ export default function More() {
     return subDuesPools(clubId, setDuesPools);
   }, [clubId]);
 
-  /* 안드로이드 하드웨어 뒤로 = 화면 안 [‹ 뒤로] 와 동일 동작 */
-  const goBack = () => setSub(null);
+  /* 뒤로가기 — 들어온 곳으로 돌려보낸다.
+     홈에서 왔으면 홈으로, 더보기 목록에서 열었으면 목록으로. */
+  const goBack = () => {
+    if (cameFrom === 'home') {
+      setSub(null);
+      setCameFrom(null);
+      router.replace('/(tabs)');
+      return;
+    }
+    setSub(null);
+  };
   useBackHandler(() => {
     if (sub) { goBack(); return true; }
     return false; // 최상위에서는 OS 기본 동작(앱 종료)
@@ -191,9 +220,6 @@ export default function More() {
       case 'venues': return <Venues {...{ clubId, club, venues, members, isAdmin, flash }} />;
       case 'matchcfg': return <MatchConfig {...{ clubId, matchConfig, rules, isAdmin, flash }} />;
       case 'myfees': return <MyFees {...{ clubId, club, me, meVal, flash }} />;
-      case 'duespool': return (
-        <DuesPools {...{ clubId, club, members, pools: duesPools, isAdmin: seeFees, flash }} />
-      );
       case 'reconcile': return (
         <Reconcile {...{
           clubId, club, members, fee, periodKey: feeMonth, aliases: feeAliases, flash,
@@ -219,7 +245,7 @@ export default function More() {
       case 'fees': return (
         <Fees {...{
           clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash,
-          venues, seeFees, seeAllVenues, myLeadVenues,
+          venues, seeFees, seeAllVenues, myLeadVenues, pools: duesPools,
         }} />
       );
       case 'board': return <Board {...{ clubId, posts, meVal, me, isAdmin, flash }} />;
@@ -300,7 +326,7 @@ export default function More() {
           title="클럽 채팅"
           subtitle={`${club?.name || ''} · 회원 ${members.length}명`}
           onBack={goBack}
-          backLabel="더보기"
+          backLabel={cameFrom === 'home' ? '홈' : '더보기'}
         />
         <Chat {...{ clubId, me, meVal, members, isAdmin, flash }} />
         {toast && (
@@ -320,7 +346,7 @@ export default function More() {
       <ScreenHeader
         title={title}
         onBack={sub ? goBack : undefined}
-        backLabel="더보기"
+        backLabel={cameFrom === 'home' ? '홈' : '더보기'}
         right={!sub && viewMode ? (
           <Chip tone="soft">
             {viewMode === 'staff' ? '운영진 모드' : viewMode === 'lead' ? '리드 모드' : '회원 모드'}

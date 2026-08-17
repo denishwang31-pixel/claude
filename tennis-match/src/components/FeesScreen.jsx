@@ -13,6 +13,7 @@ import { setFeePaid, subExpenses, addExpense, deleteExpense } from '../lib/fires
 import { FEE_CYCLE } from '../lib/constants';
 import { DateField, Label } from './pickers';
 import { VenuePicker } from './VenuePicker';
+import { DuesPools } from './DuesPoolScreen';
 import { Card, SectionTitle, Chip, Btn, Field } from './ui';
 import { C, S } from '../lib/theme';
 
@@ -25,9 +26,10 @@ const EXPENSE_CATS = ['코트 대관', '공·소모품', '경조사', '회식', 
 export function Fees({
   clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash,
   venues = [], seeFees = true, seeAllVenues = true, myLeadVenues = [],
+  pools = [],
 }) {
   const [cycle, setCycle] = useState(FEE_CYCLE.MONTHLY);
-  const [tab, setTab] = useState('income'); // income | expense
+  const [tab, setTab] = useState('income'); // income | expense | pool
   const [paste, setPaste] = useState('');
   const [expenses, setExpenses] = useState([]);
   const [adding, setAdding] = useState(false);
@@ -170,11 +172,18 @@ export function Fees({
       </Card>
 
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-        <Tab v="income" label="회비 납부" />
-        <Tab v="expense" label="지출 관리" />
+        <Tab v="income" label="정기 회비" />
+        <Tab v="expense" label="지출" />
+        <Tab v="pool" label="일회성 정산" />
       </View>
 
-      {tab === 'income' ? (
+      {tab === 'pool' ? (
+        /* 대회·캠프·회식처럼 그때그때 걷는 돈. 정기 회비와 성격이 달라
+           탭으로 분리하되, 돈 관리는 이 화면 하나에서 끝나게 둔다. */
+        <View style={{ marginTop: 12 }}>
+          <DuesPools {...{ clubId, club, members, pools, isAdmin, flash }} />
+        </View>
+      ) : tab === 'income' ? (
         <View>
           <SectionTitle>
             {periodKey} 납부 현황 ({paidN}/{active.length} · {pct}%)

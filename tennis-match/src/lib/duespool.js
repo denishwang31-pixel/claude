@@ -138,9 +138,99 @@ export function shareText(pool, membersById = {}, { clubName, account } = {}) {
   return L.join('\n');
 }
 
+/* ============================================================
+   이벤트 묶음 — 한 행사에서 정산이 여러 번 나오는 경우
+
+   예: 가을 캠프
+     · 숙박비   전원 1/N
+     · 저녁 회식 참석한 사람만
+     · 렌트카   차에 탄 사람만
+   각각 참여자도 금액도 다르다. 그런데 회원 입장에서는
+   "캠프로 내가 얼마 내야 하나"가 궁금하다.
+
+   그래서 정산마다 groupId 를 달아 같은 이벤트로 묶고, 회원별 합계를
+   따로 낸다. 정산 하나짜리 이벤트도 같은 구조로 다룬다.
+   ============================================================ */
+
+/** 같은 이벤트로 묶어서 돌려준다. 최근 이벤트가 앞에 온다. */
+export function groupPools(pools = [], membersById = {}) {
+  const map = new Map();
+
+  pools.forEach((p) => {
+    const gid = p.groupId || p.id;
+    if (!map.has(gid)) {
+      map.set(gid, { groupId: gid, title: p.groupTitle || p.title, items: [] });
+    }
+    const g = map.get(gid);
+    g.items.push(p);
+    /* 묶음 제목은 groupTitle 이 있는 것을 우선한다 */
+    if (p.groupTitle) g.title = p.groupTitle;
+  });
+
+  const groups = [...map.values()].map((g) => {
+    const items = g.items
+      .slice()
+      .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+
+    /* 회원별로 이 이벤트에서 내야 할 총액 / 낸 금액 */
+    const perMember = {};
+    items.forEach((p) => {
+      const { shares } = computeShares(p);
+      Object.entries(shares).forEach(([id, amt]) => {
+        if (!perMember[id]) perMember[id] = { id, name: membersById[id]?.name || '(탈퇴)', due: 0, paid: 0 };
+        perMember[id].due += amt;
+        if ((p.paid || {})[id]) perMember[id].paid += amt;
+      });
+    });
+
+    const rows = Object.values(perMember)
+      .map((r) => ({ ...r, outstanding: r.due - r.paid, done: r.paid >= r.due }))
+      .sort((a, b) => Number(a.done) - Number(b.done)
+        || String(a.name).localeCompare(String(b.name), 'ko'));
+
+    const total = rows.reduce((t, r) => t + r.due, 0);
+    const collected = rows.reduce((t, r) => t + r.paid, 0);
+
+    return {
+      groupId: g.groupId,
+      title: g.title,
+      items,
+      rows,
+      date: items[0]?.date || '',
+      category: items[0]?.category || '',
+      total,
+      collected,
+      outstanding: total - collected,
+      memberCount: rows.length,
+      itemCount: items.length,
+      done: rows.length > 0 && rows.every((r) => r.done),
+    };
+  });
+
+  return groups.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+/** 한 회원이 이 이벤트에서 내야 할 항목별 내역 — 회원 화면용 */
+export function memberBreakdown(group, memberId) {
+  if (!group) return { items: [], due: 0, paid: 0, outstanding: 0 };
+  const items = group.items
+    .map((p) => {
+      const { shares } = computeShares(p);
+      const amount = shares[memberId];
+      if (amount === undefined) return null;
+      return { id: p.id, title: p.title, amount, paid: !!(p.paid || {})[memberId] };
+    })
+    .filter(Boolean);
+  const due = items.reduce((t, x) => t + x.amount, 0);
+  const paid = items.filter((x) => x.paid).reduce((t, x) => t + x.amount, 0);
+  return { items, due, paid, outstanding: due - paid };
+}
+
 /** 새 정산 기본값 */
 export const blankPool = (date = new Date().toISOString().slice(0, 10)) => ({
   title: '',
+  groupId: '',      // 같은 이벤트의 다른 정산과 묶는 키 (비면 이 정산이 곧 이벤트)
+  groupTitle: '',   // 이벤트 이름 (예: 가을 캠프)
   category: POOL_CATEGORIES[0],
   date,
   dueDate: '',

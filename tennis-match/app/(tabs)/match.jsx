@@ -279,6 +279,7 @@ export default function Match() {
     pathname: '/(tabs)/more',
     params: {
       open: 'guest',
+      from: 'match',
       draftMeetingId: meeting?.id || '',
       draftNeedM: String(guest.m || 0),
       draftNeedF: String(guest.f || 0),

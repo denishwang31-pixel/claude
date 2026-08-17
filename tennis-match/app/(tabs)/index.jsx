@@ -133,7 +133,13 @@ export default function Home() {
      일정·대진 화면이 그걸 직접 본다. */
   const go = (target) => {
     if (typeof target === 'string') return router.push(target);
-    return router.push({ pathname: '/(tabs)/more', params: { open: target.more } });
+    /* from: 'home' — 더보기 화면의 뒤로가기가 목록이 아니라 홈으로 가게 한다.
+       홈에서 [회원]을 눌렀는데 뒤로가기가 더보기 목록으로 가면,
+       가 본 적 없는 화면으로 돌아가는 셈이라 어색하다. */
+    return router.push({
+      pathname: '/(tabs)/more',
+      params: { open: target.more, from: 'home' },
+    });
   };
 
   /* 코트를 고르지 않았고 코트장이 여러 곳이면, 어느 코트를 볼지 먼저 묻는다.

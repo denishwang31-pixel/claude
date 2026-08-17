@@ -467,6 +467,16 @@ export const handOverManager = async (clubId, fromId, toId) => {
 export const subHandoverHistory = (clubId, cb) =>
   onSnapshot(D(clubId, 'meta', 'handover'), (d) => cb(d.exists() ? (d.data().history || []) : []));
 
+/** 내 회원 문서 한 번 읽기 — 클럽을 옮길 때 프로필을 그대로 가져오려고 쓴다 */
+export const getMyMember = async (clubId, uid) => {
+  try {
+    const d = await getDoc(D(clubId, 'members', uid));
+    return d.exists() ? { id: d.id, ...d.data() } : null;
+  } catch (e) {
+    return null;
+  }
+};
+
 export const addCourt = (clubId, data) => addDoc(C(clubId, 'courts'), data);
 export const deleteCourt = (clubId, id) => deleteDoc(D(clubId, 'courts', id));
 
