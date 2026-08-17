@@ -119,5 +119,74 @@ for (const file of files) {
 }
 
 console.log(`[이름 ${checked}개 대조]`);
+
+/* ---- 두 번째 검사: 임포트하지 않고 쓰는 이름 ----
+
+   normalizeRoundMinutes 를 쓰면서 import 를 빠뜨린 적이 있다. 그러면
+   그 화면을 열 때 "... is not defined" 로 죽는다. 첫 번째 검사는
+   "가져온 것이 있는가"만 봤지 "쓰는 것을 가져왔는가"는 못 봤다.
+
+   src/lib 이 내보내는 이름들을 모아 두고, 각 파일에서 그 이름을
+   쓰는데 어디서도 안 가져왔으면 잡는다. */
+const libNames = new Map();   // 이름 → 그 이름을 내보내는 파일
+for (const f of walk(join(ROOT, 'src/lib'))) {
+  for (const n of exportsOf(f).names) {
+    if (n !== 'default' && !libNames.has(n)) libNames.set(n, f.slice(ROOT.length + 1));
+  }
+}
+
+let scanned = 0;
+for (const file of files) {
+  if (file.includes(`${'/'}src${'/'}lib${'/'}`)) continue;   // 라이브러리끼리는 건너뛴다
+  const rel = file.slice(ROOT.length + 1);
+  const raw = readFileSync(file, 'utf8');
+  /* 주석과 문자열은 실제 사용이 아니다 — 지우고 본다 */
+  const src = raw
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ')
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
+
+  /* 이 파일이 이미 알고 있는 이름들 — 가져왔거나, 여기서 선언했거나 */
+  const known = new Set();
+  for (const m of raw.matchAll(/import\s+([^;]*?)\s+from\s+['"][^'"]+['"]/g)) {
+    const braces = m[1].match(/\{([^}]*)\}/);
+    if (braces) {
+      braces[1].split(',').forEach((part) => {
+        const t = part.trim();
+        if (t) known.add(t.split(/\s+as\s+/).pop().trim());
+      });
+    }
+    const head = m[1].split('{')[0].replace(/,$/, '').trim();
+    if (head) known.add(head.replace(/^\*\s+as\s+/, ''));
+  }
+  for (const m of src.matchAll(/(?:const|let|var|function\s*\*?|class)\s+([A-Za-z_$][\w$]*)/g)) {
+    known.add(m[1]);
+  }
+  /* 객체 구조분해 — const { a, b } = ... , 함수 파라미터 ({ a, b }) 포함 */
+  for (const m of src.matchAll(/\{([^{}]*)\}\s*(?:=[^=>]|=>|\))/g)) {
+    m[1].split(',').forEach((part) => {
+      const t = part.split(':').pop().split('=')[0].trim().replace(/^\.\.\./, '');
+      if (/^[A-Za-z_$][\w$]*$/.test(t)) known.add(t);
+    });
+  }
+  /* 배열 구조분해 — const [a, setA] = useState(...) */
+  for (const m of src.matchAll(/(?:const|let|var)\s*\[([^\]]*)\]\s*=/g)) {
+    m[1].split(',').forEach((part) => {
+      const t = part.split('=')[0].trim().replace(/^\.\.\./, '');
+      if (/^[A-Za-z_$][\w$]*$/.test(t)) known.add(t);
+    });
+  }
+
+  for (const [name, from] of libNames) {
+    if (known.has(name)) continue;
+    // 식별자 단독으로 쓰였는지 (점 뒤에 붙은 속성명은 제외)
+    const used = new RegExp(`(^|[^.\\w$])${name}\\s*[(<,);.\\]}]`).test(src);
+    if (!used) continue;
+    scanned += 1;
+    ok(false, `${rel}: '${name}' 를 쓰는데 import 가 없습니다 (${from}) — 화면을 열면 앱이 죽습니다`);
+  }
+}
+console.log('[가져오지 않고 쓰는 이름 검사]');
 console.log(`\n임포트 검증: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

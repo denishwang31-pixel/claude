@@ -144,6 +144,44 @@ export const DRAW_MODES = [
   },
 ];
 
+/* ============================================================
+   한 타임(게임) 길이
+
+   자주 쓰는 20·30·40분은 버튼으로 바로 고르고, 그 밖의 값은
+   [직접 지정]에서 5분 단위로 고른다. 클럽마다 코트 사용 시간과
+   타임 수가 달라서 45분·50분·1시간 15분 같은 값도 실제로 쓰인다.
+   ============================================================ */
+export const ROUND_MINUTES_PRESETS = [20, 30, 40];
+export const ROUND_MINUTES_MIN = 10;
+export const ROUND_MINUTES_MAX = 120;
+export const ROUND_MINUTES_STEP = 5;
+
+/** 5분 단위 선택지 (10분 ~ 120분) */
+export const ROUND_MINUTES_OPTIONS = Array.from(
+  { length: (ROUND_MINUTES_MAX - ROUND_MINUTES_MIN) / ROUND_MINUTES_STEP + 1 },
+  (_, i) => ROUND_MINUTES_MIN + i * ROUND_MINUTES_STEP,
+);
+
+/** 저장 전 보정 — 범위를 벗어나거나 5분 단위가 아니면 맞춰 준다 */
+export const normalizeRoundMinutes = (v) => {
+  /* null·undefined·빈 문자열은 "값이 없음"이다.
+     Number(null) 은 0이라 그냥 넘기면 최솟값(10분)으로 눌려 버린다. */
+  if (v === null || v === undefined || v === '') return 40;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 40;
+  const clamped = Math.min(ROUND_MINUTES_MAX, Math.max(ROUND_MINUTES_MIN, n));
+  return Math.round(clamped / ROUND_MINUTES_STEP) * ROUND_MINUTES_STEP;
+};
+
+/** "1시간 15분" 처럼 읽기 쉽게 */
+export const roundMinutesLabel = (v) => {
+  const n = normalizeRoundMinutes(v);
+  if (n < 60) return `${n}분`;
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  return m ? `${h}시간 ${m}분` : `${h}시간`;
+};
+
 /** 코트 표면 */
 export const SURFACES = ['하드', '클레이', '인조잔디', '실내'];
 

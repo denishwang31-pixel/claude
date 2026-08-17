@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { addVenue, updateVenue, deleteVenue } from '../lib/firestore';
 import { roundsFromSettings, toMinutes, DEFAULT_SETTINGS } from '../lib/schedule';
+import { normalizeRoundMinutes, roundMinutesLabel } from '../lib/constants';
+import { RoundMinutesPicker } from './RoundMinutesPicker';
 import { Card, SectionTitle, Chip, Btn, Field } from './ui';
 import { C } from '../lib/theme';
 
@@ -41,12 +43,10 @@ function VenueForm({ draft, setDraft, members, onSubmit, submitLabel, onCancel }
       </View>
 
       <Text style={{ fontSize: 11, color: C.sub, marginTop: 8, marginBottom: 4 }}>한 타임 길이</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {[20, 30, 40, 45, 60].map((v) => (
-          <Chip key={v} tone={Number(draft.roundMinutes) === v ? 'green' : 'outline'}
-            onPress={() => setDraft({ ...draft, roundMinutes: v })}>{v}분</Chip>
-        ))}
-      </View>
+      <RoundMinutesPicker
+        value={draft.roundMinutes}
+        onChange={(v) => setDraft({ ...draft, roundMinutes: v })}
+      />
 
       <Text style={{ fontSize: 11, color: C.sub, marginTop: 10, marginBottom: 4 }}>
         리드 담당자 <Text style={{ color: C.faint }}>(이 코트장 운영을 맡는 회원)</Text>
@@ -92,7 +92,7 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
     courts: Math.max(1, Math.min(20, Number(d.courts) || 1)),
     startTime: d.startTime,
     endTime: d.endTime,
-    roundMinutes: Number(d.roundMinutes) || 40,
+    roundMinutes: normalizeRoundMinutes(d.roundMinutes),
     leadId: d.leadId || null,
     addr: (d.addr || '').trim(),
   });
@@ -128,7 +128,7 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 15, fontWeight: '800' }}>{v.name}</Text>
                 <Text style={{ fontSize: 12, color: C.sub, marginTop: 3 }}>
-                  {v.startTime}~{v.endTime} · {v.courts}면 · {v.roundMinutes}분/타임 → {roundsFromSettings(v)}타임
+                  {v.startTime}~{v.endTime} · {v.courts}면 · {roundMinutesLabel(v.roundMinutes)}/타임 → {roundsFromSettings(v)}타임
                 </Text>
                 {v.addr ? <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>{v.addr}</Text> : null}
                 <View style={{ flexDirection: 'row', gap: 6, marginTop: 6 }}>

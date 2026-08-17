@@ -20,7 +20,7 @@ import {
   addDuesPool, updateDuesPool, deleteDuesPool, setPoolPaid,
 } from '../lib/firestore';
 import { DateField, Label } from './pickers';
-import { Segmented, Fab } from './native';
+import { Segmented } from './native';
 import { Card, SectionTitle, Chip, Btn, Field, StatCard, EmptyState } from './ui';
 import { C, S, R, F } from '../lib/theme';
 
@@ -177,6 +177,18 @@ export function DuesPools({ clubId, club, members, pools = [], isAdmin, flash })
 
   return (
     <View style={{ flex: 1 }}>
+      {/* 새 정산 버튼.
+
+         예전에는 화면 위에 떠 있는 동그란 버튼(FAB)이었는데, 이 화면이
+         [회비·지출] 안에 끼워지면서 스크롤 중간에 붙박여 목록을 가렸다.
+         떠 있지 않고 목록 맨 위에 놓는다. */}
+      {isAdmin && groups.length > 0 && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+          <Text style={[F.label, { flex: 1 }]}>행사 {groups.length}건</Text>
+          <Btn small onPress={() => start()}>＋ 새 정산</Btn>
+        </View>
+      )}
+
       {groups.length === 0 ? (
         <EmptyState
           title="일회성 정산이 없습니다"
@@ -311,9 +323,6 @@ export function DuesPools({ clubId, club, members, pools = [], isAdmin, flash })
         );
       })}
 
-      {isAdmin && groups.length > 0 && (
-        <Fab icon="＋" label="새 정산" onPress={() => start()} />
-      )}
 
       {/* 새 정산 / 수정 — 팝업 */}
       <Modal visible={open && !!draft} animationType="slide" transparent onRequestClose={close}>

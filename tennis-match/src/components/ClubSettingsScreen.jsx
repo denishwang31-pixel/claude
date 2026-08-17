@@ -17,9 +17,11 @@ import { updateClubSettings, saveClubProfile } from '../lib/firestore';
 import {
   DEFAULT_SETTINGS, roundsFromSettings, roundTimes, toMinutes,
 } from '../lib/schedule';
+import { normalizeRoundMinutes } from '../lib/constants';
 import { RegionPicker } from './RegionPicker';
 import { Icon } from './Icon';
 import { Label } from './pickers';
+import { RoundMinutesPicker } from './RoundMinutesPicker';
 import { Card, SectionTitle, Chip, Btn, Field } from './ui';
 import { C, S, R, F } from '../lib/theme';
 
@@ -45,7 +47,7 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
     if (!startOk || !endOk) return flash('시간 형식을 확인하세요 (예: 10:00)');
     if (!profile.name.trim()) return flash('클럽 이름을 입력하세요');
     const courts = Math.max(1, Math.min(20, Number(s.courts) || 1));
-    const roundMinutes = Math.max(10, Math.min(180, Number(s.roundMinutes) || 40));
+    const roundMinutes = normalizeRoundMinutes(s.roundMinutes);
     try {
       await updateClubSettings(clubId, { ...s, courts, roundMinutes });
       // 이름·이미지·비밀번호 + 공개 검색 목록 동기화
@@ -181,11 +183,11 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
 
         <View style={{ marginTop: S.md }}>
           <Label>한 타임(게임) 길이</Label>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {[20, 30, 40, 45, 60].map((v) => (
-              <Chip key={v} tone={Number(s.roundMinutes) === v ? 'green' : 'outline'} onPress={() => set('roundMinutes', v)}>{v}분</Chip>
-            ))}
-          </View>
+          <RoundMinutesPicker
+            value={s.roundMinutes}
+            onChange={(v) => set('roundMinutes', v)}
+            hint="자주 쓰는 값은 버튼으로, 그 밖의 값은 [직접 지정]에서 5분 단위로 고릅니다."
+          />
         </View>
 
         {rounds > 0 && (

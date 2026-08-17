@@ -318,11 +318,11 @@ export default function Onboarding() {
   return (
     <ScrollView style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={{ padding: 24, paddingTop: 56, paddingBottom: 48 }}>
       <Text style={{ fontSize: 22, fontWeight: '700', color: C.ink }}>
-        {switching ? '클럽 옮기기' : '시작하기'}
+        {switching ? '클럽 찾기' : '시작하기'}
       </Text>
       <Text style={{ fontSize: 12, color: C.sub, marginTop: 4 }}>
         {switching
-          ? `${myName ? `${myName}님, ` : ''}가입할 클럽을 찾아보세요. 지금 클럽은 그대로 유지됩니다.`
+          ? `${myName ? `${myName}님, ` : ''}다른 클럽을 찾아보세요. 둘러보기만 해도 됩니다.`
           : '클럽은 나중에 정해도 됩니다. 우선 이름만 알려주세요.'}
       </Text>
 

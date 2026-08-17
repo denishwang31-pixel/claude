@@ -11,7 +11,7 @@
              EmptyState(빈 화면), Divider, Badge, ListRow
    ============================================================ */
 import React from 'react';
-import { View, Text, Pressable, TextInput, ScrollView } from 'react-native';
+import { View, Text, Pressable, TextInput, ScrollView, StyleSheet } from 'react-native';
 import { C, S, R, F, SHADOW } from '../lib/theme';
 import { isGuestId } from '../lib/constants';
 import { Icon } from './Icon';
@@ -131,24 +131,50 @@ export const Btn = ({ children, onPress, tone = 'primary', full, small, disabled
 };
 
 /* ---------------- Field ---------------- */
-export const Field = ({ style, error, suffix, ...props }) => (
-  <View>
-    <View style={{
-      flexDirection: 'row', alignItems: 'center',
-      backgroundColor: C.fill, borderRadius: R.md,
-      borderWidth: 1, borderColor: error ? C.danger : 'transparent',
-      paddingHorizontal: 12,
-    }}>
-      <TextInput
-        placeholderTextColor={C.faint}
-        style={[{ flex: 1, paddingVertical: 12, fontSize: 15, color: C.text }, style]}
-        {...props}
-      />
-      {!!suffix && <Text style={{ fontSize: 13, color: C.sub, fontWeight: '600' }}>{suffix}</Text>}
+/* 입력칸.
+
+   레이아웃 속성은 바깥 껍데기로 보낸다.
+     예전에는 style 을 통째로 안쪽 TextInput 에만 넘겼다. 그래서
+     <Field style={{ flex: 1 }} /> 를 가로줄에 놓으면 flex 가 껍데기에
+     안 붙고, 껍데기가 내용 크기로 쪼그라들어 입력칸이 거의 사라졌다.
+     (클럽 검색창이 눌리지도 입력되지도 않던 이유)
+
+   그래서 flex·width·margin 같은 배치용 속성은 껍데기가 갖고,
+   글자 크기·색 같은 것만 TextInput 에 넘긴다. */
+const OUTER_KEYS = [
+  'flex', 'flexGrow', 'flexShrink', 'flexBasis', 'alignSelf',
+  'width', 'minWidth', 'maxWidth',
+  'margin', 'marginTop', 'marginBottom', 'marginLeft', 'marginRight',
+  'marginHorizontal', 'marginVertical',
+];
+
+export const Field = ({ style, error, suffix, ...props }) => {
+  const flat = StyleSheet.flatten(style) || {};
+  const outer = {};
+  const inner = {};
+  Object.entries(flat).forEach(([k, v]) => {
+    if (OUTER_KEYS.includes(k)) outer[k] = v; else inner[k] = v;
+  });
+
+  return (
+    <View style={outer}>
+      <View style={{
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: C.fill, borderRadius: R.md,
+        borderWidth: 1, borderColor: error ? C.danger : 'transparent',
+        paddingHorizontal: 12,
+      }}>
+        <TextInput
+          placeholderTextColor={C.faint}
+          style={[{ flex: 1, paddingVertical: 12, fontSize: 15, color: C.text }, inner]}
+          {...props}
+        />
+        {!!suffix && <Text style={{ fontSize: 13, color: C.sub, fontWeight: '600' }}>{suffix}</Text>}
+      </View>
+      {!!error && <Text style={{ fontSize: 11, color: C.danger, marginTop: 4 }}>{error}</Text>}
     </View>
-    {!!error && <Text style={{ fontSize: 11, color: C.danger, marginTop: 4 }}>{error}</Text>}
-  </View>
-);
+  );
+};
 
 /* ---------------- IconTile — 기능 바로가기 ---------------- */
 export const IconTile = ({ icon, label, onPress, badge, width }) => (

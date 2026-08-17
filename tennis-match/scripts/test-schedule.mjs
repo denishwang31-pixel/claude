@@ -30,5 +30,35 @@ const desc = S.describeSettings({ startTime: '10:00', endTime: '13:00', roundMin
 ok(desc.includes('4타임') && desc.includes('3면'), `요약 문장: ${desc}`);
 ok(S.DEFAULT_SETTINGS.allowMixedDefault === false, '잡복 기본값은 금지');
 
+/* ---- 한 타임 길이 — 5분 단위 지정 ---- */
+{
+  const {
+    ROUND_MINUTES_PRESETS, ROUND_MINUTES_OPTIONS, ROUND_MINUTES_STEP,
+    normalizeRoundMinutes, roundMinutesLabel,
+  } = await import('../src/lib/constants.js');
+
+  console.log('\n[한 타임 길이]');
+  ok(ROUND_MINUTES_PRESETS.join() === '20,30,40', '기본 버튼은 20·30·40분');
+  ok(ROUND_MINUTES_OPTIONS.every((v, i, a) => i === 0 || v - a[i - 1] === ROUND_MINUTES_STEP),
+    '선택지가 5분 간격');
+  ok(ROUND_MINUTES_OPTIONS[0] === 10, '10분부터');
+  ok(ROUND_MINUTES_OPTIONS[ROUND_MINUTES_OPTIONS.length - 1] === 120, '120분까지');
+  ok(ROUND_MINUTES_OPTIONS.includes(45) && ROUND_MINUTES_OPTIONS.includes(50),
+    '45·50분 같은 값도 고를 수 있다');
+
+  ok(normalizeRoundMinutes(43) === 45, '5분 단위로 보정 (43 → 45)');
+  ok(normalizeRoundMinutes(42) === 40, '5분 단위로 보정 (42 → 40)');
+  ok(normalizeRoundMinutes(5) === 10, '최솟값 아래는 10분으로');
+  ok(normalizeRoundMinutes(999) === 120, '최댓값 위는 120분으로');
+  ok(normalizeRoundMinutes('40') === 40, '문자열도 처리');
+  ok(normalizeRoundMinutes(undefined) === 40, '값이 없으면 기본 40분');
+  ok(normalizeRoundMinutes(null) === 40, 'null 도 기본값');
+
+  ok(roundMinutesLabel(40) === '40분', '한 시간 미만은 분으로');
+  ok(roundMinutesLabel(60) === '1시간', '정시는 시간만');
+  ok(roundMinutesLabel(75) === '1시간 15분', '시간 + 분');
+  ok(roundMinutesLabel(120) === '2시간', '2시간');
+}
+
 console.log(`\n설정 유틸 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);
