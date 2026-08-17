@@ -216,6 +216,14 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['claims']);
       }
 
+      /* 일회성 정산(대회·캠프·회식) — 개설·납부 체크는 회장·총무.
+         참여자는 자기 몫이 얼마인지 알아야 하므로 읽기는 회원 전체에 연다.
+         (정기 회비와 달리 "누가 참여하고 얼마 내는지"는 원래 공유되는 정보다) */
+      match /duesPools/{poolId} {
+        allow read: if isClubMember(clubId);
+        allow write: if canSeeFees(clubId);
+      }
+
       /* 회비 외 수입(게스트비·대회 등) — 결산에 들어가므로 회장·총무만 */
       match /incomes/{incomeId} {
         allow read, write: if canSeeFees(clubId);

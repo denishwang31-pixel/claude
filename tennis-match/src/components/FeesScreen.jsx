@@ -110,7 +110,7 @@ export function Fees({
   const Tab = ({ v, label }) => (
     <Pressable onPress={() => setTab(v)}
       style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', backgroundColor: tab === v ? C.green : '#fff', borderWidth: tab === v ? 0 : 1, borderColor: C.border }}>
-      <Text style={{ fontWeight: '700', fontSize: 13, color: tab === v ? C.lime : C.sub }}>{label}</Text>
+      <Text style={{ fontWeight: '700', fontSize: 13, color: tab === v ? '#fff' : C.sub }}>{label}</Text>
     </Pressable>
   );
 
@@ -191,7 +191,7 @@ export function Fees({
                 <Text style={{ fontSize: 14, fontWeight: '600' }}>{m.name}</Text>
                 <Pressable onPress={() => togglePaid(m.id)}
                   style={{ paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999, backgroundColor: paidMap[m.id] ? C.green : '#fee2e2' }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: paidMap[m.id] ? C.lime : '#b91c1c' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: paidMap[m.id] ? '#fff' : '#b91c1c' }}>
                     {paidMap[m.id] ? '납부' : '미납'}
                   </Text>
                 </Pressable>

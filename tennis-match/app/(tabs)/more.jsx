@@ -12,7 +12,7 @@ import { computeStats } from '../../src/lib/matchmaking';
 import { logout } from '../../src/lib/auth';
 import {
   subJoinRequests, subFeeAliases, subDunningLog, subExpenses,
-  subHandoverHistory, loadAllFees, subFeeClaims,
+  subHandoverHistory, loadAllFees, subFeeClaims, subDuesPools,
 } from '../../src/lib/firestore';
 import { JOIN_STATUS, normalizeRole } from '../../src/lib/constants';
 import { Board, Guest, Courts } from '../../src/components/MoreScreens';
@@ -23,6 +23,7 @@ import { Dunning } from '../../src/components/DunningScreen';
 import { Settlement } from '../../src/components/SettlementScreen';
 import { Handover } from '../../src/components/HandoverScreen';
 import { MyFees } from '../../src/components/MyFeesScreen';
+import { DuesPools } from '../../src/components/DuesPoolScreen';
 import { Ntrp } from '../../src/components/NtrpScreen';
 import { Tournaments } from '../../src/components/TournamentScreen';
 import { Attendance } from '../../src/components/AttendanceScreen';
@@ -58,6 +59,7 @@ const MENU_GROUPS = [
       ['rank', 'rank', '랭킹·기록', null],
       ['ntrp', 'ntrp', 'NTRP 등급', null],
       ['myfees', 'fees', '내 회비', '내 납부 현황 확인'],
+      ['duespool', 'fees', '일회성 정산', '대회 · 캠프 · 회식 나눠내기'],
       ['members', 'members', '회원', null],
       ['courts', 'courts', '코트 검색', '주변 공공·사설 테니스장 찾기'],
     ],
@@ -69,7 +71,7 @@ const MENU_GROUPS = [
       ['joinreq', 'joinreq', '가입 신청', '검색으로 들어온 신청을 승인'],
       ['invite', 'invite', '클럽 초대', '초대코드·링크 보내기'],
       ['attendance', 'attendance', '출석', null],
-      ['fees', 'fees', '회비·지출', '회장·총무만', 'fees'],
+      ['fees', 'fees', '정기 회비·지출', '매달 걷는 회비', 'fees'],
       ['reconcile', 'fees', '입금 대사', '거래내역 붙여넣기 → 자동 확인', 'fees'],
       ['dunning', 'polls', '회비 알림', '미납자에게 개별 발송', 'fees'],
       ['settlement', 'rank', '결산·회계보고', '총회 자료 자동 생성', 'fees'],
@@ -86,7 +88,7 @@ const MENU_GROUPS = [
 const MENU_FLAT = MENU_GROUPS.flatMap((g) => g.items.map(([k, , label]) => [k, label]));
 
 export default function More() {
-  const { clubId, me, viewMode, resetOnboarding } = useApp();
+  const { clubId, me, viewMode, resetOnboarding, openOnboarding } = useApp();
   const bottomPad = useBottomPad();
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -121,6 +123,7 @@ export default function More() {
   const [allFees, setAllFees] = useState([]);
   const [handoverLog, setHandoverLog] = useState([]);
   const [feeClaims, setFeeClaims] = useState([]);
+  const [duesPools, setDuesPools] = useState([]);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
 
   const {
@@ -157,6 +160,12 @@ export default function More() {
     return subHandoverHistory(clubId, setHandoverLog);
   }, [clubId]);
 
+  /* 일회성 정산은 참여자 본인도 자기 몫을 알아야 하므로 회원 전체가 구독한다 */
+  useEffect(() => {
+    if (!clubId) return undefined;
+    return subDuesPools(clubId, setDuesPools);
+  }, [clubId]);
+
   /* 안드로이드 하드웨어 뒤로 = 화면 안 [‹ 뒤로] 와 동일 동작 */
   const goBack = () => setSub(null);
   useBackHandler(() => {
@@ -182,6 +191,9 @@ export default function More() {
       case 'venues': return <Venues {...{ clubId, club, venues, members, isAdmin, flash }} />;
       case 'matchcfg': return <MatchConfig {...{ clubId, matchConfig, rules, isAdmin, flash }} />;
       case 'myfees': return <MyFees {...{ clubId, club, me, meVal, flash }} />;
+      case 'duespool': return (
+        <DuesPools {...{ clubId, club, members, pools: duesPools, isAdmin: seeFees, flash }} />
+      );
       case 'reconcile': return (
         <Reconcile {...{
           clubId, club, members, fee, periodKey: feeMonth, aliases: feeAliases, flash,
@@ -211,7 +223,17 @@ export default function More() {
         }} />
       );
       case 'board': return <Board {...{ clubId, posts, meVal, me, isAdmin, flash }} />;
-      case 'guest': return <Guest {...{ clubId, club, guestPosts, meetings, venues, me, meVal, isAdmin, flash }} />;
+      case 'guest': return (
+        <Guest {...{
+          clubId, club, guestPosts, meetings, venues, me, meVal, isAdmin, flash,
+          draft: params?.draftMeetingId ? {
+            meetingId: String(params.draftMeetingId),
+            needM: Number(params.draftNeedM) || 0,
+            needF: Number(params.draftNeedF) || 0,
+            text: String(params.draftText || ''),
+          } : null,
+        }} />
+      );
       case 'courts': return <Courts {...{ clubId, courts, isAdmin, flash }} />;
       case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, flash }} />;
       case 'joinreq': return <JoinRequests {...{ clubId, club, members, isAdmin, flash }} />;
@@ -227,12 +249,12 @@ export default function More() {
       '새로운 클럽을 만들면 그 클럽의 회장이 됩니다.\n지금 클럽의 데이터는 그대로 남아 있고, 나중에 초대코드로 다시 참여할 수 있습니다.',
       [
         { text: '취소', style: 'cancel' },
-        { text: '계속', onPress: () => router.push('/onboarding?mode=create') },
+        { text: '계속', onPress: () => { openOnboarding?.(); router.push('/onboarding?mode=create'); } },
       ],
     );
   };
 
-  const findClub = () => { resetOnboarding?.(); router.push('/onboarding'); };
+  const findClub = () => { openOnboarding?.(); resetOnboarding?.(); router.push('/onboarding'); };
 
   /* ---------- 클럽에 아직 속하지 않은 상태(둘러보기) ---------- */
   if (!clubId) {
@@ -250,7 +272,7 @@ export default function More() {
 
           <View style={{ marginTop: 12, gap: 8 }}>
             <Btn full onPress={findClub}>클럽 찾아 가입 신청</Btn>
-            <Btn full tone="ghost" onPress={() => router.push('/onboarding?mode=create')}>새 클럽 만들기</Btn>
+            <Btn full tone="ghost" onPress={() => { openOnboarding?.(); router.push('/onboarding?mode=create'); }}>새 클럽 만들기</Btn>
           </View>
 
           <Card style={{ marginTop: 16 }}>

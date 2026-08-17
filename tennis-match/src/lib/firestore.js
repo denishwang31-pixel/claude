@@ -426,6 +426,25 @@ export const loadAllFees = async (clubId) => {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 };
 
+/* ---- 일회성 정산 (대회·캠프·회식) ----
+   정기 회비와 성격이 달라 별도 컬렉션으로 둔다. 참여자만, 한 번만 낸다. */
+export const subDuesPools = (clubId, cb) =>
+  onSnapshot(C(clubId, 'duesPools'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))));
+
+export const addDuesPool = (clubId, data) =>
+  addDoc(C(clubId, 'duesPools'), { ...data, createdAt: serverTimestamp() });
+
+export const updateDuesPool = (clubId, id, patch) =>
+  updateDoc(D(clubId, 'duesPools', id), patch);
+
+export const deleteDuesPool = (clubId, id) => deleteDoc(D(clubId, 'duesPools', id));
+
+/** 한 사람의 납부 표시 토글 */
+export const setPoolPaid = (clubId, id, memberId, paid) =>
+  updateDoc(D(clubId, 'duesPools', id), { [`paid.${memberId}`]: !!paid });
+
 /** 결산 수기 수입(게스트비·대회 등) */
 export const subIncomes = (clubId, cb) =>
   onSnapshot(C(clubId, 'incomes'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));

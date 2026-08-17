@@ -12,7 +12,7 @@ import { useVenueScope } from '../../src/hooks/useVenueScope';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import {
-  generateMatchesV5, collectPastPairs, diagnoseRoster, describeShortage, ROUND_TYPES,
+  generateMatchesV5, collectPastPairs, diagnoseRoster, describeShortage, ROUND_TYPES, guestNeed,
 } from '../../src/lib/matchmaking';
 import {
   generateKdk, splitKdkGroups, kdkStandingsByGroup, kdkQuality,
@@ -267,6 +267,25 @@ export default function Match() {
   const matches = meeting?.matches || [];
   const nM = attendees.filter((p) => p.gender === 'M').length;
 
+  /* 지금 인원으로 코트를 다 채울 수 있는지, 못 채우면 남/여 몇 명이 더
+     필요한지. 단식 타임이면 코트당 2명 기준으로 계산한다. */
+  const guest = useMemo(
+    () => guestNeed(attendees, meeting?.courts || 0, roundIsSingles(1) ? 'SINGLES' : 'MX'),
+    [attendees, meeting?.courts, playMode, meeting?.singlesRounds],
+  );
+
+  /* 필요한 성비를 그대로 담아 게스트 모집 화면으로 넘긴다 */
+  const recruitGuests = () => router.push({
+    pathname: '/(tabs)/more',
+    params: {
+      open: 'guest',
+      draftMeetingId: meeting?.id || '',
+      draftNeedM: String(guest.m || 0),
+      draftNeedF: String(guest.f || 0),
+      draftText: guest.postText || '',
+    },
+  });
+
   const Header = (
     <View>
       {/* 코트장 드롭다운 */}
@@ -290,7 +309,7 @@ export default function Match() {
                     backgroundColor: on ? C.green : '#fff',
                     borderWidth: on ? 0 : 1, borderColor: C.border, alignItems: 'center', minWidth: 74,
                   }}>
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: on ? C.lime : C.ink }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: on ? '#fff' : C.ink }}>
                     {m.date.slice(5)}({dowName(m.date)})
                   </Text>
                   <Text style={{ fontSize: 9, color: on ? '#BFE3D3' : C.faint, marginTop: 1 }}>
@@ -338,6 +357,35 @@ export default function Match() {
             <Text style={{ fontSize: 12, color: C.sub, marginTop: 7 }}>
               참석 {attendees.length}명 (남 {nM} · 여 {attendees.length - nM})
             </Text>
+
+            {/* 게스트가 몇 명 필요한지 — 성비까지 계산해서 알려 준다.
+               총무가 머릿속으로 하던 계산이고, 여기서 바로 모집글로 넘어간다. */}
+            {!isKdk && (
+              <View style={{
+                marginTop: 10, padding: 11, borderRadius: R.md,
+                backgroundColor: guest.needed ? '#FFF7ED' : C.fill,
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{
+                      fontSize: 12, fontWeight: '700',
+                      color: guest.needed ? '#9A3412' : C.sub,
+                    }}>
+                      {guest.needed ? `게스트 ${guest.total}명 필요` : '게스트 없이 진행 가능'}
+                    </Text>
+                    <Text style={{
+                      fontSize: 11, marginTop: 3, lineHeight: 16,
+                      color: guest.needed ? '#9A3412' : C.faint,
+                    }}>
+                      {guest.reason}
+                    </Text>
+                  </View>
+                  {guest.needed && isAdmin && (
+                    <Btn small onPress={recruitGuests}>게스트 모집</Btn>
+                  )}
+                </View>
+              </View>
+            )}
 
             {/* 경기 방식 — 대진을 짤 때 정한다 */}
             {isAdmin && (

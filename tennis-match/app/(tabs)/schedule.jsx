@@ -1,6 +1,7 @@
 /* 일정 / RSVP — 캘린더·시간 선택, 정기 모임 반복 등록, 참석 체크 */
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, Alert, Modal } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useApp } from '../_layout';
 import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
@@ -33,7 +34,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 export default function Schedule() {
   const { clubId, me, viewMode } = useApp();
   const bottomPad = useBottomPad();
-  const { club, members, meetings, venues, isAdmin, scopeVenues, nameOf } =
+  const router = useRouter();
+  const { club, members, meetings, venues, isAdmin, scopeVenues, nameOf, tournaments } =
     useClub(clubId, me, { viewMode });
   const { venueId, setVenueId } = useVenueScope(scopeVenues);
   const settings = { ...DEFAULT_SETTINGS, ...(club?.settings || {}) };
@@ -78,13 +80,20 @@ export default function Schedule() {
     .filter((m) => (venueId ? m.venueId === venueId : true));
   const RSVP_OPTS = [[RSVP.YES, '참석'], [RSVP.MAYBE, '미정'], [RSVP.NO, '불참']];
 
+  const closeForm = () => { setOpen(false); setEditing(null); };
+
+  /* 대회는 단발성 이벤트라 정기 모임 목록에 섞이면 묻힌다 — 위에 따로 */
+  const upcomingTournaments = (tournaments || [])
+    .filter((t) => t.status !== 'done' && (!t.date || t.date >= today()))
+    .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+
   /* 안드로이드 뒤로 = 등록 폼이 열려 있으면 폼부터 닫는다.
 
      예전에는 여기서 코트 선택도 풀었는데(전체 코트로 되돌림), 그러면
      "뒤로가기를 눌렀더니 홈이 아니라 전체 일정이 나온다"가 된다.
      코트 선택은 홈에서 바꾸는 것이므로 뒤로가기가 건드리지 않는다. */
   useBackHandler(() => {
-    if (open) { setOpen(false); setEditing(null); return true; }
+    if (open) { closeForm(); return true; }
     return false;
   });
 
@@ -224,22 +233,43 @@ export default function Schedule() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenHeader
-        title={editing ? '모임 수정' : open ? '새 모임 등록' : '일정'}
-        subtitle={editing
-          ? `${editing.date} 기준`
-          : `${venueId ? (venues.find((v) => v.id === venueId)?.name || '') : club?.name || '테니스클럽'} · 예정 ${upcoming.length}건`}
-        onBack={open ? () => { setOpen(false); setEditing(null); } : undefined}
-        backLabel="일정"
+        title="일정"
+        subtitle={`${venueId ? (venues.find((v) => v.id === venueId)?.name || '') : club?.name || '테니스클럽'} · 예정 ${upcoming.length}건`}
       />
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
         {/* 코트장 필터 — 여러 곳을 운영하는 클럽 */}
-        {!open && scopeVenues.length > 1 && (
+        {scopeVenues.length > 1 && (
           <View style={{ marginBottom: S.md, zIndex: 20 }}>
             <VenuePicker venues={scopeVenues} value={venueId} onChange={setVenueId} />
           </View>
         )}
 
         <AdBanner ads={ads} slot={AD_SLOTS.SCHEDULE} variant="strip" style={{ marginBottom: S.md }} />
+
+        {/* 대회 — 정기 모임과 성격이 달라 목록 맨 위에 따로 둔다 */}
+        {upcomingTournaments.length > 0 && (
+          <>
+            <SectionTitle>대회</SectionTitle>
+            {upcomingTournaments.map((t) => (
+              <Card key={t.id} style={{ marginBottom: 10, borderColor: C.green, borderWidth: 1 }}
+                onPress={() => router.push({ pathname: '/(tabs)/more', params: { open: 'tournament' } })}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Icon name="tournament" size={19} color={C.green} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '700', fontSize: 14 }}>{t.name || '클럽 대회'}</Text>
+                    <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
+                      {t.date || '날짜 미정'}{t.date ? `(${dowName(t.date)})` : ''}
+                      {t.courts ? ` · ${t.courts}면` : ''}
+                      {t.roster?.length ? ` · 참가 ${t.roster.length}명` : ''}
+                    </Text>
+                  </View>
+                  <Icon name="forward" size={15} color={C.faint} />
+                </View>
+              </Card>
+            ))}
+            <SectionTitle>정기 모임</SectionTitle>
+          </>
+        )}
 
         {upcoming.map((mt) => {
           const w = weatherFor(mt.date, mt.forecast);
@@ -281,7 +311,7 @@ export default function Schedule() {
                     {RSVP_OPTS.map(([v, label]) => (
                       <Pressable key={v} onPress={() => { setRsvp(clubId, mt.id, me, v); flash(`${mt.date} ${label} 처리`); }}
                         style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', backgroundColor: mine === v ? C.green : '#f5f5f4' }}>
-                        <Text style={{ fontWeight: '700', fontSize: 13, color: mine === v ? C.lime : C.sub }}>{label} {counts[v] || 0}</Text>
+                        <Text style={{ fontWeight: '700', fontSize: 13, color: mine === v ? '#fff' : C.sub }}>{label} {counts[v] || 0}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -312,7 +342,7 @@ export default function Schedule() {
                                 paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
                                 backgroundColor: on ? C.green : v === RSVP.NO ? '#fee2e2' : '#f5f5f4',
                               }}>
-                              <Text style={{ fontSize: 11, fontWeight: '700', color: on ? C.lime : v === RSVP.NO ? '#b91c1c' : C.sub }}>
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: on ? '#fff' : v === RSVP.NO ? '#b91c1c' : C.sub }}>
                                 {m.name}{on ? ' ✓' : ''}
                               </Text>
                             </Pressable>
@@ -335,7 +365,7 @@ export default function Schedule() {
             </Card>
           );
         })}
-        {upcoming.length === 0 && !open && (
+        {upcoming.length === 0 && (
           <EmptyState
             icon="📅"
             title={venueId ? '이 코트장에 예정된 모임이 없습니다' : '예정된 모임이 없습니다'}
@@ -345,10 +375,45 @@ export default function Schedule() {
           />
         )}
 
-        {isAdmin && nd && (
-          <>
-            {open && (
-              <Card>
+      </ScrollView>
+
+
+      {/* 새 모임 / 모임 수정 — 팝업.
+
+         예전에는 이 폼을 목록 아래에 펼쳤다. [＋ 새 모임]을 눌러도
+         화면에는 여전히 목록이 보이고 폼은 한참 아래에 있어서
+         "버튼을 눌렀는데 등록할 데가 없다"가 됐다. 팝업으로 바꿔
+         누르는 즉시 입력 화면이 뜨게 한다. */}
+      <Modal
+        visible={!!open && !!nd}
+        animationType="slide"
+        transparent
+        onRequestClose={closeForm}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' }}>
+          <View style={{
+            backgroundColor: C.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+            maxHeight: '92%', paddingTop: 6,
+          }}>
+            {/* 손잡이 */}
+            <View style={{
+              width: 38, height: 4, borderRadius: 2, backgroundColor: C.border,
+              alignSelf: 'center', marginBottom: 8,
+            }} />
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', paddingHorizontal: S.lg,
+              paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.border,
+            }}>
+              <Text style={[F.h3, { flex: 1 }]}>{editing ? '모임 수정' : '새 모임 등록'}</Text>
+              <Pressable onPress={closeForm} hitSlop={10}>
+                <Text style={{ fontSize: 13, color: C.sub, fontWeight: '700' }}>닫기</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              contentContainerStyle={{ padding: S.lg, paddingBottom: 40 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              {!!nd && (<>
                 <Text style={{ fontSize: 11, color: C.faint, marginBottom: 10 }}>
                   클럽 기본: {describeSettings(settings)}
                 </Text>
@@ -471,14 +536,14 @@ export default function Schedule() {
                     </AppButton>
                   </View>
                 )}
-              </Card>
-            )}
-          </>
-        )}
-      </ScrollView>
+              </>)}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* 새 모임 — 목록 맨 아래가 아니라 항상 손 닿는 자리에 */}
-      {isAdmin && !open && (
+      {isAdmin && (
         <Fab icon="＋" label="새 모임" onPress={() => {
           setEditing(null);
           setNd({ ...blank(), venueId: venueId || null });

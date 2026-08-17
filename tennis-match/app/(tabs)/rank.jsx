@@ -45,7 +45,7 @@ export default function Rank() {
   const Tab = ({ v, label }) => (
     <Pressable onPress={() => setView(v)}
       style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', backgroundColor: view === v ? C.green : '#fff', borderWidth: view === v ? 0 : 1, borderColor: C.border }}>
-      <Text style={{ fontWeight: '700', fontSize: 13, color: view === v ? C.lime : C.sub }}>{label}</Text>
+      <Text style={{ fontWeight: '700', fontSize: 13, color: view === v ? '#fff' : C.sub }}>{label}</Text>
     </Pressable>
   );
 

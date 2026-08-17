@@ -17,7 +17,7 @@ const Scale = ({ value, onPick, disabledValues = [] }) => (
             paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
             backgroundColor: on ? C.green : '#f5f5f4', opacity: off ? 0.4 : 1,
           }}>
-          <Text style={{ fontSize: 13, fontWeight: '800', color: on ? C.lime : C.sub }}>{l.v.toFixed(1)}</Text>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: on ? '#fff' : C.sub }}>{l.v.toFixed(1)}</Text>
         </Pressable>
       );
     })}
@@ -34,7 +34,7 @@ export function Ntrp({ clubId, members, me, meVal, isAdmin, flash }) {
   const Tab = ({ v, label }) => (
     <Pressable onPress={() => setTab(v)}
       style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', backgroundColor: tab === v ? C.green : '#fff', borderWidth: tab === v ? 0 : 1, borderColor: C.border }}>
-      <Text style={{ fontWeight: '700', fontSize: 13, color: tab === v ? C.lime : C.sub }}>{label}</Text>
+      <Text style={{ fontWeight: '700', fontSize: 13, color: tab === v ? '#fff' : C.sub }}>{label}</Text>
     </Pressable>
   );
 

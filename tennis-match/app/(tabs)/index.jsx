@@ -33,6 +33,22 @@ import { C, S, R, F, SHADOW } from '../../src/lib/theme';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+/* 클럽 운영 — 홈에 바로 펼친다. [키, 라벨, 더보기 화면키, 권한] */
+const MANAGE = [
+  ['members', '회원', 'members'],
+  ['joinreq', '가입 신청', 'joinreq'],
+  ['attendance', '출석', 'attendance'],
+  ['fees', '회비·지출', 'fees', 'fees'],
+  ['reconcile', '입금 대사', 'reconcile', 'fees'],
+  ['polls', '회비 알림', 'dunning', 'fees'],
+  ['rank', '결산', 'settlement', 'fees'],
+  ['venues', '코트장', 'venues'],
+  ['matchcfg', '대진 설정', 'matchcfg'],
+  ['invite', '초대', 'invite'],
+  ['pairs', '커플·페어', 'pairs'],
+  ['settings', '클럽 설정', 'settings'],
+];
+
 /** 매일 쓰는 것만 바로가기로 — 나머지는 [더보기] */
 const QUICK = [
   ['schedule', '일정', '/(tabs)/schedule'],
@@ -48,7 +64,7 @@ export default function Home() {
   const router = useRouter();
   const {
     club, members, meetings, posts, guestPosts, venues, meVal,
-    isAdmin, realStaff, scopeVenues, seeAllVenues, realRole,
+    isAdmin, realStaff, scopeVenues, seeAllVenues, realRole, seeFees, tournaments,
   } = useClub(clubId, me, { viewMode });
   const { venueId, setVenueId } = useVenueScope(scopeVenues);
 
@@ -95,6 +111,16 @@ export default function Home() {
   const w = meeting ? weatherFor(meeting.date, meeting.forecast) : null;
   const yes = meeting
     ? Object.values(meeting.rsvp || {}).filter((v) => v === RSVP.YES).length + (meeting.guests?.length || 0) : 0;
+
+  /* 대회는 단발성 주요 이벤트다. [더보기] 안에 묻혀 있으면 아무도 못 본다.
+     다음 모임 바로 아래에 둬서 접근성을 올린다. */
+  const upcomingTournaments = useMemo(
+    () => (tournaments || [])
+      .filter((t) => t.status !== 'done' && (!t.date || t.date >= today()))
+      .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
+      .slice(0, 3),
+    [tournaments],
+  );
 
   const myStat = stats[me];
   const venueName = (id) => venues.find((v) => v.id === id)?.name;
@@ -295,6 +321,38 @@ export default function Home() {
           </View>
         </Pressable>
 
+        {/* 다가오는 대회 — 단발성이라 놓치기 쉽다. 다음 모임 바로 다음 자리 */}
+        {upcomingTournaments.length > 0 && (
+          <>
+            <SectionTitle right={<Chip tone="outline">{upcomingTournaments.length}건</Chip>}>
+              다가오는 대회
+            </SectionTitle>
+            {upcomingTournaments.map((t) => (
+              <Card key={t.id} style={{ marginBottom: S.sm }}
+                onPress={() => go({ more: 'tournament' })}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{
+                    width: 38, height: 38, borderRadius: R.md, backgroundColor: C.greenSoft,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Icon name="tournament" size={19} color={C.green} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={F.bodyBold} numberOfLines={1}>{t.name || '클럽 대회'}</Text>
+                    <Text style={[F.caption, { marginTop: 2 }]}>
+                      {t.date || '날짜 미정'}
+                      {t.date ? ` (${dowName(t.date)})` : ''}
+                      {t.courts ? ` · ${t.courts}면` : ''}
+                      {t.roster?.length ? ` · ${t.roster.length}명` : ''}
+                    </Text>
+                  </View>
+                  <Icon name="forward" size={16} color={C.faint} />
+                </View>
+              </Card>
+            ))}
+          </>
+        )}
+
         {/* 바로가기 — 매일 쓰는 4개만 */}
         <Card style={{ marginTop: S.md, paddingVertical: S.lg }}>
           <View style={{ flexDirection: 'row' }}>
@@ -305,39 +363,25 @@ export default function Home() {
           </View>
         </Card>
 
-        {/* 운영진: 가입 신청 대기 */}
-        {isAdmin && pendingJoins > 0 && (
-          <Card style={{ marginTop: S.md }} onPress={() => go({ more: 'joinreq' })}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Icon name="joinreq" size={20} color={C.green} />
-              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={F.bodyBold}>가입 신청 대기</Text>
-                <Badge count={pendingJoins} />
-              </View>
-              <Chip tone="green">승인하기</Chip>
-            </View>
-          </Card>
-        )}
 
-        {/* 운영진: 관리 기능 입구 — 낱개로 펼치지 않고 하나로 묶는다 */}
+        {/* 클럽 운영 — 예전에는 [더보기]로 넘기는 입구 하나였는데, 한 번 더
+           들어가야 해서 손이 많이 갔다. 위 바로가기처럼 아이콘을 직접 펼친다. */}
         {isAdmin && (
-          <Card style={{ marginTop: S.md }} onPress={() => go({ more: 'manage' })}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <View style={{
-                width: 38, height: 38, borderRadius: R.md, backgroundColor: C.greenSoft,
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Icon name="manage" size={19} color={C.green} />
+          <>
+            <SectionTitle>클럽 운영</SectionTitle>
+            <Card style={{ paddingVertical: S.lg }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {MANAGE.filter(([, , , gate]) => gate !== 'fees' || seeFees)
+                  .map(([key, label, target]) => (
+                    <IconTile
+                      key={key} icon={key} label={label} width="25%"
+                      badge={key === 'joinreq' ? pendingJoins : 0}
+                      onPress={() => go({ more: target })}
+                    />
+                  ))}
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={F.bodyBold}>클럽 운영</Text>
-                <Text style={[F.caption, { marginTop: 2 }]}>
-                  회원 · 회비 · 출석 · 코트장 · 대진 설정 · 초대
-                </Text>
-              </View>
-              <Icon name="forward" size={16} color={C.faint} />
-            </View>
-          </Card>
+            </Card>
+          </>
         )}
 
         {/* 운영진/리드: 전체 코트 일정 */}

@@ -175,7 +175,7 @@ function GuestPostCard({ post, clubId, meetings, me, meVal, isAdmin, flash }) {
                 flexDirection: 'row', alignItems: 'center', gap: 4,
                 backgroundColor: ok ? C.green : '#f5f5f4', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
               }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: ok ? C.lime : C.sub }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: ok ? '#fff' : C.sub }}>
                   {a.name}{a.gender ? `(${a.gender === 'F' ? '여' : '남'})` : ''} {ok ? '✓확정' : '신청'}
                 </Text>
                 {canManage && !ok && (
@@ -204,9 +204,30 @@ function GuestPostCard({ post, clubId, meetings, me, meVal, isAdmin, flash }) {
 
 const EMPTY_NG = { meetingId: '', date: '', time: '', place: '', region: '', needMale: '1', needFemale: '1', note: '' };
 
-export function Guest({ clubId, club, guestPosts, meetings, venues, me, meVal, isAdmin, flash }) {
+export function Guest({
+  clubId, club, guestPosts, meetings, venues, me, meVal, isAdmin, flash, draft = null,
+}) {
   const [ng, setNg] = useState(EMPTY_NG);
   const [adding, setAdding] = useState(false);
+
+  /* 대진 화면의 [게스트 모집]에서 넘어온 경우 — 필요한 성비까지 채워서
+     모집 폼을 바로 열어 준다. 총무가 다시 입력할 필요가 없다. */
+  useEffect(() => {
+    if (!draft?.meetingId) return;
+    const m = meetings.find((x) => x.id === draft.meetingId);
+    setNg({
+      ...EMPTY_NG,
+      meetingId: draft.meetingId,
+      date: m?.date || '',
+      time: m?.time || '',
+      place: m?.place || '',
+      region: club?.settings?.region || '',
+      needMale: String(draft.needM || 0),
+      needFemale: String(draft.needF || 0),
+      note: draft.text || '',
+    });
+    setAdding(true);
+  }, [draft?.meetingId, draft?.needM, draft?.needF]);
   const [scope, setScope] = useState('all');   // all | mine | others
   const [region, setRegion] = useState(null);
 

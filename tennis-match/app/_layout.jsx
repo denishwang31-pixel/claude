@@ -37,6 +37,10 @@ export default function RootLayout() {
        코트 선택은 "지금 무엇을 보고 있는가"라는 앱 전체의 상태이므로
        보기 모드와 같은 자리에 둔다. 화면들은 전부 이 값 하나만 본다. */
   const [venueId, setVenueId] = useState(null);
+  /* 이미 클럽이 있는 사람이 "다른 클럽 찾기"로 온보딩에 들어간 상태.
+     이 표시가 없으면 라우팅 가드가 "클럽 있는데 왜 온보딩이지?" 하고
+     즉시 홈으로 되돌려서, 버튼을 눌러도 홈으로 튕겼다. */
+  const [onboardingIntent, setOnboardingIntent] = useState(false);
   const router = useRouter();
   const segments = useSegments();
 
@@ -74,17 +78,27 @@ export default function RootLayout() {
       if (root !== 'onboarding') router.replace('/onboarding');
       return;
     }
+    // 본인이 직접 들어간 온보딩은 내보내지 않는다
+    if (root === 'onboarding' && onboardingIntent) return;
     if (inAuthFlow) router.replace('/(tabs)');
-  }, [loading, session, segments]);
+  }, [loading, session, segments, onboardingIntent]);
+
+  /* 온보딩을 벗어나면 표시를 지운다 — 다음에 또 튕기지 않게 */
+  useEffect(() => {
+    if (onboardingIntent && segments[0] !== 'onboarding') setOnboardingIntent(false);
+  }, [segments, onboardingIntent]);
 
   /** 클럽을 새로 만들거나 옮길 때 호출 */
   /* 클럽을 바꾸면 코트 선택도 초기화 — 다른 클럽의 코트장 id 가 남으면 안 된다 */
   const switchClub = (clubId) => {
     setVenueId(null);
+    setOnboardingIntent(false);
     setSession((s) => ({ ...s, clubId, skipped: false, pendingClubId: null }));
   };
   /** 온보딩을 다시 밟게 한다(클럽 찾기/만들기 재진입) */
   const resetOnboarding = () => setSession((s) => ({ ...s, skipped: false }));
+  /** 클럽이 있는 상태에서 클럽 찾기/만들기 화면을 여는 정식 통로 */
+  const openOnboarding = () => setOnboardingIntent(true);
 
   if (loading) {
     return (
@@ -97,7 +111,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AppCtx.Provider value={{ ...session, viewMode, setViewMode, venueId, setVenueId, switchClub, resetOnboarding }}>
+        <AppCtx.Provider value={{ ...session, viewMode, setViewMode, venueId, setVenueId, switchClub, resetOnboarding, openOnboarding }}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="login" />
             <Stack.Screen name="onboarding" />

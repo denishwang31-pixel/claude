@@ -85,10 +85,16 @@ const TYPES = {
 
 /** 타임(라운드) 유형 — 모임/클럽 설정에서 타임별로 지정 */
 export const ROUND_TYPES = [
-  { key: 'MX', name: '혼복', desc: '남녀 2:2 (기본)' },
-  { key: 'SAME', name: '남복/여복', desc: '동성 복식만' },
-  { key: 'SINGLES', name: '단식', desc: '1:1 경기 (코트당 2명)' },
-  { key: 'AUTO', name: '자동', desc: '홀수 타임 동성복식 / 짝수 타임 혼복' },
+  { key: 'MX', name: '혼복', desc: '모든 타임을 남녀 2:2로 편성합니다' },
+  { key: 'SAME', name: '남복 / 여복', desc: '모든 타임을 동성끼리(남남 · 여여) 편성합니다' },
+  { key: 'SINGLES', name: '단식', desc: '모든 타임을 1:1로 편성합니다 (코트당 2명)' },
+  {
+    key: 'AUTO',
+    name: '번갈아 (자동)',
+    // "혼복"과 헷갈린다는 지적이 있어 이름을 바꿨다.
+    // 자동은 별도 방식이 아니라 "동성복식 ↔ 혼복을 번갈아" 라는 뜻이다.
+    desc: '1·3·5타임은 동성복식, 2·4·6타임은 혼복으로 번갈아 편성합니다',
+  },
 ];
 export const DEFAULT_ROUND_TYPE = 'MX';
 
@@ -102,6 +108,62 @@ export const DEFAULT_ROUND_TYPE = 'MX';
      needForFullStrict  요청한 코트를 전부 잡복 없이 채우려면 필요한 추가 인원 {m,f}
      needForOneMoreStrict 잡복 없이 한 면 더 늘리려면 필요한 추가 인원 {m,f}
    ============================================================ */
+/* ============================================================
+   게스트 몇 명을 더 부를까 — 성비까지 같이 답한다.
+
+   "지금 8명인데 2면이면 게스트 필요 없음", "남3 여5인데 2면이면
+   남자 1명만 더" 같은 답을 대진 화면에서 바로 보여 주기 위한 것.
+   총무가 머릿속으로 계산하던 것을 앱이 대신한다.
+
+   판단 기준
+     · 잡복(성비 안 맞는 복식)은 기본 금지이므로 "잡복 없이" 채우는 기준
+     · 코트를 다 채우고도 남는 사람은 로테이션으로 쉬므로 게스트 불필요
+     · 단식 타임은 코트당 2명이라 계산이 다르다
+   ============================================================ */
+export function guestNeed(players, courts, roundType = 'MX') {
+  const d = diagnoseRoster(players, courts, roundType);
+  const total = (players || []).length;
+  const perCourt = roundType === 'SINGLES' ? 2 : 4;
+  const seats = Math.max(0, courts) * perCourt;
+
+  /* 이미 코트를 다 채우고 있으면 게스트는 필요 없다 */
+  if (d.strictCourts >= courts) {
+    return {
+      needed: false, m: 0, f: 0, total: 0,
+      M: d.M, F: d.F, seats, courtsNow: d.strictCourts, courtsWanted: courts,
+      reason: total > seats
+        ? `참석 ${total}명 · ${courts}면을 다 쓰고 ${total - seats}명은 교대로 쉽니다`
+        : `참석 ${total}명 · ${courts}면을 채웁니다`,
+    };
+  }
+
+  const need = d.needForFullStrict || { m: 0, f: 0 };
+  const m = Math.max(0, need.m || 0);
+  const f = Math.max(0, need.f || 0);
+
+  /* 필요 인원이 0인데 코트가 안 차는 경우 — 성비와 무관하게 머릿수가 모자란다 */
+  const short = Math.max(0, seats - total);
+  const anyN = (m + f === 0) ? short : 0;
+
+  const parts = [];
+  if (m) parts.push(`남 ${m}명`);
+  if (f) parts.push(`여 ${f}명`);
+  if (anyN) parts.push(`${anyN}명`);
+
+  return {
+    needed: m + f + anyN > 0,
+    m, f, any: anyN, total: m + f + anyN,
+    M: d.M, F: d.F, seats, courtsNow: d.strictCourts, courtsWanted: courts,
+    reason: parts.length
+      ? `${courts}면을 다 쓰려면 ${parts.join(' · ')} 더 필요합니다`
+      : `${courts}면을 다 채울 수 없습니다`,
+    /* 게스트 모집글에 그대로 넣을 문구 */
+    postText: parts.length
+      ? `게스트 ${parts.join(', ')} 모집합니다`
+      : '게스트 모집합니다',
+  };
+}
+
 export function diagnoseRoster(players, courts, roundType) {
   const M = (players || []).filter((p) => p.gender === 'M').length;
   const F = (players || []).length - M;
@@ -145,7 +207,12 @@ export function diagnoseRoster(players, courts, roundType) {
         const addM = Math.max(0, (2 * x + 4 * y) - M);
         const addF = Math.max(0, (2 * x + 4 * z) - F);
         const total = addM + addF;
-        if (!best || total < best.m + best.f) best = { m: addM, f: addF };
+        const bestTotal = best ? best.m + best.f : Infinity;
+        /* 인원이 같으면 남녀를 고르게 부르는 쪽을 권한다.
+           "여자 4명"보다 "남 2명·여 2명"이 실제로 모으기 쉽다. */
+        const fairer = total === bestTotal
+          && Math.abs(addM - addF) < Math.abs(best.m - best.f);
+        if (total < bestTotal || fairer) best = { m: addM, f: addF };
       }
     }
     return best || { m: 0, f: 0 };

@@ -430,6 +430,20 @@ await T('앱 운영자의 광고 성과 조회 허용',
 await T('회원의 집계 삭제 거부',
   assertFails(deleteDoc(doc(mem1, 'adStats', 'g1'))));
 
+console.log('\n[일회성 정산 — 참여자는 자기 몫을 알아야 한다]');
+await T('회장의 일회성 정산 개설 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'duesPools', 'p1'),
+    { title: '9월 회식', total: 120000, participants: ['mem1'], paid: {} })));
+await T('회원의 정산 조회 허용(내 몫이 얼마인지)',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'duesPools', 'p1'))));
+await T('회원이 자기 납부를 체크하는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'duesPools', 'p1'), { 'paid.mem1': true })));
+await T('회원의 정산 개설 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'duesPools', 'p2'), { title: '가짜' })));
+await T('비회원의 정산 조회 거부',
+  assertFails(getDoc(doc(env.authenticatedContext('outsider2').firestore(),
+    'clubs', CLUB, 'duesPools', 'p1'))));
+
 console.log('\n[회원 개인 납부 내역 — 본인은 보되 고칠 수는 없다]');
 await T('회장의 개인 납부 기록 작성 허용',
   assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'memberFees', 'mem1'),

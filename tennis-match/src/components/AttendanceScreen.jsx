@@ -48,7 +48,7 @@ export function Attendance({ clubId, members, meetings, isAdmin, flash }) {
   const Tab = ({ v, label }) => (
     <Pressable onPress={() => setTab(v)}
       style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', backgroundColor: tab === v ? C.green : '#fff', borderWidth: tab === v ? 0 : 1, borderColor: C.border }}>
-      <Text style={{ fontWeight: '700', fontSize: 13, color: tab === v ? C.lime : C.sub }}>{label}</Text>
+      <Text style={{ fontWeight: '700', fontSize: 13, color: tab === v ? '#fff' : C.sub }}>{label}</Text>
     </Pressable>
   );
 
@@ -116,7 +116,7 @@ export function Attendance({ clubId, members, meetings, isAdmin, flash }) {
                                 backgroundColor: v === val ? (val ? C.green : '#fee2e2') : '#f5f5f4',
                                 opacity: isAdmin ? 1 : 0.6,
                               }}>
-                              <Text style={{ fontSize: 12, fontWeight: '700', color: v === val ? (val ? C.lime : '#b91c1c') : C.sub }}>{label}</Text>
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: v === val ? (val ? '#fff' : '#b91c1c') : C.sub }}>{label}</Text>
                             </Pressable>
                           ))}
                         </View>

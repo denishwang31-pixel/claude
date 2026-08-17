@@ -46,7 +46,7 @@ export function Pairs({ clubId, members, pairs, isAdmin, flash }) {
         {[['couples', '💑 커플'], ['fixedPairs', '🎾 고정 페어']].map(([k, label]) => (
           <Pressable key={k} onPress={() => { setKind(k); setSel([]); }}
             style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', backgroundColor: kind === k ? C.green : '#fff', borderWidth: kind === k ? 0 : 1, borderColor: C.border }}>
-            <Text style={{ fontWeight: '700', fontSize: 13, color: kind === k ? C.lime : C.sub }}>{label}</Text>
+            <Text style={{ fontWeight: '700', fontSize: 13, color: kind === k ? '#fff' : C.sub }}>{label}</Text>
           </Pressable>
         ))}
       </View>
