@@ -11,8 +11,8 @@ import {
   settle, compare, previousPeriod, deltaText, toPlainText, won,
 } from '../lib/settlement';
 import { loadAllFees, subIncomes, addIncome, deleteIncome } from '../lib/firestore';
-import { Field, Label } from './pickers';
-import { Card, SectionTitle, Chip, Btn, StatCard, EmptyState } from './ui';
+import { Label } from './pickers';
+import { Card, SectionTitle, Chip, Btn, Field, StatCard, EmptyState } from './ui';
 import { C, S, R, F } from '../lib/theme';
 
 const thisYear = () => String(new Date().getFullYear());

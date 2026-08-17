@@ -12,8 +12,8 @@ import {
   messageFor, canSend, periodLabel,
 } from '../lib/dunning';
 import { markDunningSent, saveFeePolicy, resolveFeeClaim, setFeePaid } from '../lib/firestore';
-import { Field, Label } from './pickers';
-import { Card, SectionTitle, Chip, Btn, StatCard } from './ui';
+import { Label } from './pickers';
+import { Card, SectionTitle, Chip, Btn, Field, StatCard } from './ui';
 import { C, S, R, F } from '../lib/theme';
 
 const today = () => new Date().toISOString().slice(0, 10);

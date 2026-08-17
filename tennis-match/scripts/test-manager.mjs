@@ -191,5 +191,35 @@ console.log('[총회 자료 텍스트]');
   ok(periodLabel('2026-08') === '8월' && periodLabel('2026') === '2026년', '기간 표기');
 }
 
+/* 실제 앱에서는 필드가 비어 있거나 타입이 어긋난 문서가 섞여 들어온다.
+   결산 화면이 그걸로 죽으면 총무는 총회 직전에 앱을 못 쓴다. */
+console.log('[결산 — 이상한 데이터에도 죽지 않는다]');
+{
+  const cases = [
+    ['빈 클럽', { fees: [], expenses: [], members: [] }],
+    ['fees 에 amount 없음', { fees: [{ id: '2026-01', paid: { a: true } }], expenses: [], members: [{ id: 'a', name: '김' }] }],
+    ['paid 가 null', { fees: [{ id: '2026-01', amount: 30000, paid: null }], expenses: [], members: [] }],
+    ['지출 date 없음', { fees: [], expenses: [{ category: '기타', amount: 5000 }], members: [] }],
+    ['지출 amount 가 문자열', { fees: [], expenses: [{ date: '2026-01-01', category: 'x', amount: '5000' }], members: [] }],
+    ['회원 이름 없음', { fees: [{ id: '2026-01', amount: 1, paid: {} }], expenses: [], members: [{ id: 'a' }] }],
+    ['연납(id 가 연도)', { fees: [{ id: '2026', amount: 300000, paid: { a: true } }], expenses: [], members: [{ id: 'a', name: '김' }] }],
+    ['이월금이 문자열', { fees: [], expenses: [], members: [], carryOver: '500000' }],
+    ['수기 수입에 금액 없음', { fees: [], expenses: [], members: [], extraIncome: [{ label: 'x' }] }],
+    ['필드 자체가 undefined', { fees: undefined, expenses: undefined, members: undefined }],
+  ];
+  cases.forEach(([name, data]) => {
+    let good = false;
+    try {
+      const cur = settle('2026', data);
+      const before = settle(previousPeriod('2026'), data);
+      deltaText(compare(cur, before)?.income);
+      const text = toPlainText(cur, '테스트클럽');
+      good = [cur.income, cur.spent, cur.balance, cur.net, cur.paidRate]
+        .every((n) => Number.isFinite(n)) && typeof text === 'string';
+    } catch (e) { good = false; }
+    ok(good, `${name}: 계산이 끝나고 숫자가 유효하다`);
+  });
+}
+
 console.log(`\n총무 기능 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);
