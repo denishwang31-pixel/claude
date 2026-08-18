@@ -4,9 +4,6 @@
     "slug": "tennis-match",
     "scheme": "tennismatch",
     "version": "0.1.0",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -16,9 +13,6 @@
       "package": "com.donghyun.tennismatch",
       "versionCode": 1,
       "permissions": [
-        "INTERNET",
-        "POST_NOTIFICATIONS",
-        "VIBRATE",
         "INTERNET",
         "POST_NOTIFICATIONS",
         "VIBRATE"
