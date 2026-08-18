@@ -10,7 +10,7 @@ import {
 } from '../lib/tournament';
 import { generateKdk, kdkStandingsByGroup, splitKdkGroups } from '../lib/kdk';
 import {
-  TOURNAMENT_FORMAT, TOURNAMENT_FORMATS, BUSU_KEYS, busuToNtrp,
+  TOURNAMENT_FORMAT, TOURNAMENT_FORMATS, BUSU_KEYS, busuToNtrp, screenRef,
 } from '../lib/constants';
 import { effectiveNtrp } from '../lib/ntrp';
 import { TeamMatch } from './TeamMatchScreen';
@@ -179,6 +179,23 @@ function CreateTournament({ clubId, members, onDone, flash }) {
             </Touchable>
           );
         })}
+
+        {/* 교류전을 찾아 여기까지 온 사람을 돌려보낸다.
+           예전에는 대회의 한 형식이었으므로 여기서 찾는 것이 자연스럽다.
+           안내 없이 없애면 "있던 게 사라졌다"가 된다. */}
+        <View style={{
+          borderTopWidth: 1, borderTopColor: C.border,
+          paddingTop: 12, marginTop: 6,
+        }}>
+          <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.text }}>
+            🤝 다른 클럽과 맞붙나요?
+          </Text>
+          <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 3, lineHeight: 17 }}>
+            {screenRef('clubmatch')} 화면에서 상대 클럽을 검색해 초대하세요.
+            상대가 수락하면 자기 출전 명단을 직접 넣고, 대진표를 함께 봅니다.
+            여기 대회는 우리 클럽 안에서만 기록됩니다.
+          </Text>
+        </View>
       </Card>
 
       <SectionTitle>대회 정보</SectionTitle>
