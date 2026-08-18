@@ -12,11 +12,12 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
 import {
-  updateMemberProfile, addMember, deleteMember, setMemberRole,
+  updateMemberProfile, addMember, deleteMember, setMemberRole, setMemberRoles,
 } from '../lib/firestore';
 import {
   ROLES, ASSIGNABLE_ROLES, ROLE_DESC, GRADES, BUSU, BUSU_KEYS,
   roleTone, isStaffRole, normalizeRole, assignableRolesFor, canAssignRole,
+  memberRoles, rolesPayload, rolesLabel, isStaffMember, primaryRole,
 } from '../lib/constants';
 import { effectiveNtrp, careerText } from '../lib/ntrp';
 import { Label, MonthField } from './pickers';
@@ -108,18 +109,29 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
     );
   };
 
-  const appoint = (m, role) => {
+  /* 역할 하나를 켜고 끈다. 겸임이므로 누른 것만 바뀐다. */
+  const toggleRole = (m, role) => {
     if (!canAssignRole(myRole, m.role, role)) {
       return flash('회장·총무 지정은 회장만 할 수 있습니다');
     }
-    if (m.id === me && normalizeRole(m.role) === ROLES.PRESIDENT && role !== ROLES.PRESIDENT) {
-      return Alert.alert('확인', '본인의 회장 권한을 내려놓으면 다시 임명할 수 없습니다. 먼저 다른 회원을 회장으로 임명하세요.');
+    const cur = memberRoles(m);
+    const on = cur.includes(role);
+
+    /* 본인의 회장 권한을 스스로 내려놓으면 다시 올릴 사람이 없다 */
+    if (on && m.id === me && role === ROLES.PRESIDENT) {
+      return Alert.alert('확인',
+        '본인의 회장 권한을 내려놓으면 다시 임명할 수 없습니다.\n'
+        + '먼저 다른 회원을 회장으로 임명하세요.');
     }
-    setMemberRole(clubId, m.id, role);
-    flash(`${m.name} → ${role}`);
+
+    const next = on ? cur.filter((r) => r !== role) : [...cur, role];
+    /* 다 끄면 '회원'으로 돌아간다 — 역할이 아예 없는 상태는 없다 */
+    const payload = rolesPayload(next.length ? next : [ROLES.MEMBER]);
+    setMemberRoles(clubId, m.id, payload);
+    return flash(`${m.name} → ${payload.roles.join(' · ')}`);
   };
 
-  const staff = members.filter((m) => isStaffRole(m.role));
+  const staff = members.filter(isStaffMember);
 
   return (
     <View>
@@ -295,26 +307,28 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                     </View>
                   )}
 
-                  {/* 역할 지정 — 운영진 이하는 운영 담당이, 회장·총무는 회장이 */}
+                  {/* 역할 지정 — 겸임을 허용한다.
+                     운영진이면서 화요일 코트를 맡는 리드는 흔하다. 하나만
+                     고르게 하면 "리드로 하면 운영 화면이 안 나오고, 운영진으로
+                     하면 내 코트 화면이 안 나온다"가 된다. */}
                   {(() => {
                     const options = assignableRolesFor(myRole, m.role);
                     if (!options.length) return null;
+                    const cur = memberRoles(m);
                     return (
                       <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: '#e7e5e4', paddingTop: 10 }}>
-                        <Label hint={canAppoint ? '회장은 모든 역할을 지정할 수 있습니다' : '회장·총무는 회장만 지정합니다'}>
-                          역할
-                        </Label>
+                        <Label hint="여러 개 고를 수 있습니다 (예: 운영진 + 리드)">역할</Label>
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                           {options.map((r) => (
                             <Chip
                               key={r}
-                              tone={normalizeRole(m.role) === r ? 'green' : 'outline'}
-                              onPress={() => appoint(m, r)}
+                              tone={cur.includes(r) ? 'green' : 'outline'}
+                              onPress={() => toggleRole(m, r)}
                             >{r}</Chip>
                           ))}
                         </View>
                         <Text style={{ fontSize: 10, color: C.faint, marginTop: 6, lineHeight: 15 }}>
-                          {ROLE_DESC[normalizeRole(m.role)]}
+                          {cur.map((r) => ROLE_DESC[r]).filter(Boolean).join('\n')}
                         </Text>
                       </View>
                     );

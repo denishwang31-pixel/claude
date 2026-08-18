@@ -19,6 +19,7 @@ import { DEFAULT_RULES } from '../lib/matchmaking';
 import {
   isStaffRole, canAppointRole, isGuestId, guestUid, ROLES,
   normalizeRole, canSeeFees, canSeeAllVenues, VIEW_MODE_ROLE,
+  memberRoles, primaryRole,
 } from '../lib/constants';
 
 const RULE_BY_KEY = Object.fromEntries(DEFAULT_RULES.map((r) => [r.key, r]));
@@ -101,9 +102,15 @@ export function useClub(clubId, me, opts = {}) {
      없는 교착에 빠진다. 그래서 ownerId 는 저장된 역할과 무관하게 회장으로
      인정하고, 아래에서 회원 문서도 조용히 회장으로 올려 준다. */
   const isOwner = !!club && !!me && club.ownerId === me;
-  const storedRole = normalizeRole(meVal?.role);
-  const realRole = isOwner ? ROLES.PRESIDENT : storedRole;
-  const realStaff = !!meVal && isStaffRole(realRole);
+
+  /* 역할은 겸임될 수 있다 — 운영진이면서 리드. 권한 판단은 목록 전체로
+     하고, 화면 표시는 그중 가장 넓은 것(대표 역할)으로 한다. */
+  const myRoles = useMemo(() => {
+    const list = memberRoles(meVal);
+    return isOwner && !list.includes(ROLES.PRESIDENT) ? [ROLES.PRESIDENT, ...list] : list;
+  }, [meVal, isOwner]);
+  const realRole = isOwner ? ROLES.PRESIDENT : primaryRole(meVal);
+  const realStaff = !!meVal && myRoles.some(isStaffRole);
 
   /* 자가 치유 — 소유자인데 역할이 회장이 아니면 한 번만 올려 준다 */
   useEffect(() => {
@@ -119,7 +126,9 @@ export function useClub(clubId, me, opts = {}) {
   const effectiveRole = viewRole && realStaff ? viewRole : realRole;
 
   const isAdmin = isStaffRole(effectiveRole);
-  const seeFees = canSeeFees(effectiveRole) && canSeeFees(realRole);
+  /* 겸임 중 하나라도 회비 권한이 있으면 본다.
+     보기 모드로 낮춰 봤을 때는 그 모드를 따른다. */
+  const seeFees = canSeeFees(effectiveRole) && myRoles.some(canSeeFees);
   const seeAllVenues = canSeeAllVenues(effectiveRole);
   const canAppoint = canAppointRole(realRole) && !viewMode;
   const isPresident = realRole === ROLES.PRESIDENT;
@@ -144,8 +153,12 @@ export function useClub(clubId, me, opts = {}) {
     if (effectiveRole === ROLES.LEAD) {                 // 리드 — 내가 맡은 코트장
       return myLeadVenues.length ? myLeadVenues : venues;
     }
+    /* 겸임 리드 — 대표 역할이 운영진이라도 맡은 코트가 있으면 같이 본다 */
+    if (myRoles.includes(ROLES.LEAD) && myLeadVenues.length) {
+      return [...new Set([...myVenues, ...myLeadVenues])];
+    }
     return myVenues;                                    // 회원 — 내가 속한 코트장
-  }, [seeAllVenues, effectiveRole, venues, myLeadVenues, myVenues]);
+  }, [seeAllVenues, effectiveRole, venues, myLeadVenues, myVenues, myRoles]);
 
   // 게스트 ID('g:<uid>')는 저장된 표시명을 우선 사용(타 클럽 회원일 수 있음)
   const nameOf = useMemo(() => {
@@ -186,6 +199,6 @@ export function useClub(clubId, me, opts = {}) {
     pairs, tournaments, venues, matchConfig, polls, meVal,
     isAdmin, realStaff, canAppoint, isPresident, viewMode, nameOf, genderOf, loading,
     myLeadVenues, myVenues, scopeVenues,
-    realRole, effectiveRole, seeFees, seeAllVenues, isOwner,
+    realRole, myRoles, effectiveRole, seeFees, seeAllVenues, isOwner,
   };
 }

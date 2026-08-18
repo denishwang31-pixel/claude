@@ -215,7 +215,16 @@ export const setMatchConfig = (clubId, cfg) =>
 
 /* ---- 회원 역할/삭제 (회장만 임명 — 규칙에서 강제) ---- */
 export const setMemberRole = (clubId, memberId, role) =>
-  updateDoc(D(clubId, 'members', memberId), { role });
+  updateDoc(D(clubId, 'members', memberId), { role, roles: [role] });
+
+/* 겸임 저장 — roles(실제)와 role(대표)을 함께 쓴다.
+   보안 규칙은 role 문자열 하나를 보고 판단하므로 둘이 어긋나면
+   화면과 권한이 따로 논다. rolesPayload 가 둘을 같이 만든다. */
+export const setMemberRoles = (clubId, memberId, payload) =>
+  updateDoc(D(clubId, 'members', memberId), {
+    roles: payload.roles,
+    role: payload.role,
+  });
 
 export const deleteMember = (clubId, memberId) => deleteDoc(D(clubId, 'members', memberId));
 

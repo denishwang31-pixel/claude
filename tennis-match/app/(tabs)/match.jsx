@@ -32,6 +32,9 @@ import {
   blankDraw, labelOf, toggleInSlot, busyInRound, playCounts, reviewDraw, slotSize,
 } from '../../src/lib/manualDraw';
 import {
+  attendingIds, diffDraw, removeGhosts, dropAffected, describeDiff, optionsFor,
+} from '../../src/lib/drawSync';
+import {
   Card, SectionTitle, Chip, Btn, Field, Avatar, CheckRow,
 } from '../../src/components/ui';
 import { C, S, R, F } from '../../src/lib/theme';
@@ -282,6 +285,41 @@ export default function Match() {
           return { ...patched, type: labelOf(patched, genderOf) || patched.type || '' };
         });
         saveMatches(clubId, meeting.id, next);
+      },
+    });
+  };
+
+  /* ---------- 대진 ↔ 참석 어긋남 ----------
+     대진을 짜고 나서 사람이 빠지는 일은 늘 있다. 그런데 대진표는 짤 때의
+     명단 그대로라, 코트에 가서야 한 자리가 빈 것을 안다. 반대로 나중에
+     참석으로 바꾼 사람은 어느 코트에도 없다. */
+  const drawDiff = useMemo(
+    () => (meeting && matches.length
+      ? diffDraw(matches, attendingIds(meeting, members))
+      : null),
+    [meeting, matches, members],
+  );
+
+  const fixDraw = () => {
+    if (!drawDiff || drawDiff.inSync) return;
+    const opts = optionsFor(drawDiff);
+    sheet.open({
+      title: '대진과 참석이 다릅니다',
+      options: opts.map((o) => ({
+        key: o.key, label: o.label, destructive: o.tone === 'danger',
+      })),
+      onSelect: (o) => {
+        if (o.key === 'regen') return gen();
+        if (o.key === 'vacate') {
+          saveMatches(clubId, meeting.id, removeGhosts(matches, drawDiff.ghosts));
+          return flash(`${drawDiff.ghosts.length}명의 자리를 비웠습니다`);
+        }
+        if (o.key === 'drop') {
+          saveMatches(clubId, meeting.id, dropAffected(matches, drawDiff.affected));
+          return flash(`${drawDiff.affected.length}경기를 삭제했습니다`);
+        }
+        saveMatches(clubId, meeting.id, []);
+        return flash('대진표를 삭제했습니다');
       },
     });
   };
@@ -643,6 +681,28 @@ export default function Match() {
               <Chip tone={view === 'list' ? 'green' : 'outline'} onPress={() => setView('list')}>목록</Chip>
             </View>
           }>대진표</SectionTitle>
+
+          {/* 대진과 참석이 어긋났으면 코트에 가기 전에 알려 준다 */}
+          {drawDiff && !drawDiff.inSync && (
+            <Card style={{ borderColor: C.warn, borderWidth: 1.5, marginBottom: S.sm }}>
+              <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.warn }}>
+                대진과 참석 명단이 다릅니다
+              </Text>
+              <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 5, lineHeight: 17 }}>
+                {describeDiff(drawDiff, nameOf)}
+              </Text>
+              <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 6, lineHeight: 15 }}>
+                {drawDiff.manual
+                  ? '수기로 짠 대진이라 자동으로 고치지 않습니다. 손으로 짠 이유가 있을 테니 지울지만 고르세요.'
+                  : '자동 편성이라 다시 돌리면 복구됩니다.'}
+              </Text>
+              {isAdmin && (
+                <View style={{ marginTop: S.md }}>
+                  <Btn full tone="primary" onPress={fixDraw}>어떻게 할지 고르기</Btn>
+                </View>
+              )}
+            </Card>
+          )}
 
           {view === 'grid' ? (
             <Card style={{ padding: 10 }}>

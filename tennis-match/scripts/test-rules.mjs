@@ -89,6 +89,37 @@ await T('타인의 rsvpBy 항목 변경 거부',
   assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt1'),
     { 'rsvpBy.mem2': 'mem1' })));
 
+/* 역할 겸임 — roles 배열이 새 권한 통로가 되면 안 된다.
+   규칙은 role 문자열 하나로 판단하므로, roles 에 몰래 '회장'을 넣어
+   화면상 권한을 얻는 길을 막아야 한다. */
+console.log('\n[역할 겸임]');
+await T('회장의 겸임 지정 허용(운영진+리드)',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem2'),
+    { roles: ['운영진', '리드'], role: '운영진' })));
+await T('회장이 아닌 운영 담당의 roles 변경 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem2'),
+    { roles: ['운영진', '리드'], role: '운영진' })));
+await T('본인이 자기 roles 를 바꾸는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'),
+    { roles: ['회장'], role: '회장' })));
+await T('role 은 그대로 두고 roles 에만 회장을 넣는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'),
+    { roles: ['회장', '회원'] })));
+await T('회장은 roles 로 회장 겸임도 지정 가능',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem2'),
+    { roles: ['총무', '리드'], role: '총무' })));
+await T('회원의 프로필 수정은 roles 를 안 건드리면 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { busu: '3부' })));
+
+/* 이 블록이 바꿔 놓은 상태를 되돌린다.
+   안 되돌리면 뒤 테스트가 "같은 값 쓰기"가 되어 diff() 가 비고, 규칙이
+   빈 집합에 대해 참을 돌려주면서 거부돼야 할 것이 통과한다.
+   (회비 테스트에서 한 번 당한 적이 있는 함정이다) */
+await env.withSecurityRulesDisabled(async (ctx) => {
+  await setDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'mem2'),
+    { name: '회원2', gender: 'M', grade: 'C', role: '회원', status: '활동' });
+});
+
 console.log('\n[참석 투표 요청]');
 await T('총무의 투표 요청 생성 허용',
   assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'j1'),

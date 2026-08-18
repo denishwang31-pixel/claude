@@ -103,6 +103,62 @@ export const ROLE_RANK = {
 };
 export const roleRank = (role) => ROLE_RANK[normalizeRole(role)] ?? 4;
 
+/* ============================================================
+   역할 겸임 — 한 사람이 운영진이면서 리드일 수 있다
+
+   실제 동호회에서는 겸임이 기본이다. 운영진이면서 화요일 코트를 맡고,
+   총무가 리드를 겸하기도 한다. 역할을 하나만 고르게 하면 둘 중 하나를
+   포기해야 하고, 그러면 "리드로 해 두면 회비를 못 보고, 총무로 해 두면
+   내 코트 화면이 안 나온다"가 된다.
+
+   저장 형태
+     roles : ['운영진', '리드']   ← 실제 값
+     role  : '운영진'             ← 그중 가장 넓은 권한 (대표 역할)
+
+   role 을 계속 두는 이유는 보안 규칙과 옛 데이터 때문이다. 규칙은
+   role 문자열 하나를 보고 판단하고, roles 가 없던 시절 문서도 아직 있다.
+   그래서 쓸 때 둘을 같이 맞춰 둔다 — 읽는 쪽은 memberRoles 만 쓰면 된다.
+   ============================================================ */
+
+/** 이 회원의 역할 목록. roles 가 없으면 옛 문서이므로 role 하나로 본다 */
+export function memberRoles(member) {
+  const list = Array.isArray(member?.roles) ? member.roles : null;
+  const cleaned = (list || [])
+    .map(normalizeRole)
+    .filter((r) => ASSIGNABLE_ROLES.includes(r));
+  if (cleaned.length) return [...new Set(cleaned)];
+  return [normalizeRole(member?.role)];
+}
+
+/** 대표 역할 — 가장 넓은 권한. 배지·목록 정렬에 쓴다 */
+export const primaryRole = (member) =>
+  memberRoles(member).sort((a, b) => roleRank(a) - roleRank(b))[0] || ROLES.MEMBER;
+
+/** 이 역할을 갖고 있는가 (겸임 포함) */
+export const hasRole = (member, role) =>
+  memberRoles(member).includes(normalizeRole(role));
+
+/** 저장할 값 — roles 와 대표 role 을 함께 맞춘다 */
+export function rolesPayload(list) {
+  const cleaned = [...new Set((list || [])
+    .map(normalizeRole)
+    .filter((r) => ASSIGNABLE_ROLES.includes(r)))];
+  const roles = cleaned.length ? cleaned : [ROLES.MEMBER];
+  /* '회원'은 "아무 역할 없음"이라 다른 역할과 같이 들 이유가 없다.
+     운영진이면서 회원인 상태는 의미가 없고 화면만 어지럽힌다. */
+  const withoutMember = roles.filter((r) => r !== ROLES.MEMBER);
+  const final = withoutMember.length ? withoutMember : [ROLES.MEMBER];
+  const sorted = final.sort((a, b) => roleRank(a) - roleRank(b));
+  return { roles: sorted, role: sorted[0] };
+}
+
+/** 겸임까지 본 화면 표시 — '운영진 · 리드' */
+export const rolesLabel = (member) => memberRoles(member).join(' · ');
+
+/** 겸임 중 하나라도 운영 권한이 있으면 운영 담당이다 */
+export const isStaffMember = (member) => memberRoles(member).some(isStaffRole);
+export const canSeeFeesMember = (member) => memberRoles(member).some(canSeeFees);
+
 /** 보기 모드 → 그 모드가 흉내내는 역할 */
 export const VIEW_MODE_ROLE = {
   president: ROLES.PRESIDENT,

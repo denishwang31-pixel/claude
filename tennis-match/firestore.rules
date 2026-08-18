@@ -95,14 +95,21 @@ service cloud.firestore {
           /* 역할 변경 —
                회장: 전부
                운영 담당: 운영진·리드·회원 사이에서만. 회장·총무는 못 세우고,
-                          회장·총무인 사람을 끌어내리지도 못한다. */
+                          회장·총무인 사람을 끌어내리지도 못한다.
+
+             역할은 겸임될 수 있어서 roles(배열)와 role(대표) 두 필드로
+             저장된다. role 만 막으면 roles 에 '회장'을 몰래 넣어 화면상
+             권한을 얻을 수 있으므로 두 필드를 같이 막는다.
+             roles 의 내용까지 규칙에서 훑을 수는 없으므로(배열 순회 불가),
+             운영 담당이 roles 를 건드리는 것 자체를 회장에게만 허용한다. */
           (isClubAdmin(clubId)
-              && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
+              && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'roles'])
                   || isPresident(clubId)
-                  || (isDailyRole(request.resource.data.role)
+                  || (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles'])
+                      && isDailyRole(request.resource.data.role)
                       && isDailyRole(resource.data.get('role', '회원')))))
           || (request.auth.uid == memberId
-              && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
+              && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'roles']))
           || (
             isClubMember(clubId)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ntrpVotes'])
