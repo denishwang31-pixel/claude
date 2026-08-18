@@ -37,7 +37,18 @@ export async function registerPushToken(clubId, uid) {
     }
     if (final !== 'granted') return null;
 
+    /* projectId 가 없으면 토큰 발급 자체가 안 된다.
+       app.json 의 extra.eas.projectId 는 `eas init` / `eas update:configure`
+       가 넣어 준다. 없으면 아래 호출이 예외를 던지고, 그러면 이 앱의 알림이
+       전부 조용히 죽는다 — 회비 독촉도, 참석 투표 요청도, 교류전 초대도.
+       서버는 멀쩡히 보내는데 받을 토큰이 저장되지 않아 아무도 못 받는다. */
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    if (!projectId) {
+      console.warn(
+        '[알림] app.json 에 extra.eas.projectId 가 없습니다. 푸시 토큰을 받지 못하면 '
+        + '모든 알림이 발송되지 않습니다. `eas init` 또는 `eas update:configure` 실행 필요.',
+      );
+    }
     const tokenRes = projectId
       ? await Notifications.getExpoPushTokenAsync({ projectId })
       : await Notifications.getExpoPushTokenAsync();
@@ -46,6 +57,9 @@ export async function registerPushToken(clubId, uid) {
     if (token && clubId && uid) await savePushToken(clubId, uid, token);
     return token;
   } catch (e) {
-    return null; // 알림 실패는 치명적이지 않음
+    /* 알림 실패가 앱 흐름을 막아서는 안 된다. 다만 조용히 삼키면
+       "알림이 안 와요"를 몇 주 뒤에 원인 없이 마주하게 된다. */
+    console.warn('[알림] 푸시 토큰 등록 실패:', e?.message || e);
+    return null;
   }
 }
