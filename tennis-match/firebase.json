@@ -4,10 +4,14 @@
   },
   "functions": {
     "source": "functions",
-    "runtime": "nodejs20"
+    "runtime": "nodejs22"
   },
   "emulators": {
-    "firestore": { "port": 8089 },
-    "ui": { "enabled": false }
+    "firestore": {
+      "port": 8089
+    },
+    "ui": {
+      "enabled": false
+    }
   }
 }

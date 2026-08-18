@@ -2,6 +2,7 @@
 import {
   DUN_STAGE, DUN_STAGES, dueDateOf, daysBetween, stageFor,
   unpaidMembers, recipientsFor, messageFor, canSend, planAutoSend, periodLabel,
+  summaryForManager,
 } from '../src/lib/dunning.js';
 import {
   settle, compare, previousPeriod, deltaText, toPlainText, won,
@@ -219,6 +220,94 @@ console.log('[결산 — 이상한 데이터에도 죽지 않는다]');
     } catch (e) { good = false; }
     ok(good, `${name}: 계산이 끝나고 숫자가 유효하다`);
   });
+}
+
+/* ============================================================
+   앱 ↔ 서버 사본 대조
+
+   firebase deploy 는 functions/ 만 올리므로 서버는 src/lib 를 읽을 수
+   없고, 독촉 로직이 두 벌 존재할 수밖에 없다.
+
+   대조가 없던 동안 실제로 어긋나 있었다 — 앱은 최종 단계에 "사정이
+   있으시면 운영진에게 알려 주세요"를 쓰는데, 서버는 2차 문구를 그대로
+   다시 보내고 있었다. 돈 얘기라 어긋나도 아무도 모른다.
+   ============================================================ */
+console.log('\n[앱 ↔ 서버 사본 대조]');
+{
+  const { createRequire } = await import('node:module');
+  const require = createRequire(import.meta.url);
+  const srv = require('../functions/dunning.js');
+
+  const PAID = { a: true };
+  const SENT = { '2026-08': { first: '2026-08-11' } };
+  const MSG_ARG = {
+    clubName: '염곡클럽', monthKey: '2026-08', amount: 30000,
+    dueDate: '2026-08-10', account: '국민 123-456',
+  };
+
+  const CASES = {
+    dueDateOf: [
+      ['2026-08', 10], ['2026-02', 31], ['2028-02', 31], ['2026-08', 0],
+      ['2026-08', 99], ['2026', 10], ['', 10], [null, 5],
+    ],
+    daysBetween: [
+      ['2026-08-10', '2026-08-11'], ['2026-08-10', '2026-08-07'],
+      ['2026-08-10', '2026-08-10'], ['2026-12-31', '2027-01-01'],
+    ],
+    stageFor: [
+      ['2026-08', '2026-08-07', 10], ['2026-08', '2026-08-11', 10],
+      ['2026-08', '2026-08-15', 10], ['2026-08', '2026-08-20', 10],
+      ['2026-08', '2026-08-09', 10], ['2026-08', '2026-08-10', 10],
+    ],
+    unpaidMembers: [[MEMBERS, PAID], [MEMBERS, {}], [MEMBERS, { a: 1, b: 1, c: 1 }]],
+    recipientsFor: [
+      [DUN_STAGES[0], MEMBERS, PAID], [DUN_STAGES[1], MEMBERS, PAID],
+      [DUN_STAGES[3], MEMBERS, PAID], [null, MEMBERS, PAID],
+    ],
+    periodLabel: [['2026-08'], ['2026'], [''], ['2026-01']],
+    messageFor: [
+      [DUN_STAGES[0], MSG_ARG], [DUN_STAGES[1], MSG_ARG],
+      [DUN_STAGES[2], MSG_ARG], [DUN_STAGES[3], MSG_ARG],
+      [null, MSG_ARG], [DUN_STAGES[1], { ...MSG_ARG, account: '' }],
+    ],
+    summaryForManager: [
+      ['염곡클럽', '2026-08', [{ id: 'b' }, { id: 'c' }], 30000],
+      ['염곡클럽', '2026-08', [], 30000],
+      ['', '2026', [{ id: 'b' }], 0],
+    ],
+    canSend: [
+      [DUN_STAGES[1], '2026-08', SENT], [DUN_STAGES[2], '2026-08', SENT],
+      [null, '2026-08', SENT], [DUN_STAGES[1], '2026-09', SENT],
+    ],
+    planAutoSend: [
+      [{ clubName: '염곡클럽', monthKey: '2026-08', today: '2026-08-11', dueDay: 10, amount: 30000, members: MEMBERS, paidMap: PAID, sent: {}, account: '국민 123' }],
+      [{ clubName: '염곡클럽', monthKey: '2026-08', today: '2026-08-11', dueDay: 10, amount: 30000, members: MEMBERS, paidMap: PAID, sent: SENT, account: '' }],
+      [{ clubName: '염곡클럽', monthKey: '2026-08', today: '2026-08-20', dueDay: 10, amount: 30000, members: MEMBERS, paidMap: PAID, sent: {}, account: '' }],
+      [{ clubName: '염곡클럽', monthKey: '2026-08', today: '2026-08-07', dueDay: 10, amount: 30000, members: MEMBERS, paidMap: {}, sent: {}, account: '' }],
+      [{ clubName: '염곡클럽', monthKey: '2026-08', today: '2026-08-03', dueDay: 10, amount: 30000, members: MEMBERS, paidMap: {}, sent: {}, account: '' }],
+      [{ clubName: '염곡클럽', monthKey: '2026-08', today: '2026-08-11', dueDay: 10, amount: 30000, members: MEMBERS, paidMap: { a: 1, b: 1, c: 1 }, sent: {}, account: '' }],
+    ],
+  };
+
+  const app = {
+    dueDateOf, daysBetween, stageFor, unpaidMembers, recipientsFor,
+    periodLabel, messageFor, summaryForManager, canSend, planAutoSend,
+  };
+
+  let compared = 0;
+  Object.entries(CASES).forEach(([fn, argSets]) => {
+    if (typeof srv[fn] !== 'function') { ok(false, `서버에 ${fn} 없음`); return; }
+    argSets.forEach((args, i) => {
+      compared += 1;
+      ok(JSON.stringify(app[fn](...args)) === JSON.stringify(srv[fn](...args)),
+        `${fn} #${i + 1} 앱=서버 (기대 ${JSON.stringify(app[fn](...args))}, 실제 ${JSON.stringify(srv[fn](...args))})`);
+    });
+  });
+
+  /* 단계 표는 그 자체가 계약이다 — 하나만 어긋나도 발송일이 달라진다 */
+  ok(JSON.stringify(DUN_STAGES) === JSON.stringify(srv.DUN_STAGES), '단계 표가 같다');
+  ok(JSON.stringify(DUN_STAGE) === JSON.stringify(srv.DUN_STAGE), '단계 키가 같다');
+  console.log(`  (사본 대조 ${compared}건)`);
 }
 
 console.log(`\n총무 기능 테스트: ${pass} 통과 / ${fail} 실패`);

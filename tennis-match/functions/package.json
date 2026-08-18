@@ -2,7 +2,7 @@
   "name": "tennis-match-functions",
   "private": true,
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "scripts": {
@@ -10,7 +10,7 @@
     "logs": "firebase functions:log"
   },
   "dependencies": {
-    "firebase-admin": "^12.7.0",
+    "firebase-admin": "^14.2.0",
     "firebase-functions": "^7.3.2"
   }
 }

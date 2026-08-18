@@ -34,23 +34,59 @@ const {
   normalizeAsk, isAskDue, pendingVoters, askMessage, changeMessage, changedAnswers,
 } = require('./rsvpAsk');
 const { inviteMessage, responseMessage } = require('./clubMatch');
+const { planAutoSend, unpaidMembers, summaryForManager } = require('./dunning');
 
 /** 운영 담당 — 참석 변경·미납 현황 같은 운영 알림을 받는 사람 */
 const isStaff = (role) => role === '회장' || role === '총무' || role === '운영진';
 
-/* ---------------- Expo Push 발송 헬퍼 ---------------- */
+/* ---------------- Expo Push 발송 헬퍼 ----------------
+
+   응답을 읽어 죽은 토큰을 지운다.
+
+   앱을 지우거나 기기를 바꾸면 그 토큰은 영영 못 받는 것이 된다.
+   그런데 회원 문서에는 그대로 남아 있어서, 다음 발송 때도 그 토큰에
+   또 쏜다. 쌓이면 "20명에게 보냈다"는데 실제로 받는 사람은 12명인
+   상태가 되고, 발송 통계가 거짓말을 하기 시작한다.
+
+   Expo 는 토큰마다 결과를 돌려주고, 못 쓰는 토큰에는
+   DeviceNotRegistered 를 준다. 그걸 보고 지운다.
+   토큰이 어느 회원 것인지 모르므로 컬렉션 그룹으로 찾아 지운다. */
+async function dropDeadToken(token) {
+  try {
+    const hits = await db.collectionGroup('members')
+      .where('pushToken', '==', token).get();
+    await Promise.all(hits.docs.map((d) =>
+      d.ref.update({ pushToken: FieldValue.delete() })));
+    if (hits.size) logger.info('죽은 푸시 토큰 정리', hits.size, '건');
+  } catch (e) {
+    logger.warn('죽은 토큰 정리 실패', e);
+  }
+}
+
 async function sendPush(tokens, title, body, data = {}) {
   const valid = [...new Set(tokens)].filter((t) => typeof t === 'string' && t.startsWith('ExponentPushToken'));
   if (!valid.length) return;
   for (let i = 0; i < valid.length; i += 100) {
-    const chunk = valid.slice(i, i + 100).map((to) => ({ to, title, body, data, sound: 'default' }));
+    const batch = valid.slice(i, i + 100);
+    const chunk = batch.map((to) => ({ to, title, body, data, sound: 'default' }));
     try {
       const res = await fetch('https://exp.host/--/api/v2/push/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(chunk),
       });
-      if (!res.ok) logger.warn('push send non-200', await res.text());
+      if (!res.ok) { logger.warn('push send non-200', await res.text()); continue; }
+
+      /* 응답은 보낸 순서대로 온다. 실패한 자리의 토큰을 그대로 짚을 수 있다. */
+      const json = await res.json().catch(() => null);
+      const tickets = (json && json.data) || [];
+      for (let k = 0; k < tickets.length; k += 1) {
+        const t = tickets[k];
+        if (!t || t.status !== 'error') continue;
+        const reason = t.details && t.details.error;
+        if (reason === 'DeviceNotRegistered') await dropDeadToken(batch[k]);
+        else logger.warn('push 실패', reason || t.message);
+      }
     } catch (e) { logger.error('push send failed', e); }
   }
 }
@@ -333,49 +369,16 @@ exports.onApplicantConfirmed = onDocumentUpdated({ ...REGION, document: 'guestPo
    총무가 "형, 회비요..." 를 보내지 않아도 되게 하는 것이 목적이다.
    매일 09시에 돌면서 오늘이 어느 단계인지 보고, 해당하는 사람에게만 보낸다.
 
-   지키는 규칙 (src/lib/dunning.js 와 동일해야 한다)
-     1. 발신은 클럽 이름으로. 총무 개인 이름을 넣지 않는다.
-     2. 미납자 본인에게만 개별 발송. 단체 공지로 명단이 나가지 않는다.
-     3. 마지막 단계(D+10)는 자동 발송하지 않는다 — 총무가 앱에서 직접 보낸다.
-     4. 같은 단계는 한 번만. meta/dunning 에 발송 기록을 남겨 중복을 막는다.  */
+   단계·문구·대상 판단은 functions/dunning.js 에 있다. 그 파일은
+   src/lib/dunning.js 의 사본이고, scripts/test-manager.mjs 가 둘을
+   대조한다. 예전에는 이 로직이 여기 손으로 적혀 있었고 대조가 없어서
+   실제로 어긋나 있었다 — 앱은 최종 단계에 "사정이 있으시면 운영진에게
+   알려 주세요"를 쓰는데 서버는 2차 문구를 그대로 다시 보냈다.
 
-const DUN_STAGES = [
-  { key: 'pre', offset: -3, audience: 'all', auto: true, label: '사전 안내' },
-  { key: 'first', offset: 1, audience: 'unpaid', auto: true, label: '1차 알림' },
-  { key: 'second', offset: 5, audience: 'unpaid', auto: true, label: '2차 알림' },
-  { key: 'final', offset: 10, audience: 'unpaid', auto: false, label: '최종 안내' },
-];
+   여기서는 Firestore 를 읽고 쓰는 일만 한다. 판단은 하지 않는다.  */
 
-const pad = (n) => String(n).padStart(2, '0');
 const seoulToday = () =>
   new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
-
-function dueDateOf(monthKey, dueDay) {
-  const [y, m] = String(monthKey).split('-');
-  const year = Number(y), month = Number(m);
-  const last = new Date(year, month, 0).getDate();
-  return `${year}-${pad(month)}-${pad(Math.min(Math.max(1, dueDay), last))}`;
-}
-
-const daysBetween = (a, b) =>
-  Math.round((new Date(`${b}T00:00:00Z`) - new Date(`${a}T00:00:00Z`)) / 86400000);
-
-function dunMessage(stageKey, clubName, monthKey, amount, dueDate, account) {
-  const p = `${Number(String(monthKey).split('-')[1])}월`;
-  const won = `${Number(amount || 0).toLocaleString()}원`;
-  const acc = account ? `\n입금: ${account}` : '';
-  const club = clubName || '클럽';
-  if (stageKey === 'pre') {
-    return { title: `${club} ${p} 회비 안내`, body: `${p} 회비 ${won} 납부일은 ${dueDate}입니다.${acc}` };
-  }
-  if (stageKey === 'first') {
-    return { title: `${club} ${p} 회비`, body: `${p} 회비 ${won}가 아직 확인되지 않았습니다.${acc}` };
-  }
-  return {
-    title: `${club} ${p} 회비 미납`,
-    body: `${p} 회비 ${won}가 미납 상태입니다. 납부 후에는 자동으로 확인됩니다.${acc}`,
-  };
-}
 
 exports.dailyFeeDunning = onSchedule(
   { ...REGION, schedule: '0 9 * * *', timeZone: 'Asia/Seoul' },
@@ -389,52 +392,60 @@ exports.dailyFeeDunning = onSchedule(
         const settings = club.data().settings || {};
         const dueDay = Number(settings.feeDueDay) || 10;
         const account = settings.feeAccount || '';
-        const due = dueDateOf(month, dueDay);
-        const stage = DUN_STAGES.find((s) => s.offset === daysBetween(due, today));
-        // 오늘이 발송일이 아니거나, 사람이 확인해야 하는 단계면 건너뛴다
-        if (!stage || !stage.auto) continue;
 
-        // 이미 보낸 단계는 다시 보내지 않는다
         const logRef = club.ref.collection('meta').doc('dunning');
-        const logDoc = await logRef.get();
+        const [logDoc, feeDoc, memberSnap] = await Promise.all([
+          logRef.get(),
+          club.ref.collection('fees').doc(month).get(),
+          club.ref.collection('members').get(),
+        ]);
         const sent = logDoc.exists ? (logDoc.data().sent || {}) : {};
-        if (sent[month] && sent[month][stage.key]) continue;
-
-        const feeDoc = await club.ref.collection('fees').doc(month).get();
         const paid = feeDoc.exists ? (feeDoc.data().paid || {}) : {};
         const amount = (feeDoc.exists && feeDoc.data().amount)
           || settings.feeAmount || 30000;
+        const members = memberSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        const tokens = await clubTokens(club.id, (m) => {
-          const active = !m.status || m.status === '활동';
-          if (!active) return false;
-          return stage.audience === 'all' ? true : !paid[m.id];
+        /* 보낼지 말지, 누구에게, 무슨 문구로 — 전부 공용 모듈이 정한다.
+           auto:false 단계(최종 안내)와 중복 발송도 여기서 걸러진다. */
+        const plan = planAutoSend({
+          clubName: club.data().name,
+          monthKey: month,
+          today,
+          dueDay,
+          amount,
+          members,
+          paidMap: paid,
+          sent,
+          account,
         });
+        if (!plan.recipients.length || !plan.message) continue;
+
+        const wanted = new Set(plan.recipients.map((m) => m.id));
+        const tokens = members
+          .filter((m) => wanted.has(m.id))
+          .map((m) => m.pushToken)
+          .filter(Boolean);
         if (!tokens.length) continue;
 
-        const msg = dunMessage(stage.key, club.data().name, month, amount, due, account);
-        await sendPush(tokens, msg.title, msg.body, { type: 'fee', month, stage: stage.key });
+        await sendPush(tokens, plan.message.title, plan.message.body,
+          { type: 'fee', month, stage: plan.stage.key });
         await logRef.set(
-          { sent: { [month]: { [stage.key]: today } } },
+          { sent: { [month]: { [plan.stage.key]: today } } },
           { merge: true },
         );
 
         // 2차 단계에서는 총무에게 현황을 요약해 준다
-        if (stage.key === 'second') {
-          const staffTokens = await clubTokens(club.id,
-            (m) => m.role === '회장' || m.role === '총무');
-          const unpaidCount = tokens.length;
-          if (staffTokens.length) {
-            await sendPush(
-              staffTokens,
-              `${club.data().name || '클럽'} ${Number(month.split('-')[1])}월 회비 현황`,
-              `미납 ${unpaidCount}명 · ${(unpaidCount * amount).toLocaleString()}원 남았습니다.`,
-              { type: 'fee-summary', month },
-            );
+        if (plan.stage.key === 'second') {
+          const staff = members.filter((m) => m.role === '회장' || m.role === '총무');
+          const staffPush = staff.map((m) => m.pushToken).filter(Boolean);
+          if (staffPush.length) {
+            const unpaid = unpaidMembers(members, paid);
+            const sum = summaryForManager(club.data().name, month, unpaid, amount);
+            await sendPush(staffPush, sum.title, sum.body, { type: 'fee-summary', month });
           }
         }
       } catch (e) {
-        console.error('dunning failed for club', club.id, e);
+        logger.error('dunning failed for club', club.id, e);
       }
     }
   },
