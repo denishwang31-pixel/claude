@@ -14,7 +14,7 @@ import {
   subJoinRequests, subFeeAliases, subDunningLog, subExpenses,
   subHandoverHistory, loadAllFees, subFeeClaims, subDuesPools,
 } from '../../src/lib/firestore';
-import { JOIN_STATUS, normalizeRole } from '../../src/lib/constants';
+import { JOIN_STATUS, normalizeRole, SCREEN } from '../../src/lib/constants';
 import { Board, Guest, Courts } from '../../src/components/MoreScreens';
 import { Members } from '../../src/components/MembersScreen';
 import { Fees } from '../../src/components/FeesScreen';
@@ -38,6 +38,18 @@ import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card, SectionTitle, Chip, Btn, ListRow, Badge } from '../../src/components/ui';
 import { C, F } from '../../src/lib/theme';
 
+/* 어디서 들어왔는지(from) → 뒤로가기가 갈 곳.
+   진입점을 새로 만들 때 여기에 한 줄만 추가하면 된다. */
+const FROM_ROUTES = {
+  home: '/(tabs)',
+  match: '/(tabs)/match',
+  schedule: '/(tabs)/schedule',
+  rank: '/(tabs)/rank',
+};
+const FROM_LABELS = {
+  home: '홈', match: '대진', schedule: '일정', rank: '랭킹',
+};
+
 /* 메뉴 분류 — [키, 아이콘, 라벨, 부제, 권한]
 
    분류 기준은 "누구의 것인가"다.
@@ -53,46 +65,46 @@ const MENU_GROUPS = [
     title: '내 활동',
     staffOnly: false,
     items: [
-      ['myfees', 'fees', '내 회비', '납부 현황 확인 · 기록이 다르면 문의'],
-      ['rank', 'rank', '내 기록·랭킹', null],
-      ['ntrp', 'ntrp', 'NTRP 등급', null],
+      ['myfees', 'fees', SCREEN.myfees, '납부 현황 확인 · 기록이 다르면 문의'],
+      ['rank', 'rank', SCREEN.rank, null],
+      ['ntrp', 'ntrp', SCREEN.ntrp, null],
     ],
   },
   {
     title: '클럽 활동',
     staffOnly: false,
     items: [
-      ['tournament', 'tournament', '대회', 'KDK · 청백전 · 클럽 교류전'],
-      ['polls', 'polls', '참가투표', '회식·대회 참가 의사를 물어보세요'],
-      ['board', 'board', '공지·자유글', null],
-      ['chat', 'chat', '클럽 채팅', null],
-      ['members', 'members', '회원 목록', null],
+      ['tournament', 'tournament', SCREEN.tournament, 'KDK · 청백전 · 클럽 교류전'],
+      ['polls', 'polls', SCREEN.polls, '회식·대회 참가 의사를 물어보세요'],
+      ['board', 'board', SCREEN.board, null],
+      ['chat', 'chat', SCREEN.chat, null],
+      ['members', 'members', SCREEN.members, null],
     ],
   },
   {
     title: '찾아보기',
     staffOnly: false,
     items: [
-      ['guest', 'guest', '게스트 모집', '모든 클럽이 함께 보는 공개 게시판'],
-      ['courts', 'courts', '코트 검색', '주변 공공·사설 테니스장 찾기'],
+      ['guest', 'guest', SCREEN.guest, '모든 클럽이 함께 보는 공개 게시판'],
+      ['courts', 'courts', SCREEN.courts, '주변 공공·사설 테니스장 찾기'],
     ],
   },
   {
     title: '클럽 운영',
     staffOnly: true,
     items: [
-      ['joinreq', 'joinreq', '가입 신청', '검색으로 들어온 신청을 승인'],
-      ['invite', 'invite', '클럽 초대', '초대코드·링크 보내기'],
-      ['attendance', 'attendance', '출석', null],
-      ['fees', 'fees', '회비·지출', '정기 회비 · 지출 · 일회성 정산', 'fees'],
-      ['reconcile', 'fees', '입금 대사', '거래내역 붙여넣기 → 자동 확인', 'fees'],
-      ['dunning', 'polls', '회비 알림', '미납자에게 개별 발송', 'fees'],
-      ['settlement', 'rank', '결산·회계보고', '총회 자료 자동 생성', 'fees'],
-      ['handover', 'members', '총무 인수인계', '권한만 넘기면 기록은 남습니다', 'fees'],
-      ['venues', 'venues', '코트장 관리', '우리 클럽이 정기적으로 쓰는 코트'],
-      ['pairs', 'pairs', '커플·고정 페어', null],
-      ['matchcfg', 'matchcfg', '대진 설정', null],
-      ['settings', 'settings', '클럽 설정', null],
+      ['joinreq', 'joinreq', SCREEN.joinreq, '검색으로 들어온 신청을 승인'],
+      ['invite', 'invite', SCREEN.invite, '초대코드·링크 보내기'],
+      ['attendance', 'attendance', SCREEN.attendance, null],
+      ['fees', 'fees', SCREEN.fees, '정기 회비 · 지출 · 일회성 정산', 'fees'],
+      ['reconcile', 'fees', SCREEN.reconcile, '거래내역 붙여넣기 → 자동 확인', 'fees'],
+      ['dunning', 'polls', SCREEN.dunning, '미납자에게 개별 발송', 'fees'],
+      ['settlement', 'rank', SCREEN.settlement, '총회 자료 자동 생성', 'fees'],
+      ['handover', 'members', SCREEN.handover, '권한만 넘기면 기록은 남습니다', 'fees'],
+      ['venues', 'venues', SCREEN.venues, '우리 클럽이 정기적으로 쓰는 코트'],
+      ['pairs', 'pairs', SCREEN.pairs, null],
+      ['matchcfg', 'matchcfg', SCREEN.matchcfg, null],
+      ['settings', 'settings', SCREEN.settings, null],
     ],
   },
 ];
@@ -148,7 +160,7 @@ export default function More() {
 
   const {
     club, members, meetings, posts, guestPosts, courts, fee, pairs, tournaments,
-    venues, matchConfig, rules, polls, meVal, isAdmin, canAppoint, nameOf,
+    venues, matchConfig, rules, polls, meVal, isAdmin, canAppoint, nameOf, realRole,
     seeFees, seeAllVenues, myLeadVenues,
   } = useClub(clubId, me, { feeMonth, viewMode });
   const { stats } = useMemo(() => computeStats(members, meetings), [members, meetings]);
@@ -188,14 +200,17 @@ export default function More() {
 
   /* 뒤로가기 — 들어온 곳으로 돌려보낸다.
      홈에서 왔으면 홈으로, 더보기 목록에서 열었으면 목록으로. */
+  /* 들어온 곳으로 돌려보낸다.
+
+     from 에 어느 탭에서 왔는지가 담겨 온다. 예전에는 'home' 만 처리해서
+     대진 화면에서 [게스트 모집]으로 들어오면 뒤로가기가 더보기 목록으로
+     갔다 — 가 본 적 없는 화면이라 어색하다.
+     새 진입점을 만들 때 from 만 붙이면 뒤로가기는 자동으로 맞는다. */
   const goBack = () => {
-    if (cameFrom === 'home') {
-      setSub(null);
-      setCameFrom(null);
-      router.replace('/(tabs)');
-      return;
-    }
     setSub(null);
+    if (!cameFrom) return;              // 더보기 목록에서 열었으면 목록으로
+    setCameFrom(null);
+    router.replace(FROM_ROUTES[cameFrom] || '/(tabs)');
   };
   useBackHandler(() => {
     if (sub) { goBack(); return true; }
@@ -261,7 +276,7 @@ export default function More() {
         }} />
       );
       case 'courts': return <Courts {...{ clubId, courts, isAdmin, flash }} />;
-      case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, flash }} />;
+      case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, myRole: realRole, flash }} />;
       case 'joinreq': return <JoinRequests {...{ clubId, club, members, isAdmin, flash }} />;
       case 'invite': return <Invite {...{ clubId, club, members, isAdmin, flash }} />;
       case 'polls': return <Polls {...{ clubId, polls, members, me, isAdmin, flash }} />;
@@ -324,11 +339,13 @@ export default function More() {
       <View style={{ flex: 1, backgroundColor: C.bg }}>
         <ScreenHeader
           title="클럽 채팅"
-          subtitle={`${club?.name || ''} · 회원 ${members.length}명`}
+          subtitle={venues.length > 1
+            ? `${club?.name || ''} · 전체 / 코트장별 채널`
+            : `${club?.name || ''} · 회원 ${members.length}명`}
           onBack={goBack}
-          backLabel={cameFrom === 'home' ? '홈' : '더보기'}
+          backLabel={FROM_LABELS[cameFrom] || '더보기'}
         />
-        <Chat {...{ clubId, me, meVal, members, isAdmin, flash }} />
+        <Chat {...{ clubId, me, meVal, members, venues, isAdmin, flash }} />
         {toast && (
           <View style={{
             position: 'absolute', bottom: 84, alignSelf: 'center', backgroundColor: C.ink,
@@ -346,7 +363,7 @@ export default function More() {
       <ScreenHeader
         title={title}
         onBack={sub ? goBack : undefined}
-        backLabel={cameFrom === 'home' ? '홈' : '더보기'}
+        backLabel={FROM_LABELS[cameFrom] || '더보기'}
         right={!sub && viewMode ? (
           <Chip tone="soft">
             {viewMode === 'staff' ? '운영진 모드' : viewMode === 'lead' ? '리드 모드' : '회원 모드'}

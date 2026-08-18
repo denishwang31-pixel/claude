@@ -39,6 +39,10 @@ service cloud.firestore {
     function isPresident(clubId) {
       return (isClubMember(clubId) && clubRole(clubId) == '회장') || isClubOwner(clubId);
     }
+    /** 회장이 아니어도 정할 수 있는 일상 역할 (constants.js DAILY_ROLES 와 동일) */
+    function isDailyRole(r) {
+      return r == '운영진' || r == '리드' || r == '회원' || r == '책임리더';
+    }
     /** 앱 운영자 = appAdmins/{uid} 문서가 존재하는 계정 (Firebase 콘솔에서 수동 등록) */
     function isAppAdmin() {
       return signedIn() &&
@@ -88,9 +92,15 @@ service cloud.firestore {
             || resource.data.get('startedAt', '') == ''
             || isPresident(clubId)
           ) && (
+          /* 역할 변경 —
+               회장: 전부
+               운영 담당: 운영진·리드·회원 사이에서만. 회장·총무는 못 세우고,
+                          회장·총무인 사람을 끌어내리지도 못한다. */
           (isClubAdmin(clubId)
               && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
-                  || isPresident(clubId)))
+                  || isPresident(clubId)
+                  || (isDailyRole(request.resource.data.role)
+                      && isDailyRole(resource.data.get('role', '회원')))))
           || (request.auth.uid == memberId
               && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
           || (

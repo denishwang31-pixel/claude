@@ -55,8 +55,37 @@ export const canSeeAllVenues = (role) =>
 /** 하위호환 */
 export const isAdminRole = (role) => isStaffRole(role);
 
-/** 역할 임명 권한 — 회장만 */
+/** 역할 임명 권한 — 회장만 (회장·총무를 세울 수 있는 사람) */
 export const canAppointRole = (role) => normalizeRole(role) === ROLES.PRESIDENT;
+
+/* 운영진도 일상 역할은 정할 수 있어야 한다.
+
+   회장 한 사람만 임명할 수 있으면 "리드 한 명 지정"에도 회장을 불러야 한다.
+   그렇다고 아무나 회장·총무를 세우게 하면 권한이 위로 새어 나간다.
+   그래서 위 두 자리(회장·총무)만 회장이 정하고, 나머지는 운영 담당이 정한다. */
+
+/** 운영진 이하 역할 — 회장이 아니어도 정할 수 있다 */
+export const DAILY_ROLES = [ROLES.STAFF, ROLES.LEAD, ROLES.MEMBER];
+
+/** 회장만 정할 수 있는 자리 */
+export const TOP_ROLES = [ROLES.PRESIDENT, ROLES.MANAGER];
+
+/**
+ * actor 가 target 인 사람을 nextRole 로 바꿀 수 있는가.
+ * ⚠️ firestore.rules 의 같은 규칙과 반드시 일치해야 한다.
+ */
+export const canAssignRole = (actorRole, targetRole, nextRole) => {
+  const actor = normalizeRole(actorRole);
+  if (actor === ROLES.PRESIDENT) return true;              // 회장은 전부
+  if (!isStaffRole(actor)) return false;                   // 일반 회원은 불가
+  // 운영 담당 — 위 두 자리는 건드리지 못한다 (올리는 것도, 내리는 것도)
+  return DAILY_ROLES.includes(nextRole)
+    && DAILY_ROLES.includes(normalizeRole(targetRole));
+};
+
+/** 이 사람이 지금 고를 수 있는 역할 목록 */
+export const assignableRolesFor = (actorRole, targetRole) =>
+  ASSIGNABLE_ROLES.filter((r) => canAssignRole(actorRole, targetRole, r));
 
 /** 보기 모드 — 회장이 각 역할의 화면을 그대로 확인할 때 사용 */
 export const VIEW_MODES = [
@@ -181,6 +210,45 @@ export const roundMinutesLabel = (v) => {
   const m = n % 60;
   return m ? `${h}시간 ${m}분` : `${h}시간`;
 };
+
+/* ============================================================
+   화면 이름 — 한 곳에서만 정한다.
+
+   안내 문구에 "운영진이 [회원] 화면에서 …" 라고 적어 뒀는데 실제 메뉴는
+   [회원 목록]이었다. 이런 어긋남은 사용자가 그 메뉴를 못 찾게 만든다.
+   메뉴도 안내 문구도 여기 값을 쓰고, 테스트가 어긋남을 잡는다.
+   ============================================================ */
+export const SCREEN = {
+  myfees: '내 회비',
+  rank: '내 기록·랭킹',
+  ntrp: 'NTRP 등급',
+  tournament: '대회',
+  polls: '참가투표',
+  board: '공지·자유글',
+  chat: '클럽 채팅',
+  members: '회원 목록',
+  guest: '게스트 모집',
+  courts: '코트 검색',
+  joinreq: '가입 신청',
+  invite: '클럽 초대',
+  attendance: '출석',
+  fees: '회비·지출',
+  reconcile: '입금 대사',
+  dunning: '회비 알림',
+  settlement: '결산·회계보고',
+  handover: '총무 인수인계',
+  venues: '코트장 관리',
+  pairs: '커플·고정 페어',
+  matchcfg: '대진 설정',
+  settings: '클럽 설정',
+  more: '더보기',
+  schedule: '일정',
+  match: '대진표',
+  home: '홈',
+};
+
+/** 안내 문구에 넣을 때 — "[회원 목록]" 형태로 */
+export const screenRef = (key) => `[${SCREEN[key] || key}]`;
 
 /** 코트 표면 */
 export const SURFACES = ['하드', '클레이', '인조잔디', '실내'];

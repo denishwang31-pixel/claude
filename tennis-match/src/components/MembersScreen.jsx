@@ -1,4 +1,9 @@
-/* 회원 관리 — 프로필 수정(성별·부수·조·지역·구력), 역할 임명(회장 전용), 소속 코트장, 삭제
+/* 회원 관리 — 프로필 수정(성별·부수·조·지역·구력), 역할 지정, 소속 코트장, 삭제
+
+   역할 지정
+     운영진·리드·회원은 운영 담당이 정한다. 회장·총무는 회장만 정한다.
+     (회장 한 명만 임명할 수 있으면 리드 한 명 세우는 데도 회장을 불러야 하고,
+      아무나 회장·총무를 세우면 권한이 위로 새어 나간다)
 
    구력 확인제도
      테니스 시작 년월은 한 번 저장되면 본인도 못 바꾼다. 대회 참가 자격이
@@ -11,7 +16,7 @@ import {
 } from '../lib/firestore';
 import {
   ROLES, ASSIGNABLE_ROLES, ROLE_DESC, GRADES, BUSU, BUSU_KEYS,
-  roleTone, isStaffRole, normalizeRole,
+  roleTone, isStaffRole, normalizeRole, assignableRolesFor, canAssignRole,
 } from '../lib/constants';
 import { effectiveNtrp, careerText } from '../lib/ntrp';
 import { Label, MonthField } from './pickers';
@@ -22,7 +27,7 @@ import { C, S, R, F } from '../lib/theme';
 
 const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoint, flash }) {
+export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoint, myRole, flash }) {
   const [openId, setOpenId] = useState(null);
   const [d, setD] = useState({});
   const [adding, setAdding] = useState(false);
@@ -101,6 +106,9 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
   };
 
   const appoint = (m, role) => {
+    if (!canAssignRole(myRole, m.role, role)) {
+      return flash('회장·총무 지정은 회장만 할 수 있습니다');
+    }
     if (m.id === me && normalizeRole(m.role) === ROLES.PRESIDENT && role !== ROLES.PRESIDENT) {
       return Alert.alert('확인', '본인의 회장 권한을 내려놓으면 다시 임명할 수 없습니다. 먼저 다른 회원을 회장으로 임명하세요.');
     }
@@ -121,8 +129,9 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
           ))}
           {staff.length === 0 && <Text style={{ fontSize: 11, color: C.faint }}>지정된 운영 담당이 없습니다.</Text>}
         </View>
-        <Text style={{ fontSize: 10, color: C.faint, marginTop: 8 }}>
-          임명은 <Text style={{ fontWeight: '700' }}>회장</Text>만 할 수 있습니다. 인원 제한은 없습니다.
+        <Text style={{ fontSize: 10, color: C.faint, marginTop: 8, lineHeight: 15 }}>
+          <Text style={{ fontWeight: '700' }}>운영진 · 리드 · 회원</Text>은 운영 담당이 정할 수 있고,
+          <Text style={{ fontWeight: '700' }}> 회장 · 총무</Text>는 회장만 정합니다. 인원 제한은 없습니다.
         </Text>
       </Card>
 
@@ -283,24 +292,30 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                     </View>
                   )}
 
-                  {/* 역할 임명 — 회장만 */}
-                  {canAppoint && (
-                    <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: '#e7e5e4', paddingTop: 10 }}>
-                      <Label hint="회장만 변경 가능">역할</Label>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                        {ASSIGNABLE_ROLES.map((r) => (
-                          <Chip
-                            key={r}
-                            tone={normalizeRole(m.role) === r ? 'green' : 'outline'}
-                            onPress={() => appoint(m, r)}
-                          >{r}</Chip>
-                        ))}
+                  {/* 역할 지정 — 운영진 이하는 운영 담당이, 회장·총무는 회장이 */}
+                  {(() => {
+                    const options = assignableRolesFor(myRole, m.role);
+                    if (!options.length) return null;
+                    return (
+                      <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: '#e7e5e4', paddingTop: 10 }}>
+                        <Label hint={canAppoint ? '회장은 모든 역할을 지정할 수 있습니다' : '회장·총무는 회장만 지정합니다'}>
+                          역할
+                        </Label>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                          {options.map((r) => (
+                            <Chip
+                              key={r}
+                              tone={normalizeRole(m.role) === r ? 'green' : 'outline'}
+                              onPress={() => appoint(m, r)}
+                            >{r}</Chip>
+                          ))}
+                        </View>
+                        <Text style={{ fontSize: 10, color: C.faint, marginTop: 6, lineHeight: 15 }}>
+                          {ROLE_DESC[normalizeRole(m.role)]}
+                        </Text>
                       </View>
-                      <Text style={{ fontSize: 10, color: C.faint, marginTop: 6, lineHeight: 15 }}>
-                        {ROLE_DESC[normalizeRole(m.role)]}
-                      </Text>
-                    </View>
-                  )}
+                    );
+                  })()}
 
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
                     <Btn small onPress={() => save(m)}>저장</Btn>

@@ -13,11 +13,11 @@
    ============================================================ */
 import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { updateClubSettings, saveClubProfile } from '../lib/firestore';
+import { updateClubSettings, saveClubProfile, updateVenue } from '../lib/firestore';
 import {
   DEFAULT_SETTINGS, roundsFromSettings, roundTimes, toMinutes,
 } from '../lib/schedule';
-import { normalizeRoundMinutes } from '../lib/constants';
+import { normalizeRoundMinutes, roundMinutesLabel, screenRef } from '../lib/constants';
 import { RegionPicker } from './RegionPicker';
 import { Icon } from './Icon';
 import { Label } from './pickers';
@@ -37,6 +37,31 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
     setProfile({ name: club?.name || '', image: club?.image || '', joinPassword: club?.joinPassword || '' });
   }, [club?.id]);
 
+  /* 어느 코트장의 값을 고치고 있는가.
+     '' = 코트장 미지정 모임에 쓰이는 클럽 기본값.
+
+     예전에는 위에 코트장 목록을 읽기 전용으로 늘어놓고, 그 아래 면수·
+     운영시간 조절기가 있었다. 둘이 이어져 보이는데 실제로는 아래 값이
+     클럽 기본값이라 "어느 코트 설정인지" 알 수 없었다.
+     이제 위에서 대상을 고르면 아래 값이 그 대상의 것으로 바뀐다. */
+  const [target, setTarget] = useState('');
+  const venue = venues.find((v) => v.id === target) || null;
+
+  /* 고른 대상이 바뀌면 편집값을 그 대상의 것으로 갈아 끼운다 */
+  useEffect(() => {
+    if (venue) {
+      setS((prev) => ({
+        ...prev,
+        courts: venue.courts,
+        startTime: venue.startTime,
+        endTime: venue.endTime,
+        roundMinutes: venue.roundMinutes,
+      }));
+    } else {
+      setS({ ...DEFAULT_SETTINGS, ...(club?.settings || {}) });
+    }
+  }, [target, venue?.id]);
+
   const hasVenues = venues.length > 0;
   const startOk = toMinutes(s.startTime) != null;
   const endOk = toMinutes(s.endTime) != null;
@@ -49,6 +74,15 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
     const courts = Math.max(1, Math.min(20, Number(s.courts) || 1));
     const roundMinutes = normalizeRoundMinutes(s.roundMinutes);
     try {
+      /* 코트장을 고른 상태면 그 코트장의 면수·시간을 고친다.
+         클럽 기본값은 건드리지 않는다 — 서로 다른 값이다. */
+      if (venue) {
+        await updateVenue(clubId, venue.id, {
+          courts, roundMinutes, startTime: s.startTime, endTime: s.endTime,
+        });
+        flash(`${venue.name} 설정이 저장되었습니다`);
+        return undefined;
+      }
       await updateClubSettings(clubId, { ...s, courts, roundMinutes });
       // 이름·이미지·비밀번호 + 공개 검색 목록 동기화
       await saveClubProfile(clubId, {
@@ -76,7 +110,7 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
           <Text style={{ fontSize: 13, color: C.green2, marginTop: 6, fontWeight: '700' }}>→ 총 {rounds}타임 진행</Text>
           {hasVenues && (
             <Text style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>
-              코트장별 설정은 [코트장 관리]에 있습니다: {venues.map((v) => v.name).join(' · ')}
+              코트장별 설정은 {screenRef('venues')}에 있습니다: {venues.map((v) => v.name).join(' · ')}
             </Text>
           )}
           <Text style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>설정 변경은 총무·운영진만 가능합니다.</Text>
@@ -113,37 +147,62 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
 
       {/* ---------- 코트/시간 — 어떤 코트에 대한 값인지 명시 ---------- */}
       <SectionTitle
-        hint={hasVenues
+        hint={venue
+          ? '이 코트장에서 여는 모임의 기본값입니다.'
+          : hasVenues
           ? '코트장을 지정하지 않은 모임에만 쓰이는 기본값입니다.'
-          : '새 모임 등록의 기본값이 됩니다. 코트장이 여러 곳이면 [코트장 관리]에 등록하세요.'}>
-        {hasVenues ? '기본 코트 설정 (코트장 미지정 모임용)' : '코트·운영 시간'}
+          : `새 모임 등록의 기본값이 됩니다. 코트장이 여러 곳이면 ${screenRef('venues')}에 등록하세요.`}>
+        {venue ? `${venue.name} — 코트·운영 시간`
+          : hasVenues ? '기본 코트 설정 (코트장 미지정 모임용)' : '코트·운영 시간'}
       </SectionTitle>
 
-      {/* 코트장이 등록된 클럽 — 코트장별 설정은 저쪽이 담당한다고 못박는다 */}
+      {/* 코트장이 여러 곳이면 어느 것을 고칠지 먼저 고른다 */}
       {hasVenues && (
         <Card style={{ marginBottom: S.sm }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <Icon name="venues" size={16} color={C.green} />
-            <Text style={[F.bodyBold, { flex: 1 }]}>등록된 코트장 {venues.length}곳</Text>
+            <Text style={[F.bodyBold, { flex: 1 }]}>어느 코트의 설정인가요?</Text>
             {!!onOpenVenues && (
-              <Chip tone="soft" onPress={onOpenVenues}>코트장 관리로</Chip>
+              <Chip tone="soft" onPress={onOpenVenues}>코트장 추가·삭제</Chip>
             )}
           </View>
-          {venues.map((v, i) => (
-            <View key={v.id} style={{
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              paddingVertical: 7, borderTopWidth: i ? 1 : 0, borderTopColor: C.border,
-            }}>
-              <Text style={{ fontSize: 13.5, fontWeight: '600', color: C.text }}>{v.name}</Text>
-              <Text style={{ fontSize: 12, color: C.sub }}>
-                {v.startTime}~{v.endTime} · {v.courts}면 · {v.roundMinutes}분
-              </Text>
-            </View>
-          ))}
-          <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 16 }}>
-            각 코트장의 면수·시간은 [코트장 관리]에서 바꿉니다.
-            아래 값은 코트장을 고르지 않고 등록한 모임에만 적용됩니다.
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            <Chip tone={target === '' ? 'green' : 'outline'} onPress={() => setTarget('')}>
+              기본값 (코트장 미지정)
+            </Chip>
+            {venues.map((v) => (
+              <Chip key={v.id} tone={target === v.id ? 'green' : 'outline'} onPress={() => setTarget(v.id)}>
+                {v.name}
+              </Chip>
+            ))}
+          </View>
+
+          <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 10, lineHeight: 17 }}>
+            {venue
+              ? `아래 면수·운영시간은 "${venue.name}"의 값입니다. 저장하면 이 코트장에만 반영됩니다.`
+              : '아래 값은 코트장을 고르지 않고 등록한 모임에만 쓰입니다.'}
           </Text>
+
+          {/* 지금 고르지 않은 코트장들도 한눈에 — 값이 서로 다르다는 걸 보여 준다 */}
+          <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 8 }}>
+            {venues.map((v, i) => (
+              <View key={v.id} style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                paddingVertical: 6, borderTopWidth: i ? 1 : 0, borderTopColor: C.border,
+              }}>
+                <Text style={{
+                  fontSize: 12.5, fontWeight: target === v.id ? '700' : '500',
+                  color: target === v.id ? C.green : C.text,
+                }}>
+                  {v.name}
+                </Text>
+                <Text style={{ fontSize: 11.5, color: C.sub }}>
+                  {v.startTime}~{v.endTime} · {v.courts}면 · {roundMinutesLabel(v.roundMinutes)}
+                </Text>
+              </View>
+            ))}
+          </View>
         </Card>
       )}
 
@@ -212,7 +271,7 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <Icon name="matchcfg" size={18} color={C.green} />
           <View style={{ flex: 1 }}>
-            <Text style={F.bodyBold}>[대진 설정]에서 관리합니다</Text>
+            <Text style={F.bodyBold}>{screenRef('matchcfg')}에서 관리합니다</Text>
             <Text style={[F.caption, { marginTop: 2, lineHeight: 16 }]}>
               잡복 허용 · 기본 타임 유형 · 실력 매칭 · 편성 우선순위.
               같은 값이 두 곳에 있으면 어긋나기 쉬워 한 곳으로 모았습니다.
@@ -244,7 +303,7 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
       </Card>
 
       <View style={{ marginTop: S.lg }}>
-        <Btn full onPress={save}>설정 저장</Btn>
+        <Btn full onPress={save}>{venue ? `${venue.name} 설정 저장` : '설정 저장'}</Btn>
       </View>
     </View>
   );

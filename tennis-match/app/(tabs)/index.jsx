@@ -17,10 +17,12 @@ import { useVenueScope } from '../../src/hooks/useVenueScope';
 import { computeStats } from '../../src/lib/matchmaking';
 import { weatherFor } from '../../src/lib/weather';
 import {
-  updateMeeting, subGear, subJoinRequests, subServiceStats,
+  updateMeeting, subGear, subJoinRequests, subServiceStats, setRsvp,
 } from '../../src/lib/firestore';
 import { dowName } from '../../src/lib/schedule';
-import { RSVP, viewModesFor, roleTone, JOIN_STATUS } from '../../src/lib/constants';
+import {
+  RSVP, viewModesFor, roleTone, JOIN_STATUS, screenRef,
+} from '../../src/lib/constants';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
 import { VenuePicker } from '../../src/components/VenuePicker';
@@ -33,7 +35,13 @@ import { C, S, R, F, SHADOW } from '../../src/lib/theme';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-/* 클럽 운영 — 홈에 바로 펼친다. [키, 라벨, 더보기 화면키, 권한] */
+/* 클럽 운영 — 홈에 바로 펼치는 것은 "자주 하는 일"만.
+
+   설정류(대진 설정 · 커플·페어 · 코트장 관리 · 클럽 설정)와 초대는
+   한 번 정해 두면 잘 안 바뀐다. 홈에 두면 매일 보는 화면만 복잡해진다.
+   그런 것은 [더보기] → 클럽 운영에 그대로 있다.
+
+   [키, 라벨, 더보기 화면키, 권한] */
 const MANAGE = [
   ['members', '회원', 'members'],
   ['joinreq', '가입 신청', 'joinreq'],
@@ -41,12 +49,6 @@ const MANAGE = [
   ['fees', '회비·지출', 'fees', 'fees'],
   ['reconcile', '입금 대사', 'reconcile', 'fees'],
   ['polls', '회비 알림', 'dunning', 'fees'],
-  ['rank', '결산', 'settlement', 'fees'],
-  ['venues', '코트장', 'venues'],
-  ['matchcfg', '대진 설정', 'matchcfg'],
-  ['invite', '초대', 'invite'],
-  ['pairs', '커플·페어', 'pairs'],
-  ['settings', '클럽 설정', 'settings'],
 ];
 
 /** 매일 쓰는 것만 바로가기로 — 나머지는 [더보기] */
@@ -386,44 +388,94 @@ export default function Home() {
                     />
                   ))}
               </View>
+              <Pressable
+                onPress={() => router.push({
+                  pathname: '/(tabs)/more', params: { open: 'manage', from: 'home' },
+                })}
+                style={({ pressed }) => ({ marginTop: S.md, opacity: pressed ? 0.6 : 1 })}>
+                <Text style={{ fontSize: 11.5, color: C.green, fontWeight: '600' }}>
+                  설정 · 초대 · 코트장 관리는 더보기에서 →
+                </Text>
+              </Pressable>
             </Card>
           </>
         )}
 
-        {/* 운영진/리드: 전체 코트 일정 */}
-        {isAdmin && visible.length > 0 && (
+        {/* 예정 일정 — 회원도 여기서 참석 여부를 바로 정한다.
+
+           예전에는 운영진에게만 목록을 보여 줬다. 회원은 일정을 보려면
+           일정 탭으로, 참석 체크하러 또 들어가야 했다.
+           홈에서 다 끝나야 한다:
+             참석 확정 → 초록 강조
+             불참     → 흐리게
+             미정     → 그 자리에서 [참석] / [불참] 버튼 */}
+        {visible.length > 0 && (
           <>
             <SectionTitle right={<Chip tone="outline">{visible.length}건</Chip>}>
-              {seeAllVenues ? '전체 코트 일정' : '담당 코트 일정'}
+              {seeAllVenues ? '예정 일정 · 전체 코트' : mode === 'lead' ? '예정 일정 · 담당 코트' : '내 예정 일정'}
             </SectionTitle>
             <Card style={{ paddingVertical: 4 }}>
-              {visible.slice(0, 6).map((m, i) => {
+              {visible.slice(0, 8).map((m, i) => {
                 const cnt = Object.values(m.rsvp || {}).filter((v) => v === RSVP.YES).length + (m.guests?.length || 0);
                 // 단식 모임은 코트당 2명이 정원이다
                 const per = m.playMode === 'singles' ? 2 : 4;
                 const enough = cnt >= (m.courts || 1) * per;
+                const mine = m.rsvp?.[me];              // 내 참석 상태
+                const going = mine === RSVP.YES;
+                const notGoing = mine === RSVP.NO;
                 return (
-                  <Pressable key={m.id}
-                    onPress={() => goMeeting(m)}
-                    style={({ pressed }) => ({
-                      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                      paddingVertical: 11, borderTopWidth: i ? 1 : 0, borderTopColor: C.border,
-                      opacity: pressed ? 0.6 : 1,
-                    })}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={F.bodyBold}>
-                        {m.date.slice(5).replace('-', '.')} ({dowName(m.date)}) {m.time}
-                      </Text>
-                      <Text style={[F.caption, { marginTop: 2 }]}>
-                        {m.place || venueName(m.venueId) || '장소 미정'} · {m.courts}면 · {m.rounds}타임
-                        {m.matches?.length ? ' · 대진 완료' : ''}
-                      </Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Chip tone={enough ? 'soft' : 'warn'}>참석 {cnt}</Chip>
-                      <Icon name="forward" size={14} color={C.faint} />
-                    </View>
-                  </Pressable>
+                  <View key={m.id} style={{
+                    borderTopWidth: i ? 1 : 0, borderTopColor: C.border,
+                    backgroundColor: going ? C.greenSoft : 'transparent',
+                    borderRadius: going ? R.md : 0,
+                    marginTop: i ? 0 : 0,
+                    opacity: notGoing ? 0.45 : 1,
+                  }}>
+                    <Pressable
+                      onPress={() => goMeeting(m)}
+                      style={({ pressed }) => ({
+                        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        paddingVertical: 11, paddingHorizontal: going ? 10 : 0,
+                        opacity: pressed ? 0.6 : 1,
+                      })}>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={[F.bodyBold, going && { color: C.green }]}>
+                            {m.date.slice(5).replace('-', '.')} ({dowName(m.date)}) {m.time}
+                          </Text>
+                          {going && <Chip tone="green">참석</Chip>}
+                          {notGoing && <Chip tone="outline">불참</Chip>}
+                        </View>
+                        <Text style={[F.caption, { marginTop: 2 }]}>
+                          {m.place || venueName(m.venueId) || '장소 미정'} · {m.courts}면 · {m.rounds}타임
+                          {m.matches?.length ? ' · 대진 완료' : ''}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Chip tone={enough ? 'soft' : 'warn'}>참석 {cnt}</Chip>
+                        <Icon name="forward" size={14} color={C.faint} />
+                      </View>
+                    </Pressable>
+
+                    {/* 아직 정하지 않았으면 여기서 바로 정한다 */}
+                    {mine === undefined && (
+                      <View style={{ flexDirection: 'row', gap: 6, paddingBottom: 11 }}>
+                        <Btn small onPress={() => setRsvp(clubId, m.id, me, RSVP.YES)}>참석</Btn>
+                        <Btn small tone="ghost" onPress={() => setRsvp(clubId, m.id, me, RSVP.MAYBE)}>미정</Btn>
+                        <Btn small tone="ghost" onPress={() => setRsvp(clubId, m.id, me, RSVP.NO)}>불참</Btn>
+                      </View>
+                    )}
+                    {/* 이미 정했으면 조용히 바꿀 수 있게만 */}
+                    {mine !== undefined && (
+                      <Pressable
+                        onPress={() => setRsvp(clubId, m.id, me, going ? RSVP.NO : RSVP.YES)}
+                        style={{ paddingBottom: 10, paddingHorizontal: going ? 10 : 0 }}>
+                        <Text style={{ fontSize: 11.5, color: C.faint }}>
+                          {going ? '참석 취소' : notGoing ? '참석으로 바꾸기' : '미정 — 참석으로 바꾸기'}
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
                 );
               })}
             </Card>
@@ -441,7 +493,7 @@ export default function Home() {
                 </View>
               ) : (
                 <Text style={{ fontSize: 12.5, color: C.sub, lineHeight: 19 }}>
-                  아직 지정된 그룹이 없습니다. 운영진이 [회원] 화면에서 소속 코트장을 지정하면
+                  아직 지정된 그룹이 없습니다. 운영진이 {screenRef('members')}에서 소속 코트장을 지정하면
                   그 그룹의 일정만 표시됩니다.
                 </Text>
               )}

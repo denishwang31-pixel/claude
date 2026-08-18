@@ -13,14 +13,15 @@
     "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-rules.mjs\"",
     "test:kdk": "node scripts/test-kdk.mjs",
     "test:team": "node scripts/test-team.mjs",
-    "test:all": "npm run test:imports && npm run test:engine && npm run test:kdk && npm run test:team && npm run test:tournament && npm run test:schedule && npm run test:courts && npm run test:venue && npm run test:reconcile && npm run test:manager && npm run test:duespool",
+    "test:all": "npm run test:imports && npm run test:labels && npm run test:engine && npm run test:kdk && npm run test:team && npm run test:tournament && npm run test:schedule && npm run test:courts && npm run test:venue && npm run test:reconcile && npm run test:manager && npm run test:duespool",
     "courts:seoul": "node scripts/fetch-courts.mjs",
     "test:courts": "node scripts/test-courts.mjs",
     "test:venue": "node scripts/test-venue-scope.mjs",
     "test:reconcile": "node scripts/test-reconcile.mjs",
     "test:manager": "node scripts/test-manager.mjs",
     "test:duespool": "node scripts/test-duespool.mjs",
-    "test:imports": "node scripts/test-imports.mjs"
+    "test:imports": "node scripts/test-imports.mjs",
+    "test:labels": "node scripts/test-labels.mjs"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "^8.0.1",

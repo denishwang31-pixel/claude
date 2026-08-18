@@ -252,7 +252,7 @@ export default function Schedule() {
             <SectionTitle>대회</SectionTitle>
             {upcomingTournaments.map((t) => (
               <Card key={t.id} style={{ marginBottom: 10, borderColor: C.green, borderWidth: 1 }}
-                onPress={() => router.push({ pathname: '/(tabs)/more', params: { open: 'tournament' } })}>
+                onPress={() => router.push({ pathname: '/(tabs)/more', params: { open: 'tournament', from: 'schedule' } })}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <Icon name="tournament" size={19} color={C.green} />
                   <View style={{ flex: 1 }}>
