@@ -292,6 +292,45 @@ service cloud.firestore {
       allow write: if isClubAdmin(clubId);
     }
 
+    /* ---------- 클럽 교류전(루트) ----------
+       두 클럽이 같이 보는 문서다. 클럽 하위에 두면 상대가 읽을 수 없어서
+       루트에 두고, 두 클럽의 사람에게만 연다.
+
+       권한을 한쪽에 몰아 둔 이유
+         같은 대진표를 두 클럽이 동시에 고치면 마지막에 누른 쪽이 이긴다.
+         그것을 합칠 방법은 없다. 실제로도 주최 클럽이 코트를 잡고 진행을
+         맡으므로, 대진·결과·설정은 개설한 클럽(host)만 건드린다.
+         초대받은 클럽(guest)은 수락·거절과 자기 출전 명단만 쓴다.
+         상대 명단을 남이 고칠 수 있으면 교류전이 아니라 사고다. */
+    match /clubMatches/{matchId} {
+      function hostId() { return resource.data.hostClubId; }
+      function guestId() { return resource.data.get('guestClubId', ''); }
+
+      // 회원이면 읽을 수 있다 — 자기 클럽 경기를 선수도 봐야 한다
+      allow read: if isClubMember(hostId())
+        || (guestId() != '' && isClubMember(guestId()));
+
+      // 개설은 주최 클럽 운영진이. 남의 클럽 이름으로 초대를 못 만든다.
+      allow create: if isClubAdmin(request.resource.data.hostClubId)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow update: if
+        // 주최 클럽 운영진 — 두 클럽 id 는 바꿀 수 없다(상대를 몰래 갈아치우기 금지)
+        (isClubAdmin(hostId())
+          && request.resource.data.hostClubId == hostId()
+          && request.resource.data.get('guestClubId', '') == guestId())
+        // 초대받은 클럽 운영진 — 수락/거절 + 자기 명단만
+        || (guestId() != '' && isClubAdmin(guestId())
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'guestRoster', 'respondedBy', 'respondedAt', 'updatedAt'])
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['status'])
+              || request.resource.data.status == 'accepted'
+              || request.resource.data.status == 'declined'));
+
+      allow delete: if isClubAdmin(hostId());
+    }
+
     /* ---------- 앱 운영자 명단(루트) ----------
        - 별도 로그인은 없다. 평소처럼 이메일로 로그인하고, 이 컬렉션에
          본인 uid 문서가 있으면 앱 운영자 권한이 켜진다.

@@ -223,6 +223,7 @@ export const SCREEN = {
   rank: '내 기록·랭킹',
   ntrp: 'NTRP 등급',
   tournament: '대회',
+  clubmatch: '클럽 교류전',
   polls: '참가투표',
   board: '공지·자유글',
   chat: '클럽 채팅',

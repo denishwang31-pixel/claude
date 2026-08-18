@@ -529,6 +529,92 @@ await T('일반 회원의 인수인계 이력 수정 거부',
 await T('편성 규칙은 회원도 조회 가능',
   assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'meta', 'rules'))));
 
+/* ---------------- 클럽 교류전 ----------------
+   두 클럽이 같은 문서를 본다. 권한을 한쪽에 몰아 두지 않으면
+   마지막에 누른 쪽이 이기는 대진표가 된다. */
+console.log('\n[클럽 교류전]');
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  // 상대 클럽 B — 회장 bpres, 회원 bmem
+  await setDoc(doc(db, 'clubs', 'club2'), { name: '상대클럽', ownerId: 'bpres', inviteCode: 'ZZZ999' });
+  await setDoc(doc(db, 'clubs', 'club2', 'members', 'bpres'), { name: 'B회장', gender: 'M', role: '회장', status: '활동' });
+  await setDoc(doc(db, 'clubs', 'club2', 'members', 'bmem'), { name: 'B회원', gender: 'F', role: '회원', status: '활동' });
+  await setDoc(doc(db, 'clubMatches', 'cm1'), {
+    kind: 'linked', hostClubId: CLUB, hostClubName: '테스트클럽',
+    guestClubId: 'club2', guestClubName: '상대클럽',
+    date: '2099-09-01', status: 'pending', createdBy: 'owner1',
+    config: {}, hostRoster: [], guestRoster: [], matches: [],
+  });
+});
+const bpres = env.authenticatedContext('bpres').firestore();
+const bmem = env.authenticatedContext('bmem').firestore();
+
+await T('주최 클럽 운영진의 교류전 개설 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubMatches', 'cm2'), {
+    kind: 'linked', hostClubId: CLUB, hostClubName: '테스트클럽',
+    guestClubId: 'club2', guestClubName: '상대클럽',
+    date: '2099-10-01', status: 'pending', createdBy: 'owner1',
+  })));
+await T('남의 클럽 이름으로 개설 거부',
+  assertFails(setDoc(doc(bpres, 'clubMatches', 'cm3'), {
+    kind: 'linked', hostClubId: CLUB, hostClubName: '테스트클럽',
+    guestClubId: 'club2', status: 'pending', createdBy: 'bpres',
+  })));
+await T('일반 회원의 개설 거부',
+  assertFails(setDoc(doc(mem1, 'clubMatches', 'cm4'), {
+    kind: 'linked', hostClubId: CLUB, guestClubId: 'club2',
+    status: 'pending', createdBy: 'mem1',
+  })));
+await T('수락 상태로 바로 만드는 것 거부(상대 동의 없이 진행 금지)',
+  assertFails(setDoc(doc(owner, 'clubMatches', 'cm5'), {
+    kind: 'linked', hostClubId: CLUB, guestClubId: 'club2',
+    status: 'accepted', createdBy: 'owner1',
+  })));
+
+await T('양쪽 클럽 회원 모두 읽기 허용(선수도 대진을 봐야 한다)',
+  assertSucceeds(getDoc(doc(mem1, 'clubMatches', 'cm1'))));
+await T('상대 클럽 회원도 읽기 허용',
+  assertSucceeds(getDoc(doc(bmem, 'clubMatches', 'cm1'))));
+await T('무관한 클럽 사용자의 읽기 거부',
+  assertFails(getDoc(doc(outsider, 'clubMatches', 'cm1'))));
+
+await T('초대받은 클럽 운영진의 수락 허용',
+  assertSucceeds(updateDoc(doc(bpres, 'clubMatches', 'cm1'),
+    { status: 'accepted', respondedBy: 'bpres' })));
+await T('초대받은 클럽의 자기 명단 입력 허용',
+  assertSucceeds(updateDoc(doc(bpres, 'clubMatches', 'cm1'),
+    { guestRoster: [{ id: 'bmem', name: 'B회원', gender: 'F' }] })));
+await T('초대받은 클럽이 주최 명단을 고치는 것 거부',
+  assertFails(updateDoc(doc(bpres, 'clubMatches', 'cm1'),
+    { hostRoster: [{ id: 'x', name: '가짜' }] })));
+await T('초대받은 클럽이 대진표를 고치는 것 거부(운영은 주최가 한다)',
+  assertFails(updateDoc(doc(bpres, 'clubMatches', 'cm1'),
+    { matches: [{ id: 'm1', teamA: [], teamB: [] }] })));
+await T('초대받은 클럽이 설정을 고치는 것 거부',
+  assertFails(updateDoc(doc(bpres, 'clubMatches', 'cm1'), { config: { courts: 9 } })));
+await T('초대받은 클럽이 임의 상태로 바꾸는 것 거부',
+  assertFails(updateDoc(doc(bpres, 'clubMatches', 'cm1'), { status: 'done' })));
+await T('상대 클럽 일반 회원의 수락 거부',
+  assertFails(updateDoc(doc(bmem, 'clubMatches', 'cm1'), { status: 'accepted' })));
+
+await T('주최 클럽 운영진의 대진 저장 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubMatches', 'cm1'),
+    { matches: [{ id: 'm1', round: 1, court: 1, teamA: [], teamB: [] }] })));
+await T('주최 클럽의 설정 변경 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubMatches', 'cm1'), { config: { courts: 3, rounds: 5 } })));
+await T('주최가 상대 클럽을 몰래 갈아치우는 것 거부',
+  assertFails(updateDoc(doc(owner, 'clubMatches', 'cm1'), { guestClubId: 'club3' })));
+await T('주최가 주최 클럽 자체를 바꾸는 것 거부',
+  assertFails(updateDoc(doc(owner, 'clubMatches', 'cm1'), { hostClubId: 'club2' })));
+await T('주최 클럽 일반 회원의 대진 수정 거부',
+  assertFails(updateDoc(doc(mem1, 'clubMatches', 'cm1'), { matches: [] })));
+await T('무관한 사용자의 수정 거부',
+  assertFails(updateDoc(doc(outsider, 'clubMatches', 'cm1'), { status: 'canceled' })));
+await T('상대 클럽의 삭제 거부',
+  assertFails(deleteDoc(doc(bpres, 'clubMatches', 'cm1'))));
+await T('주최 클럽의 삭제 허용',
+  assertSucceeds(deleteDoc(doc(owner, 'clubMatches', 'cm2'))));
+
 console.log('\n[회비/기타]');
 await T('회원 회비 쓰기 거부',
   assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'fees', '2026-07'), { paid: { mem1: true } })));

@@ -151,6 +151,168 @@ export function generateTeamMatches(teamA, teamB, courts = 1, rounds = 0, option
   return out;
 }
 
+/* ============================================================
+   타임별 경기 유형 지정 편성
+
+   위의 generateTeamMatches 는 "아무 조합이나 2:2"였다. 실제 교류전은
+   그렇게 안 돌아간다 — 1타임 혼복, 2타임 남복, 3타임 여복처럼 미리
+   정해 놓고 그 타임에 나갈 선수를 뽑는다. 그래야 양 클럽이 "우리는
+   남복에 누구를 낸다"를 준비할 수 있다.
+
+   유형별로 각 팀이 내보내는 사람이 다르다.
+     혼복  남1 여1        단식  1명 (되도록 같은 성별끼리 붙인다)
+     남복  남2            여복  여2
+   ============================================================ */
+export const TEAM_ROUND_TYPES = [
+  { key: 'MX', name: '혼복', need: { M: 1, F: 1 }, singles: false },
+  { key: 'MD', name: '남복', need: { M: 2, F: 0 }, singles: false },
+  { key: 'WD', name: '여복', need: { M: 0, F: 2 }, singles: false },
+  { key: 'SG', name: '단식', need: null, singles: true },
+];
+
+export const teamRoundType = (key) =>
+  TEAM_ROUND_TYPES.find((t) => t.key === key) || TEAM_ROUND_TYPES[0];
+
+const sexOf = (p) => (p.gender === 'F' ? 'F' : 'M');
+
+/**
+ * 한 팀에서 이 유형에 맞는 조합을 고른다.
+ * 적게 뛴 사람 우선, 같은 파트너 반복은 피한다.
+ * 인원이 모자라면 null — 억지로 다른 성별을 넣지 않는다.
+ * (남복 타임에 여자를 넣으면 그건 남복이 아니다)
+ */
+function pickForType(team, busy, type, played, partnerN) {
+  const avail = team.filter((p) => !busy.has(p.id));
+
+  if (type.singles) {
+    if (!avail.length) return null;
+    const best = [...avail].sort((a, b) => played[a.id] - played[b.id]);
+    return [best[0]];
+  }
+
+  const need = type.need;
+  const pool = { M: avail.filter((p) => sexOf(p) === 'M'), F: avail.filter((p) => sexOf(p) === 'F') };
+  if (pool.M.length < need.M || pool.F.length < need.F) return null;
+
+  const take = (list, n) => [...list].sort((a, b) => played[a.id] - played[b.id]).slice(0, n * 3);
+  const candM = take(pool.M, need.M);
+  const candF = take(pool.F, need.F);
+
+  let best = null;
+  const consider = (pair) => {
+    const cost = partnerN(pair[0].id, pair[1].id) * 100 + played[pair[0].id] + played[pair[1].id];
+    if (!best || cost < best.cost) best = { cost, pair };
+  };
+
+  if (need.M === 1 && need.F === 1) {
+    candM.forEach((m) => candF.forEach((f) => consider([m, f])));
+  } else {
+    const same = need.M === 2 ? candM : candF;
+    for (let i = 0; i < same.length; i += 1) {
+      for (let j = i + 1; j < same.length; j += 1) consider([same[i], same[j]]);
+    }
+  }
+  return best ? best.pair : null;
+}
+
+/**
+ * 타임별 유형을 지켜 교류전 대진을 짠다.
+ *
+ * @param roundTypes { 1:'MX', 2:'MD', … } — 지정 없는 타임은 혼복
+ * @returns { matches, shortages } shortages 는 인원이 모자라 못 채운 칸.
+ *          조용히 빼먹으면 "3면 잡았는데 2면만 나왔다"가 되므로
+ *          왜 못 채웠는지 화면에 알려 주기 위해 같이 돌려준다.
+ */
+export function generateTypedTeamMatches(teamA, teamB, {
+  courts = 1, rounds = 4, roundTypes = {},
+} = {}) {
+  const nCourts = Math.max(1, Number(courts) || 1);
+  const nRounds = Math.max(1, Number(rounds) || 1);
+
+  const played = {};
+  [...teamA, ...teamB].forEach((p) => { played[p.id] = 0; });
+  const partner = {};
+  const partnerN = (a, b) => partner[pairKey(a, b)] || 0;
+
+  const out = [];
+  const shortages = [];
+
+  for (let r = 1; r <= nRounds; r += 1) {
+    const type = teamRoundType(roundTypes[r] || roundTypes[String(r)] || 'MX');
+    const busy = new Set();
+
+    for (let c = 1; c <= nCourts; c += 1) {
+      const pa = pickForType(teamA, busy, type, played, partnerN);
+      if (!pa) { shortages.push({ round: r, court: c, type: type.name, side: 'A' }); continue; }
+      pa.forEach((p) => busy.add(p.id));
+
+      const pb = pickForType(teamB, busy, type, played, partnerN);
+      if (!pb) {
+        pa.forEach((p) => busy.delete(p.id));
+        shortages.push({ round: r, court: c, type: type.name, side: 'B' });
+        continue;
+      }
+      pb.forEach((p) => busy.add(p.id));
+
+      if (pa.length === 2) partner[pairKey(pa[0].id, pa[1].id)] = partnerN(pa[0].id, pa[1].id) + 1;
+      if (pb.length === 2) partner[pairKey(pb[0].id, pb[1].id)] = partnerN(pb[0].id, pb[1].id) + 1;
+      [...pa, ...pb].forEach((p) => { played[p.id] += 1; });
+
+      out.push({
+        id: `cm-${r}-${c}`,
+        round: r,
+        court: c,
+        team: true,
+        typeKey: type.key,
+        type: type.singles ? '단식' : type.name,
+        teamA: pa.map((p) => p.id),
+        teamB: pb.map((p) => p.id),
+        score: null,
+      });
+    }
+  }
+  return { matches: out, shortages };
+}
+
+/**
+ * 빈 대진표 — 자동 편성을 쓰지 않고 각 팀이 직접 선수를 넣는 경우.
+ * 칸만 먼저 만들어 두고 선수는 나중에 채운다. 그래야 "몇 타임 몇 면"이
+ * 먼저 합의되고, 양 클럽이 각자 자기 칸만 채울 수 있다.
+ */
+export function blankTeamMatches({ courts = 1, rounds = 4, roundTypes = {} } = {}) {
+  const nCourts = Math.max(1, Number(courts) || 1);
+  const nRounds = Math.max(1, Number(rounds) || 1);
+  const out = [];
+  for (let r = 1; r <= nRounds; r += 1) {
+    const type = teamRoundType(roundTypes[r] || roundTypes[String(r)] || 'MX');
+    for (let c = 1; c <= nCourts; c += 1) {
+      out.push({
+        id: `cm-${r}-${c}`,
+        round: r,
+        court: c,
+        team: true,
+        typeKey: type.key,
+        type: type.singles ? '단식' : type.name,
+        teamA: [],
+        teamB: [],
+        score: null,
+      });
+    }
+  }
+  return out;
+}
+
+/** 수동 편성이 다 찼는지 — 비어 있으면 어디가 비었는지 알려 준다 */
+export function emptySlots(matches) {
+  const size = (m) => (m.typeKey === 'SG' ? 1 : 2);
+  return (matches || []).flatMap((m) => {
+    const out = [];
+    if ((m.teamA || []).length < size(m)) out.push({ round: m.round, court: m.court, side: 'A' });
+    if ((m.teamB || []).length < size(m)) out.push({ round: m.round, court: m.court, side: 'B' });
+    return out;
+  });
+}
+
 /** 단체전 점수 — 이긴 경기 수 합산 */
 export function teamScore(matches) {
   let a = 0; let b = 0; let gamesA = 0; let gamesB = 0; let done = 0;

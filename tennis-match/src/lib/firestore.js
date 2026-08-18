@@ -668,6 +668,54 @@ export const getClubDirectory = async (clubId) => {
 };
 
 /* ============================================================
+   클럽 교류전 — 두 클럽이 같이 보는 문서라 루트에 둔다
+   clubMatches/{matchId}
+
+   클럽 하위(clubs/{id}/…)에 두면 상대 클럽이 읽을 수 없다. 남의 클럽
+   문서를 열어 주려면 그 클럽 전체를 열어야 하는데 그럴 수는 없다.
+   그래서 두 클럽 id 를 나란히 들고 있는 문서를 루트에 만들고,
+   보안 규칙이 "이 두 클럽의 사람만" 읽게 한다.
+   ============================================================ */
+export const createClubMatch = (payload) =>
+  addDoc(collection(db, 'clubMatches'), {
+    ...payload,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+export const updateClubMatch = (matchId, patch) =>
+  updateDoc(doc(db, 'clubMatches', matchId), { ...patch, updatedAt: serverTimestamp() });
+
+export const subClubMatch = (matchId, cb) =>
+  onSnapshot(doc(db, 'clubMatches', matchId), (d) =>
+    cb(d.exists() ? { id: d.id, ...d.data() } : null));
+
+/* 우리 클럽이 낀 교류전 전부.
+   "주최한 것"과 "초대받은 것"은 필드가 달라서 한 번의 질의로 못 가져온다
+   (Firestore 에는 OR 이 없다). 두 갈래를 각각 구독해 합친다. */
+export const subClubMatches = (clubId, cb) => {
+  const bag = { host: [], guest: [] };
+  const emit = () => {
+    const seen = new Set();
+    const all = [...bag.host, ...bag.guest].filter((m) => {
+      if (seen.has(m.id)) return false;      // 혼자 연습용으로 자기 클럽을 부른 경우
+      seen.add(m.id);
+      return true;
+    });
+    cb(all.sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))));
+  };
+  const un1 = onSnapshot(
+    query(collection(db, 'clubMatches'), where('hostClubId', '==', clubId)),
+    (s) => { bag.host = s.docs.map((d) => ({ id: d.id, ...d.data() })); emit(); },
+  );
+  const un2 = onSnapshot(
+    query(collection(db, 'clubMatches'), where('guestClubId', '==', clubId)),
+    (s) => { bag.guest = s.docs.map((d) => ({ id: d.id, ...d.data() })); emit(); },
+  );
+  return () => { un1(); un2(); };
+};
+
+/* ============================================================
    가입 신청 — 비회원이 직접 문서를 만들고, 운영진이 승인한다.
    clubs/{clubId}/joinRequests/{uid}
    승인 시점에 members/{uid} 문서를 운영진 권한으로 만들고,

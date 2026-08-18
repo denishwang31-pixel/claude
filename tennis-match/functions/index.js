@@ -22,6 +22,7 @@ const REGION = { region: 'asia-northeast3' }; // 서울
 const {
   normalizeAsk, isAskDue, pendingVoters, askMessage, changeMessage, changedAnswers,
 } = require('./rsvpAsk');
+const { inviteMessage, responseMessage } = require('./clubMatch');
 
 /** 운영 담당 — 참석 변경·미납 현황 같은 운영 알림을 받는 사람 */
 const isStaff = (role) => role === '회장' || role === '총무' || role === '운영진';
@@ -231,6 +232,67 @@ function shiftDays(ymd, delta) {
   d.setUTCDate(d.getUTCDate() + delta);
   return d.toISOString().slice(0, 10);
 }
+
+/* ================= 클럽 교류전 =================
+   초대를 보내도 상대가 앱을 열어 보지 않으면 아무 일도 안 일어난다.
+   그래서 초대와 응답을 양쪽 운영진에게 밀어 준다. */
+
+/** 그 클럽 운영 담당의 푸시 토큰 */
+async function staffTokens(clubId) {
+  if (!clubId) return [];
+  const snap = await db.collection('clubs').doc(clubId).collection('members').get();
+  return snap.docs
+    .filter((d) => isStaff(d.data().role))
+    .map((d) => d.data().pushToken)
+    .filter(Boolean);
+}
+
+exports.onClubMatchCreated = onDocumentCreated(
+  { ...REGION, document: 'clubMatches/{matchId}' },
+  async (event) => {
+    const m = event.data?.data();
+    // 미등록 상대는 받을 사람이 없다 — 주최 클럽이 혼자 진행한다
+    if (!m || !m.guestClubId || m.status !== 'pending') return;
+    const tokens = await staffTokens(m.guestClubId);
+    if (!tokens.length) return;
+    const msg = inviteMessage(m);
+    await sendPush(tokens, msg.title, msg.body,
+      { type: 'clubMatchInvite', matchId: event.params.matchId });
+  },
+);
+
+exports.onClubMatchUpdated = onDocumentUpdated(
+  { ...REGION, document: 'clubMatches/{matchId}' },
+  async (event) => {
+    const b = event.data?.before.data();
+    const a = event.data?.after.data();
+    if (!b || !a) return;
+    const { matchId } = event.params;
+
+    // 수락·거절 → 주최 클럽에게
+    if (b.status === 'pending' && (a.status === 'accepted' || a.status === 'declined')) {
+      const tokens = await staffTokens(a.hostClubId);
+      if (tokens.length) {
+        const msg = responseMessage(a, a.status === 'accepted');
+        await sendPush(tokens, msg.title, msg.body, { type: 'clubMatchAnswer', matchId });
+      }
+      return;
+    }
+
+    // 대진 발표(0 → n) → 양 클럽 운영진에게
+    if ((b.matches || []).length === 0 && (a.matches || []).length > 0) {
+      const tokens = [
+        ...await staffTokens(a.hostClubId),
+        ...await staffTokens(a.guestClubId),
+      ];
+      if (tokens.length) {
+        await sendPush(tokens, '🎾 교류전 대진 발표',
+          `${a.hostClubName || ''} vs ${a.guestClubName || ''} ${a.date || ''} 대진이 확정되었습니다.`,
+          { type: 'clubMatchDraw', matchId });
+      }
+    }
+  },
+);
 
 /* ---------------- 3) 게스트 확정 → 본인 알림 ---------------- */
 exports.onApplicantConfirmed = onDocumentUpdated({ ...REGION, document: 'guestPosts/{postId}/applicants/{uid}' }, async (event) => {

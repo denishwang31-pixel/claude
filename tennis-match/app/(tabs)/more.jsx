@@ -34,6 +34,7 @@ import { JoinRequests } from '../../src/components/JoinRequestsScreen';
 import { Invite } from '../../src/components/InviteScreen';
 import { Polls } from '../../src/components/PollScreen';
 import { Chat } from '../../src/components/ChatScreen';
+import { ClubMatchScreen } from '../../src/components/ClubMatchScreen';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card, SectionTitle, Chip, Btn, ListRow, Badge } from '../../src/components/ui';
 import { C, F } from '../../src/lib/theme';
@@ -74,7 +75,8 @@ const MENU_GROUPS = [
     title: '클럽 활동',
     staffOnly: false,
     items: [
-      ['tournament', 'tournament', SCREEN.tournament, 'KDK · 청백전 · 클럽 교류전'],
+      ['tournament', 'tournament', SCREEN.tournament, 'KDK · 청백전 · 클럽 내 대회'],
+      ['clubmatch', 'tournament', SCREEN.clubmatch, '상대 클럽을 검색해 초대하고 함께 진행'],
       ['polls', 'polls', SCREEN.polls, '회식·대회 참가 의사를 물어보세요'],
       ['board', 'board', SCREEN.board, null],
       ['chat', 'chat', SCREEN.chat, null],
@@ -222,6 +224,12 @@ export default function More() {
   const renderSub = () => {
     switch (sub) {
       case 'tournament': return <Tournaments {...{ clubId, members, tournaments, isAdmin, flash }} />;
+      case 'clubmatch': return (
+        <ClubMatchScreen
+          {...{ clubId, me, members, isAdmin, flash }}
+          clubName={club?.name || ''}
+        />
+      );
       case 'ntrp': return <Ntrp {...{ clubId, members, me, meVal, isAdmin, flash }} />;
       case 'attendance': return <Attendance {...{ clubId, members, meetings, isAdmin, flash }} />;
       case 'pairs': return <Pairs {...{ clubId, members, pairs, isAdmin, flash }} />;
