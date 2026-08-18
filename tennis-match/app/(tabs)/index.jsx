@@ -27,6 +27,7 @@ import {
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
 import { VenuePicker } from '../../src/components/VenuePicker';
+import { UpdateBanner } from '../../src/components/UpdateBanner';
 import { Icon } from '../../src/components/Icon';
 import { useOptionSheet } from '../../src/components/native';
 import {
@@ -267,6 +268,9 @@ export default function Home() {
 
       <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: bottomPad }}>
         {/* 코트장 드롭다운 — 여기서 고른 코트가 일정·대진표까지 이어진다 */}
+        {/* 받아 놓은 업데이트가 있을 때만 뜬다. 평소엔 아무것도 안 그린다 */}
+        <UpdateBanner />
+
         {scopeVenues.length > 1 && (
           <View style={{ marginBottom: S.md, zIndex: 20 }}>
             <VenuePicker venues={scopeVenues} value={venueId} onChange={setVenueId} />
