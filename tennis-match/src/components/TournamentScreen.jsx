@@ -38,7 +38,7 @@ function formatLabel(t) {
 }
 
 /* ---------------- 대회 개설 ---------------- */
-function CreateTournament({ clubId, members, onDone, flash }) {
+function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
   const [format, setFormat] = useState(TOURNAMENT_FORMAT.GROUP_BRACKET);
   const [name, setName] = useState('');
   const [date, setDate] = useState(today());
@@ -53,8 +53,21 @@ function CreateTournament({ clubId, members, onDone, flash }) {
   const [useSkillGroups, setUseSkillGroups] = useState(false); // NTRP 실력 그룹 사용
   const [groupSizes, setGroupSizes] = useState('8,8');         // 그룹별 정원
   const [skillGroups, setSkillGroups] = useState(null);        // 배정 결과(수동 조정 가능)
+  const [pickVenue, setPickVenue] = useState('');               // 참가자 고를 때 코트장 필터
+  const [pickQ, setPickQ] = useState('');                       // 이름 검색
 
   const pickedList = members.filter((m) => picked[m.id]);
+
+  /* 화면에 그릴 회원 — 코트장·이름·부수로 좁힌다 */
+  const shown = useMemo(() => {
+    const q = pickQ.trim().toLowerCase();
+    return members.filter((m) => {
+      if (pickVenue && !(m.venueIds || []).includes(pickVenue)) return false;
+      if (q && !String(m.name || '').toLowerCase().includes(q)) return false;
+      if (busuLimit && m.busu && BUSU_KEYS.indexOf(m.busu) < BUSU_KEYS.indexOf(busuLimit)) return false;
+      return true;
+    });
+  }, [members, pickVenue, pickQ, busuLimit]);
   const teams = useMemo(() => {
     if (pickedList.length < 4) return [];
     return autoTeams(
@@ -298,23 +311,60 @@ function CreateTournament({ clubId, members, onDone, flash }) {
 
       <SectionTitle right={
         <Chip tone="soft" onPress={() => {
-          const all = {};
-          const eligible = busuLimit
-            ? members.filter((m) => !m.busu || BUSU_KEYS.indexOf(m.busu) >= BUSU_KEYS.indexOf(busuLimit))
-            : members;
-          eligible.forEach((m) => { all[m.id] = true; });
+          const all = { ...picked };
+          shown.forEach((m) => { all[m.id] = true; });
           setPicked(all);
-        }}>전원 선택</Chip>
+        }}>보이는 사람 전원</Chip>
       }>참가자 선택 ({pickedList.length}명)</SectionTitle>
       <Card>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          {members.map((m) => (
+        {/* 코트장으로 먼저 좁힌다.
+           회원이 200명이면 이름 칩 200개에서 사람을 찾는 것 자체가 일이다.
+           대부분의 대회는 한두 코트장 사람들로 열린다. */}
+        {venues.length > 0 && (
+          <View style={{ marginBottom: 10 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+              <Chip tone={!pickVenue ? 'green' : 'outline'} onPress={() => setPickVenue('')}>
+                전체 {members.length}
+              </Chip>
+              {venues.map((v) => {
+                const n = members.filter((m) => (m.venueIds || []).includes(v.id)).length;
+                return (
+                  <Chip key={v.id} tone={pickVenue === v.id ? 'green' : 'outline'}
+                    onPress={() => setPickVenue(v.id)}>
+                    {v.name} {n}
+                  </Chip>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        <Field placeholder="이름으로 찾기" value={pickQ} onChangeText={setPickQ} />
+
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+          {shown.map((m) => (
             <Chip key={m.id} tone={picked[m.id] ? 'green' : 'outline'}
               onPress={() => setPicked({ ...picked, [m.id]: !picked[m.id] })}>
               {m.name}
             </Chip>
           ))}
+          {shown.length === 0 && (
+            <Text style={{ fontSize: 11.5, color: C.faint }}>해당하는 회원이 없습니다.</Text>
+          )}
         </View>
+
+        {/* 다른 코트장에서 고른 사람도 참가자다 — 필터를 바꿨다고
+           사라지면 "아까 고른 사람이 없어졌다"가 된다 */}
+        {pickedList.length > shown.filter((m) => picked[m.id]).length && (
+          <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 8 }}>
+            지금 목록 밖에서 고른 사람 {pickedList.length - shown.filter((m) => picked[m.id]).length}명이 더 있습니다.
+          </Text>
+        )}
+        {pickedList.length > 0 && (
+          <View style={{ marginTop: 8 }}>
+            <Btn small tone="ghost" onPress={() => setPicked({})}>선택 모두 지우기</Btn>
+          </View>
+        )}
       </Card>
 
       {isBracket && (
@@ -704,7 +754,7 @@ function KdkView({ clubId, t, isAdmin, flash }) {
   );
 }
 
-export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
+export function Tournaments({ clubId, members, venues = [], tournaments, isAdmin, flash }) {
   const [view, setView] = useState('list'); // list | create | detail
   const [openId, setOpenId] = useState(null);
 
@@ -719,7 +769,7 @@ export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
     return (
       <View>
         <Pressable onPress={() => setView('list')}><Text style={{ color: C.green2, fontSize: 13, marginBottom: 8 }}>‹ 목록으로</Text></Pressable>
-        <CreateTournament clubId={clubId} members={members} flash={flash} onDone={() => setView('list')} />
+        <CreateTournament clubId={clubId} members={members} venues={venues} flash={flash} onDone={() => setView('list')} />
       </View>
     );
   }

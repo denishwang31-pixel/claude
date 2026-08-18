@@ -223,7 +223,7 @@ export default function More() {
 
   const renderSub = () => {
     switch (sub) {
-      case 'tournament': return <Tournaments {...{ clubId, members, tournaments, isAdmin, flash }} />;
+      case 'tournament': return <Tournaments {...{ clubId, members, venues, tournaments, isAdmin, flash }} />;
       case 'clubmatch': return (
         <ClubMatchScreen
           {...{ clubId, me, members, isAdmin, flash }}

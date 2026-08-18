@@ -20,6 +20,7 @@ import {
   updateMeeting, subGear, subJoinRequests, subServiceStats, setRsvp,
 } from '../../src/lib/firestore';
 import { dowName } from '../../src/lib/schedule';
+import { canRsvpSelf, rsvpBlockReason } from '../../src/lib/scheduleView';
 import {
   RSVP, viewModesFor, roleTone, JOIN_STATUS, screenRef,
 } from '../../src/lib/constants';
@@ -108,6 +109,13 @@ export default function Home() {
     const list = venueId ? inScope.filter((m) => m.venueId === venueId) : inScope;
     return [...list].sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
   }, [meetings, seeAllVenues, scopeIds, venueId, me]);
+
+  /* 홈은 앱을 열면 가장 먼저 그려지는 화면이다. 일정이 100건 쌓였다고
+     홈이 느려지면 앱 전체가 느린 것처럼 느껴진다. 가까운 것만 보여주고
+     나머지는 [일정] 탭으로 보낸다. */
+  const HOME_LIMIT = 6;
+  const homeList = visible.slice(0, HOME_LIMIT);
+  const moreCount = visible.length - homeList.length;
 
   const meeting = visible[0];
   const w = meeting ? weatherFor(meeting.date, meeting.forecast) : null;
@@ -415,7 +423,7 @@ export default function Home() {
               {seeAllVenues ? '예정 일정 · 전체 코트' : mode === 'lead' ? '예정 일정 · 담당 코트' : '내 예정 일정'}
             </SectionTitle>
             <Card style={{ paddingVertical: 4 }}>
-              {visible.slice(0, 8).map((m, i) => {
+              {homeList.map((m, i) => {
                 const cnt = Object.values(m.rsvp || {}).filter((v) => v === RSVP.YES).length + (m.guests?.length || 0);
                 // 단식 모임은 코트당 2명이 정원이다
                 const per = m.playMode === 'singles' ? 2 : 4;
@@ -457,18 +465,25 @@ export default function Home() {
                       </View>
                     </Pressable>
 
-                    {/* 아직 정하지 않았으면 여기서 바로 정한다 */}
-                    {mine === undefined && (
+                    {/* 아직 정하지 않았으면 여기서 바로 정한다.
+                       단, 내가 속한 코트장의 모임에서만 — 운영진은 모든 코트를
+                       보지만 안 나가는 코트에 참석을 넣으면 그 대진에 잡힌다. */}
+                    {mine === undefined && canRsvpSelf(meVal, m) && (
                       <View style={{ flexDirection: 'row', gap: 6, paddingBottom: 11 }}>
-                        <Btn small onPress={() => setRsvp(clubId, m.id, me, RSVP.YES)}>참석</Btn>
-                        <Btn small tone="ghost" onPress={() => setRsvp(clubId, m.id, me, RSVP.MAYBE)}>미정</Btn>
-                        <Btn small tone="ghost" onPress={() => setRsvp(clubId, m.id, me, RSVP.NO)}>불참</Btn>
+                        <Btn small onPress={() => setRsvp(clubId, m.id, me, RSVP.YES, me)}>참석</Btn>
+                        <Btn small tone="ghost" onPress={() => setRsvp(clubId, m.id, me, RSVP.MAYBE, me)}>미정</Btn>
+                        <Btn small tone="ghost" onPress={() => setRsvp(clubId, m.id, me, RSVP.NO, me)}>불참</Btn>
                       </View>
                     )}
+                    {!canRsvpSelf(meVal, m) && mine === undefined && (
+                      <Text style={{ fontSize: 10.5, color: C.faint, paddingBottom: 10 }}>
+                        {rsvpBlockReason(meVal, m, venueName(m.venueId))}
+                      </Text>
+                    )}
                     {/* 이미 정했으면 조용히 바꿀 수 있게만 */}
-                    {mine !== undefined && (
+                    {mine !== undefined && canRsvpSelf(meVal, m) && (
                       <Pressable
-                        onPress={() => setRsvp(clubId, m.id, me, going ? RSVP.NO : RSVP.YES)}
+                        onPress={() => setRsvp(clubId, m.id, me, going ? RSVP.NO : RSVP.YES, me)}
                         style={{ paddingBottom: 10, paddingHorizontal: going ? 10 : 0 }}>
                         <Text style={{ fontSize: 11.5, color: C.faint }}>
                           {going ? '참석 취소' : notGoing ? '참석으로 바꾸기' : '미정 — 참석으로 바꾸기'}
@@ -478,6 +493,17 @@ export default function Home() {
                   </View>
                 );
               })}
+
+              {/* 가까운 것만 홈에 둔다 — 나머지는 일정 탭이 제자리다 */}
+              {moreCount > 0 && (
+                <Pressable
+                  onPress={() => router.push('/(tabs)/schedule')}
+                  style={{ paddingVertical: 11, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: C.green, fontWeight: '700' }}>
+                    일정 {moreCount}건 더 보기 →
+                  </Text>
+                </Pressable>
+              )}
             </Card>
           </>
         )}

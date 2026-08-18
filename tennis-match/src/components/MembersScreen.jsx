@@ -31,7 +31,10 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
   const [openId, setOpenId] = useState(null);
   const [d, setD] = useState({});
   const [adding, setAdding] = useState(false);
-  const [nm, setNm] = useState({ name: '', gender: 'M', busu: '', grade: '', region: '', startedAt: '' });
+  const [nm, setNm] = useState({
+    name: '', gender: 'M', busu: '', grade: '', region: '', startedAt: '',
+    role: ROLES.MEMBER, venueIds: [],
+  });
 
   const openEdit = (m) => {
     if (openId === m.id) return setOpenId(null);
@@ -376,17 +379,69 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                 <Label hint="선택">테니스 시작일</Label>
                 <Field placeholder="2019-03" value={nm.startedAt} onChangeText={(v) => setNm({ ...nm, startedAt: v })} />
               </View>
+
+              {/* 직책 — 등록할 때 같이 정한다.
+                 예전에는 무조건 '회원'으로 들어가서, 운영진을 추가해 놓고
+                 목록에서 역할을 다시 바꿔야 했다. 그 "다시"가 매번 빠졌다. */}
+              <View style={{ marginTop: 12 }}>
+                <Label hint="나중에 회원 목록에서 바꿀 수 있습니다">직책</Label>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                  {assignableRolesFor(myRole, ROLES.MEMBER).map((r) => (
+                    <Chip key={r} tone={nm.role === r ? 'green' : 'outline'}
+                      onPress={() => setNm({ ...nm, role: r })}>{r}</Chip>
+                  ))}
+                </View>
+              </View>
+
+              {/* 소속 코트장 — 200명 클럽에서 이게 없으면 일정·투표가
+                 전원에게 간다. 등록 시점에 정하는 것이 가장 안 빠진다. */}
+              {venues.length > 0 && (
+                <View style={{ marginTop: 12 }}>
+                  <Label hint="여러 곳 선택 가능 · 일정·투표 대상이 여기서 갈립니다">
+                    소속 코트장
+                  </Label>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                    {venues.map((v) => {
+                      const on = (nm.venueIds || []).includes(v.id);
+                      return (
+                        <Chip key={v.id} tone={on ? 'green' : 'outline'}
+                          onPress={() => setNm({
+                            ...nm,
+                            venueIds: on
+                              ? nm.venueIds.filter((x) => x !== v.id)
+                              : [...(nm.venueIds || []), v.id],
+                          })}>
+                          {v.name}
+                        </Chip>
+                      );
+                    })}
+                  </View>
+                  {(nm.venueIds || []).length === 0 && (
+                    <Text style={{ fontSize: 10.5, color: C.warn, marginTop: 5 }}>
+                      지정하지 않으면 모든 코트장의 일정·투표를 받습니다.
+                    </Text>
+                  )}
+                </View>
+              )}
               <View style={{ marginTop: 12 }}>
                 <Btn full disabled={!nm.name} onPress={() => {
                   const data = {
                     name: nm.name.trim(), gender: nm.gender, grade: nm.grade,
                     busu: nm.busu || '', region: nm.region || '',
+                    role: canAssignRole(myRole, ROLES.MEMBER, nm.role) ? nm.role : ROLES.MEMBER,
+                    venueIds: nm.venueIds || [],
                   };
                   const s = (nm.startedAt || '').trim();
                   if (s) data.startedAt = /^\d{4}-\d{2}$/.test(s) ? `${s}-01` : s;
                   addMember(clubId, 'local:' + rid(), data);
-                  setNm({ name: '', gender: 'M', busu: '', grade: '', region: '', startedAt: '' });
-                  flash('회원이 추가되었습니다');
+                  const where = (nm.venueIds || [])
+                    .map((id) => venues.find((v) => v.id === id)?.name)
+                    .filter(Boolean).join(', ');
+                  setNm({
+                    name: '', gender: 'M', busu: '', grade: '', region: '', startedAt: '',
+                    role: ROLES.MEMBER, venueIds: [],
+                  });
+                  flash(`${data.name} 추가${where ? ` · ${where}` : ''}`);
                 }}>추가</Btn>
               </View>
             </Card>

@@ -70,6 +70,34 @@ export const updateMeeting = (clubId, id, patch) => updateDoc(D(clubId, 'meeting
 
 export const deleteMeeting = (clubId, id) => deleteDoc(D(clubId, 'meetings', id));
 
+/** 일정 일괄 삭제.
+ *
+ *  잘못 만든 정기 일정 수십 건을 하나씩 지우는 것은 현실적이지 않다.
+ *  회원·회비·대회는 건드리지 않는다 — 일정만 지운다.
+ *
+ *  @param scope 'all' 전체 · 'future' 오늘 이후 · 'past' 오늘 이전
+ *  @param venueId 있으면 그 코트장 일정만
+ *  @returns 지운 건수
+ */
+export async function deleteMeetingsBulk(clubId, { scope = 'future', venueId = null } = {}) {
+  const snap = await getDocs(C(clubId, 'meetings'));
+  const t = today();
+  const targets = snap.docs.filter((d) => {
+    const m = d.data();
+    if (venueId && m.venueId !== venueId) return false;
+    if (scope === 'future') return (m.date || '') >= t;
+    if (scope === 'past') return (m.date || '') < t;
+    return true;
+  });
+  // Firestore 배치는 500건이 상한이라 잘라서 보낸다
+  for (let i = 0; i < targets.length; i += 400) {
+    const batch = writeBatch(db);
+    targets.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+  return targets.length;
+}
+
 /** 이 모임 이후(같은 코트장·같은 시리즈)의 일정을 한꺼번에 수정.
  *
  *  "어느 날부터 면수가 3면 → 2면으로 줄었다" 같은 상황에서, 지난 기록은
@@ -133,8 +161,18 @@ export const saveMatches = (clubId, meetingId, matches) =>
 
 /* 총무가 회원 추가: 실서비스에선 초대코드 가입이 기본이나, 오프라인 등록용.
    memberId 는 임시 uid(예: 'local:'+random) 를 넘길 수 있음 */
+/* 회원 추가.
+   역할과 소속 코트장을 등록할 때 같이 받는다. 예전에는 role 을 무조건
+   '회원'으로 덮어써서, 총무가 운영진을 추가해 놓고 다시 회원 목록에서
+   역할을 바꿔야 했다. 코트장도 마찬가지로 따로 지정해야 했고, 200명
+   클럽에서는 그 "따로"가 매번 빠졌다. */
 export const addMember = (clubId, memberId, data) =>
-  setDoc(D(clubId, 'members', memberId), { ...data, role: ROLES.MEMBER, status: '활동' });
+  setDoc(D(clubId, 'members', memberId), {
+    role: ROLES.MEMBER,
+    status: '활동',
+    venueIds: [],
+    ...data,
+  });
 
 /* ---- 클럽 운영 설정(코트·시간·타임 길이 등) ---- */
 export const updateClubSettings = (clubId, settings) =>
