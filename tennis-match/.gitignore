@@ -6,6 +6,10 @@ web-build/
 .DS_Store
 # Firebase 키는 커밋 금지 권장
 # firebaseConfig.js
+# Cloud Functions 환경변수 — 발급키가 들어가므로 커밋 금지
+functions/.env
+functions/.env.*
+!functions/.env.example
 firestore-debug.log
 firebase-debug.log
 .firebaserc

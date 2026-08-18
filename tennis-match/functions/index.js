@@ -2,20 +2,31 @@
    PHASE 3·4 — Cloud Functions (v2, Node 20)
    푸시 트리거 4종 + 기상청 단기예보 수집.
    배포: firebase deploy --only functions   (Blaze 요금제 필요 — 무료 쿼터 내 사용)
-   시크릿: firebase functions:secrets:set KMA_SERVICE_KEY  (공공데이터포털 일반 인증키)
+   날씨 키(선택): functions/.env 에 KMA_SERVICE_KEY=공공데이터포털_일반인증키
+                 없어도 배포된다. 날씨 예보만 쉰다.
    ============================================================ */
 const {
   onDocumentCreated, onDocumentUpdated, onDocumentDeleted, onDocumentWritten,
 } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { defineSecret } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions/v2');
 
 initializeApp();
 const db = getFirestore();
-const KMA_SERVICE_KEY = defineSecret('KMA_SERVICE_KEY');
+/* 기상청 키는 배포를 막지 않는다.
+
+   예전에는 defineSecret + secrets:[…] 로 묶었다. 그러면 그 시크릿이
+   Secret Manager 에 없을 때 배포가 통째로 실패한다. 실제로 그렇게 됐다 —
+   쓰지도 않는 날씨 키 하나 때문에 참석 투표 알림도, 교류전 초대 푸시도
+   올라가지 못했다. 곁가지 기능이 본 기능의 배포를 막으면 안 된다.
+
+   그래서 런타임에 환경변수로 읽고, 없으면 그 함수만 조용히 쉰다.
+   키를 넣는 방법은 두 가지이고 둘 다 process.env 로 들어온다.
+     · functions/.env 파일에  KMA_SERVICE_KEY=발급키
+     · 또는 시크릿을 만든 뒤 이 함수에 secrets 로 다시 묶는다 */
+const kmaKey = () => process.env.KMA_SERVICE_KEY || '';
 
 const REGION = { region: 'asia-northeast3' }; // 서울
 
@@ -477,9 +488,9 @@ async function fetchKmaForecast(serviceKey, nx, ny, targetDate) {
 }
 
 exports.updateForecasts = onSchedule(
-  { ...REGION, schedule: 'every 12 hours', timeZone: 'Asia/Seoul', secrets: [KMA_SERVICE_KEY] },
+  { ...REGION, schedule: 'every 12 hours', timeZone: 'Asia/Seoul' },
   async () => {
-    const key = KMA_SERVICE_KEY.value();
+    const key = kmaKey();
     if (!key) { logger.warn('KMA_SERVICE_KEY 미설정 — 예보 스킵'); return; }
 
     const today = new Date().toISOString().slice(0, 10);
