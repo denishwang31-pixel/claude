@@ -35,6 +35,7 @@ import { Invite } from '../../src/components/InviteScreen';
 import { Polls } from '../../src/components/PollScreen';
 import { Chat } from '../../src/components/ChatScreen';
 import { ClubMatchScreen } from '../../src/components/ClubMatchScreen';
+import { UpdateStatus } from '../../src/components/UpdateStatus';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card, SectionTitle, Chip, Btn, ListRow, Badge } from '../../src/components/ui';
 import { C, F } from '../../src/lib/theme';
@@ -417,6 +418,11 @@ export default function More() {
                 초대코드를 받았다면 [다른 클럽 찾기] 검색창에 코드를 그대로 넣으세요.
               </Text>
             </Card>
+
+            {/* 지금 어떤 버전이 돌고 있는지 — 이게 없으면 "업데이트했는데
+               왜 그대로냐"의 원인을 구분할 수 없다 */}
+            <SectionTitle>앱 정보</SectionTitle>
+            <UpdateStatus flash={flash} />
 
             <View style={{ marginTop: 24, alignItems: 'center' }}>
               <Pressable onPress={logout}><Text style={{ color: C.danger, fontSize: 13, fontWeight: '600' }}>로그아웃</Text></Pressable>
