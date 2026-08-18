@@ -10,7 +10,7 @@ const {
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions/v2');
 
 initializeApp();
@@ -18,6 +18,13 @@ const db = getFirestore();
 const KMA_SERVICE_KEY = defineSecret('KMA_SERVICE_KEY');
 
 const REGION = { region: 'asia-northeast3' }; // 서울
+
+const {
+  normalizeAsk, isAskDue, pendingVoters, askMessage, changeMessage, changedAnswers,
+} = require('./rsvpAsk');
+
+/** 운영 담당 — 참석 변경·미납 현황 같은 운영 알림을 받는 사람 */
+const isStaff = (role) => role === '회장' || role === '총무' || role === '운영진';
 
 /* ---------------- Expo Push 발송 헬퍼 ---------------- */
 async function sendPush(tokens, title, body, data = {}) {
@@ -67,6 +74,30 @@ exports.onMeetingUpdated = onDocumentUpdated({ ...REGION, document: 'clubs/{club
     return;
   }
 
+  /* 참석 여부를 나중에 바꾼 사람 → 운영진에게.
+     대진을 다 짠 뒤 당일 아침에 한 명이 빠지는 것이 가장 큰 사고였다.
+     첫 응답은 알리지 않는다(정상적인 흐름이고, 회원 수만큼 알림이
+     쏟아지면 운영진이 알림을 꺼 버린다). */
+  const changes = changedAnswers(before, after);
+  if (changes.length) {
+    const club = (await db.collection('clubs').doc(clubId).get()).data() || {};
+    const memberSnap = await db.collection('clubs').doc(clubId).collection('members').get();
+    const nameById = {};
+    const staffTokens = [];
+    memberSnap.docs.forEach((d) => {
+      const m = d.data();
+      nameById[d.id] = m.name || '';
+      if (isStaff(m.role) && m.pushToken) staffTokens.push(m.pushToken);
+    });
+    if (staffTokens.length) {
+      for (const ch of changes) {
+        const msg = changeMessage(club.name, nameById[ch.id], ch.from, ch.to, after);
+        await sendPush(staffTokens, msg.title, msg.body,
+          { type: 'rsvpChanged', meetingId, memberId: ch.id });
+      }
+    }
+  }
+
   // 대진 발표(0 → n)
   if ((before.matches || []).length === 0 && (after.matches || []).length > 0) {
     const attendeeIds = new Set([
@@ -87,6 +118,119 @@ exports.onMeetingUpdated = onDocumentUpdated({ ...REGION, document: 'clubs/{club
     await sendPush(tokens, '🎾 대진표 발표', `${after.date} 모임 대진이 확정되었습니다. 코트 배정을 확인하세요!`, { type: 'matches', meetingId });
   }
 });
+
+/* ================= 참석 투표 요청 =================
+   총무가 단톡방에서 "아직 답 안 주신 분?"을 손으로 세지 않게 한다.
+
+   두 갈래로 들어온다.
+     자동 — 모임 N일 전 지정한 시각 (clubs/{id}.settings.rsvpAsk)
+     수동 — 총무가 [투표 요청]을 누름 (pushJobs 문서가 생김)
+
+   어느 쪽이든 아직 답하지 않은 사람에게만 간다. 이미 참석이라고 한
+   사람에게 또 물으면 알림이 성가신 것이 되고, 그러면 알림 자체를
+   꺼 버린다 — 그 순간 이 기능은 죽는다. */
+
+/** 대상에게 실제로 쏘고, 모임에 발송 기록을 남긴다 */
+async function sendRsvpAsk(clubRef, meetingRef, meeting, targetIds, { auto } = {}) {
+  const memberSnap = await clubRef.collection('members').get();
+  const wanted = targetIds ? new Set(targetIds) : null;
+  const tokens = memberSnap.docs
+    .filter((d) => {
+      const m = { id: d.id, ...d.data() };
+      if (wanted && !wanted.has(d.id)) return false;
+      if (m.status && m.status !== '활동') return false;
+      // 요청서가 만들어진 뒤 답한 사람은 빼 준다 — 답한 사람에게 보내지 않는다
+      const v = (meeting.rsvp || {})[d.id];
+      return v === undefined || v === null || v === '';
+    })
+    .map((d) => d.data().pushToken)
+    .filter(Boolean);
+
+  if (!tokens.length) return 0;
+
+  const club = (await clubRef.get()).data() || {};
+  const msg = askMessage(club.name, meeting);
+  await sendPush(tokens, msg.title, msg.body,
+    { type: 'rsvpAsk', meetingId: meetingRef.id });
+
+  const patch = {
+    'rsvpAsk.lastAt': new Date(),
+    'rsvpAsk.count': FieldValue.increment(1),
+    'rsvpAsk.lastTo': tokens.length,
+  };
+  if (auto) patch['rsvpAsk.auto'] = auto;
+  await meetingRef.update(patch);
+  return tokens.length;
+}
+
+/** 수동 — 총무가 [투표 요청]을 누르면 요청서 한 장이 생긴다 */
+exports.onPushJobCreated = onDocumentCreated(
+  { ...REGION, document: 'clubs/{clubId}/pushJobs/{jobId}' },
+  async (event) => {
+    const job = event.data?.data();
+    if (!job || job.type !== 'rsvpAsk' || !job.meetingId) return;
+    const { clubId } = event.params;
+    const clubRef = db.collection('clubs').doc(clubId);
+    const meetingRef = clubRef.collection('meetings').doc(job.meetingId);
+    try {
+      const snap = await meetingRef.get();
+      if (!snap.exists) {
+        await event.data.ref.update({ status: 'skipped', reason: 'no-meeting' });
+        return;
+      }
+      const meeting = snap.data();
+      if (meeting.canceled) {
+        await event.data.ref.update({ status: 'skipped', reason: 'canceled' });
+        return;
+      }
+      const sent = await sendRsvpAsk(clubRef, meetingRef, meeting, job.targets);
+      await event.data.ref.update({ status: 'done', sent, doneAt: new Date() });
+    } catch (e) {
+      logger.error('rsvpAsk job failed', clubId, event.params.jobId, e);
+      await event.data.ref.update({ status: 'failed' }).catch(() => {});
+    }
+  },
+);
+
+/* 자동 — 30분마다 돌면서 "오늘이 그날인가"를 본다.
+
+   정각 한 번만 보는 방식이면 그 시각에 실행이 밀리거나 배포 중이면
+   그날 발송이 통째로 사라진다. 예정 시각을 지났으면 같은 날 안에서는
+   늦게라도 보내고, 이미 보낸 날은 rsvpAsk.auto 로 걸러 중복을 막는다. */
+exports.autoRsvpAsk = onSchedule(
+  { ...REGION, schedule: 'every 30 minutes', timeZone: 'Asia/Seoul' },
+  async () => {
+    const kst = new Date(Date.now() + 9 * 3600000);
+    const nowYmd = kst.toISOString().slice(0, 10);
+    const nowHHMM = kst.toISOString().slice(11, 16);
+    const clubs = await db.collection('clubs').get();
+
+    for (const club of clubs.docs) {
+      try {
+        const cfg = normalizeAsk((club.data().settings || {}).rsvpAsk);
+        if (!cfg.enabled) continue;
+        // 물어볼 날은 하루뿐이므로 그날 열리는 모임만 꺼내면 된다
+        const target = await club.ref.collection('meetings')
+          .where('date', '==', shiftDays(nowYmd, cfg.daysBefore)).get();
+        for (const mdoc of target.docs) {
+          const mt = mdoc.data();
+          if (!isAskDue(mt, cfg, nowYmd, nowHHMM)) continue;
+          const n = await sendRsvpAsk(club.ref, mdoc.ref, mt, null, { auto: nowYmd });
+          logger.info('rsvpAsk auto', club.id, mdoc.id, 'sent', n);
+        }
+      } catch (e) {
+        logger.error('autoRsvpAsk failed for club', club.id, e);
+      }
+    }
+  },
+);
+
+/** 'YYYY-MM-DD' 에 일수를 더한다 (표준시 계산이라 시차를 타지 않는다) */
+function shiftDays(ymd, delta) {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
 
 /* ---------------- 3) 게스트 확정 → 본인 알림 ---------------- */
 exports.onApplicantConfirmed = onDocumentUpdated({ ...REGION, document: 'guestPosts/{postId}/applicants/{uid}' }, async (event) => {
@@ -403,7 +547,6 @@ exports.onClubUpdated = onDocumentUpdated(
 /* ---------------- 서비스 전체 현황 카운터 ----------------
    온보딩·홈에 보여주는 "클럽 N개 · 회원 M명 · 누적 경기 K건".
    클럽/회원이 생기거나 사라질 때 증감시킨다. */
-const { FieldValue } = require('firebase-admin/firestore');
 
 exports.onClubCreatedStat = onDocumentCreated(
   { ...REGION, document: 'clubs/{clubId}' },

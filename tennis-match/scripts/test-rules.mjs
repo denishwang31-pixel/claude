@@ -77,6 +77,38 @@ await T('회원의 rsvp 외 필드 변경 거부',
 await T('총무의 모임 편집 허용(대진 저장)',
   assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'meetings', 'mt1'), { matches: [{ id: 'x' }] })));
 
+/* rsvpBy — "누가 눌렀는지". 서버가 이걸 보고 본인이 마음을 바꾼 것만
+   운영진에게 알린다. 남의 이름으로 쓸 수 있으면 알림을 조작할 수 있다. */
+await T('본인 RSVP + rsvpBy 동시 기록 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt1'),
+    { 'rsvp.mem1': 'maybe', 'rsvpBy.mem1': 'mem1' })));
+await T('rsvpBy 를 남의 이름으로 쓰는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt1'),
+    { 'rsvp.mem1': 'yes', 'rsvpBy.mem1': 'owner1' })));
+await T('타인의 rsvpBy 항목 변경 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt1'),
+    { 'rsvpBy.mem2': 'mem1' })));
+
+console.log('\n[참석 투표 요청]');
+await T('총무의 투표 요청 생성 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'j1'),
+    { type: 'rsvpAsk', meetingId: 'mt1', by: 'owner1', targets: ['mem1'], status: 'queued' })));
+await T('일반 회원의 투표 요청 생성 거부(전체 알림 통로가 되면 안 된다)',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'pushJobs', 'j2'),
+    { type: 'rsvpAsk', meetingId: 'mt1', by: 'mem1', status: 'queued' })));
+await T('남의 이름으로 요청 생성 거부',
+  assertFails(setDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'j3'),
+    { type: 'rsvpAsk', meetingId: 'mt1', by: 'mem1', status: 'queued' })));
+await T('모르는 종류의 작업 생성 거부',
+  assertFails(setDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'j4'),
+    { type: 'broadcast', by: 'owner1' })));
+await T('발송 결과 위조 거부(서버만 쓴다)',
+  assertFails(updateDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'j1'), { status: 'done', sent: 99 })));
+await T('일반 회원의 요청 내역 조회 거부',
+  assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'pushJobs', 'j1'))));
+await T('총무의 요청 내역 조회 허용',
+  assertSucceeds(getDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'j1'))));
+
 console.log('\n[게시판 (FIX-03 S-3)]');
 await T('회원 댓글 추가 허용(comments만)',
   assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'posts', 'p1'),

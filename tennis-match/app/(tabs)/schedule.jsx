@@ -11,8 +11,11 @@ import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { weatherFor } from '../../src/lib/weather';
 import {
   setRsvp, addMeeting, addMeetingsBatch, updateMeeting, updateMeetingsFrom,
-  deleteMeeting, subGear,
+  deleteMeeting, subGear, requestRsvp,
 } from '../../src/lib/firestore';
+import {
+  normalizeAsk, pendingVoters, askProgress, askDateFor,
+} from '../../src/lib/rsvpAsk';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
 import {
@@ -79,6 +82,31 @@ export default function Schedule() {
     .filter((m) => (!m.venueId ? true : scopeIds.includes(m.venueId)))
     .filter((m) => (venueId ? m.venueId === venueId : true));
   const RSVP_OPTS = [[RSVP.YES, '참석'], [RSVP.MAYBE, '미정'], [RSVP.NO, '불참']];
+
+  /* ---------- 참석 투표 요청 ----------
+     아직 답하지 않은 사람에게만 보낸다. 이미 참석이라고 한 사람에게
+     또 물으면 알림이 성가신 것이 되고, 그러면 알림 자체를 꺼 버린다. */
+  const askCfg = normalizeAsk(club?.settings?.rsvpAsk);
+  const askRsvp = (mt) => {
+    const pending = pendingVoters(members, mt);
+    if (!pending.length) return flash('모든 회원이 이미 답했습니다');
+    Alert.alert(
+      '참석 투표 요청',
+      `아직 답하지 않은 ${pending.length}명에게만 알림을 보냅니다.\n\n`
+      + `${pending.slice(0, 8).map((m) => m.name).join(', ')}`
+      + `${pending.length > 8 ? ` 외 ${pending.length - 8}명` : ''}`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: `${pending.length}명에게 보내기`,
+          onPress: async () => {
+            await requestRsvp(clubId, mt.id, me, pending.map((m) => m.id));
+            flash(`${pending.length}명에게 투표 요청을 보냈습니다`);
+          },
+        },
+      ],
+    );
+  };
 
   const closeForm = () => { setOpen(false); setEditing(null); };
 
@@ -325,9 +353,51 @@ export default function Schedule() {
                     ))}
                   </View>
 
-                  {/* 운영진: 다른 회원 참석을 대신 체크(테스트·현장 대응용) */}
+                  {/* 운영진: 투표 요청 + 다른 회원 참석 대신 체크 */}
                   {isAdmin && (
                     <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingTop: 8 }}>
+                      {(() => {
+                        const p = askProgress(members, mt);
+                        const sendOn = askDateFor(mt, askCfg);
+                        const sent = mt.rsvpAsk?.count || 0;
+                        return (
+                          <View style={{ marginBottom: 10 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: C.ink }}>
+                                  응답 {p.answered}/{p.total}
+                                  {p.pending > 0 ? ` · 미응답 ${p.pending}명` : ' · 전원 응답'}
+                                </Text>
+                                <Text style={{ fontSize: 10, color: C.faint, marginTop: 2 }}>
+                                  {askCfg.enabled && sendOn
+                                    ? `자동 요청 ${sendOn} ${askCfg.time}`
+                                    : '자동 요청 꺼짐 — 클럽 설정에서 켤 수 있습니다'}
+                                  {sent ? ` · 지금까지 ${sent}회 발송` : ''}
+                                </Text>
+                              </View>
+                              <Btn small tone={p.pending ? 'primary' : 'ghost'}
+                                onPress={() => askRsvp(mt)}>
+                                투표 요청
+                              </Btn>
+                            </View>
+
+                            {/* 누가 아직 안 냈는지 — 단톡방에서 손으로 세던 일 */}
+                            {p.pending > 0 && (
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                                {pendingVoters(members, mt).map((m) => (
+                                  <View key={m.id} style={{
+                                    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8,
+                                    backgroundColor: C.fill, borderWidth: 1, borderColor: C.border,
+                                  }}>
+                                    <Text style={{ fontSize: 10.5, color: C.sub }}>{m.name}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })()}
+
                       <Text style={{ fontSize: 10, color: C.faint, marginBottom: 6 }}>
                         운영진: 이름을 눌러 참석 여부를 대신 처리 (참석 ↔ 불참)
                       </Text>
@@ -337,7 +407,7 @@ export default function Schedule() {
                           const on = v === RSVP.YES;
                           return (
                             <Pressable key={m.id}
-                              onPress={() => setRsvp(clubId, mt.id, m.id, on ? RSVP.NO : RSVP.YES)}
+                              onPress={() => setRsvp(clubId, mt.id, m.id, on ? RSVP.NO : RSVP.YES, me)}
                               style={{
                                 paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
                                 backgroundColor: on ? C.green : v === RSVP.NO ? '#fee2e2' : '#f5f5f4',
@@ -350,13 +420,21 @@ export default function Schedule() {
                         })}
                       </View>
                       <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
+                        {/* 일괄 처리는 rsvpBy 도 같이 덮는다.
+                           안 그러면 예전에 본인이 눌렀던 기록이 남아, 운영진이
+                           누른 변경을 서버가 "회원이 마음을 바꿨다"로 읽고
+                           운영진에게 알림을 되돌려 보낸다. */}
                         <Btn small tone="ghost" onPress={() => {
                           const map = {};
-                          members.forEach((m) => { map[m.id] = RSVP.YES; });
-                          updateMeeting(clubId, mt.id, { rsvp: map });
+                          const by = {};
+                          members.forEach((m) => { map[m.id] = RSVP.YES; by[m.id] = me; });
+                          updateMeeting(clubId, mt.id, { rsvp: map, rsvpBy: by });
                           flash('전원 참석 처리');
                         }}>전원 참석</Btn>
-                        <Btn small tone="ghost" onPress={() => { updateMeeting(clubId, mt.id, { rsvp: {} }); flash('참석 초기화'); }}>초기화</Btn>
+                        <Btn small tone="ghost" onPress={() => {
+                          updateMeeting(clubId, mt.id, { rsvp: {}, rsvpBy: {} });
+                          flash('참석 초기화');
+                        }}>초기화</Btn>
                       </View>
                     </View>
                   )}

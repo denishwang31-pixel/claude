@@ -4,7 +4,7 @@
 
    반환:
      { club, members, meetings, posts, guestPosts, courts, rules, fee,
-       meVal, isAdmin, nameOf, loading }
+       meVal, isAdmin, nameOf, genderOf, loading }
 
    핵심: rules 는 Firestore 에 "키 문자열 배열"로 저장되지만(setRules),
    화면·엔진은 "{key,name,desc} 객체 배열"을 기대하므로 여기서 변환(hydrateRules).
@@ -163,10 +163,28 @@ export function useClub(clubId, me, opts = {}) {
     };
   }, [members, meetings]);
 
+  /* 성별 — 대진표 이름 색에 쓴다. nameOf 와 같은 규칙으로 게스트까지 본다.
+     게스트는 회원 문서가 없을 수 있어(타 클럽 사람) 모임에 적힌 값을 쓴다. */
+  const genderOf = useMemo(() => {
+    const byId = Object.fromEntries(members.map((m) => [m.id, m]));
+    const guestGender = {};
+    meetings.forEach((mt) => (mt.guests || []).forEach((g) => {
+      const key = g.uid || g.name;
+      if (key) guestGender[key] = g.gender;
+    }));
+    return (id) => {
+      if (isGuestId(id)) {
+        const uid = guestUid(id);
+        return guestGender[uid] || byId[uid]?.gender || '';
+      }
+      return byId[id]?.gender || '';
+    };
+  }, [members, meetings]);
+
   return {
     club, members, meetings, posts, guestPosts, courts, rules, fee,
     pairs, tournaments, venues, matchConfig, polls, meVal,
-    isAdmin, realStaff, canAppoint, isPresident, viewMode, nameOf, loading,
+    isAdmin, realStaff, canAppoint, isPresident, viewMode, nameOf, genderOf, loading,
     myLeadVenues, myVenues, scopeVenues,
     realRole, effectiveRole, seeFees, seeAllVenues, isOwner,
   };

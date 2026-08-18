@@ -20,7 +20,8 @@ import {
 import { normalizeRoundMinutes, roundMinutesLabel, screenRef } from '../lib/constants';
 import { RegionPicker } from './RegionPicker';
 import { Icon } from './Icon';
-import { Label } from './pickers';
+import { Label, TimeField } from './pickers';
+import { normalizeAsk, RSVP_DAYS_BEFORE } from '../lib/rsvpAsk';
 import { RoundMinutesPicker } from './RoundMinutesPicker';
 import { Card, SectionTitle, Chip, Btn, Field } from './ui';
 import { C, S, R, F } from '../lib/theme';
@@ -99,6 +100,7 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
   };
 
   const set = (k, v) => setS({ ...s, [k]: v });
+  const ask = normalizeAsk(s.rsvpAsk);
 
   if (!isAdmin) {
     return (
@@ -264,6 +266,59 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
           </View>
         )}
       </Card>
+
+      {/* ---------- 참석 투표 자동 요청 ----------
+         코트장별 설정이 아니라 클럽 전체 규칙이므로, 코트장을 고른
+         상태에서는 숨긴다(저장 경로가 코트장 문서로 가기 때문이다). */}
+      {!venue && (
+        <>
+          <SectionTitle hint="답하지 않은 회원에게만 갑니다. 이미 참석이라고 한 사람에게는 보내지 않습니다.">
+            참석 투표 자동 요청
+          </SectionTitle>
+          <Card>
+            <Pressable
+              onPress={() => set('rsvpAsk', { ...ask, enabled: !ask.enabled })}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{
+                width: 22, height: 22, borderRadius: 6,
+                backgroundColor: ask.enabled ? C.green : C.fill,
+                borderWidth: ask.enabled ? 0 : 1.5, borderColor: C.border,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                {ask.enabled && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900' }}>✓</Text>}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={F.bodyBold}>모임 전에 자동으로 묻기</Text>
+                <Text style={[F.caption, { marginTop: 2, lineHeight: 16 }]}>
+                  끄더라도 {screenRef('schedule')}에서 [투표 요청]을 눌러 언제든 보낼 수 있습니다.
+                </Text>
+              </View>
+            </Pressable>
+
+            {ask.enabled && (
+              <View style={{ marginTop: S.md, borderTopWidth: 1, borderTopColor: C.border, paddingTop: S.md }}>
+                <Label>며칠 전에</Label>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {RSVP_DAYS_BEFORE.map((d) => (
+                    <Chip key={d} tone={ask.daysBefore === d ? 'green' : 'outline'}
+                      onPress={() => set('rsvpAsk', { ...ask, daysBefore: d })}>
+                      {d}일 전
+                    </Chip>
+                  ))}
+                </View>
+                <View style={{ marginTop: S.md }}>
+                  <Label hint="이 시각에 보냅니다">발송 시각</Label>
+                  <TimeField value={ask.time} onChange={(v) => set('rsvpAsk', { ...ask, time: v })} />
+                </View>
+                <Text style={[F.caption, { marginTop: S.sm, lineHeight: 16 }]}>
+                  예정된 모임의 {ask.daysBefore}일 전 {ask.time}에, 아직 답하지 않은 회원에게만
+                  알림이 갑니다. 회원이 나중에 참석 여부를 바꾸면 운영진에게 알림이 옵니다.
+                </Text>
+              </View>
+            )}
+          </Card>
+        </>
+      )}
 
       {/* ---------- 대진 기본값은 대진 설정 한 곳으로 (이중 설정 제거) ---------- */}
       <SectionTitle>대진 편성 기본값</SectionTitle>

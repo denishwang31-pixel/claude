@@ -35,6 +35,34 @@ import { C, S, R, F } from '../../src/lib/theme';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+/* 표 아래 색 설명.
+   색을 입혀 놓고 무슨 뜻인지 안 적으면 "왜 이 사람만 빨갛지"가 된다. */
+function MatchLegend() {
+  const dot = (color, label) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }} />
+      <Text style={{ fontSize: 9, color: C.faint }}>{label}</Text>
+    </View>
+  );
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8, alignItems: 'center' }}>
+      {dot(C.male, '남')}
+      {dot(C.female, '여')}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+        <View style={{ width: 12, height: 8, borderRadius: 3, backgroundColor: C.green }} />
+        <Text style={{ fontSize: 9, color: C.faint }}>내 이름</Text>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+        <View style={{
+          width: 12, height: 8, borderRadius: 3,
+          backgroundColor: C.greenSoft, borderWidth: 1, borderColor: C.green,
+        }} />
+        <Text style={{ fontSize: 9, color: C.faint }}>내 경기</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function Match() {
   const { clubId, me, viewMode } = useApp();
   const bottomPad = useBottomPad();
@@ -42,7 +70,7 @@ export default function Match() {
   const router = useRouter();
   const {
     club, members, meetings, venues, rules, pairs, matchConfig,
-    isAdmin, scopeVenues, nameOf,
+    isAdmin, scopeVenues, nameOf, genderOf,
   } = useClub(clubId, me, { viewMode });
   const { venueId, setVenueId } = useVenueScope(scopeVenues);
   const cfg = { ...DEFAULT_MATCH_CONFIG, ...(matchConfig || {}) };
@@ -552,13 +580,14 @@ export default function Match() {
           {view === 'grid' ? (
             <Card style={{ padding: 10 }}>
               <MatchGrid
-                matches={matches} nameOf={nameOf} roundTimes={times}
+                matches={matches} nameOf={nameOf} genderOf={genderOf} me={me} roundTimes={times}
                 onPressMatch={(m) => {
                   if (!isAdmin) return;
                   setEditing(m.id); setSc({ a: '', b: '' });
                 }}
               />
-              {isAdmin && <Text style={{ fontSize: 9, color: C.faint, marginTop: 8 }}>경기를 누르면 스코어를 입력할 수 있습니다.</Text>}
+              <MatchLegend />
+              {isAdmin && <Text style={{ fontSize: 9, color: C.faint, marginTop: 4 }}>경기를 누르면 스코어를 입력할 수 있습니다.</Text>}
             </Card>
           ) : (
             <View>
@@ -567,12 +596,20 @@ export default function Match() {
                   <Text style={{ fontSize: 12, fontWeight: '700', color: C.ink, marginTop: 10, marginBottom: 4 }}>
                     {r}타임 {times.find((t) => t.round === r) ? `(${times.find((t) => t.round === r).start}~${times.find((t) => t.round === r).end})` : ''}
                   </Text>
-                  {matches.filter((m) => m.round === r).map((m) => (
-                    <Card key={m.id} style={{ marginBottom: 6 }}>
+                  {matches.filter((m) => m.round === r).map((m) => {
+                    const isMine = [...m.teamA, ...m.teamB].includes(me);
+                    return (
+                    <Card key={m.id} style={{
+                      marginBottom: 6,
+                      backgroundColor: isMine ? C.greenSoft : undefined,
+                      borderColor: isMine ? C.green : undefined,
+                      borderWidth: isMine ? 1.5 : undefined,
+                    }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <View style={{ flexDirection: 'row', gap: 4 }}>
+                        <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
                           <Chip tone="lime">코트 {m.court}</Chip>
                           <Chip tone={m.type === '혼복' ? 'green' : 'default'}>{m.type}</Chip>
+                          {isMine && <Chip tone="green">내 경기</Chip>}
                         </View>
                         {m.score ? (
                           <Text style={{ fontWeight: '700', color: C.green }}>{m.score.a} : {m.score.b}</Text>
@@ -590,7 +627,8 @@ export default function Match() {
                         </View>
                       </View>
                     </Card>
-                  ))}
+                    );
+                  })}
                 </View>
               ))}
             </View>
@@ -622,7 +660,7 @@ export default function Match() {
 
           <SectionTitle>참석자 경기 현황</SectionTitle>
           <Card style={{ padding: 10 }}>
-            <AttendanceGrid attendees={attendees} matches={matches} roundTimes={times} />
+            <AttendanceGrid attendees={attendees} matches={matches} roundTimes={times} me={me} />
           </Card>
 
           {/* KDK 개인 순위 — 조별 */}

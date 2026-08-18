@@ -101,8 +101,29 @@ export const updateMeetingsFrom = async (clubId, fromDate, patch, scope = {}) =>
   return targets.length;
 };
 
-export const setRsvp = (clubId, meetingId, memberId, value) =>
-  updateDoc(D(clubId, 'meetings', meetingId), { [`rsvp.${memberId}`]: value });
+/* 참석 응답.
+   actorId 는 "실제로 누른 사람"이다. 본인이 눌렀으면 memberId 와 같고,
+   운영진이 현장에서 대신 처리했으면 다르다. 서버가 이걸 보고
+   "본인이 마음을 바꾼 것"만 운영진에게 알린다 — 운영진이 자기가
+   누른 것을 자기에게 다시 알릴 필요는 없다. */
+export const setRsvp = (clubId, meetingId, memberId, value, actorId) =>
+  updateDoc(D(clubId, 'meetings', meetingId), {
+    [`rsvp.${memberId}`]: value,
+    [`rsvpBy.${memberId}`]: actorId || memberId,
+  });
+
+/* 참석 투표 요청 — 아직 답하지 않은 사람에게만 푸시.
+   앱에서 직접 푸시를 쏠 수는 없으므로(토큰은 서버만 본다) 요청서를
+   한 장 남기고, Cloud Functions 가 그것을 보고 발송한다. */
+export const requestRsvp = (clubId, meetingId, by, targets) =>
+  addDoc(C(clubId, 'pushJobs'), {
+    type: 'rsvpAsk',
+    meetingId,
+    by,
+    targets: targets || [],
+    status: 'queued',
+    createdAt: serverTimestamp(),
+  });
 
 export const setRestScore = (clubId, meetingId, memberId, value) =>
   updateDoc(D(clubId, 'meetings', meetingId), { [`restScores.${memberId}`]: value });

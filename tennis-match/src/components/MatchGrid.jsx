@@ -19,23 +19,51 @@ const TYPE_TONE = {
 const CELL_W = 132;   // 코트 열 너비
 const HEAD_W = 46;    // 타임 열 너비
 
-/** 팀 이름 두 줄 표기 (단식이면 한 명) */
-function TeamText({ ids, nameOf, win, dim }) {
+/* 이름 색 — 남녀를 한눈에 가른다.
+
+   혼복인지 남복인지는 칸 위 꼬리표로 알 수 있지만, 잡복이나 단식이
+   섞이면 "이 코트에 여자가 몇 명이지"를 이름마다 떠올려야 했다.
+   색을 입히면 표를 훑는 것만으로 구성이 보인다. */
+const nameColor = (gender) => (gender === 'F' ? C.female : gender === 'M' ? C.male : C.text);
+
+/** 팀 이름 표기 (단식이면 한 명). 내 이름은 배경까지 칠해 도드라지게 한다 */
+function TeamText({ ids, nameOf, genderOf, me, win, dim }) {
   return (
-    <Text
-      numberOfLines={2}
-      style={{
-        fontSize: 11,
-        fontWeight: win ? '900' : '600',
-        color: dim ? C.faint : win ? C.green : C.text,
-        textAlign: 'center',
-      }}>
-      {ids.map((id) => nameOf(id)).join(' · ')}
-    </Text>
+    <View style={{
+      flexDirection: 'row', flexWrap: 'wrap',
+      justifyContent: 'center', alignItems: 'center',
+    }}>
+      {ids.map((id, i) => {
+        const mine = !!me && id === me;
+        const g = genderOf ? genderOf(id) : '';
+        return (
+          <View key={id} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {i > 0 && <Text style={{ fontSize: 10, color: C.faint }}> · </Text>}
+            <Text
+              numberOfLines={1}
+              style={{
+                fontSize: 11,
+                fontWeight: mine || win ? '900' : '600',
+                /* 내 이름은 초록 알약으로 덮어 칠한다.
+                   칸 배경(연초록) 위에서도 확실히 떠올라야 하므로
+                   성별 색 대신 흰 글씨를 쓴다 — 내 이름을 찾는 것이
+                   먼저고, 내 성별은 이미 알고 있다. */
+                color: mine ? '#fff' : dim ? C.faint : win ? C.green : nameColor(g),
+                backgroundColor: mine ? C.green : 'transparent',
+                borderRadius: mine ? 4 : 0,
+                paddingHorizontal: mine ? 4 : 0,
+                overflow: 'hidden',
+              }}>
+              {nameOf(id)}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
-export function MatchGrid({ matches, nameOf, roundTimes = [], onPressMatch }) {
+export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPressMatch }) {
   if (!matches?.length) return null;
 
   const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
@@ -91,11 +119,16 @@ export function MatchGrid({ matches, nameOf, roundTimes = [], onPressMatch }) {
                 const tone = TYPE_TONE[m.type] || { bg: '#fff', fg: C.sub };
                 const aWin = m.score && m.score.a > m.score.b;
                 const bWin = m.score && m.score.b > m.score.a;
+                /* 내가 뛰는 칸 — 표가 넓어도 내 경기부터 눈에 들어와야 한다 */
+                const isMine = !!me && [...m.teamA, ...m.teamB].includes(me);
                 return (
                   <Pressable key={c} onPress={() => onPressMatch?.(m)}
                     style={{
-                      width: CELL_W, minHeight: 62, backgroundColor: '#fff',
-                      borderWidth: 1, borderColor: '#f5f5f4', padding: 6,
+                      width: CELL_W, minHeight: 62,
+                      backgroundColor: isMine ? C.greenSoft : '#fff',
+                      borderWidth: isMine ? 2 : 1,
+                      borderColor: isMine ? C.green : '#f5f5f4',
+                      padding: isMine ? 5 : 6,
                     }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <View style={{ backgroundColor: tone.bg, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
@@ -106,9 +139,11 @@ export function MatchGrid({ matches, nameOf, roundTimes = [], onPressMatch }) {
                         : <Text style={{ fontSize: 9, color: C.faint }}>기록전</Text>}
                     </View>
                     <View style={{ marginTop: 4 }}>
-                      <TeamText ids={m.teamA} nameOf={nameOf} win={aWin} dim={m.score && !aWin} />
+                      <TeamText ids={m.teamA} nameOf={nameOf} genderOf={genderOf} me={me}
+                        win={aWin} dim={m.score && !aWin} />
                       <Text style={{ fontSize: 8, color: C.faint, textAlign: 'center', marginVertical: 1 }}>vs</Text>
-                      <TeamText ids={m.teamB} nameOf={nameOf} win={bWin} dim={m.score && !bWin} />
+                      <TeamText ids={m.teamB} nameOf={nameOf} genderOf={genderOf} me={me}
+                        win={bWin} dim={m.score && !bWin} />
                     </View>
                   </Pressable>
                 );
@@ -122,7 +157,7 @@ export function MatchGrid({ matches, nameOf, roundTimes = [], onPressMatch }) {
 }
 
 /** 참석자별 출전 현황 — 언제 뛰고 언제 쉬는지 한눈에 */
-export function AttendanceGrid({ attendees, matches, roundTimes = [] }) {
+export function AttendanceGrid({ attendees, matches, roundTimes = [], me }) {
   if (!attendees?.length) return null;
   const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
   if (!rounds.length) return null;
@@ -166,17 +201,20 @@ export function AttendanceGrid({ attendees, matches, roundTimes = [] }) {
 
           {sorted.map((p, i) => {
             const n = total(p.id);
+            /* 내 줄 — 참석자가 스무 명 넘으면 내 이름을 찾는 것부터 일이다 */
+            const mine = !!me && p.id === me;
             return (
               <View key={p.id} style={{
                 flexDirection: 'row', alignItems: 'center',
-                backgroundColor: i % 2 ? '#fafaf9' : '#fff',
+                backgroundColor: mine ? C.greenSoft : i % 2 ? '#fafaf9' : '#fff',
                 borderRadius: 6,
+                borderWidth: mine ? 1.5 : 0, borderColor: C.green,
               }}>
                 <View style={{ width: NAME_W, paddingVertical: 5, paddingLeft: 4 }}>
                   <Text numberOfLines={1} style={{
-                    fontSize: 11, fontWeight: '700',
-                    color: p.gender === 'F' ? C.female : C.male,
-                  }}>{p.name}</Text>
+                    fontSize: 11, fontWeight: mine ? '900' : '700',
+                    color: nameColor(p.gender),
+                  }}>{mine ? `${p.name} (나)` : p.name}</Text>
                 </View>
 
                 {rounds.map((r) => {
