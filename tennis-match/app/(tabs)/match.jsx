@@ -27,7 +27,10 @@ import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
 import { VenuePicker } from '../../src/components/VenuePicker';
 import { MatchGrid, AttendanceGrid } from '../../src/components/MatchGrid';
-import { Segmented } from '../../src/components/native';
+import { Segmented, useOptionSheet } from '../../src/components/native';
+import {
+  blankDraw, labelOf, toggleInSlot, busyInRound, playCounts, reviewDraw, slotSize,
+} from '../../src/lib/manualDraw';
 import {
   Card, SectionTitle, Chip, Btn, Field, Avatar, CheckRow,
 } from '../../src/components/ui';
@@ -78,6 +81,8 @@ export default function Match() {
   const [meetingId, setMeetingId] = useState(null);
   const [view, setView] = useState('grid');       // grid | list
   const [showTools, setShowTools] = useState(false);
+  const [manualOn, setManualOn] = useState(false);   // 수기 편집 패널
+  const sheet = useOptionSheet();
   const [editing, setEditing] = useState(null);
   const [sc, setSc] = useState({ a: '', b: '' });
   const [toast, setToast] = useState(null);
@@ -224,6 +229,61 @@ export default function Match() {
     const groups = [...new Set(matches.map((m) => m.group))].length;
     flash(`KDK ${groups}개 조 · ${matches.length}경기 · 1인 ${q.minGames}경기`
       + (q.repeatedPartners ? ` · 파트너 중복 ${q.repeatedPartners}` : ' · 파트너 중복 없음'));
+  };
+
+  /* ---------- 수기 대진 ----------
+     자동 편성이 아무리 좋아도 현장에는 규칙으로 못 적는 사정이 있다
+     ("저 형 무릎이 안 좋아 1타임만", "3코트는 어두우니 고수끼리").
+     지금까지는 다시 돌리는 수밖에 없었고, 그러면 마음에 들던 칸까지
+     같이 바뀌었다. 빈 표를 만들고 칸을 눌러 채우는 길을 연다. */
+  const makeBlank = () => {
+    if (!meeting) return flash('모임을 먼저 선택하세요');
+    const make = () => {
+      const blank = blankDraw({
+        courts: meeting.courts || 1,
+        rounds: meeting.rounds || 4,
+        singles: isSingles,
+      });
+      saveMatches(clubId, meeting.id, blank);
+      setManualOn(true);
+      flash(`빈 표 ${blank.length}칸을 만들었습니다. 칸을 눌러 채우세요`);
+    };
+    if (matches.length) {
+      return Alert.alert('빈 대진표 만들기',
+        '지금 대진과 기록된 스코어가 모두 지워집니다.\n계속할까요?',
+        [{ text: '취소', style: 'cancel' }, { text: '만들기', style: 'destructive', onPress: make }]);
+    }
+    return make();
+  };
+
+  /** 칸을 눌러 그 자리에 설 사람을 고른다 */
+  const fillSlot = (m, side) => {
+    const busy = busyInRound(matches, m.round, m.id);
+    const counts = playCounts(attendees, matches);
+    const cur = (side === 'B' ? m.teamB : m.teamA) || [];
+    sheet.open({
+      title: `${m.round}타임 코트${m.court} · ${side === 'B' ? '뒷팀' : '앞팀'}`,
+      options: [
+        ...attendees
+          .filter((p) => !busy.has(p.id) || cur.includes(p.id))
+          .map((p) => ({
+            key: p.id,
+            label: `${cur.includes(p.id) ? '✓ ' : ''}${p.name}`
+              + ` (${p.gender === 'F' ? '여' : '남'} · ${counts[p.id] || 0}경기)`,
+          })),
+        { key: '__clear', label: '이 칸 비우기', destructive: true },
+      ],
+      onSelect: (o) => {
+        const next = matches.map((x) => {
+          if (x.id !== m.id) return x;
+          const patched = o.key === '__clear'
+            ? { ...x, [side === 'B' ? 'teamB' : 'teamA']: [] }
+            : toggleInSlot(x, side, o.key);
+          return { ...patched, type: labelOf(patched, genderOf) || patched.type || '' };
+        });
+        saveMatches(clubId, meeting.id, next);
+      },
+    });
   };
 
   const gen = () => {
@@ -494,10 +554,17 @@ export default function Match() {
             })()}
 
             {isAdmin && (
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                <Btn onPress={gen}>{matches.length ? '대진 재생성' : '자동 대진 생성'}</Btn>
-                <Btn tone="ghost" onPress={() => setShowTools(!showTools)}>{showTools ? '설정 닫기' : '편성 설정'}</Btn>
-              </View>
+              <>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                  <Btn onPress={gen}>{matches.length ? '대진 재생성' : '자동 대진 생성'}</Btn>
+                  <Btn tone="ghost" onPress={() => setShowTools(!showTools)}>{showTools ? '설정 닫기' : '편성 설정'}</Btn>
+                  <Btn tone="ghost" onPress={makeBlank}>수기 작성</Btn>
+                </View>
+                <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 8, lineHeight: 15 }}>
+                  수기 작성은 코트 × 타임 빈 표를 만들어 직접 채웁니다.
+                  자동으로 짠 뒤 몇 칸만 고치는 것도 아래 [수기 편집]에서 됩니다.
+                </Text>
+              </>
             )}
           </Card>
 
@@ -658,6 +725,89 @@ export default function Match() {
             </Card>
           )}
 
+          {/* 수기 편집 — 자동으로 짠 표도 여기서 몇 칸만 고칠 수 있다 */}
+          {isAdmin && (
+            <>
+              <SectionTitle right={
+                <Chip tone={manualOn ? 'green' : 'outline'} onPress={() => setManualOn(!manualOn)}>
+                  {manualOn ? '닫기' : '열기'}
+                </Chip>
+              }>수기 편집</SectionTitle>
+
+              {manualOn && (() => {
+                const rv = reviewDraw(attendees, matches);
+                return (
+                  <Card>
+                    <Text style={{ fontSize: 11, color: C.sub, lineHeight: 16 }}>
+                      칸을 눌러 그 자리에 설 사람을 고릅니다.
+                      같은 타임에 이미 뛰는 사람은 목록에서 빠집니다.
+                    </Text>
+
+                    {/* 짜는 중에 균형이 보여야 한다 — 다 짜고 나서 세면 늦다 */}
+                    <View style={{
+                      flexDirection: 'row', flexWrap: 'wrap', gap: 6,
+                      marginTop: 10, paddingTop: 10,
+                      borderTopWidth: 1, borderTopColor: C.border,
+                    }}>
+                      <Chip tone={rv.spread <= 1 ? 'green' : 'warn'}>
+                        출전 {rv.min}~{rv.max}경기
+                      </Chip>
+                      {rv.incomplete.length > 0 && (
+                        <Chip tone="warn">덜 채운 칸 {rv.incomplete.length}</Chip>
+                      )}
+                      {rv.dupes.length > 0 && (
+                        <Chip tone="red">같은 타임 중복 {rv.dupes.length}</Chip>
+                      )}
+                      {rv.unused.length > 0 && (
+                        <Chip tone="warn">한 번도 안 뛰는 {rv.unused.length}명</Chip>
+                      )}
+                      {rv.empty > 0 && <Chip tone="default">빈 코트 {rv.empty}</Chip>}
+                    </View>
+                    {rv.unused.length > 0 && (
+                      <Text style={{ fontSize: 10.5, color: C.warn, marginTop: 6 }}>
+                        {rv.unused.slice(0, 8).map((p) => p.name).join(', ')}
+                        {rv.unused.length > 8 ? ` 외 ${rv.unused.length - 8}명` : ''} — 아직 배정 안 됨
+                      </Text>
+                    )}
+
+                    <View style={{ gap: 6, marginTop: 12 }}>
+                      {[...matches].sort((a, b) => a.round - b.round || a.court - b.court).map((m) => {
+                        const cap = slotSize(m);
+                        const aFull = (m.teamA || []).length === cap;
+                        const bFull = (m.teamB || []).length === cap;
+                        return (
+                          <View key={m.id} style={{
+                            flexDirection: 'row', alignItems: 'center', gap: 5,
+                            paddingVertical: 4,
+                            borderTopWidth: 1, borderTopColor: '#f5f5f4',
+                          }}>
+                            <Text style={{ width: 68, fontSize: 10.5, color: C.sub }}>
+                              {m.round}타임 {m.court}코트
+                            </Text>
+                            <Text style={{ width: 40, fontSize: 9.5, color: C.faint }}>
+                              {m.type || '—'}
+                            </Text>
+                            <Btn small tone={aFull ? 'ghost' : 'primary'}
+                              style={{ flex: 1 }}
+                              onPress={() => fillSlot(m, 'A')}>
+                              {(m.teamA || []).map(nameOf).join('·') || '앞팀'}
+                            </Btn>
+                            <Text style={{ fontSize: 9, color: C.faint }}>vs</Text>
+                            <Btn small tone={bFull ? 'ghost' : 'primary'}
+                              style={{ flex: 1 }}
+                              onPress={() => fillSlot(m, 'B')}>
+                              {(m.teamB || []).map(nameOf).join('·') || '뒷팀'}
+                            </Btn>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </Card>
+                );
+              })()}
+            </>
+          )}
+
           <SectionTitle>참석자 경기 현황</SectionTitle>
           <Card style={{ padding: 10 }}>
             <AttendanceGrid attendees={attendees} matches={matches} roundTimes={times} me={me} />
@@ -753,6 +903,8 @@ export default function Match() {
         contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}
         activationDistance={12}
       />
+      {sheet.node}
+
       {toast && (
         <View style={{ position: 'absolute', bottom: 20, alignSelf: 'center', backgroundColor: C.ink, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, maxWidth: 340 }}>
           <Text style={{ color: C.lime, fontSize: 12, fontWeight: '700', textAlign: 'center' }}>{toast}</Text>

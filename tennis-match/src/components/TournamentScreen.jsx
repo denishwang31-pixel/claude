@@ -1,4 +1,5 @@
-/* 대회 — 형식 4종(조별+토너먼트 · KDK · 청백전 · 클럽교류전) 개설 · 진행 · 기록 보관 */
+/* 대회 — 조별+토너먼트 · KDK · 청백전 · 팀 리그 개설 · 진행 · 기록 보관
+   (클럽 교류전은 두 클럽이 같이 보는 문서라 [클럽 교류전] 화면에 따로 있다) */
 import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import {
@@ -14,6 +15,7 @@ import {
 } from '../lib/constants';
 import { effectiveNtrp } from '../lib/ntrp';
 import { TeamMatch } from './TeamMatchScreen';
+import { TeamLeague } from './TeamLeagueScreen';
 import { MatchGrid } from './MatchGrid';
 import { DateField, Label } from './pickers';
 import { AppButton, Touchable, Segmented, useOptionSheet } from './native';
@@ -25,6 +27,10 @@ const today = () => new Date().toISOString().slice(0, 10);
 /** 목록·상세에 보여줄 형식 요약 */
 function formatLabel(t) {
   const f = TOURNAMENT_FORMATS.find((x) => x.key === t.format);
+  if (t.stage === 'league') {
+    const n = (t.league?.teams || []).length;
+    return `🚩 팀 리그${n ? ` · ${n}팀` : ''} · ${(t.roster || []).length}명`;
+  }
   if (t.stage === 'team') return `${f?.icon || ''} ${f?.label || '단체전'} · ${(t.roster || []).length}명`;
   if (t.stage === 'kdk') return `🎯 KDK · ${(t.roster || []).length}명`;
   if (t.stage === 'skillGroups' || t.mode === 'skillGroups') return `${t.skillGroups?.length || 0}개 실력 그룹`;
@@ -79,7 +85,24 @@ function CreateTournament({ clubId, members, onDone, flash }) {
       status: 'ongoing',
     };
 
-    /* 단체전 — 청백전 / 클럽교류전 */
+    /* 팀 리그 — 3팀 이상. 청백전과 저장 구조는 같고(roster + 편성 결과),
+       화면만 다르다. stage 로 갈라 둔다. */
+    if (format === TOURNAMENT_FORMAT.TEAM_LEAGUE) {
+      if (pickedList.length < 6) return flash('팀 리그는 6명 이상이 필요합니다');
+      addTournament(clubId, {
+        ...base,
+        stage: 'league',
+        roster: pickedList.map((m) => ({
+          id: m.id, name: m.name, gender: m.gender, busu: m.busu || '',
+          grade: m.grade || '', ntrp: effectiveNtrp(m).value ?? null,
+        })),
+        league: null,
+        entries: [], groups: [], bracket: null,
+      });
+      flash('팀 리그가 개설되었습니다');
+      return onDone();
+    }
+
     if (format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE || format === TOURNAMENT_FORMAT.TEAM_CLUB) {
       if (pickedList.length < 4) return flash('참가자를 4명 이상 선택하세요');
       addTournament(clubId, {
@@ -147,7 +170,9 @@ function CreateTournament({ clubId, members, onDone, flash }) {
     onDone();
   };
 
-  const isTeam = format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE || format === TOURNAMENT_FORMAT.TEAM_CLUB;
+  const isTeam = format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE
+    || format === TOURNAMENT_FORMAT.TEAM_CLUB
+    || format === TOURNAMENT_FORMAT.TEAM_LEAGUE;
   const isKdkFormat = format === TOURNAMENT_FORMAT.KDK;
   const isBracket = !isTeam && !isKdkFormat;
 
@@ -714,7 +739,17 @@ export function Tournaments({ clubId, members, tournaments, isAdmin, flash }) {
           </Text>
         </Card>
 
-        {t.stage === 'team' ? (
+        {t.stage === 'league' ? (
+          <TeamLeague
+            key={t.id}
+            roster={t.roster || []}
+            courts={t.courts || 2}
+            saved={t.league}
+            isAdmin={isAdmin}
+            flash={flash}
+            onSave={(payload) => updateTournament(clubId, t.id, { league: payload })}
+          />
+        ) : t.stage === 'team' ? (
           <TeamMatch
             key={t.id}
             format={t.format}

@@ -297,6 +297,7 @@ export const TOURNAMENT_FORMAT = {
   GROUP_BRACKET: 'group_bracket',  // 예선 조별리그 → 본선 토너먼트 (기존)
   KDK: 'kdk',                      // 개인전 KDK
   TEAM_BLUE_WHITE: 'blue_white',   // 청백전 — 클럽을 두 팀으로 나눠 단체전
+  TEAM_LEAGUE: 'team_league',      // 팀 리그 — 3팀 이상으로 나눠 돌려가며
   TEAM_CLUB: 'club_match',         // 클럽교류전 — 우리 클럽 vs 상대 클럽
 };
 
@@ -318,6 +319,13 @@ export const TOURNAMENT_FORMATS = [
     label: '청백전',
     icon: '🔵',
     desc: '클럽 회원을 청팀·백팀으로 나눠 단체전을 합니다. 이긴 경기 수를 합산해 팀 승부를 가립니다.',
+  },
+  {
+    key: TOURNAMENT_FORMAT.TEAM_LEAGUE,
+    label: '팀 리그 (3팀 이상)',
+    icon: '🚩',
+    desc: '인원을 3~8개 팀으로 나눠 팀끼리 돌려가며 붙습니다. 팀 점수를 합산해 순위를 냅니다. '
+      + '인원이 많아 두 팀으로는 대기가 길어질 때 씁니다.',
   },
 ];
 

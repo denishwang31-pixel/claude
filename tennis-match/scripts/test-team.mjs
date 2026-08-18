@@ -131,11 +131,13 @@ T('오픈부는 환산 없음', busuToNtrp('오픈부') === null);
 T('부수별 설명 존재', BUSU_KEYS.every((k) => busuToNtrp(k) !== undefined));
 
 console.log('\n[대회 형식]');
-/* 새로 만들 수 있는 형식은 3종. 클럽 교류전은 여기서 빠졌다 —
-   두 클럽이 같이 보는 문서라 [클럽 교류전] 화면에서만 만든다.
-   두 길을 다 열어 두면 옛 길로 만든 교류전은 상대가 볼 수 없다. */
-T('새로 만들 수 있는 형식 3종', TOURNAMENT_FORMATS.length === 3,
+/* 클럽 안에서 만드는 형식만 여기 있다 — 조별+토너먼트 · KDK · 청백전 · 팀 리그.
+   클럽 교류전은 빠졌다: 두 클럽이 같이 보는 문서라 [클럽 교류전] 화면에서만
+   만든다. 두 길을 다 열어 두면 옛 길로 만든 교류전은 상대가 볼 수 없다. */
+T('새로 만들 수 있는 형식 4종', TOURNAMENT_FORMATS.length === 4,
   TOURNAMENT_FORMATS.map((f) => f.label).join(', '));
+T('팀 리그가 목록에 있다',
+  TOURNAMENT_FORMATS.some((f) => f.key === TOURNAMENT_FORMAT.TEAM_LEAGUE));
 T('교류전은 대회 형식 목록에 없다',
   !TOURNAMENT_FORMATS.some((f) => f.key === TOURNAMENT_FORMAT.TEAM_CLUB));
 T('청백전 팀 2개', TEAM_SIDES[TOURNAMENT_FORMAT.TEAM_BLUE_WHITE].length === 2);
