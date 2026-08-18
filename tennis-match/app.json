@@ -18,6 +18,9 @@
       "permissions": [
         "INTERNET",
         "POST_NOTIFICATIONS",
+        "VIBRATE",
+        "INTERNET",
+        "POST_NOTIFICATIONS",
         "VIBRATE"
       ],
       "adaptiveIcon": {
@@ -54,6 +57,21 @@
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#022c22"
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "ab8eb046-6344-483a-af51-c9f049a00a7e"
+      }
+    },
+    "owner": "denis-hwang",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ab8eb046-6344-483a-af51-c9f049a00a7e"
     }
   }
 }

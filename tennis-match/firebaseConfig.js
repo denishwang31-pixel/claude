@@ -11,12 +11,13 @@ import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 export const firebaseConfig = {
-  apiKey: 'YOUR_API_KEY',
-  authDomain: 'YOUR_PROJECT.firebaseapp.com',
-  projectId: 'YOUR_PROJECT',
-  storageBucket: 'YOUR_PROJECT.appspot.com',
-  messagingSenderId: 'YOUR_SENDER_ID',
-  appId: 'YOUR_APP_ID',
+  apiKey: "AIzaSyAuz511b8yp_L-7Hg9Cim5Epxt-LQRPw_g",
+  authDomain: "tennis-match-52b31.firebaseapp.com",
+  projectId: "tennis-match-52b31",
+  storageBucket: "tennis-match-52b31.firebasestorage.app",
+  messagingSenderId: "738996873154",
+  appId: "1:738996873154:web:7309cdb6c54a998afcd85b",
+  measurementId: "G-DQYYD8L3E9",
 };
 
 export const app = initializeApp(firebaseConfig);
