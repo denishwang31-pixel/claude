@@ -19,7 +19,7 @@ const uid = () => `mt_${Date.now().toString(36)}_${(_seq++).toString(36)}`;
 
 export const DEFAULT_RULES = [
   { key: 'maxPlay', name: '출전 인원 최대화', desc: '가능한 많은 인원이 코트에 서도록 구성' },
-  { key: 'evenGames', name: '게임 수 균등 배분', desc: '출전 횟수 최소자 우선 선발' },
+  { key: 'evenGames', name: '게임 수 균등 배분', desc: '출전 횟수 최소자 우선 선발 · 남복/여복 횟수도 함께 맞춤' },
   { key: 'pairNoRepeat', name: '페어 중복 방지', desc: '이전 모임 누적 기록까지 포함해 같은 페어 회피' },
   { key: 'pattern', name: '타임별 희망 패턴', desc: '홀수 타임: 남복+여복 / 짝수 타임: 혼복 우선' },
   { key: 'restPriority', name: '휴식 우선점수 반영', desc: '지난주 많이 쉰 사람에게 총무가 부여한 점수 우선' },
@@ -278,6 +278,32 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
 
   const games = {};
   players.forEach((p) => { games[p.id] = 0; });
+
+  /* 상대 만남 기록.
+
+     페어(같은 편) 중복은 원래 막고 있었지만 상대 중복은 아무도 안 봤다.
+     그래서 "오늘 저 사람이랑만 세 번 붙었다"가 그대로 나왔다.
+     VBA 는 usedOpp 로 상대 조합을 세고 상한(oppCap)을 걸었다. 같은 것을 둔다. */
+  const usedOpps = {};
+  const oppCount = (a, b) => usedOpps[pairKey(a, b)] || 0;
+
+  /* 유형별 게임 수 — 남복은 남자끼리, 여복은 여자끼리 편차를 본다.
+     전체 게임 수만 맞추면 "나는 4게임 다 혼복만 했다"가 된다. */
+  const typeGames = {};
+  players.forEach((p) => { typeGames[p.id] = { MD: 0, WD: 0, MX: 0 }; });
+
+  /* 남녀 누적 휴식 인원 — 타임 구성을 고를 때 쓴다.
+     한쪽 성별만 계속 쉬는 것을 막는다(VBA restM/restF). */
+  const restedTotal = { M: 0, F: 0 };
+
+  /* 출석률 — 낮은 사람을 먼저 넣는다.
+     VBA 는 반대로 자주 나오는 사람을 우대했지만, 이 클럽의 뜻은
+     "덜 나오던 사람이 나왔을 때 더 뛰게 해서 다시 나오게 하자"다. */
+  const attRate = (id) => {
+    const v = (options.attendance || {})[id];
+    return typeof v === 'number' ? v : 50;   // 기록 없는 사람은 중간값
+  };
+
   const usedPairs = { ...pastPairs };
   const allMatches = [];
   const rest = (id) => restScores[id] || 0;
@@ -293,7 +319,7 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
      @param useCouples 커플/페어 출전 동기화 적용 여부
      @param useFixed   고정페어 "같은 팀" 강제 적용 여부
      @param deadline   이 시각(ms)을 넘기면 즉시 포기 — 불가능한 제약에 매달리지 않음 */
-  const planRound = (r, useCouples, useFixed, deadline) => {
+  const planRound = (r, useCouples, useFixed, deadline, oppCap = 1) => {
     const syncMap = useCouples ? partnerOf : {};
     const teamMap = useFixed ? fixedOf : {};
     const allowMixed = !!options.allowMixed;     // 잡복 허용(기본 false)
@@ -418,7 +444,14 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
         });
       }
       if (!singlesMatches.length) return null;
-      return { matches: singlesMatches, tempPairs: {} };
+      /* 단식은 파트너가 없어 페어 개념이 없다. 상대 기록은 남긴다 —
+         "오늘 저 사람하고만 세 번 단식했다"도 똑같이 피해야 한다. */
+      const singlesOpps = {};
+      singlesMatches.forEach((mt) => {
+        const k = pairKey(mt.teamA[0], mt.teamB[0]);
+        singlesOpps[k] = (singlesOpps[k] || 0) + 1;
+      });
+      return { matches: singlesMatches, tempPairs: {}, tempOpps: singlesOpps, cost: 0 };
     }
 
     let best = null, bestScore = -Infinity;
@@ -456,6 +489,16 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
           if (useFixed && sameSexFixed.M && y > 0) s += 20;
           if (useFixed && sameSexFixed.F && z > 0) s += 20;
           s -= Math.abs((availM - needM) - (availF - needF)); // 잔여 성비 불균형 페널티
+
+          /* 남녀 누적 휴식 균형.
+             그 타임만 보면 매번 같은 쪽이 쉬어도 티가 안 난다. 지금까지
+             쉰 인원을 누적해 비율로 보면 "여자만 계속 쉬는" 구성이 걸러진다.
+             (VBA restM/restF 와 같은 계산) */
+          const totalM = players.filter((p) => p.gender === 'M').length;
+          const totalF = players.filter((p) => p.gender === 'F').length;
+          const rateM = totalM ? (restedTotal.M + (availM - needM)) / totalM : 0;
+          const rateF = totalF ? (restedTotal.F + (availF - needF)) / totalF : 0;
+          s -= Math.abs(rateM - rateF) * 25;
           if (s > bestScore) { bestScore = s; best = { x, y, z, w, needM, needF }; }
         }
       }
@@ -465,8 +508,10 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
     const { x, y, z, w, needM, needF } = best;
 
     /* 2) 타임 단위 풀 선발: 출전횟수 최소 → 휴식점수 → 랜덤 */
-    const ranked = (gender) =>
-      players
+    const ranked = (gender) => {
+      /* 이 성별이 이번 타임에 뛸 동성 복식 유형 */
+      const sameType = gender === 'F' ? 'WD' : 'MD';
+      return players
         .filter((p) => p.gender === gender)
         .sort((a, b) =>
           /* 게스트 먼저.
@@ -481,8 +526,16 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
              오늘 한 게임도 못 뛴다. 많이 빠지는 사람일수록 먼저 챙긴다. */
           + (availRounds(a.id) - availRounds(b.id)) * 10
           + (games[a.id] - games[b.id]) * W.evenGames
+          /* 이 타임에 쓰는 동성 복식 유형의 게임 수가 적은 사람 먼저.
+             전체 게임 수만 맞추면 "나는 오늘 혼복만 네 번 했다"가 된다. */
+          + (typeGames[a.id][sameType] - typeGames[b.id][sameType]) * W.evenGames * 0.6
+          /* 출석률이 낮은 사람 먼저.
+             덜 나오던 사람이 모처럼 나왔을 때 더 뛰게 해야 다시 나온다.
+             (0~100 을 0~1 로 줄여 게임 수 균등을 뒤집지 않을 만큼만 준다) */
+          + (attRate(a.id) - attRate(b.id)) * 0.02
           - (rest(a.id) - rest(b.id)) * W.restPriority * 0.5
           || Math.random() - 0.5);
+    };
     const rankM = ranked('M');
     const rankF = ranked('F');
 
@@ -569,7 +622,9 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
       const m = arrange(poolM);
       const f = arrange(poolF);
       const tempPairs = {};
+      const tempOpps = {};
       const matches = [];
+      let cost = 0;          // 이 시도의 나쁨 — 페어 중복 ×10 + 상대 재대결
       let ok = true;
 
       for (let c = 0; c < courtTypes.length; c++) {
@@ -629,8 +684,22 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
           const exemptB = teamMap[teamB[0].id] === teamB[1].id;
           const repeat = (exemptA ? 0 : (usedPairs[kA] || 0) + (tempPairs[kA] || 0))
             + (exemptB ? 0 : (usedPairs[kB] || 0) + (tempPairs[kB] || 0));
-          if (!fpViolation && (repeat === 0 || (!strictPair && g > MAX_GAME * 0.6) || g === MAX_GAME - 1)) {
-            placed = { teamA, teamB, kA, kB, type: t.label };
+
+          /* 상대 재대결 — 네 갈래(A1:B1, A1:B2, A2:B1, A2:B2)를 모두 센다.
+             상한(oppCap)을 넘으면 이 조합은 쓰지 않는다. 상한은 바깥에서
+             1 → 2 → 무제한으로 풀어 준다. */
+          const crossKeys = [
+            pairKey(teamA[0].id, teamB[0].id), pairKey(teamA[0].id, teamB[1].id),
+            pairKey(teamA[1].id, teamB[0].id), pairKey(teamA[1].id, teamB[1].id),
+          ];
+          const oppRepeat = crossKeys.reduce(
+            (n, k) => n + (usedOpps[k] || 0) + (tempOpps[k] || 0), 0);
+          const oppOver = crossKeys.some(
+            (k) => (usedOpps[k] || 0) + (tempOpps[k] || 0) >= oppCap);
+
+          if (!fpViolation && !oppOver
+              && (repeat === 0 || (!strictPair && g > MAX_GAME * 0.6) || g === MAX_GAME - 1)) {
+            placed = { teamA, teamB, kA, kB, crossKeys, repeat, oppRepeat, type: t.label };
           } else {
             m.unshift(...ms); f.unshift(...fs);
             if (skillBalance) {                    // 실력순은 유지하고 동점자끼리만 섞음
@@ -645,12 +714,25 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
         if (!placed) { ok = false; break; }
         tempPairs[placed.kA] = (tempPairs[placed.kA] || 0) + 1;
         tempPairs[placed.kB] = (tempPairs[placed.kB] || 0) + 1;
+        placed.crossKeys.forEach((k) => { tempOpps[k] = (tempOpps[k] || 0) + 1; });
+        cost += placed.repeat * 10 + placed.oppRepeat;
         matches.push({
           id: uid(), round: r, court: c + 1, type: placed.type,
           teamA: placed.teamA.map((p) => p.id), teamB: placed.teamB.map((p) => p.id), score: null,
         });
       }
-      if (ok && matches.length) roundResult = { matches, tempPairs };
+      /* 첫 성공에서 멈추지 않는다.
+
+         예전에는 되는 조합을 찾자마자 확정했다. 그러면 "되기는 하는데
+         같은 사람끼리 또 붙는" 결과가 그대로 나간다. 몇 번 더 돌려 보고
+         가장 나은 것을 쓴다. 대신 완벽한 것(중복 0)을 찾으면 즉시 멈춘다 —
+         더 돌려도 나아질 게 없고, 그때가 대부분이다. */
+      if (ok && matches.length) {
+        if (!roundResult || cost < roundResult.cost) {
+          roundResult = { matches, tempPairs, tempOpps, cost };
+        }
+        if (cost === 0) break;
+      }
     }
     return roundResult;
   };
@@ -666,22 +748,46 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
     let roundResult = null;
     let relaxed = null;
 
-    roundResult = planRound(r, hasSync, hasFixedTeam, Date.now() + budget);
+    /* 상대 재대결 상한을 1 → 2 → 무제한으로 풀어 가며 시도한다.
+       인원이 빠듯한 클럽에서 1회를 고집하면 아예 편성이 안 되므로,
+       "되는 선에서 가장 적게" 만나도록 단계로 올린다. (VBA phase 0~2) */
+    for (const cap of [1, 2, Infinity]) {
+      roundResult = planRound(r, hasSync, hasFixedTeam, Date.now() + budget, cap);
+      if (roundResult) {
+        if (cap > 1) relaxed = `oppRepeat${cap === 2 ? '2' : 'Any'}`;
+        break;
+      }
+    }
 
     if (!roundResult && hasFixedTeam) {          // 같은 팀 강제만 포기(출전 시간 동기화는 유지)
-      roundResult = planRound(r, hasSync, false, Date.now() + budget);
+      roundResult = planRound(r, hasSync, false, Date.now() + budget, Infinity);
       if (roundResult) relaxed = 'fixedPairTeam';
     }
     if (!roundResult && hasSync) {               // 커플/페어 제약 전부 포기
-      roundResult = planRound(r, false, false, Date.now() + budget);
+      roundResult = planRound(r, false, false, Date.now() + budget, Infinity);
       if (roundResult) relaxed = 'allPairConstraints';
     }
 
     if (!roundResult) { report.skippedRounds.push(r); continue; }
     if (relaxed) report.relaxed.push({ round: r, what: relaxed });
 
-    roundResult.matches.forEach((mt) => [...mt.teamA, ...mt.teamB].forEach((id) => { games[id]++; }));
+    roundResult.matches.forEach((mt) => {
+      [...mt.teamA, ...mt.teamB].forEach((id) => { games[id] += 1; });
+      /* 유형별 게임 수 — 다음 타임 선발에서 "남복만 계속 한 사람"을 뒤로 민다 */
+      const key = mt.type === '남복' ? 'MD' : mt.type === '여복' ? 'WD' : 'MX';
+      [...mt.teamA, ...mt.teamB].forEach((id) => {
+        if (typeGames[id]) typeGames[id][key] += 1;
+      });
+    });
     Object.entries(roundResult.tempPairs).forEach(([k, v]) => { usedPairs[k] = (usedPairs[k] || 0) + v; });
+    Object.entries(roundResult.tempOpps).forEach(([k, v]) => { usedOpps[k] = (usedOpps[k] || 0) + v; });
+
+    /* 이 타임에 쉰 인원을 누적 — 다음 타임 코트 구성에서 남녀 균형에 쓴다 */
+    const playedNow = new Set(roundResult.matches.flatMap((mt) => [...mt.teamA, ...mt.teamB]));
+    players.forEach((p) => {
+      if (!playedNow.has(p.id)) restedTotal[p.gender === 'F' ? 'F' : 'M'] += 1;
+    });
+
     allMatches.push(...roundResult.matches);
   }
 

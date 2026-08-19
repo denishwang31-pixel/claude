@@ -529,5 +529,120 @@ const withNtrp = (nm, nf) => [
     '한 타임만 가능한 사람이 그 타임에 배정되지 않음');
 }
 
+
+/* ============================================================
+   상대 재대결 제한 (VBA usedOpp / oppCap)
+
+   페어(같은 편) 중복은 원래 막고 있었지만 상대 중복은 아무도 안 봤다.
+   그래서 "오늘 저 사람이랑만 세 번 붙었다"가 그대로 나왔다.
+   ============================================================ */
+{
+  const oppPairs = (ms) => {
+    const c = {};
+    ms.forEach((m) => {
+      m.teamA.forEach((a) => m.teamB.forEach((b) => {
+        const k = [a, b].sort().join('|');
+        c[k] = (c[k] || 0) + 1;
+      }));
+    });
+    return c;
+  };
+
+  {
+    // 인원이 넉넉하면 같은 상대를 두 번 만날 이유가 없다
+    const P = roster(6, 6);
+    const ms = generateMatchesV5(P, 2, 4, DEFAULT_RULES, {}, {});
+    checkMatches(ms, P);
+    const worst = Math.max(...Object.values(oppPairs(ms)), 0);
+    ok(worst <= 2, `남6여6·2면·4타임에서 같은 상대를 ${worst}번 만남`);
+  }
+  {
+    // 인원이 빠듯해도 편성은 되어야 한다 (상한을 단계적으로 푼다)
+    const P = roster(2, 2);
+    const ms = generateMatchesV5(P, 1, 4, DEFAULT_RULES, {}, {});
+    ok(ms.length > 0, '인원이 빠듯하면 편성 자체가 안 됨 — 상한 완화가 동작하지 않음');
+    checkMatches(ms, P);
+  }
+  {
+    // 넉넉한 인원에서는 재대결이 페어 중복보다 먼저 줄어야 한다
+    const P = roster(8, 8);
+    const ms = generateMatchesV5(P, 2, 4, DEFAULT_RULES, {}, {});
+    const worst = Math.max(...Object.values(oppPairs(ms)), 0);
+    ok(worst <= 1, `남8여8 넉넉한 인원인데 같은 상대를 ${worst}번 만남`);
+  }
+}
+
+/* ============================================================
+   유형별 게임 수 균형 (VBA typeImb)
+
+   전체 게임 수만 맞추면 "나는 오늘 혼복만 네 번 했다"가 된다.
+   ============================================================ */
+{
+  const P = roster(6, 6);
+  const ms = generateMatchesV5(P, 2, 6, DEFAULT_RULES, {}, {});
+  const md = {}, wd = {};
+  P.forEach((p) => { md[p.id] = 0; wd[p.id] = 0; });
+  ms.forEach((m) => {
+    const ids = [...m.teamA, ...m.teamB];
+    if (m.type === '남복') ids.forEach((id) => { md[id] += 1; });
+    if (m.type === '여복') ids.forEach((id) => { wd[id] += 1; });
+  });
+  const men = P.filter((p) => p.gender === 'M').map((p) => md[p.id]);
+  const women = P.filter((p) => p.gender === 'F').map((p) => wd[p.id]);
+  const spreadM = Math.max(...men) - Math.min(...men);
+  const spreadF = Math.max(...women) - Math.min(...women);
+  ok(spreadM <= 2, `남복 게임 수 편차 과다 (${men.join(',')})`);
+  ok(spreadF <= 2, `여복 게임 수 편차 과다 (${women.join(',')})`);
+}
+
+/* ============================================================
+   남녀 휴식 균형 (VBA restM/restF)
+
+   그 타임만 보면 매번 같은 쪽이 쉬어도 티가 안 난다.
+   ============================================================ */
+{
+  // 남8 여4 · 2면 — 여자가 매번 다 나오고 남자만 쉬는 구성이 되기 쉽다
+  const P = roster(8, 4);
+  const ms = generateMatchesV5(P, 2, 4, DEFAULT_RULES, {}, {});
+  checkMatches(ms, P);
+  const cnt = {};
+  P.forEach((p) => { cnt[p.id] = 0; });
+  ms.forEach((m) => [...m.teamA, ...m.teamB].forEach((id) => { cnt[id] += 1; }));
+  const men = P.filter((p) => p.gender === 'M').map((p) => cnt[p.id]);
+  const women = P.filter((p) => p.gender === 'F').map((p) => cnt[p.id]);
+  const avgM = men.reduce((a, b) => a + b, 0) / men.length;
+  const avgF = women.reduce((a, b) => a + b, 0) / women.length;
+  ok(Math.abs(avgM - avgF) <= 1.6,
+    `남녀 평균 출전 격차 과다 (남 ${avgM.toFixed(1)} / 여 ${avgF.toFixed(1)})`);
+}
+
+/* ============================================================
+   출석률이 낮은 사람을 더 뛰게
+
+   VBA 는 자주 나오는 사람을 우대했지만, 이 클럽의 뜻은 반대다 —
+   덜 나오던 사람이 모처럼 나왔을 때 더 뛰게 해야 다시 나온다.
+   ============================================================ */
+{
+  const P = roster(6, 6);
+  // M1·F1 은 출석률이 낮고, M2·F2 는 높다
+  const attendance = { M1: 10, F1: 10, M2: 95, F2: 95 };
+  let lowTotal = 0, highTotal = 0;
+  for (let t = 0; t < 12; t++) {          // 무작위가 섞이므로 여러 번 돌려 경향을 본다
+    const ms = generateMatchesV5(P, 2, 4, DEFAULT_RULES, {}, {}, { attendance });
+    const cnt = {};
+    P.forEach((p) => { cnt[p.id] = 0; });
+    ms.forEach((m) => [...m.teamA, ...m.teamB].forEach((id) => { cnt[id] += 1; }));
+    lowTotal += cnt.M1 + cnt.F1;
+    highTotal += cnt.M2 + cnt.F2;
+  }
+  ok(lowTotal >= highTotal,
+    `출석률 낮은 사람이 덜 뜀 (낮음 ${lowTotal} vs 높음 ${highTotal})`);
+  // 출석률을 안 넘기면 예전과 같아야 한다
+  ok(generateMatchesV5(P, 2, 4, DEFAULT_RULES, {}, {}).length > 0,
+    'attendance 미지정에서 편성 실패');
+  ok(generateMatchesV5(P, 2, 4, DEFAULT_RULES, {}, {}, { attendance: {} }).length > 0,
+    'attendance 빈 객체에서 편성 실패');
+}
+
 console.log(`\n엔진 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

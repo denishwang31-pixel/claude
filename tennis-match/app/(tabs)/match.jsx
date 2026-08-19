@@ -19,6 +19,7 @@ import {
 } from '../../src/lib/kdk';
 import { DEFAULT_MATCH_CONFIG, roundTimes, dowName } from '../../src/lib/schedule';
 import { effectiveNtrp } from '../../src/lib/ntrp';
+import { attendanceStats } from '../../src/components/AttendanceScreen';
 import {
   RSVP, DRAW_MODE, DRAW_MODES, PLAY_MODE, PLAY_MODES,
 } from '../../src/lib/constants';
@@ -208,6 +209,7 @@ export default function Match() {
             .map((r) => [r, roundTypeOf(r)]),
         ),
         excluded: meeting.excluded || {},
+        attendance: attRates,
         report,
       },
     );
@@ -289,6 +291,18 @@ export default function Match() {
       },
     });
   };
+
+  /* 출석률 — 낮은 사람을 먼저 넣는다.
+     자주 빠지던 사람이 모처럼 나왔을 때 더 뛰게 해야 다시 나온다.
+     기록이 없으면 넘기지 않는다(엔진이 중간값으로 본다). */
+  const attRates = useMemo(() => {
+    const { stat } = attendanceStats(members, meetings);
+    const out = {};
+    Object.entries(stat).forEach(([id, s]) => {
+      if (s.rate !== null && s.rate !== undefined) out[id] = s.rate;
+    });
+    return out;
+  }, [members, meetings]);
 
   /* ---------- 타임별 미배정 ----------
      늦게 오는 사람, 먼저 가는 사람, "오늘은 두 타임만". 이걸 못 넣으면
