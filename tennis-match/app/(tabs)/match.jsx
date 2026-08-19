@@ -675,64 +675,96 @@ export default function Match() {
                 ))}
               </Card>
 
-              {/* 타임별 미배정 — 지각·조퇴·중간 이탈 */}
+              {/* 타임별 미배정 — 회원 × 타임 표.
+                 사람마다 줄을 잡으면 20명만 넘어도 화면을 한참 내려야 한다.
+                 엑셀 체크박스처럼 한 표에 모아 두면 "이번 타임에 누가
+                 빠지는지"가 세로로 읽힌다. */}
               <SectionTitle hint="빠질 타임을 눌러 끕니다. 편성 전에 빼야 나머지가 고르게 나뉩니다.">
                 타임별 미배정
               </SectionTitle>
-              <Card>
-                <View style={{ gap: 8 }}>
-                  {attendees.map((p) => {
-                    const off = offRounds(p.id);
-                    return (
-                      <View key={p.id} style={{
-                        borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingTop: 8,
-                      }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={{
-                            flex: 1, fontSize: 12.5, fontWeight: '700',
+              <Card style={{ padding: 10 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View>
+                    {/* 머리글 */}
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4 }}>
+                      <View style={{ width: 74 }} />
+                      {Array.from({ length: meeting.rounds || 0 }, (_, i) => i + 1).map((r) => (
+                        <View key={r} style={{ width: 38, alignItems: 'center' }}>
+                          <Text style={{ fontSize: 10.5, fontWeight: '800', color: C.ink }}>{r}T</Text>
+                          {times.find((t) => t.round === r) && (
+                            <Text style={{ fontSize: 7.5, color: C.faint }}>
+                              {times.find((t) => t.round === r).start}
+                            </Text>
+                          )}
+                        </View>
+                      ))}
+                      <View style={{ width: 52 }} />
+                    </View>
+
+                    {attendees.map((p, i) => {
+                      const off = offRounds(p.id);
+                      return (
+                        <View key={p.id} style={{
+                          flexDirection: 'row', alignItems: 'center',
+                          backgroundColor: i % 2 ? '#fafaf9' : '#fff',
+                          borderRadius: 6,
+                        }}>
+                          <Text numberOfLines={1} style={{
+                            width: 74, fontSize: 11.5, fontWeight: '700', paddingLeft: 4,
                             color: p.gender === 'F' ? C.female : C.male,
                           }}>
                             {p.name}
-                            {off.length ? (
-                              <Text style={{ fontWeight: '400', color: C.warn }}>
-                                {'  '}{off.join('·')}타임 제외
-                              </Text>
-                            ) : null}
                           </Text>
+
+                          {Array.from({ length: meeting.rounds || 0 }, (_, k) => k + 1).map((r) => {
+                            const on = isOff(p.id, r);
+                            return (
+                              <Pressable key={r} onPress={() => toggleOff(p.id, r)}
+                                style={{ width: 38, alignItems: 'center', paddingVertical: 5 }}>
+                                <View style={{
+                                  width: 24, height: 24, borderRadius: 6,
+                                  alignItems: 'center', justifyContent: 'center',
+                                  backgroundColor: on ? '#fee2e2' : C.fill,
+                                  borderWidth: 1.5,
+                                  borderColor: on ? '#fca5a5' : C.border,
+                                }}>
+                                  <Text style={{
+                                    fontSize: 12, fontWeight: '900',
+                                    color: on ? '#b91c1c' : '#d6d3d1',
+                                  }}>
+                                    {on ? '✕' : ''}
+                                  </Text>
+                                </View>
+                              </Pressable>
+                            );
+                          })}
+
                           {/* 가장 흔한 두 가지는 한 번에 */}
-                          <Chip tone="outline" onPress={() => setOffPreset(p.id, 'late')}>지각</Chip>
-                          <Chip tone="outline" onPress={() => setOffPreset(p.id, 'early')}>조퇴</Chip>
-                          {off.length > 0 && (
-                            <Chip tone="default" onPress={() => setOffPreset(p.id, 'clear')}>해제</Chip>
-                          )}
+                          <View style={{ width: 52, flexDirection: 'row', gap: 3, justifyContent: 'center' }}>
+                            {off.length > 0 ? (
+                              <Pressable onPress={() => setOffPreset(p.id, 'clear')} hitSlop={6}>
+                                <Text style={{ fontSize: 10, color: C.green, fontWeight: '700' }}>해제</Text>
+                              </Pressable>
+                            ) : (
+                              <>
+                                <Pressable onPress={() => setOffPreset(p.id, 'late')} hitSlop={6}>
+                                  <Text style={{ fontSize: 10, color: C.faint }}>지각</Text>
+                                </Pressable>
+                                <Pressable onPress={() => setOffPreset(p.id, 'early')} hitSlop={6}>
+                                  <Text style={{ fontSize: 10, color: C.faint }}>조퇴</Text>
+                                </Pressable>
+                              </>
+                            )}
+                          </View>
                         </View>
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-                          {Array.from({ length: meeting.rounds || 0 }, (_, i) => i + 1).map((r) => (
-                            <Pressable key={r} onPress={() => toggleOff(p.id, r)}
-                              style={{
-                                paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
-                                backgroundColor: isOff(p.id, r) ? '#fee2e2' : C.fill,
-                                borderWidth: 1,
-                                borderColor: isOff(p.id, r) ? '#fca5a5' : C.border,
-                              }}>
-                              <Text style={{
-                                fontSize: 11, fontWeight: '700',
-                                color: isOff(p.id, r) ? '#b91c1c' : C.sub,
-                                textDecorationLine: isOff(p.id, r) ? 'line-through' : 'none',
-                              }}>
-                                {r}T
-                              </Text>
-                            </Pressable>
-                          ))}
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-                <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 10, lineHeight: 15 }}>
-                  [지각]은 1타임, [조퇴]는 마지막 타임을 뺍니다.
-                  편성한 뒤에 손으로 빼면 그 사람이 뛴 것으로 계산돼 나머지 인원의
-                  게임 수가 어긋납니다. 그래서 편성 전에 여기서 빼는 것이 맞습니다.
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+                <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 8, lineHeight: 15 }}>
+                  ✕ 표시가 그 타임에 빠지는 사람입니다. [지각]은 1타임, [조퇴]는 마지막 타임.
+                  {'\n'}편성한 뒤에 손으로 빼면 그 사람이 뛴 것으로 계산돼 나머지 인원의
+                  게임 수가 어긋납니다. 그래서 편성 전에 여기서 빼야 합니다.
                 </Text>
               </Card>
 

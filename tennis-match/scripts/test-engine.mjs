@@ -475,5 +475,59 @@ const withNtrp = (nm, nf) => [
   }
 }
 
+
+/* ============================================================
+   게스트 우선 배정
+
+   게스트는 돈을 내고 한 번 오는 사람이다. 회원은 다음 주에 또 뛰지만
+   게스트에게는 오늘이 전부라서, 덜 뛰고 가면 다시 오지 않는다.
+   ============================================================ */
+{
+  const withGuests = [
+    ...roster(4, 4),
+    { id: 'g:손님1', name: '손님1', gender: 'M', grade: 'B' },
+    { id: 'g:손님2', name: '손님2', gender: 'F', grade: 'B' },
+  ];
+  const count = (ms, id) =>
+    ms.filter((m) => [...m.teamA, ...m.teamB].includes(id)).length;
+
+  const ms = generateMatchesV5(withGuests, 2, 4, DEFAULT_RULES, {}, {});
+  checkMatches(ms, withGuests);
+
+  const gm = count(ms, 'g:손님1');
+  const gf = count(ms, 'g:손님2');
+  const memberCounts = roster(4, 4).map((p) => count(ms, p.id));
+  const minMember = Math.min(...memberCounts);
+
+  ok(gm >= minMember, `게스트(남)가 최소 출전 회원보다 덜 뜀 (${gm} < ${minMember})`);
+  ok(gf >= minMember, `게스트(여)가 최소 출전 회원보다 덜 뜀 (${gf} < ${minMember})`);
+  ok(gm > 0 && gf > 0, '게스트가 한 게임도 못 뜀');
+
+  // isGuest 플래그로 표시해도 같아야 한다
+  const flagged = [
+    ...roster(4, 4),
+    { id: 'x1', name: '손님3', gender: 'M', grade: 'B', isGuest: true },
+  ];
+  const ms2 = generateMatchesV5(flagged, 2, 4, DEFAULT_RULES, {}, {});
+  ok(count(ms2, 'x1') > 0, 'isGuest 플래그 게스트가 배정되지 않음');
+}
+
+/* ============================================================
+   남은 기회가 적은 사람 먼저
+
+   네 타임 중 세 타임을 빠지는 사람은, 남은 한 타임에 못 들어가면
+   오늘 한 게임도 못 뛰고 돌아간다.
+   ============================================================ */
+{
+  const P = roster(6, 6);
+  const inRound = (ms, r) =>
+    ms.filter((m) => m.round === r).flatMap((m) => [...m.teamA, ...m.teamB]);
+  // M1 은 4타임에만 나올 수 있다
+  const ms = generateMatchesV5(P, 2, 4, DEFAULT_RULES, {}, {},
+    { excluded: { M1: [1, 2, 3] } });
+  ok(inRound(ms, 4).includes('M1'),
+    '한 타임만 가능한 사람이 그 타임에 배정되지 않음');
+}
+
 console.log(`\n엔진 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

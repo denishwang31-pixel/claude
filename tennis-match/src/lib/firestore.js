@@ -336,6 +336,33 @@ export const setNtrpVote = (clubId, targetId, voterId, value) =>
 export const updateMemberProfile = (clubId, memberId, patch) =>
   updateDoc(D(clubId, 'members', memberId), patch);
 
+/* 소속 코트장 일괄 배정.
+   회원이 200명이면 한 사람씩 눌러 지정하는 것은 현실적이지 않다.
+   그리고 이 지정이 없으면 일정·투표가 전원에게 가므로 반드시 채워야 한다.
+
+   @param mode 'set' 덮어쓰기 · 'add' 추가 · 'remove' 빼기
+   @returns 바꾼 인원 수 */
+export async function assignVenuesBulk(clubId, memberIds, venueIds, mode = 'set') {
+  const ids = [...new Set(memberIds || [])].filter(Boolean);
+  if (!ids.length) return 0;
+  const snap = await getDocs(C(clubId, 'members'));
+  const byId = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+
+  for (let i = 0; i < ids.length; i += 400) {   // 배치 상한 500
+    const batch = writeBatch(db);
+    ids.slice(i, i + 400).forEach((id) => {
+      const cur = byId[id]?.venueIds || [];
+      let next;
+      if (mode === 'add') next = [...new Set([...cur, ...venueIds])];
+      else if (mode === 'remove') next = cur.filter((v) => !venueIds.includes(v));
+      else next = [...new Set(venueIds)];
+      batch.update(D(clubId, 'members', id), { venueIds: next });
+    });
+    await batch.commit();
+  }
+  return ids.length;
+}
+
 /* ---- 출석 ---- */
 export const setAttendance = (clubId, meetingId, memberId, present) =>
   updateDoc(D(clubId, 'meetings', meetingId), { [`attendance.${memberId}`]: present });

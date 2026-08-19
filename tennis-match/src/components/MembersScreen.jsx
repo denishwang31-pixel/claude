@@ -13,6 +13,7 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
 import {
   updateMemberProfile, addMember, deleteMember, setMemberRole, setMemberRoles,
+  assignVenuesBulk,
 } from '../lib/firestore';
 import {
   ROLES, ASSIGNABLE_ROLES, ROLE_DESC, GRADES, BUSU, BUSU_KEYS,
@@ -32,6 +33,8 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
   const [openId, setOpenId] = useState(null);
   const [d, setD] = useState({});
   const [adding, setAdding] = useState(false);
+  const [bulkOn, setBulkOn] = useState(false);      // 코트장 일괄 배정 패널
+  const [picked, setPicked] = useState({});
   const [nm, setNm] = useState({
     name: '', gender: 'M', busu: '', grade: '', region: '', startedAt: '',
     role: ROLES.MEMBER, venueIds: [],
@@ -133,6 +136,33 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
 
   const staff = members.filter(isStaffMember);
 
+  const pickedIds = Object.keys(picked).filter((k) => picked[k]);
+  const bulkAssign = (venueIds, mode) => {
+    if (!pickedIds.length) return flash('회원을 먼저 고르세요');
+    const label = venueIds.length
+      ? venues.filter((v) => venueIds.includes(v.id)).map((v) => v.name).join(', ')
+      : '배정 해제';
+    return Alert.alert(
+      '코트장 일괄 배정',
+      `${pickedIds.length}명을 ${label}${mode === 'add' ? '에 추가' : '(으)로 설정'}합니다.`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '적용',
+          onPress: async () => {
+            try {
+              const n = await assignVenuesBulk(clubId, pickedIds, venueIds, mode);
+              setPicked({});
+              flash(`${n}명 배정 완료`);
+            } catch (e) {
+              flash('배정에 실패했습니다');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <View>
       {/* 운영진 요약 */}
@@ -169,6 +199,79 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
           회비·지출 내역은 회장·총무만 볼 수 있습니다. 리드는 배정된 코트장의 일정·대진만 다룹니다.
         </Text>
       </Card>
+
+      {/* 코트장 일괄 배정 — 200명을 한 명씩 누를 수는 없다.
+         이 지정이 비어 있으면 일정·투표가 전원에게 가므로 반드시 채워야 한다. */}
+      {isAdmin && venues.length > 0 && (
+        <>
+          <SectionTitle right={
+            <Chip tone={bulkOn ? 'green' : 'outline'} onPress={() => { setBulkOn(!bulkOn); setPicked({}); }}>
+              {bulkOn ? '닫기' : '열기'}
+            </Chip>
+          }>코트장 일괄 배정</SectionTitle>
+
+          {bulkOn && (
+            <Card>
+              <Text style={{ fontSize: 11, color: C.sub, lineHeight: 16 }}>
+                회원을 고르고 코트장을 누르면 한 번에 배정됩니다.
+                배정이 없는 회원은 모든 코트장의 일정·투표를 받습니다.
+              </Text>
+
+              {/* 아직 배정 안 된 사람부터 — 이게 가장 급하다 */}
+              {(() => {
+                const none = members.filter((m) => !(m.venueIds || []).length);
+                if (!none.length) return null;
+                return (
+                  <View style={{ marginTop: 10 }}>
+                    <Btn small tone="ghost"
+                      onPress={() => setPicked(Object.fromEntries(none.map((m) => [m.id, true])))}>
+                      미배정 {none.length}명 고르기
+                    </Btn>
+                  </View>
+                );
+              })()}
+
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
+                {members.map((m) => {
+                  const on = !!picked[m.id];
+                  const where = (m.venueIds || [])
+                    .map((id) => venues.find((v) => v.id === id)?.name).filter(Boolean);
+                  return (
+                    <Chip key={m.id} tone={on ? 'green' : 'outline'}
+                      onPress={() => setPicked({ ...picked, [m.id]: !on })}>
+                      {m.name}{where.length ? ` · ${where.join('/')}` : ''}
+                    </Chip>
+                  );
+                })}
+              </View>
+
+              <View style={{
+                marginTop: 12, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 10,
+              }}>
+                <Label hint={`${pickedIds.length}명 선택됨`}>이 코트장으로</Label>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {venues.map((v) => (
+                    <Chip key={v.id} tone="soft" onPress={() => bulkAssign([v.id], 'set')}>
+                      {v.name}
+                    </Chip>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {venues.map((v) => (
+                    <Chip key={v.id} tone="outline" onPress={() => bulkAssign([v.id], 'add')}>
+                      ＋{v.name} 추가
+                    </Chip>
+                  ))}
+                  <Chip tone="red" onPress={() => bulkAssign([], 'set')}>배정 해제</Chip>
+                </View>
+                <Text style={{ fontSize: 10, color: C.faint, marginTop: 8, lineHeight: 15 }}>
+                  [코트장]은 기존 배정을 덮어쓰고, [＋추가]는 겸소속으로 더합니다.
+                </Text>
+              </View>
+            </Card>
+          )}
+        </>
+      )}
 
       <SectionTitle>전체 회원 ({members.length}명)</SectionTitle>
       <Card>

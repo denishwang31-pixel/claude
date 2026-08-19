@@ -255,6 +255,12 @@ export function describeShortage(need) {
  */
 export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPairs = {}, restScores = {}, options = {}) {
   const players = allPlayers;   // 바깥 계산(집계·초기화)은 전원 기준
+
+  /* 게스트 판별 — id 접두사('g:') 또는 명시 플래그.
+     둘 다 보는 이유는 대회 화면처럼 게스트 개념 없이 넘어오는 경우가
+     있기 때문이다. 그때는 전원 회원으로 보고 예전과 같게 동작한다. */
+  const guestRank = (p) =>
+    (p?.isGuest || String(p?.id || '').startsWith('g:') ? 0 : 1);
   const W = {};
   (ruleOrder || DEFAULT_RULES).forEach((r, i) => { W[r.key] = (ruleOrder || DEFAULT_RULES).length - i; });
   const strictPair = W.pairNoRepeat >= 4; // 페어중복방지 1~2순위 → 엄격
@@ -308,6 +314,14 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
       return Array.isArray(list) && list.includes(r);
     };
     const players = allPlayers.filter((p) => !offNow(p.id));
+
+    /* 이 사람이 오늘 나올 수 있는 타임이 몇 개인가.
+       많이 빠지는 사람일수록 남은 타임에 우선 넣어야 한 게임도 못 뛰는
+       일이 없다. */
+    const availRounds = (id) => {
+      const off = (options.excluded || {})[id];
+      return rounds - (Array.isArray(off) ? off.length : 0);
+    };
 
     const availM = players.filter((p) => p.gender === 'M').length;
     const availF = players.filter((p) => p.gender === 'F').length;
@@ -455,7 +469,18 @@ export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPai
       players
         .filter((p) => p.gender === gender)
         .sort((a, b) =>
-          (games[a.id] - games[b.id]) * W.evenGames
+          /* 게스트 먼저.
+
+             게스트는 돈을 내고 한 번 오는 사람이다. 회원은 다음 주에 또
+             뛰지만 게스트에게는 오늘이 전부라서, 덜 뛰고 가면 그 클럽에
+             다시 오지 않는다. 그래서 다른 어떤 기준보다 앞에 둔다.
+             (VBA 도 selk 에서 게스트에게 1억을 빼 최우선으로 뽑았다) */
+          (guestRank(a) - guestRank(b)) * 1000
+          /* 남은 기회가 적은 사람 먼저.
+             네 타임 중 세 타임을 빠지는 사람은 남은 한 타임에 못 들어가면
+             오늘 한 게임도 못 뛴다. 많이 빠지는 사람일수록 먼저 챙긴다. */
+          + (availRounds(a.id) - availRounds(b.id)) * 10
+          + (games[a.id] - games[b.id]) * W.evenGames
           - (rest(a.id) - rest(b.id)) * W.restPriority * 0.5
           || Math.random() - 0.5);
     const rankM = ranked('M');
