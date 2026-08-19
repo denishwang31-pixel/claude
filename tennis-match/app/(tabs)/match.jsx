@@ -207,6 +207,7 @@ export default function Match() {
           Array.from({ length: meeting.rounds || 0 }, (_, i) => i + 1)
             .map((r) => [r, roundTypeOf(r)]),
         ),
+        excluded: meeting.excluded || {},
         report,
       },
     );
@@ -287,6 +288,35 @@ export default function Match() {
         saveMatches(clubId, meeting.id, next);
       },
     });
+  };
+
+  /* ---------- 타임별 미배정 ----------
+     늦게 오는 사람, 먼저 가는 사람, "오늘은 두 타임만". 이걸 못 넣으면
+     총무가 대진을 짜 놓고 그 사람 자리만 손으로 고치게 되고, 그러면
+     게임 수 균등 계산이 어긋난다. */
+  const excluded = meeting?.excluded || {};
+  const offRounds = (id) => excluded[id] || [];
+  const isOff = (id, r) => offRounds(id).includes(r);
+
+  const toggleOff = (id, r) => {
+    if (!meeting) return;
+    const cur = offRounds(id);
+    const next = cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r].sort((a, b) => a - b);
+    const map = { ...excluded };
+    if (next.length) map[id] = next; else delete map[id];
+    updateMeeting(clubId, meeting.id, { excluded: map });
+  };
+
+  /** 자주 쓰는 두 가지 — 지각·조퇴 */
+  const setOffPreset = (id, kind) => {
+    if (!meeting) return;
+    const n = meeting.rounds || 0;
+    const map = { ...excluded };
+    if (kind === 'late') map[id] = [1];
+    else if (kind === 'early') map[id] = [n];
+    else delete map[id];
+    if (map[id] && !map[id].length) delete map[id];
+    updateMeeting(clubId, meeting.id, { excluded: map });
   };
 
   /* ---------- 대진 ↔ 참석 어긋남 ----------
@@ -643,6 +673,67 @@ export default function Match() {
                     </View>
                   </View>
                 ))}
+              </Card>
+
+              {/* 타임별 미배정 — 지각·조퇴·중간 이탈 */}
+              <SectionTitle hint="빠질 타임을 눌러 끕니다. 편성 전에 빼야 나머지가 고르게 나뉩니다.">
+                타임별 미배정
+              </SectionTitle>
+              <Card>
+                <View style={{ gap: 8 }}>
+                  {attendees.map((p) => {
+                    const off = offRounds(p.id);
+                    return (
+                      <View key={p.id} style={{
+                        borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingTop: 8,
+                      }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={{
+                            flex: 1, fontSize: 12.5, fontWeight: '700',
+                            color: p.gender === 'F' ? C.female : C.male,
+                          }}>
+                            {p.name}
+                            {off.length ? (
+                              <Text style={{ fontWeight: '400', color: C.warn }}>
+                                {'  '}{off.join('·')}타임 제외
+                              </Text>
+                            ) : null}
+                          </Text>
+                          {/* 가장 흔한 두 가지는 한 번에 */}
+                          <Chip tone="outline" onPress={() => setOffPreset(p.id, 'late')}>지각</Chip>
+                          <Chip tone="outline" onPress={() => setOffPreset(p.id, 'early')}>조퇴</Chip>
+                          {off.length > 0 && (
+                            <Chip tone="default" onPress={() => setOffPreset(p.id, 'clear')}>해제</Chip>
+                          )}
+                        </View>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                          {Array.from({ length: meeting.rounds || 0 }, (_, i) => i + 1).map((r) => (
+                            <Pressable key={r} onPress={() => toggleOff(p.id, r)}
+                              style={{
+                                paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+                                backgroundColor: isOff(p.id, r) ? '#fee2e2' : C.fill,
+                                borderWidth: 1,
+                                borderColor: isOff(p.id, r) ? '#fca5a5' : C.border,
+                              }}>
+                              <Text style={{
+                                fontSize: 11, fontWeight: '700',
+                                color: isOff(p.id, r) ? '#b91c1c' : C.sub,
+                                textDecorationLine: isOff(p.id, r) ? 'line-through' : 'none',
+                              }}>
+                                {r}T
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+                <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 10, lineHeight: 15 }}>
+                  [지각]은 1타임, [조퇴]는 마지막 타임을 뺍니다.
+                  편성한 뒤에 손으로 빼면 그 사람이 뛴 것으로 계산돼 나머지 인원의
+                  게임 수가 어긋납니다. 그래서 편성 전에 여기서 빼는 것이 맞습니다.
+                </Text>
               </Card>
 
               <SectionTitle>휴식 우선점수</SectionTitle>

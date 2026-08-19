@@ -253,7 +253,8 @@ export function describeShortage(need) {
  *   - fixedPairs : 항상 같은 팀이어야 하는 조합 → 동기화 + 같은 팀 + 중복 페널티 면제
  * @returns {Array} matches  [{id,round,court,type,teamA:[id,id],teamB:[id,id],score}]
  */
-export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs = {}, restScores = {}, options = {}) {
+export function generateMatchesV5(allPlayers, courts, rounds, ruleOrder, pastPairs = {}, restScores = {}, options = {}) {
+  const players = allPlayers;   // 바깥 계산(집계·초기화)은 전원 기준
   const W = {};
   (ruleOrder || DEFAULT_RULES).forEach((r, i) => { W[r.key] = (ruleOrder || DEFAULT_RULES).length - i; });
   const strictPair = W.pairNoRepeat >= 4; // 페어중복방지 1~2순위 → 엄격
@@ -291,6 +292,23 @@ export function generateMatchesV5(players, courts, rounds, ruleOrder, pastPairs 
     const teamMap = useFixed ? fixedOf : {};
     const allowMixed = !!options.allowMixed;     // 잡복 허용(기본 false)
     const skillBalance = !!options.skillBalance; // NTRP 근접 매칭(기본 false)
+
+    /* 이 타임에 못 뛰는 사람은 아예 후보에서 뺀다.
+
+       늦게 오는 사람(1타임 제외), 먼저 가는 사람(마지막 타임 제외),
+       "오늘 무릎이 안 좋아 두 타임만" 같은 사정은 매번 있다. 이걸 못 넣으면
+       총무가 대진을 짜 놓고 그 사람 자리만 손으로 고치게 되고, 그러면
+       게임 수 균등 계산이 어긋난다.
+
+       빼는 시점이 중요하다. 편성한 뒤에 빼면 그 사람이 뛴 것으로 계산돼
+       다른 사람의 출전 횟수가 잘못 맞춰진다. 후보에서 먼저 빼야
+       남은 사람들끼리 고르게 나뉜다. */
+    const offNow = (id) => {
+      const list = (options.excluded || {})[id];
+      return Array.isArray(list) && list.includes(r);
+    };
+    const players = allPlayers.filter((p) => !offNow(p.id));
+
     const availM = players.filter((p) => p.gender === 'M').length;
     const availF = players.filter((p) => p.gender === 'F').length;
 

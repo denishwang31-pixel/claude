@@ -414,5 +414,66 @@ const withNtrp = (nm, nf) => [
   });
 }
 
+/* ============================================================
+   타임별 미배정 — "나는 4타임 빼 줘"
+
+   늦게 오는 사람, 먼저 가는 사람, 오늘 무릎이 안 좋은 사람.
+   이걸 못 넣으면 총무가 짜 놓고 그 자리만 손으로 고치게 되고,
+   그러면 게임 수 균등 계산이 어긋난다.
+   ============================================================ */
+{
+  const P8 = roster(4, 4);
+  const inRound = (ms, r) =>
+    ms.filter((m) => m.round === r).flatMap((m) => [...m.teamA, ...m.teamB]);
+
+  {
+    const ms = generateMatchesV5(P8, 2, 4, DEFAULT_RULES, {}, {}, { excluded: { M1: [4] } });
+    ok(!inRound(ms, 4).includes('M1'), '4타임 제외자가 4타임에 배정됨');
+    ok([1, 2, 3].some((r) => inRound(ms, r).includes('M1')), '제외하지 않은 타임에도 안 나옴');
+    checkMatches(ms, P8);
+  }
+  {
+    // 늦게 옴 — 1타임 제외
+    const ms = generateMatchesV5(P8, 2, 4, DEFAULT_RULES, {}, {}, { excluded: { M1: [1], F1: [1] } });
+    ok(!inRound(ms, 1).includes('M1') && !inRound(ms, 1).includes('F1'), '지각자가 1타임에 배정됨');
+    ok(inRound(ms, 1).length > 0, '지각자를 빼면 1타임 경기가 아예 안 나옴');
+    checkMatches(ms, P8);
+  }
+  {
+    // 먼저 감 — 마지막 두 타임 제외
+    const ms = generateMatchesV5(P8, 2, 4, DEFAULT_RULES, {}, {}, { excluded: { F2: [3, 4] } });
+    ok(!inRound(ms, 3).includes('F2') && !inRound(ms, 4).includes('F2'), '조퇴자가 후반 타임에 배정됨');
+    checkMatches(ms, P8);
+  }
+  {
+    /* 빠진 사람을 뺀 나머지끼리 고르게 나뉘어야 한다.
+       편성 뒤에 빼면 그 사람이 뛴 것으로 계산돼 남은 사람 균등이 어긋난다. */
+    const ms = generateMatchesV5(P8, 2, 4, DEFAULT_RULES, {}, {}, { excluded: { M1: [1, 2, 3, 4] } });
+    const cnt = {};
+    P8.forEach((p) => { cnt[p.id] = 0; });
+    ms.forEach((m) => [...m.teamA, ...m.teamB].forEach((id) => { cnt[id] += 1; }));
+    ok(cnt.M1 === 0, '전 타임 제외인데 경기에 나옴');
+    const others = P8.filter((p) => p.id !== 'M1').map((p) => cnt[p.id]);
+    ok(Math.max(...others) - Math.min(...others) <= 2,
+      `나머지 인원 출전 편차 과다 (${others.join(',')})`);
+  }
+  {
+    ok(generateMatchesV5(P8, 2, 4, DEFAULT_RULES, {}, {}, { excluded: {} }).length > 0,
+      'excluded 빈 객체에서 편성 실패');
+    ok(generateMatchesV5(P8, 2, 4, DEFAULT_RULES, {}, {}, { excluded: null }).length > 0,
+      'excluded null 에서 편성 실패');
+    ok(generateMatchesV5(P8, 2, 4, DEFAULT_RULES, {}, {}).length > 0,
+      'excluded 미지정에서 편성 실패');
+  }
+  {
+    // 너무 많이 빠져 코트를 못 채워도 죽지 않는다
+    const ms = generateMatchesV5(P8, 2, 2, DEFAULT_RULES, {}, {},
+      { excluded: { M1: [1], M2: [1], F1: [1], F2: [1], M3: [1] } });
+    ok(Array.isArray(ms), '인원 부족 타임에서 예외 발생');
+    ok(['M1', 'M2', 'F1', 'F2', 'M3'].every((id) => !inRound(ms, 1).includes(id)),
+      '제외자가 인원 부족 타임에 끼어듦');
+  }
+}
+
 console.log(`\n엔진 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);
