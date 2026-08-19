@@ -355,6 +355,92 @@ service cloud.firestore {
       allow write: if isAppAdmin();
     }
 
+    /* ---------- 코치 프로필(루트, 앱 공용) ----------
+
+       읽기를 왜 전부 열어 두나
+         회원은 승인된 코치만 봐야 하지만, 그 걸러 내기를 규칙으로 하려면
+         목록 질의마다 status 조건이 붙고 색인이 늘어난다. 여기 담기는 것은
+         코치가 스스로 공개하려고 적은 홍보 정보뿐이라 새어도 손해가 없다.
+         화면은 coach.js 의 publicCoaches() 로 걸러 그린다.
+
+       쓰기가 진짜 경계다
+         · 문서 id = uid. 남의 프로필은 만들지도 고치지도 못한다.
+         · 본인은 status 를 draft/pending 으로만 둘 수 있다.
+           스스로 approved 로 올리면 심사 없이 공개되고 지급 대상이 된다.
+         · reviewedBy/reviewedAt 은 본인이 영영 못 만진다.
+         · approved 상태에서 내용을 고치면 pending 으로 내려간다.
+           깨끗한 내용으로 승인받고 나중에 바꿔 치우는 것을 막기 위해서다.
+           (돈이 걸린 광고라서 이렇게 둔다) */
+    match /coaches/{coachUid} {
+      function isOwner() { return request.auth.uid == coachUid; }
+      function touches(fields) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+      }
+      function newStatus() { return request.resource.data.get('status', ''); }
+
+      allow read: if signedIn();
+
+      allow create: if isOwner()
+        && newStatus() in ['draft', 'pending']
+        && !request.resource.data.keys().hasAny(['reviewedBy', 'reviewedAt']);
+
+      allow update: if isOwner()
+        && !touches(['reviewedBy', 'reviewedAt'])
+        && newStatus() in ['draft', 'pending'];
+
+      allow update: if isAppAdmin();
+      allow delete: if isAppAdmin() || isOwner();
+    }
+
+    /* ---------- 코치 홍보 영상(루트) ----------
+       영상은 "모든 회원이 보는 광고"이고 승인이 곧 지급 결정이다.
+       그래서 코치는 올리고 고치고 지울 수만 있고, 승인 상태는 앱 운영자만 바꾼다.
+       프로필과 같은 이유로, 고치면 다시 pending 으로 내려간다. */
+    match /coachVideos/{videoId} {
+      function isMine() { return resource.data.coachId == request.auth.uid; }
+
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.coachId == request.auth.uid
+        && request.resource.data.get('status', '') == 'pending'
+        && !request.resource.data.keys().hasAny(['reviewedBy', 'reviewedAt']);
+
+      allow update: if isMine()
+        && request.resource.data.coachId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['reviewedBy', 'reviewedAt']) == false
+        && request.resource.data.get('status', '') == 'pending';
+
+      allow update: if isAppAdmin();
+      allow delete: if isAppAdmin() || isMine();
+    }
+
+    /* ---------- 코치 월 지급(루트) ----------
+       돈이 나가는 기록이다. 코치 본인도 볼 수 없게 한다 —
+       금액을 보고 항의하는 자리가 아니라 앱 운영자의 정산 장부다. */
+    match /coachPayouts/{payoutId} {
+      allow read, write: if isAppAdmin();
+    }
+
+    /* ---------- 용품 주문(루트, 드랍십) ----------
+       배송지와 연락처가 들어간다. 남의 주문은 보이면 안 된다. */
+    match /gearOrders/{orderId} {
+      allow read: if isAppAdmin() || resource.data.buyerUid == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.buyerUid == request.auth.uid
+        && request.resource.data.status == 'placed';
+
+      // 회원은 접수 상태에서만 취소할 수 있다. 그 뒤는 앱 운영자가 처리한다.
+      allow update: if resource.data.buyerUid == request.auth.uid
+        && resource.data.status == 'placed'
+        && request.resource.data.status == 'canceled';
+
+      allow update: if isAppAdmin();
+      allow delete: if isAppAdmin();
+    }
+
     /* ---------- 서비스 전체 현황(루트) ----------
        "클럽 N개 · 회원 M명"을 보여주기 위한 카운터. 개인 정보는 없다.
        누구나(로그인 사용자) 올릴 수 있게 두되, 값을 임의로 덮어쓰지 못하도록

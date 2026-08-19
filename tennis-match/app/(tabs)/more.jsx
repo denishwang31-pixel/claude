@@ -35,6 +35,8 @@ import { Invite } from '../../src/components/InviteScreen';
 import { Polls } from '../../src/components/PollScreen';
 import { Chat } from '../../src/components/ChatScreen';
 import { ClubMatchScreen } from '../../src/components/ClubMatchScreen';
+import { CoachScreen } from '../../src/components/CoachScreen';
+import { CoachReviewScreen } from '../../src/components/CoachReviewScreen';
 import { UpdateStatus } from '../../src/components/UpdateStatus';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card, SectionTitle, Chip, Btn, ListRow, Badge } from '../../src/components/ui';
@@ -90,6 +92,16 @@ const MENU_GROUPS = [
     items: [
       ['guest', 'guest', SCREEN.guest, '모든 클럽이 함께 보는 공개 게시판'],
       ['courts', 'courts', SCREEN.courts, '주변 공공·사설 테니스장 찾기'],
+      ['coaches', 'ntrp', SCREEN.coaches, '지역별로 코치를 찾고 레슨 영상 보기'],
+    ],
+  },
+  {
+    /* 앱 운영자 전용. 클럽 운영진과는 다른 권한이라 묶음을 따로 둔다 —
+       클럽 회장이 코치 지급 장부를 볼 이유가 없다. */
+    title: '앱 운영',
+    appAdminOnly: true,
+    items: [
+      ['coachreview', 'ntrp', SCREEN.coachreview, '영상 승인 · 월 지급 관리'],
     ],
   },
   {
@@ -116,7 +128,7 @@ const MENU_GROUPS = [
 const MENU_FLAT = MENU_GROUPS.flatMap((g) => g.items.map(([k, , label]) => [k, label]));
 
 export default function More() {
-  const { clubId, me, viewMode, resetOnboarding, openOnboarding } = useApp();
+  const { clubId, me, viewMode, isAppAdmin, resetOnboarding, openOnboarding } = useApp();
   const bottomPad = useBottomPad();
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -285,6 +297,8 @@ export default function More() {
         }} />
       );
       case 'courts': return <Courts {...{ clubId, courts, isAdmin, flash }} />;
+      case 'coaches': return <CoachScreen {...{ uid: me, flash }} />;
+      case 'coachreview': return <CoachReviewScreen {...{ uid: me, flash }} />;
       case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, myRole: realRole, flash }} />;
       case 'joinreq': return <JoinRequests {...{ clubId, club, members, isAdmin, flash }} />;
       case 'invite': return <Invite {...{ clubId, club, members, isAdmin, flash }} />;
@@ -383,7 +397,9 @@ export default function More() {
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
         {!sub ? (
           <>
-            {MENU_GROUPS.filter((g) => !g.staffOnly || isAdmin).map((g) => (
+            {MENU_GROUPS
+              .filter((g) => (!g.staffOnly || isAdmin) && (!g.appAdminOnly || isAppAdmin))
+              .map((g) => (
               <View key={g.title}>
                 <SectionTitle>{g.title}</SectionTitle>
                 <Card style={{ paddingVertical: 4 }}>

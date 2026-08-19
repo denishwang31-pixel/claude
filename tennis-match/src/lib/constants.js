@@ -286,6 +286,8 @@ export const SCREEN = {
   members: '회원 목록',
   guest: '게스트 모집',
   courts: '코트 검색',
+  coaches: '코치 찾기',
+  coachreview: '코치 승인·지급',
   joinreq: '가입 신청',
   invite: '클럽 초대',
   attendance: '출석',

@@ -652,6 +652,135 @@ await T('회원 회비 쓰기 거부',
 await T('비멤버의 클럽 문서 읽기 거부',
   assertFails(getDoc(doc(outsider, 'clubs', CLUB))));
 
+console.log('\n[코치 — 승인이 곧 지급 결정이라 상태는 앱 운영자만]');
+/* 픽스처: 코치 프로필 두 건과 영상 한 건.
+   coach1 은 아직 대기, coach2 는 이미 승인된 상태로 둔다. */
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  await setDoc(doc(db, 'coaches', 'coach1'),
+    { name: '김코치', regionText: '서울 강남구', career: '10년', status: 'pending' });
+  await setDoc(doc(db, 'coaches', 'coach2'),
+    { name: '박코치', regionText: '서울 송파구', career: '8년', status: 'approved',
+      reviewedBy: 'appboss', reviewedAt: '2026-08-01' });
+  await setDoc(doc(db, 'coachVideos', 'v1'),
+    { coachId: 'coach1', title: '포핸드', url: 'https://youtu.be/aaaaaa', status: 'pending' });
+  await setDoc(doc(db, 'coachVideos', 'v2'),
+    { coachId: 'coach1', title: '백핸드', url: 'https://youtu.be/bbbbbb', status: 'approved' });
+  await setDoc(doc(db, 'coachPayouts', 'coach1_2026-08'),
+    { coachId: 'coach1', month: '2026-08', amount: 50000, status: 'planned' });
+  await setDoc(doc(db, 'gearOrders', 'o1'),
+    { buyerUid: 'mem1', title: '라켓', amount: 53000, status: 'placed', addr: '서울시 ...' });
+});
+
+const coach1 = env.authenticatedContext('coach1').firestore();
+const coach2 = env.authenticatedContext('coach2').firestore();
+const boss = env.authenticatedContext('appboss').firestore();
+
+await T('로그인 회원의 코치 목록 읽기 허용',
+  assertSucceeds(getDocs(collection(mem1, 'coaches'))));
+await T('비로그인 코치 읽기 거부',
+  assertFails(getDoc(doc(anon, 'coaches', 'coach2'))));
+
+await T('본인 프로필 생성 허용(대기 상태로)',
+  assertSucceeds(setDoc(doc(env.authenticatedContext('coach3').firestore(), 'coaches', 'coach3'),
+    { name: '최코치', regionText: '경기 성남시', career: '3년', status: 'pending' })));
+await T('남의 uid 로 프로필 생성 거부',
+  assertFails(setDoc(doc(coach1, 'coaches', 'coach9'),
+    { name: '가짜', regionText: '서울', career: '1년', status: 'pending' })));
+await T('처음부터 승인 상태로 만드는 것 거부',
+  assertFails(setDoc(doc(env.authenticatedContext('coach4').firestore(), 'coaches', 'coach4'),
+    { name: '자칭', regionText: '서울', career: '1년', status: 'approved' })));
+await T('만들면서 심사 기록을 끼워 넣는 것 거부',
+  assertFails(setDoc(doc(env.authenticatedContext('coach5').firestore(), 'coaches', 'coach5'),
+    { name: '자칭', regionText: '서울', career: '1년', status: 'pending', reviewedBy: 'appboss' })));
+
+await T('본인이 대기 상태에서 내용 수정 허용',
+  assertSucceeds(updateDoc(doc(coach1, 'coaches', 'coach1'), { career: '11년', status: 'pending' })));
+await T('본인이 스스로 승인으로 올리는 것 거부',
+  assertFails(updateDoc(doc(coach1, 'coaches', 'coach1'), { status: 'approved' })));
+await T('본인이 심사자 기록을 쓰는 것 거부',
+  assertFails(updateDoc(doc(coach1, 'coaches', 'coach1'),
+    { status: 'pending', reviewedBy: 'appboss' })));
+/* 순서가 중요하다 — 아래 두 건은 coach2 가 'approved' 인 상태에서 시작해야 한다.
+   먼저 "대기로 내리는" 쪽을 돌리면 coach2 가 pending 이 되어, 다음 검사가
+   막혀야 할 이유 자체를 잃고 조용히 통과해 버린다. 실제로 한 번 겪었다. */
+await T('승인 상태를 유지한 채 내용만 바꾸는 것 거부',
+  assertFails(updateDoc(doc(coach2, 'coaches', 'coach2'), { career: '20년' })));
+await T('승인된 프로필을 본인이 고치면 대기로 내려가야 통과',
+  assertSucceeds(updateDoc(doc(coach2, 'coaches', 'coach2'), { career: '9년', status: 'pending' })));
+await T('남의 프로필 수정 거부',
+  assertFails(updateDoc(doc(coach1, 'coaches', 'coach2'), { career: '조작', status: 'pending' })));
+await T('일반 회원의 코치 프로필 수정 거부',
+  assertFails(updateDoc(doc(mem1, 'coaches', 'coach1'), { status: 'pending', career: '조작' })));
+await T('앱 운영자의 승인 허용',
+  assertSucceeds(updateDoc(doc(boss, 'coaches', 'coach1'),
+    { status: 'approved', reviewedBy: 'appboss', reviewedAt: '2026-08-19' })));
+await T('앱 운영자의 반려 허용',
+  assertSucceeds(updateDoc(doc(boss, 'coaches', 'coach1'),
+    { status: 'rejected', rejectReason: '경력 확인 불가', reviewedBy: 'appboss' })));
+
+console.log('\n[코치 영상]');
+await T('회원의 영상 목록 읽기 허용',
+  assertSucceeds(getDocs(collection(mem1, 'coachVideos'))));
+await T('본인 영상 등록 허용(대기 상태로)',
+  assertSucceeds(setDoc(doc(coach1, 'coachVideos', 'v3'),
+    { coachId: 'coach1', title: '발리', url: 'https://youtu.be/cccccc', status: 'pending' })));
+await T('남의 이름으로 영상 등록 거부',
+  assertFails(setDoc(doc(coach1, 'coachVideos', 'v4'),
+    { coachId: 'coach2', title: '도용', url: 'https://youtu.be/dddddd', status: 'pending' })));
+await T('처음부터 승인된 영상 등록 거부',
+  assertFails(setDoc(doc(coach1, 'coachVideos', 'v5'),
+    { coachId: 'coach1', title: '무단', url: 'https://youtu.be/eeeeee', status: 'approved' })));
+await T('본인 영상 내용 수정 허용(대기로)',
+  assertSucceeds(updateDoc(doc(coach1, 'coachVideos', 'v1'), { title: '포핸드 교정', status: 'pending' })));
+await T('본인이 자기 영상을 승인하는 것 거부',
+  assertFails(updateDoc(doc(coach1, 'coachVideos', 'v1'), { status: 'approved' })));
+await T('승인된 영상을 승인 상태 그대로 바꿔치우는 것 거부',
+  assertFails(updateDoc(doc(coach1, 'coachVideos', 'v2'), { url: 'https://youtu.be/zzzzzz' })));
+await T('남의 영상 수정 거부',
+  assertFails(updateDoc(doc(coach2, 'coachVideos', 'v1'), { title: '조작', status: 'pending' })));
+await T('앱 운영자의 영상 승인 허용',
+  assertSucceeds(updateDoc(doc(boss, 'coachVideos', 'v1'),
+    { status: 'approved', reviewedBy: 'appboss' })));
+await T('본인 영상 삭제 허용',
+  assertSucceeds(deleteDoc(doc(coach1, 'coachVideos', 'v3'))));
+await T('남의 영상 삭제 거부',
+  assertFails(deleteDoc(doc(coach2, 'coachVideos', 'v1'))));
+
+console.log('\n[코치 지급 — 앱 운영자의 장부]');
+await T('코치 본인도 지급 내역을 볼 수 없다',
+  assertFails(getDoc(doc(coach1, 'coachPayouts', 'coach1_2026-08'))));
+await T('일반 회원의 지급 내역 읽기 거부',
+  assertFails(getDoc(doc(mem1, 'coachPayouts', 'coach1_2026-08'))));
+await T('코치가 자기 지급액을 올리는 것 거부',
+  assertFails(updateDoc(doc(coach1, 'coachPayouts', 'coach1_2026-08'), { amount: 500000 })));
+await T('앱 운영자의 지급 내역 읽기 허용',
+  assertSucceeds(getDoc(doc(boss, 'coachPayouts', 'coach1_2026-08'))));
+await T('앱 운영자의 지급 처리 허용',
+  assertSucceeds(updateDoc(doc(boss, 'coachPayouts', 'coach1_2026-08'), { status: 'paid' })));
+
+console.log('\n[용품 주문 — 배송지가 남의 눈에 보이면 안 된다]');
+await T('본인 주문 읽기 허용',
+  assertSucceeds(getDoc(doc(mem1, 'gearOrders', 'o1'))));
+await T('남의 주문 읽기 거부',
+  assertFails(getDoc(doc(coach1, 'gearOrders', 'o1'))));
+await T('앱 운영자의 주문 읽기 허용',
+  assertSucceeds(getDoc(doc(boss, 'gearOrders', 'o1'))));
+await T('본인 이름으로 주문 접수 허용',
+  assertSucceeds(setDoc(doc(mem1, 'gearOrders', 'o2'),
+    { buyerUid: 'mem1', title: '그립', amount: 8000, status: 'placed', addr: '서울시 ...' })));
+await T('남의 이름으로 주문 접수 거부',
+  assertFails(setDoc(doc(mem1, 'gearOrders', 'o3'),
+    { buyerUid: 'coach1', title: '도용', amount: 8000, status: 'placed', addr: 'x' })));
+await T('접수 상태에서 본인 취소 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'gearOrders', 'o2'), { status: 'canceled' })));
+await T('회원이 스스로 입금 확인으로 넘기는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'gearOrders', 'o1'), { status: 'paid' })));
+await T('앱 운영자의 상태 변경 허용',
+  assertSucceeds(updateDoc(doc(boss, 'gearOrders', 'o1'), { status: 'paid' })));
+await T('회원의 주문 삭제 거부',
+  assertFails(deleteDoc(doc(mem1, 'gearOrders', 'o1'))));
+
 await env.cleanup();
 console.log(`\n규칙 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

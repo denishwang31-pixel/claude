@@ -23,6 +23,7 @@ import { Icon } from './Icon';
 import { Label, TimeField } from './pickers';
 import { normalizeAsk, RSVP_DAYS_BEFORE } from '../lib/rsvpAsk';
 import { RoundMinutesPicker } from './RoundMinutesPicker';
+import { BANKS, paySettings, availableMethods, PAY_LABEL } from '../lib/pay';
 import { Card, SectionTitle, Chip, Btn, Field } from './ui';
 import { C, S, R, F } from '../lib/theme';
 
@@ -68,6 +69,18 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
   const endOk = toMinutes(s.endTime) != null;
   const rounds = startOk && endOk ? roundsFromSettings(s) : 0;
   const times = rounds ? roundTimes(s, rounds) : [];
+
+  /* 지금 설정으로 회원에게 어떤 버튼이 보이는지 미리 보여 준다.
+     저장하고 회원 화면에 가서야 아무것도 안 생긴 걸 아는 일을 막는다. */
+  const payPreview = availableMethods(paySettings({
+    payment: {
+      account: {
+        bank: s.payment?.bank, number: s.payment?.number, holder: s.payment?.holder,
+      },
+      kakaoPayLink: s.payment?.kakaoPayLink,
+      naverPayLink: s.payment?.naverPayLink,
+    },
+  }));
 
   const save = async () => {
     if (!startOk || !endOk) return flash('시간 형식을 확인하세요 (예: 10:00)');
@@ -351,9 +364,66 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
               value={String(s.guestFee ?? '')} onChangeText={(v) => set('guestFee', Number(v) || 0)} />
           </View>
         </View>
-        <View style={{ marginTop: S.md }}>
-          <Label hint="선택">송금 링크</Label>
-          <Field placeholder="https://…" autoCapitalize="none" value={s.payLink || ''} onChangeText={(v) => set('payLink', v)} />
+      </Card>
+
+      {/* ---------- 납부 받을 곳 ----------
+          여기를 채워야 회원의 [내 회비]에 [납부하기] 버튼이 생긴다.
+          비워 두면 버튼 자체가 안 나온다 — 눌러도 안 되는 버튼을 두지 않는다. */}
+      <SectionTitle hint="채우면 회원이 앱에서 바로 송금할 수 있습니다">
+        회비 받을 계좌
+      </SectionTitle>
+      <Card>
+        <Label>은행</Label>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {BANKS.map((b) => (
+            <Chip key={b} tone={s.payment?.bank === b ? 'green' : 'outline'}
+              onPress={() => set('payment', { ...(s.payment || {}), bank: b })}>{b}</Chip>
+          ))}
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: S.md }}>
+          <View style={{ flex: 2 }}>
+            <Label>계좌번호</Label>
+            <Field placeholder="110-123-456789" keyboardType="numbers-and-punctuation"
+              value={s.payment?.number || ''}
+              onChangeText={(v) => set('payment', { ...(s.payment || {}), number: v })} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Label>예금주</Label>
+            <Field placeholder="홍길동"
+              value={s.payment?.holder || ''}
+              onChangeText={(v) => set('payment', { ...(s.payment || {}), holder: v })} />
+          </View>
+        </View>
+
+        <Label hint="선택 — 각 앱에서 만든 내 송금 링크를 붙여 넣으세요">
+          카카오페이 송금 링크
+        </Label>
+        <Field placeholder="https://qr.kakaopay.com/…" autoCapitalize="none"
+          value={s.payment?.kakaoPayLink || ''}
+          onChangeText={(v) => set('payment', { ...(s.payment || {}), kakaoPayLink: v })} />
+
+        <Label hint="선택">네이버페이 송금 링크</Label>
+        <Field placeholder="https://naver.me/…" autoCapitalize="none"
+          value={s.payment?.naverPayLink || ''}
+          onChangeText={(v) => set('payment', { ...(s.payment || {}), naverPayLink: v })} />
+
+        <View style={{ marginTop: S.md, backgroundColor: C.fill, borderRadius: 8, padding: 10 }}>
+          <Text style={{ fontSize: 11, fontWeight: '800', color: C.sub }}>회원에게 보일 버튼</Text>
+          {payPreview.length === 0 ? (
+            <Text style={{ fontSize: 11.5, color: C.faint, marginTop: 4, lineHeight: 17 }}>
+              아직 없습니다. 은행과 계좌번호를 채우면 [토스로 보내기]와
+              [계좌번호 복사]가 생깁니다.
+            </Text>
+          ) : (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
+              {payPreview.map((m) => <Chip key={m} tone="green">{PAY_LABEL[m]}</Chip>)}
+            </View>
+          )}
+          <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 8, lineHeight: 15 }}>
+            앱 안에서 카드로 결제하는 기능은 아직 없습니다. 회원이 송금하면
+            총무가 {screenRef('reconcile')}에서 확인해 납부로 바꿉니다.
+          </Text>
         </View>
       </Card>
 

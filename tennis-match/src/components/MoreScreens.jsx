@@ -4,6 +4,7 @@ import { View, Text, TextInput, Pressable, Linking } from 'react-native';
 import {
   addPost, addComment, addGuestPost, deleteGuestPost, applyToGuestPost, cancelApplication,
   confirmApplicant, subApplicants, updateMeeting, addCourt, deleteCourt,
+  subClubDirectory, subCoaches,
 } from '../lib/firestore';
 import { GUEST_STATUS } from '../lib/constants';
 import { DateField, TimeField, Label } from './pickers';
@@ -14,6 +15,8 @@ import {
   ALL_COURTS, SURFACE_FILTERS, searchCourts, courtSidos, courtGungus, courtDongs,
   courtLink, linkKind, courtRegionText,
 } from '../lib/courtData';
+import { buildCourtIndex, courtInfo, courtInfoLine, lessonsByDay } from '../lib/courtInfo';
+import { publicCoaches, lessonSlotText } from '../lib/coach';
 import { Card, SectionTitle, Chip, Btn, Field, Avatar } from './ui';
 import { C, R, F } from '../lib/theme';
 
@@ -386,6 +389,87 @@ export function Guest({
    예약 링크는 기관 대문이 아니라 예약 화면으로 보낸다.
    정확한 주소를 아는 코트는 [예약하기], 검색 결과로 보내는 코트는
    [예약 찾기]로 구분해 표시한다.                                   */
+/* 코트 한 곳에 붙는 "누가 있는가" — 눌러야 펼쳐진다.
+   목록에서 늘 펼쳐 두면 코트 500곳이 전부 길어져 훑기가 어려워진다. */
+function CourtWho({ info, expanded, onToggle }) {
+  const line = courtInfoLine(info);
+  if (!line) return null;
+
+  const byDay = lessonsByDay(info.lessons);
+  const days = ['월', '화', '수', '목', '금', '토', '일'].filter((d) => byDay[d]?.length);
+
+  return (
+    <View style={{ marginTop: 8 }}>
+      <Pressable onPress={onToggle}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}>
+        <Chip tone="green">{line}</Chip>
+        <Text style={{ fontSize: 11, color: C.green2, fontWeight: '700' }}>
+          {expanded ? '접기' : '보기'}
+        </Text>
+      </Pressable>
+
+      {expanded && (
+        <View style={{ marginTop: 4 }}>
+          {info.clubs.length > 0 && (
+            <View style={{ marginTop: 6 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: C.sub }}>운영 중인 클럽</Text>
+              {info.clubs.map((c) => (
+                <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 6 }}>
+                  <Text style={{ fontSize: 12.5, color: C.text, fontWeight: '700' }}>{c.name}</Text>
+                  <Text style={{ fontSize: 11, color: C.faint }}>
+                    {c.region || ''}{c.memberCount ? ` · ${c.memberCount}명` : ''}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {info.coaches.length > 0 && (
+            <View style={{ marginTop: 10 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: C.sub }}>레슨 중인 코치</Text>
+              {info.coaches.map((co) => (
+                <View key={co.id} style={{ marginTop: 4 }}>
+                  <Text style={{ fontSize: 12.5, color: C.text, fontWeight: '700' }}>
+                    {co.name}
+                    {co.phone ? <Text style={{ fontWeight: '400', color: C.faint }}>  {co.phone}</Text> : null}
+                  </Text>
+                  {!!co.intro && (
+                    <Text style={{ fontSize: 11, color: C.sub }} numberOfLines={1}>{co.intro}</Text>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+
+          {days.length > 0 && (
+            <View style={{ marginTop: 10 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: C.sub }}>레슨 시간</Text>
+              {days.map((d) => (
+                <View key={d} style={{ flexDirection: 'row', marginTop: 4, gap: 8 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: C.green, width: 16 }}>{d}</Text>
+                  <View style={{ flex: 1 }}>
+                    {byDay[d].map((l, i) => (
+                      <Text key={`${l.coachId}${l.from}${i}`} style={{ fontSize: 11.5, color: C.text }}>
+                        {[l.from, l.to].filter(Boolean).join('~')} · {l.coachName}
+                        {l.note ? ` (${l.note})` : ''}
+                      </Text>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          <Text style={{ fontSize: 10, color: C.faint, marginTop: 10, lineHeight: 15 }}>
+            클럽 정보는 각 클럽이 등록한 코트장에서, 레슨 정보는 코치가 등록한
+            내용에서 옵니다. 방문 전에 직접 확인하세요.
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 export function Courts({ clubId, courts, isAdmin, flash }) {
   const [sido, setSido] = useState(null);
   const [gungu, setGungu] = useState(null);
@@ -393,6 +477,21 @@ export function Courts({ clubId, courts, isAdmin, flash }) {
   const [surfaces, setSurfaces] = useState([]);
   const [keyword, setKeyword] = useState('');
   const [nc, setNc] = useState({ sido: '', gu: '', name: '', addr: '', surface: '하드', link: '' });
+
+  /* 그 코트에 누가 있는지 — 공개 클럽 목록과 승인된 코치 목록에서 온다.
+     둘 다 루트 컬렉션이라 클럽에 속하지 않은 사람도 볼 수 있다. */
+  const [directory, setDirectory] = useState([]);
+  const [coaches, setCoaches] = useState([]);
+  const [openWho, setOpenWho] = useState(null);
+  useEffect(() => subClubDirectory(setDirectory), []);
+  useEffect(() => subCoaches(setCoaches), []);
+
+  /* 색인을 한 번 만들어 두고 카드마다 조회만 한다.
+     코트 500곳마다 클럽·코치 전체를 훑으면 스크롤이 끊긴다. */
+  const whoIndex = useMemo(
+    () => buildCourtIndex({ clubs: directory, coaches: publicCoaches(coaches) }),
+    [directory, coaches],
+  );
 
   /* 클럽이 직접 등록한 코트도 같은 목록에서 함께 검색되게 합친다 */
   const merged = useMemo(() => [
@@ -502,6 +601,13 @@ export function Courts({ clubId, courts, isAdmin, flash }) {
               {!!c.operator && (
                 <Text style={{ fontSize: 10, color: C.faint, marginTop: 6 }}>{c.operator}</Text>
               )}
+              <CourtWho
+                info={courtInfo(c, whoIndex)}
+                expanded={openWho === `${c.sido}${c.name}${i}`}
+                onToggle={() => setOpenWho(
+                  openWho === `${c.sido}${c.name}${i}` ? null : `${c.sido}${c.name}${i}`,
+                )}
+              />
             </View>
             <View style={{ alignItems: 'flex-end', gap: 6 }}>
               {courtLink(c) ? (

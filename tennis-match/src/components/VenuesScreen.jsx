@@ -2,7 +2,7 @@
    코트장별 면수 · 운영시간 · 타임 길이 · 리드(담당자) 지정 */
 import React, { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { addVenue, updateVenue, deleteVenue } from '../lib/firestore';
+import { addVenue, updateVenue, deleteVenue, publishClubDirectory } from '../lib/firestore';
 import { roundsFromSettings, toMinutes, DEFAULT_SETTINGS } from '../lib/schedule';
 import { normalizeRoundMinutes, roundMinutesLabel } from '../lib/constants';
 import { RoundMinutesPicker } from './RoundMinutesPicker';
@@ -87,6 +87,23 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
 
   const nameOf = (id) => members.find((m) => m.id === id)?.name;
 
+  /* 코트장이 바뀌면 공개 목록에도 반영한다.
+     코트 검색 화면이 "이 코트를 쓰는 클럽"을 이 값으로 찾기 때문이다.
+     여기서 안 밀어 주면 코트장을 등록해도 코트 검색에는 영영 안 나온다.
+     이름과 주소만 나가고 리드·시간표는 클럽 안에 남는다. */
+  const syncDirectory = (next) => {
+    if (!clubId || !club?.name) return;
+    publishClubDirectory(clubId, {
+      name: club.name,
+      region: club.region || '',
+      memberCount: members.length,
+      searchable: club.searchable !== false,
+      image: club.image || '',
+      hasPassword: !!club.joinPassword,
+      venues: next,
+    }).catch(() => {});
+  };
+
   const normalize = (d) => ({
     name: d.name.trim(),
     courts: Math.max(1, Math.min(20, Number(d.courts) || 1)),
@@ -116,7 +133,13 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
               <VenueForm
                 draft={editDraft} setDraft={setEditDraft} members={members}
                 submitLabel="저장"
-                onSubmit={() => { updateVenue(clubId, v.id, normalize(editDraft)); setEditId(null); flash('코트장 수정됨'); }}
+                onSubmit={() => {
+                  const n = normalize(editDraft);
+                  updateVenue(clubId, v.id, n);
+                  syncDirectory(venues.map((x) => (x.id === v.id ? { ...x, ...n } : x)));
+                  setEditId(null);
+                  flash('코트장 수정됨');
+                }}
                 onCancel={() => setEditId(null)}
               />
             </View>
@@ -140,7 +163,11 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
               {isAdmin && (
                 <View style={{ gap: 6 }}>
                   <Btn small tone="ghost" onPress={() => { setEditId(v.id); setEditDraft({ ...v, courts: String(v.courts) }); }}>수정</Btn>
-                  <Pressable onPress={() => { deleteVenue(clubId, v.id); flash('삭제됨'); }}>
+                  <Pressable onPress={() => {
+                    deleteVenue(clubId, v.id);
+                    syncDirectory(venues.filter((x) => x.id !== v.id));
+                    flash('삭제됨');
+                  }}>
                     <Text style={{ fontSize: 11, color: C.danger, textAlign: 'center' }}>삭제</Text>
                   </Pressable>
                 </View>
@@ -164,7 +191,9 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
               draft={draft} setDraft={setDraft} members={members}
               submitLabel="추가"
               onSubmit={() => {
-                addVenue(clubId, normalize(draft));
+                const n = normalize(draft);
+                addVenue(clubId, n);
+                syncDirectory([...venues, n]);
                 setDraft(blankVenue(settings)); setAdding(false); flash('코트장 추가됨');
               }}
               onCancel={() => setAdding(false)}

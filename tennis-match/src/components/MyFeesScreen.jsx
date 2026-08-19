@@ -9,8 +9,10 @@
    할 수 없다 — 그렇게 하면 회비 관리가 무너진다. 대신 기록이 다르면
    [확인 요청]을 남길 수 있고, 그게 총무 화면에 뜬다. */
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, Pressable, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, Alert, Linking } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { subMyFees, fileFeeClaim, cancelFeeClaim } from '../lib/firestore';
+import { paySettings, availableMethods, payTarget, PAY_LABEL, accountText } from '../lib/pay';
 import { Card, SectionTitle, Chip, Btn, StatCard, EmptyState } from './ui';
 import { C, S, R, F } from '../lib/theme';
 
@@ -39,6 +41,31 @@ export function MyFees({ clubId, club, me, meVal, flash }) {
   const owed = unpaid.reduce((t, r) => t + Number(r.amount || 0), 0);
   const account = club?.settings?.feeAccount || '';
   const dueDay = club?.settings?.feeDueDay || 10;
+
+  /* 송금 수단 — 클럽이 계좌를 넣어 뒀으면 버튼이 켜진다.
+     예전에 자유 입력으로 적어 둔 계좌도 읽어 내므로 대개는 그냥 켜진다.
+     아무것도 못 읽으면 목록이 비고, 아래 버튼 줄 자체가 안 그려진다. */
+  const pay = useMemo(() => paySettings(club?.settings), [club?.settings]);
+  const methods = useMemo(() => availableMethods(pay), [pay]);
+  const [paying, setPaying] = useState(null);   // 송금 버튼을 펼친 기간
+
+  /* 송금 앱으로 보낸다. 앱이 안 깔려 있으면 열리지 않으므로
+     그 경우 계좌를 복사해 준다 — 회원이 막다른 길에 갇히지 않게. */
+  const send = async (method, amount) => {
+    const t = payTarget(method, pay, amount);
+    if (!t) return;
+    if (t.kind === 'copy') {
+      await Clipboard.setStringAsync(t.value);
+      flash('계좌번호를 복사했습니다');
+      return;
+    }
+    try {
+      await Linking.openURL(t.value);
+    } catch (e) {
+      await Clipboard.setStringAsync(accountText(pay.account));
+      flash('앱을 열지 못해 계좌번호를 복사했습니다');
+    }
+  };
 
   const submit = (key) => {
     fileFeeClaim(clubId, me, key, note.trim());
@@ -113,6 +140,35 @@ export function MyFees({ clubId, club, me, meVal, flash }) {
                     </Pressable>
                   )}
                 </View>
+
+                {/* 납부 — 미납일 때만. 이미 낸 달에 송금 버튼을 두면 두 번 보낸다. */}
+                {!r.paid && methods.length > 0 && (
+                  <View style={{ marginTop: 10 }}>
+                    {paying === r.key ? (
+                      <View>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                          {methods.map((m) => (
+                            <Chip key={m} tone="green" onPress={() => send(m, r.amount)}>
+                              {PAY_LABEL[m]}
+                            </Chip>
+                          ))}
+                        </View>
+                        <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 8, lineHeight: 16 }}>
+                          송금 앱이 열리고 계좌·금액이 채워집니다. 보내신 뒤에는 총무가
+                          입금을 확인해야 납부로 바뀝니다 — 버튼을 눌렀다고 바로
+                          납부 처리되지는 않습니다.
+                        </Text>
+                        <Pressable onPress={() => setPaying(null)} style={{ marginTop: 6 }}>
+                          <Text style={{ fontSize: 11, color: C.faint }}>닫기</Text>
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <Btn small full onPress={() => setPaying(r.key)}>
+                        {won(r.amount)} 납부하기
+                      </Btn>
+                    )}
+                  </View>
+                )}
 
                 {asking === r.key && (
                   <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 12 }}>

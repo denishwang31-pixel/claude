@@ -11,6 +11,9 @@ import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { subGear, addGear, deleteGear } from '../../src/lib/firestore';
 import { GEAR_CATEGORIES } from '../../src/lib/constants';
 import { openAd, sellerName, AD_SLOTS } from '../../src/lib/ads';
+import {
+  GEAR_MODE, GEAR_MODE_LABEL, gearMode, margin, marginText, gearReady, isSoldOut,
+} from '../../src/lib/dropship';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Label } from '../../src/components/pickers';
 import {
@@ -21,6 +24,11 @@ import { C, S, R, F, SHADOW } from '../../src/lib/theme';
 const BLANK = {
   title: '', category: GEAR_CATEGORIES[0], price: '', image: '', link: '', desc: '',
   onHome: true,
+  /* 드랍십 — 지금은 링크형만 쓰지만 칸을 미리 둔다.
+     실제로 앱에서 주문을 받으려면 사업자등록·통신판매업 신고가 필요하다.
+     PRE-LAUNCH.md D 참고. */
+  mode: GEAR_MODE.LINK,
+  supplier: '', cost: '', shipCost: '', shipFee: '', feeRate: '', stock: '', orderUrl: '',
 };
 
 export default function Gear() {
@@ -45,7 +53,11 @@ export default function Gear() {
 
   const list = useMemo(() => items.filter((x) => !cat || x.category === cat), [items, cat]);
 
+  const check = useMemo(() => gearReady(f), [f]);
+
   const submit = () => {
+    if (!check.ok) { flash(`${check.missing.join(' · ')}을(를) 채워 주세요`); return; }
+    const drop = gearMode(f) === GEAR_MODE.DROPSHIP;
     addGear({
       title: f.title.trim(),
       category: f.category,
@@ -55,6 +67,19 @@ export default function Gear() {
       price: Number(f.price) || 0,
       slots: f.onHome ? [AD_SLOTS.GEAR, AD_SLOTS.HOME, AD_SLOTS.SCHEDULE] : [AD_SLOTS.GEAR],
       active: true,
+      mode: gearMode(f),
+      /* 원가·수수료는 앱 운영자만 보는 값이다. 회원 화면에는 안 그린다.
+         드랍십이 아닐 때는 아예 저장하지 않는다 — 쓰이지 않는 0 이 쌓이면
+         나중에 "이 상품 원가가 0인가?"를 헷갈리게 한다. */
+      ...(drop ? {
+        supplier: f.supplier.trim(),
+        cost: Number(f.cost) || 0,
+        shipCost: Number(f.shipCost) || 0,
+        shipFee: Number(f.shipFee) || 0,
+        feeRate: Number(f.feeRate) || 0,
+        stock: f.stock === '' ? null : Number(f.stock),
+        orderUrl: f.orderUrl.trim(),
+      } : {}),
     });
     setF(BLANK);
     setAdding(false);
@@ -92,6 +117,16 @@ export default function Gear() {
               ))}
             </View>
 
+            <Label hint="링크형은 판매처로 보내기만 합니다 · 드랍십은 앱에서 주문을 받습니다">
+              판매 방식
+            </Label>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: S.md }}>
+              {[GEAR_MODE.LINK, GEAR_MODE.DROPSHIP].map((m) => (
+                <Chip key={m} tone={gearMode(f) === m ? 'green' : 'outline'}
+                  onPress={() => setF({ ...f, mode: m })}>{GEAR_MODE_LABEL[m]}</Chip>
+              ))}
+            </View>
+
             <Label>상품명</Label>
             <Field placeholder="예: 윌슨 블레이드 98" value={f.title} onChangeText={(v) => setF({ ...f, title: v })} />
 
@@ -119,6 +154,68 @@ export default function Gear() {
               )}
             </View>
 
+            {gearMode(f) === GEAR_MODE.DROPSHIP && (
+              <View style={{ marginTop: S.lg, backgroundColor: C.fill, borderRadius: 10, padding: 12 }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: C.text }}>
+                  드랍십 — 나만 보는 값
+                </Text>
+                <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 3, lineHeight: 15 }}>
+                  공급가와 수수료는 회원 화면에 안 보입니다. 마진이 맞는지 여기서 확인하세요.
+                </Text>
+
+                <View style={{ marginTop: S.md }}>
+                  <Label>공급처</Label>
+                  <Field placeholder="예: ○○스포츠 총판"
+                    value={f.supplier} onChangeText={(v) => setF({ ...f, supplier: v })} />
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: S.md }}>
+                  <View style={{ flex: 1 }}>
+                    <Label>공급가</Label>
+                    <Field keyboardType="number-pad" suffix="원"
+                      value={f.cost} onChangeText={(v) => setF({ ...f, cost: v })} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Label hint="선택">재고</Label>
+                    <Field keyboardType="number-pad"
+                      value={f.stock} onChangeText={(v) => setF({ ...f, stock: v })} />
+                  </View>
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: S.md }}>
+                  <View style={{ flex: 1 }}>
+                    <Label hint="내가 내는">배송비</Label>
+                    <Field keyboardType="number-pad" suffix="원"
+                      value={f.shipCost} onChangeText={(v) => setF({ ...f, shipCost: v })} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Label hint="회원에게 받는">배송비</Label>
+                    <Field keyboardType="number-pad" suffix="원"
+                      value={f.shipFee} onChangeText={(v) => setF({ ...f, shipFee: v })} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Label hint="결제">수수료</Label>
+                    <Field keyboardType="decimal-pad" suffix="%"
+                      value={f.feeRate} onChangeText={(v) => setF({ ...f, feeRate: v })} />
+                  </View>
+                </View>
+
+                {Number(f.price) > 0 && Number(f.cost) > 0 && (
+                  <View style={{ marginTop: S.md }}>
+                    <Text style={{
+                      fontSize: 14, fontWeight: '800',
+                      color: margin(f).profit > 0 ? C.green : C.danger,
+                    }}>
+                      한 건당 {marginText(f)}
+                    </Text>
+                    {check.warn.map((w) => (
+                      <Text key={w} style={{ fontSize: 11, color: C.warn, marginTop: 4 }}>{w}</Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+
             <View style={{ marginTop: S.lg }}>
               <CheckRow
                 checked={f.onHome}
@@ -129,7 +226,12 @@ export default function Gear() {
             </View>
 
             <View style={{ marginTop: S.lg }}>
-              <Btn full disabled={!f.title.trim()} onPress={submit}>등록</Btn>
+              <Btn full disabled={!check.ok} onPress={submit}>등록</Btn>
+              {!check.ok && (
+                <Text style={{ fontSize: 11, color: C.faint, marginTop: 6, textAlign: 'center' }}>
+                  {check.missing.join(' · ')}을(를) 채우면 등록할 수 있습니다
+                </Text>
+              )}
             </View>
           </Card>
         )}
@@ -152,7 +254,14 @@ export default function Gear() {
                     </View>
                   )}
                   <View style={{ flex: 1, padding: 12 }}>
-                    <Chip tone="soft">{it.category}</Chip>
+                    <View style={{ flexDirection: 'row', gap: 5 }}>
+                      <Chip tone="soft">{it.category}</Chip>
+                      {isSoldOut(it) && <Chip tone="red">품절</Chip>}
+                      {/* 마진은 앱 운영자만 본다 — 회원에게 원가가 보이면 안 된다 */}
+                      {isAppAdmin && gearMode(it) === GEAR_MODE.DROPSHIP && (
+                        <Chip tone={margin(it).profit > 0 ? 'green' : 'red'}>{marginText(it)}</Chip>
+                      )}
+                    </View>
                     <Text numberOfLines={2} style={[F.bodyBold, { marginTop: 5 }]}>{it.title}</Text>
                     {!!it.desc && (
                       <Text numberOfLines={1} style={{ fontSize: 11.5, color: C.sub, marginTop: 2 }}>{it.desc}</Text>

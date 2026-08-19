@@ -686,6 +686,7 @@ const normalize = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ''
 
 export const publishClubDirectory = (clubId, {
   name, region, memberCount, searchable = true, image, maleCount, femaleCount, hasPassword,
+  venues,
 }) =>
   setDoc(doc(db, 'clubDirectory', clubId), {
     name,
@@ -698,8 +699,26 @@ export const publishClubDirectory = (clubId, {
     image: image || '',
     hasPassword: !!hasPassword,
     searchable,
+    /* 코트 검색에서 "이 코트를 쓰는 클럽"을 보여 주려고 함께 공개한다.
+       이름과 지역만 담는다 — 코트장 리드나 시간표는 클럽 내부 정보다.
+       venues 를 안 넘기면 기존 값을 그대로 둔다(merge). */
+    ...(venues ? {
+      venues: venues.map((v) => ({
+        name: String(v.name || '').trim(),
+        sido: String(v.sido || '').trim(),
+        addr: String(v.addr || '').trim(),
+      })).filter((v) => v.name),
+    } : {}),
     updatedAt: serverTimestamp(),
   }, { merge: true });
+
+/** 코트 검색용 공개 클럽 목록 — 이름·지역·코트장만 담긴 문서들 */
+export const subClubDirectory = (cb) =>
+  onSnapshot(
+    query(collection(db, 'clubDirectory'), where('searchable', '==', true), limit(500)),
+    (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    () => cb([]),
+  );
 
 /* ============================================================
    서비스 전체 현황 — "클럽 5,301개 · 회원 50,110명"처럼 규모를 보여준다.
@@ -846,3 +865,75 @@ export const joinClubWithCode = async (clubId, uid, profile, code) => {
   });
   bumpServiceStat('members');
 };
+
+/* ============================================================
+   코치 (루트, 앱 공용)
+
+     coaches/{uid}                 코치 프로필 — 1인 1프로필이라 문서 id 를 uid 로 둔다
+     coachVideos/{videoId}         홍보 영상 — 승인 큐를 한 번에 읽으려고 루트에 둔다
+     coachPayouts/{coachId_YYYYMM} 월 지급 — 문서 id 를 계산해 중복 지급을 막는다
+
+   왜 클럽 밑이 아니라 루트인가
+     코치는 특정 클럽 소속이 아니다. 모든 클럽 회원이 같은 목록을 본다.
+     클럽 밑에 두면 클럽 수만큼 같은 코치를 복사해야 한다.
+   ============================================================ */
+
+export const subCoaches = (cb) =>
+  onSnapshot(collection(db, 'coaches'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+
+export const subMyCoach = (uid, cb) => {
+  if (!uid) { cb(null); return () => {}; }
+  return onSnapshot(doc(db, 'coaches', uid), (d) =>
+    cb(d.exists() ? { id: d.id, ...d.data() } : null));
+};
+
+/** 프로필 저장. 상태는 여기서 건드리지 않는다 — coach.js 의 전이 함수만 쓴다. */
+export const saveCoach = (uid, data) =>
+  setDoc(doc(db, 'coaches', uid), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+
+export const patchCoach = (uid, patch) => updateDoc(doc(db, 'coaches', uid), patch);
+export const deleteCoach = (uid) => deleteDoc(doc(db, 'coaches', uid));
+
+export const subCoachVideos = (cb) =>
+  onSnapshot(collection(db, 'coachVideos'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+
+export const addCoachVideo = (data) =>
+  addDoc(collection(db, 'coachVideos'), {
+    ...data,
+    createdAt: new Date().toISOString(),   // 문자열 — 월별 집계에 그대로 쓴다
+    serverAt: serverTimestamp(),
+  });
+
+export const patchCoachVideo = (id, patch) => updateDoc(doc(db, 'coachVideos', id), patch);
+export const deleteCoachVideo = (id) => deleteDoc(doc(db, 'coachVideos', id));
+
+export const subCoachPayouts = (cb) =>
+  onSnapshot(collection(db, 'coachPayouts'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+
+/** id 를 코치+월로 계산하므로 같은 달에 두 번 만들어도 한 건으로 합쳐진다 */
+export const saveCoachPayout = (id, data) =>
+  setDoc(doc(db, 'coachPayouts', id), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+
+export const deleteCoachPayout = (id) => deleteDoc(doc(db, 'coachPayouts', id));
+
+/* ---------- 용품 주문(드랍십) ----------
+   지금은 링크형만 쓰지만 주문 구조를 미리 둔다. 나중에 결제를 붙일 때
+   상태 이름이 흔들리면 이미 쌓인 주문을 다시 손봐야 하기 때문. */
+
+export const subGearOrders = (cb) =>
+  onSnapshot(collection(db, 'gearOrders'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+
+export const subMyGearOrders = (uid, cb) => {
+  if (!uid) { cb([]); return () => {}; }
+  return onSnapshot(
+    query(collection(db, 'gearOrders'), where('buyerUid', '==', uid)),
+    (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
+  );
+};
+
+export const addGearOrder = (data) => addDoc(collection(db, 'gearOrders'), data);
+export const patchGearOrder = (id, patch) => updateDoc(doc(db, 'gearOrders', id), patch);
