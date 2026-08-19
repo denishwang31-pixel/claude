@@ -1,17 +1,19 @@
 /* ============================================================
-   코치 — 프로필 · 지역 검색 · 영상 승인 · 월 지급
+   코치 — 프로필 · 지역 검색 · 영상 승인 · 광고비 청구
 
-   무엇을 위한 것인가
-     코치가 본인 영상을 올려 홍보하고, 앱은 그 영상을 모든 회원에게
-     보여 주는 대신 코치에게 월 3~5만원을 지급한다. 즉 영상은 콘텐츠가
-     아니라 "광고"다. 그래서 아무나 올리는 대로 나가면 안 되고 앱 주인의
-     승인을 거친다.
+   돈이 어느 쪽으로 흐르는가 (여기를 헷갈리면 전부 거꾸로 된다)
+     **코치가 앱에 낸다.** 앱이 코치에게 주는 것이 아니다.
 
-   왜 승인이 필요한가 — 지급이 걸려 있기 때문
-     승인이 곧 "이번 달 이 코치에게 돈을 준다"는 결정이다. 승인한 사람과
-     시각을 남기지 않으면 나중에 누가 왜 통과시켰는지 알 수 없고, 지급
-     내역과 대조가 안 된다. 그래서 상태 전이를 이 파일 한 곳에서만
-     만든다 — 화면이 status 를 직접 손대지 않는다.
+     코치가 얻는 것: 영상이 모든 클럽 회원에게 노출된다 → 유튜브 구독자가
+     늘고 레슨 문의가 들어온다. 그 대가로 월 광고비를 앱에 낸다.
+     즉 이 영상은 콘텐츠가 아니라 코치가 돈을 내고 싣는 **광고**다.
+
+   왜 승인이 필요한가
+     승인이 곧 "이번 달 이 코치의 광고를 싣는다"는 결정이고, 동시에
+     그 달 광고비를 청구할 근거가 된다. 승인한 사람과 시각을 남기지 않으면
+     나중에 "왜 이 광고가 나갔나", "이 달 청구가 맞나"를 확인할 수 없다.
+     그래서 상태 전이를 이 파일 한 곳에서만 만든다 — 화면이 status 를
+     직접 손대지 않는다.
 
    예약·결제·코치 관리는 여기 없다
      사용자가 "추후 개발"로 못박은 부분이다. 지금은 프로필과 영상,
@@ -224,29 +226,48 @@ export const sortCoaches = (list, videoCountOf = () => 0) =>
     (videoCountOf(b.id) - videoCountOf(a.id))
     || String(a.name || '').localeCompare(String(b.name || '')));
 
-/* ---------- 월 지급 ----------
+/* ---------- 광고비 청구 (코치 → 앱) ----------
 
-   금액 규칙은 사용자가 정한 "월 3~5만원". 자동으로 5만원을 주지는
-   않는다 — 앱 주인이 금액을 정하고, 범위를 벗어나면 화면이 막는다. */
+   금액은 월 3~5만원. 코치마다 다를 수 있어(노출 자리·영상 편수) 앱 주인이
+   정하고, 범위를 벗어나면 화면이 막는다.
 
-export const PAYOUT_MIN = 30000;
-export const PAYOUT_MAX = 50000;
+   지금은 "청구서를 만들고 받았는지 표시하는" 장부까지만이다.
+   앱 안에서 카드로 자동 결제되는 구독은 PG 계약이 필요하다 —
+   PRE-LAUNCH.md D 에 적어 두었다. */
+
+export const BILLING_MIN = 30000;
+export const BILLING_MAX = 50000;
+
+export const BILLING_STATUS = {
+  BILLED: 'billed',     // 청구함 — 아직 안 들어옴
+  PAID: 'paid',         // 입금 확인
+  WAIVED: 'waived',     // 면제 — 무료 체험, 초기 입점 혜택 등
+};
+
+export const BILLING_STATUS_LABEL = {
+  [BILLING_STATUS.BILLED]: '미수금',
+  [BILLING_STATUS.PAID]: '입금 완료',
+  [BILLING_STATUS.WAIVED]: '면제',
+};
 
 /** '2026-08' */
-export const payoutMonth = (d = new Date()) =>
+export const billingMonth = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
-/** 한 코치의 한 달치는 한 건이다 — 문서 id 를 계산해서 중복 지급을 구조적으로 막는다 */
-export const payoutId = (coachId, month) => `${coachId}_${month}`;
+/** 한 코치의 한 달치는 한 건이다 — 문서 id 를 계산해서 중복 청구를 구조적으로 막는다 */
+export const billingId = (coachId, month) => `${coachId}_${month}`;
 
-export const payoutAmountOk = (n) =>
-  Number.isFinite(Number(n)) && Number(n) >= PAYOUT_MIN && Number(n) <= PAYOUT_MAX;
+export const billingAmountOk = (n) =>
+  Number.isFinite(Number(n)) && Number(n) >= BILLING_MIN && Number(n) <= BILLING_MAX;
 
 /**
- * 그 달에 지급 대상인 코치 — 승인된 영상이 그 달에 한 편이라도 있어야 한다.
- * "프로필만 올려 두고 영상은 안 올리는" 코치에게 돈이 나가지 않게 하는 장치.
+ * 그 달 광고비 청구 대상 — 승인된 영상이 그 달에 한 편이라도 노출된 코치.
+ *
+ * 왜 "영상이 있어야" 하나
+ *   광고비는 노출의 대가다. 프로필만 올려 두고 영상을 안 올린 코치에게
+ *   청구하면 받을 근거가 없다. 반대로 영상이 나갔으면 청구할 근거가 있다.
  */
-export function payoutCandidates(coaches, videos, month) {
+export function billingTargets(coaches, videos, month) {
   const approved = publicVideos(videos).filter((v) => String(v.createdAt || '').startsWith(month));
   const count = {};
   approved.forEach((v) => { count[v.coachId] = (count[v.coachId] || 0) + 1; });
@@ -255,16 +276,30 @@ export function payoutCandidates(coaches, videos, month) {
     .map((c) => ({ coachId: c.id, name: c.name, videoCount: count[c.id] }));
 }
 
-/** 이미 만들어 둔 지급 건과 대조 — 빠진 사람, 금액이 범위를 벗어난 건을 알려 준다 */
-export function payoutDiff(candidates, payouts, month) {
+/**
+ * 이미 만들어 둔 청구 건과 대조.
+ *   missing    노출은 됐는데 청구서를 안 만든 코치 — 받을 돈을 흘리는 자리
+ *   outOfRange 금액이 3~5만원을 벗어난 건
+ *   unpaid     아직 안 들어온 건 (면제는 빼고 센다)
+ *   billed     청구 합계 / collected 실제 들어온 돈
+ */
+export function billingDiff(targets, billings, month) {
   const byId = {};
-  (payouts || []).filter((p) => p.month === month).forEach((p) => { byId[p.coachId] = p; });
-  const missing = candidates.filter((c) => !byId[c.coachId]);
-  const outOfRange = Object.values(byId).filter((p) => !payoutAmountOk(p.amount));
-  const unpaid = Object.values(byId).filter((p) => p.status !== 'paid');
-  const total = Object.values(byId).reduce((n, p) => n + (Number(p.amount) || 0), 0);
+  (billings || []).filter((b) => b.month === month).forEach((b) => { byId[b.coachId] = b; });
+  const rows = Object.values(byId);
+  const missing = targets.filter((t) => !byId[t.coachId]);
+  const outOfRange = rows.filter((b) => b.status !== BILLING_STATUS.WAIVED
+    && !billingAmountOk(b.amount));
+  const unpaid = rows.filter((b) => b.status === BILLING_STATUS.BILLED);
+  const billed = rows
+    .filter((b) => b.status !== BILLING_STATUS.WAIVED)
+    .reduce((n, b) => n + (Number(b.amount) || 0), 0);
+  const collected = rows
+    .filter((b) => b.status === BILLING_STATUS.PAID)
+    .reduce((n, b) => n + (Number(b.amount) || 0), 0);
   return {
-    missing, outOfRange, unpaid, total,
+    missing, outOfRange, unpaid, billed, collected,
+    outstanding: billed - collected,
     inSync: missing.length === 0 && outOfRange.length === 0,
   };
 }

@@ -416,10 +416,11 @@ service cloud.firestore {
       allow delete: if isAppAdmin() || isMine();
     }
 
-    /* ---------- 코치 월 지급(루트) ----------
-       돈이 나가는 기록이다. 코치 본인도 볼 수 없게 한다 —
-       금액을 보고 항의하는 자리가 아니라 앱 운영자의 정산 장부다. */
-    match /coachPayouts/{payoutId} {
+    /* ---------- 코치 광고비 청구(루트) ----------
+       코치가 앱에 내는 광고비 장부다. 코치 본인도 볼 수 없게 한다 —
+       남이 얼마를 내는지 서로 보이면 곧바로 가격 협상거리가 된다.
+       (코치에게 알릴 금액은 앱 밖에서 따로 안내한다) */
+    match /coachBillings/{billingId} {
       allow read, write: if isAppAdmin();
     }
 

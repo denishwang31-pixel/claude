@@ -97,11 +97,11 @@ const MENU_GROUPS = [
   },
   {
     /* 앱 운영자 전용. 클럽 운영진과는 다른 권한이라 묶음을 따로 둔다 —
-       클럽 회장이 코치 지급 장부를 볼 이유가 없다. */
+       클럽 회장이 코치 광고비 장부를 볼 이유가 없다. */
     title: '앱 운영',
     appAdminOnly: true,
     items: [
-      ['coachreview', 'ntrp', SCREEN.coachreview, '영상 승인 · 월 지급 관리'],
+      ['coachreview', 'ntrp', SCREEN.coachreview, '영상 승인 · 광고비 청구·수납'],
     ],
   },
   {

@@ -10,8 +10,9 @@ import {
   COACH_STATUS, VIDEO_STATUS, normalizeCoach, coachProfileReady,
   submitPatch, approvePatch, rejectPatch, publicCoaches, publicVideos,
   searchCoaches, sortCoaches, lessonSlotText, sortLessonSlots, lessonSlotOk,
-  payoutMonth, payoutId, payoutAmountOk, payoutCandidates, payoutDiff,
-  PAYOUT_MIN, PAYOUT_MAX, youtubeId, videoThumb, videoReady, statusTone,
+  billingMonth, billingId, billingAmountOk, billingTargets, billingDiff,
+  BILLING_MIN, BILLING_MAX, BILLING_STATUS,
+  youtubeId, videoThumb, videoReady, statusTone,
 } from '../src/lib/coach.js';
 import {
   normalizeCourtName, courtKey, courtKeyOf, sameCourt, clubCourtKeys,
@@ -177,21 +178,21 @@ console.log('\n[레슨 시간 표기]');
 /* ============================================================
    월 지급
    ============================================================ */
-console.log('\n[월 지급 — 영상 올린 코치에게만]');
+console.log('\n[광고비 청구 — 돈은 코치 → 앱 방향이다]');
 {
-  eq(payoutMonth(new Date('2026-08-19T00:00:00')), '2026-08', '년-월 두 자리');
-  eq(payoutMonth(new Date('2026-01-05T00:00:00')), '2026-01', '한 자리 달도 0 을 붙인다');
-  eq(payoutId('coach1', '2026-08'), 'coach1_2026-08',
-    '한 코치의 한 달치는 문서 하나 — 중복 지급이 구조적으로 막힌다');
+  eq(billingMonth(new Date('2026-08-19T00:00:00')), '2026-08', '년-월 두 자리');
+  eq(billingMonth(new Date('2026-01-05T00:00:00')), '2026-01', '한 자리 달도 0 을 붙인다');
+  eq(billingId('coach1', '2026-08'), 'coach1_2026-08',
+    '한 코치의 한 달치는 문서 하나 — 중복 청구가 구조적으로 막힌다');
 
-  eq(payoutAmountOk(30000), true, '3만원은 된다');
-  eq(payoutAmountOk(50000), true, '5만원도 된다');
-  eq(payoutAmountOk(29999), false, '3만원 미만은 막는다');
-  eq(payoutAmountOk(50001), false, '5만원 초과는 막는다');
-  eq(payoutAmountOk('40000'), true, '문자로 들어와도 숫자로 본다');
-  eq(payoutAmountOk(''), false, '빈 값은 막는다');
-  eq(payoutAmountOk(null), false, 'null 도 막는다');
-  eq([PAYOUT_MIN, PAYOUT_MAX], [30000, 50000], '범위는 3~5만원');
+  eq(billingAmountOk(30000), true, '3만원은 된다');
+  eq(billingAmountOk(50000), true, '5만원도 된다');
+  eq(billingAmountOk(29999), false, '3만원 미만은 막는다');
+  eq(billingAmountOk(50001), false, '5만원 초과는 막는다');
+  eq(billingAmountOk('40000'), true, '문자로 들어와도 숫자로 본다');
+  eq(billingAmountOk(''), false, '빈 값은 막는다');
+  eq(billingAmountOk(null), false, 'null 도 막는다');
+  eq([BILLING_MIN, BILLING_MAX], [30000, 50000], '범위는 3~5만원');
 
   const coaches = [
     { id: 'c1', status: 'approved', name: '김' },
@@ -203,35 +204,53 @@ console.log('\n[월 지급 — 영상 올린 코치에게만]');
     { coachId: 'c1', status: 'approved', createdAt: '2026-08-03' },
     { coachId: 'c1', status: 'approved', createdAt: '2026-08-20' },
     { coachId: 'c2', status: 'approved', createdAt: '2026-08-11' },
-    { coachId: 'c2', status: 'pending', createdAt: '2026-08-12' },  // 승인 전 — 세지 않는다
+    { coachId: 'c2', status: 'pending', createdAt: '2026-08-12' },  // 승인 전 — 노출 안 됐다
     { coachId: 'c3', status: 'approved', createdAt: '2026-07-30' }, // 지난달
     { coachId: 'c4', status: 'approved', createdAt: '2026-08-01' }, // 코치가 승인 전
   ];
-  const cand = payoutCandidates(coaches, videos, '2026-08');
-  eq(cand.map((c) => c.coachId), ['c1', 'c2'], '그 달에 승인된 영상이 있는 승인 코치만');
-  eq(cand[0].videoCount, 2, '편수를 함께 준다 — 금액 정할 때 근거가 된다');
+  const t = billingTargets(coaches, videos, '2026-08');
+  eq(t.map((x) => x.coachId), ['c1', 'c2'],
+    '그 달에 광고가 실제로 나간 코치만 청구 대상 — 노출 없이 청구할 근거는 없다');
+  eq(t[0].videoCount, 2, '편수를 함께 준다 — 금액 정할 때 근거가 된다');
 
-  const diff1 = payoutDiff(cand, [], '2026-08');
-  eq(diff1.missing.map((c) => c.coachId), ['c1', 'c2'], '아직 아무것도 안 만들었으면 둘 다 빠짐');
-  eq(diff1.inSync, false, '빠진 사람이 있으면 어긋남');
+  const d1 = billingDiff(t, [], '2026-08');
+  eq(d1.missing.map((x) => x.coachId), ['c1', 'c2'],
+    '광고는 나갔는데 청구서를 안 만들었으면 잡아 준다 — 그대로 두면 못 받는 돈이다');
+  eq(d1.inSync, false, '빠진 청구가 있으면 어긋남');
+  eq([d1.billed, d1.collected, d1.outstanding], [0, 0, 0], '아직 아무것도 안 만들었으면 0');
 
-  const payouts = [
-    { coachId: 'c1', month: '2026-08', amount: 50000, status: 'paid' },
-    { coachId: 'c2', month: '2026-08', amount: 30000, status: 'planned' },
-    { coachId: 'c9', month: '2026-07', amount: 999, status: 'paid' },  // 지난달 — 안 본다
+  const billings = [
+    { coachId: 'c1', month: '2026-08', amount: 50000, status: BILLING_STATUS.PAID },
+    { coachId: 'c2', month: '2026-08', amount: 30000, status: BILLING_STATUS.BILLED },
+    { coachId: 'c9', month: '2026-07', amount: 999, status: BILLING_STATUS.PAID },  // 지난달
   ];
-  const diff2 = payoutDiff(cand, payouts, '2026-08');
-  eq(diff2.missing, [], '둘 다 만들어 두면 빠진 사람 없음');
-  eq(diff2.outOfRange, [], '금액이 범위 안이면 문제 없음');
-  eq(diff2.unpaid.map((p) => p.coachId), ['c2'], '아직 안 준 건을 알려 준다');
-  eq(diff2.total, 80000, '그 달 합계');
-  eq(diff2.inSync, true, '빠진 사람도 이상한 금액도 없으면 맞음');
+  const d2 = billingDiff(t, billings, '2026-08');
+  eq(d2.missing, [], '둘 다 청구서를 만들었으면 빠진 건 없음');
+  eq(d2.billed, 80000, '이 달 청구 합계');
+  eq(d2.collected, 50000, '실제로 들어온 돈');
+  eq(d2.outstanding, 30000, '미수금 = 청구 - 입금');
+  eq(d2.unpaid.map((b) => b.coachId), ['c2'], '아직 안 들어온 건');
+  eq(d2.inSync, true, '빠진 청구도 이상한 금액도 없으면 맞음');
 
-  const bad = payoutDiff(cand, [
-    { coachId: 'c1', month: '2026-08', amount: 100000, status: 'paid' },
-    { coachId: 'c2', month: '2026-08', amount: 30000, status: 'paid' },
+  /* 면제 — 무료 체험이나 초기 입점 혜택.
+     0원이 정상이므로 금액 검사에서 빼고, 청구 합계에도 안 넣는다.
+     이걸 안 하면 "범위를 벗어난 금액" 경고가 매달 뜬다. */
+  const withWaived = billingDiff(t, [
+    { coachId: 'c1', month: '2026-08', amount: 0, status: BILLING_STATUS.WAIVED },
+    { coachId: 'c2', month: '2026-08', amount: 30000, status: BILLING_STATUS.PAID },
   ], '2026-08');
-  eq(bad.outOfRange.map((p) => p.coachId), ['c1'], '범위를 벗어난 금액을 잡는다');
+  eq(withWaived.outOfRange, [], '면제 건은 금액이 0이어도 경고하지 않는다');
+  eq(withWaived.billed, 30000, '면제는 청구 합계에 안 들어간다');
+  eq(withWaived.collected, 30000, '입금은 실제 들어온 것만');
+  eq(withWaived.outstanding, 0, '미수금 없음');
+  eq(withWaived.unpaid, [], '면제는 미수금이 아니다');
+  eq(withWaived.inSync, true, '면제가 섞여도 어긋남이 아니다');
+
+  const bad = billingDiff(t, [
+    { coachId: 'c1', month: '2026-08', amount: 100000, status: BILLING_STATUS.PAID },
+    { coachId: 'c2', month: '2026-08', amount: 30000, status: BILLING_STATUS.PAID },
+  ], '2026-08');
+  eq(bad.outOfRange.map((b) => b.coachId), ['c1'], '범위를 벗어난 금액을 잡는다');
   eq(bad.inSync, false, '금액이 이상하면 어긋남');
 }
 

@@ -666,8 +666,8 @@ await env.withSecurityRulesDisabled(async (ctx) => {
     { coachId: 'coach1', title: '포핸드', url: 'https://youtu.be/aaaaaa', status: 'pending' });
   await setDoc(doc(db, 'coachVideos', 'v2'),
     { coachId: 'coach1', title: '백핸드', url: 'https://youtu.be/bbbbbb', status: 'approved' });
-  await setDoc(doc(db, 'coachPayouts', 'coach1_2026-08'),
-    { coachId: 'coach1', month: '2026-08', amount: 50000, status: 'planned' });
+  await setDoc(doc(db, 'coachBillings', 'coach1_2026-08'),
+    { coachId: 'coach1', month: '2026-08', amount: 50000, status: 'billed' });
   await setDoc(doc(db, 'gearOrders', 'o1'),
     { buyerUid: 'mem1', title: '라켓', amount: 53000, status: 'placed', addr: '서울시 ...' });
 });
@@ -747,17 +747,19 @@ await T('본인 영상 삭제 허용',
 await T('남의 영상 삭제 거부',
   assertFails(deleteDoc(doc(coach2, 'coachVideos', 'v1'))));
 
-console.log('\n[코치 지급 — 앱 운영자의 장부]');
-await T('코치 본인도 지급 내역을 볼 수 없다',
-  assertFails(getDoc(doc(coach1, 'coachPayouts', 'coach1_2026-08'))));
-await T('일반 회원의 지급 내역 읽기 거부',
-  assertFails(getDoc(doc(mem1, 'coachPayouts', 'coach1_2026-08'))));
-await T('코치가 자기 지급액을 올리는 것 거부',
-  assertFails(updateDoc(doc(coach1, 'coachPayouts', 'coach1_2026-08'), { amount: 500000 })));
-await T('앱 운영자의 지급 내역 읽기 허용',
-  assertSucceeds(getDoc(doc(boss, 'coachPayouts', 'coach1_2026-08'))));
-await T('앱 운영자의 지급 처리 허용',
-  assertSucceeds(updateDoc(doc(boss, 'coachPayouts', 'coach1_2026-08'), { status: 'paid' })));
+console.log('\n[코치 광고비 — 코치가 앱에 내는 돈. 앱 운영자의 장부]');
+await T('코치 본인도 청구 내역을 볼 수 없다',
+  assertFails(getDoc(doc(coach1, 'coachBillings', 'coach1_2026-08'))));
+await T('일반 회원의 청구 내역 읽기 거부',
+  assertFails(getDoc(doc(mem1, 'coachBillings', 'coach1_2026-08'))));
+await T('코치가 자기 청구액을 깎는 것 거부',
+  assertFails(updateDoc(doc(coach1, 'coachBillings', 'coach1_2026-08'), { amount: 0 })));
+await T('코치가 스스로 입금 완료로 바꾸는 것 거부',
+  assertFails(updateDoc(doc(coach1, 'coachBillings', 'coach1_2026-08'), { status: 'paid' })));
+await T('앱 운영자의 청구 내역 읽기 허용',
+  assertSucceeds(getDoc(doc(boss, 'coachBillings', 'coach1_2026-08'))));
+await T('앱 운영자의 입금 확인 허용',
+  assertSucceeds(updateDoc(doc(boss, 'coachBillings', 'coach1_2026-08'), { status: 'paid' })));
 
 console.log('\n[용품 주문 — 배송지가 남의 눈에 보이면 안 된다]');
 await T('본인 주문 읽기 허용',

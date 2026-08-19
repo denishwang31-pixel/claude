@@ -871,7 +871,8 @@ export const joinClubWithCode = async (clubId, uid, profile, code) => {
 
      coaches/{uid}                 코치 프로필 — 1인 1프로필이라 문서 id 를 uid 로 둔다
      coachVideos/{videoId}         홍보 영상 — 승인 큐를 한 번에 읽으려고 루트에 둔다
-     coachPayouts/{coachId_YYYYMM} 월 지급 — 문서 id 를 계산해 중복 지급을 막는다
+     coachBillings/{coachId_YYYYMM} 광고비 청구 — 코치가 앱에 내는 돈.
+                                   문서 id 를 계산해 중복 청구를 막는다
 
    왜 클럽 밑이 아니라 루트인가
      코치는 특정 클럽 소속이 아니다. 모든 클럽 회원이 같은 목록을 본다.
@@ -909,15 +910,15 @@ export const addCoachVideo = (data) =>
 export const patchCoachVideo = (id, patch) => updateDoc(doc(db, 'coachVideos', id), patch);
 export const deleteCoachVideo = (id) => deleteDoc(doc(db, 'coachVideos', id));
 
-export const subCoachPayouts = (cb) =>
-  onSnapshot(collection(db, 'coachPayouts'), (s) =>
+export const subCoachBillings = (cb) =>
+  onSnapshot(collection(db, 'coachBillings'), (s) =>
     cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
 
 /** id 를 코치+월로 계산하므로 같은 달에 두 번 만들어도 한 건으로 합쳐진다 */
-export const saveCoachPayout = (id, data) =>
-  setDoc(doc(db, 'coachPayouts', id), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+export const saveCoachBilling = (id, data) =>
+  setDoc(doc(db, 'coachBillings', id), { ...data, updatedAt: serverTimestamp() }, { merge: true });
 
-export const deleteCoachPayout = (id) => deleteDoc(doc(db, 'coachPayouts', id));
+export const deleteCoachBilling = (id) => deleteDoc(doc(db, 'coachBillings', id));
 
 /* ---------- 용품 주문(드랍십) ----------
    지금은 링크형만 쓰지만 주문 구조를 미리 둔다. 나중에 결제를 붙일 때
