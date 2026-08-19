@@ -333,6 +333,12 @@ export default function Match() {
     updateMeeting(clubId, meeting.id, { excluded: map });
   };
 
+  /* 저장된 대진.
+     여기서 선언한다 — 아래 drawDiff 가 이 값을 읽는데, 예전에는 화면
+     그리는 자리(훨씬 아래)에서 선언돼 있었다. const 는 선언 전에 읽으면
+     예외를 던지므로 대진 탭이 열리자마자 앱이 죽었다. */
+  const matches = meeting?.matches || [];
+
   /* ---------- 대진 ↔ 참석 어긋남 ----------
      대진을 짜고 나서 사람이 빠지는 일은 늘 있다. 그런데 대진표는 짤 때의
      명단 그대로라, 코트에 가서야 한 자리가 빈 것을 안다. 반대로 나중에
@@ -434,7 +440,6 @@ export default function Match() {
   };
 
   /* ---------------- 화면 ---------------- */
-  const matches = meeting?.matches || [];
   const nM = attendees.filter((p) => p.gender === 'M').length;
 
   /* 지금 인원으로 코트를 다 채울 수 있는지, 못 채우면 남/여 몇 명이 더
