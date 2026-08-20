@@ -12,6 +12,7 @@
     "android": {
       "package": "com.donghyun.tennismatch",
       "versionCode": 1,
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "INTERNET",
         "POST_NOTIFICATIONS",

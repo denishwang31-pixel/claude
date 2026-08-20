@@ -367,5 +367,36 @@ for (const file of files) {
   }
 }
 
+/* ============================================================
+   app.json 이 가리키는 파일이 실제로 있는가
+
+   왜 필요한가
+     `googleServicesFile` 처럼 app.json 이 파일 경로를 가리키는 항목은,
+     그 파일이 없으면 **빌드가 깨진다.** 그런데 그 사실을 EAS 서버에서
+     20분 기다린 끝에 알게 된다. 여기서 1초 만에 잡는다.
+
+     실제로 위험한 조합이 있었다: FCM 을 붙이려고 app.json 에 줄만 먼저
+     넣고 google-services.json 은 나중에 받으려던 순간이다.
+   ============================================================ */
+console.log('[app.json 이 가리키는 파일 검사]');
+{
+  const appJson = JSON.parse(readFileSync(join(ROOT, 'app.json'), 'utf8'));
+  const e = appJson.expo || {};
+  const paths = [
+    ['icon', e.icon],
+    ['splash.image', e.splash?.image],
+    ['android.googleServicesFile', e.android?.googleServicesFile],
+    ['android.adaptiveIcon.foregroundImage', e.android?.adaptiveIcon?.foregroundImage],
+    ['ios.googleServicesFile', e.ios?.googleServicesFile],
+    ['web.favicon', e.web?.favicon],
+  ].filter(([, v]) => typeof v === 'string' && v.startsWith('.'));
+
+  for (const [key, rel] of paths) {
+    scanned += 1;
+    ok(existsSync(resolve(ROOT, rel)),
+      `app.json 의 ${key} 가 '${rel}' 를 가리키는데 그 파일이 없습니다 — 빌드가 깨집니다`);
+  }
+}
+
 console.log(`\n임포트 검증: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);
