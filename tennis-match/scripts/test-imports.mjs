@@ -14,6 +14,9 @@ import { join, dirname, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/** 경로 구분자를 슬래시로 통일 — Windows 와 리눅스에서 같은 결과를 내기 위해 */
+const slash = (p) => String(p).split('\\').join('/');
 const SRC_DIRS = ['src', 'app'];
 const EXTS = ['.js', '.jsx', '.mjs'];
 
@@ -98,7 +101,7 @@ console.log(`[소스 ${files.length}개 검사]`);
 
 let checked = 0;
 for (const file of files) {
-  const rel = file.slice(ROOT.length + 1);
+  const rel = slash(file.slice(ROOT.length + 1));
   for (const imp of importsOf(file)) {
     const target = resolveModule(file, imp.spec);
     ok(!!target, `${rel}: '${imp.spec}' 를 찾을 수 없습니다`);
@@ -137,8 +140,19 @@ for (const f of walk(join(ROOT, 'src/lib'))) {
 
 let scanned = 0;
 for (const file of files) {
-  if (file.includes(`${'/'}src${'/'}lib${'/'}`)) continue;   // 라이브러리끼리는 건너뛴다
-  const rel = file.slice(ROOT.length + 1);
+  /* 라이브러리끼리는 건너뛴다.
+     ⚠️ 예전에는 '/src/lib/' 를 그대로 찾았는데, Windows 의 경로 구분자는
+     역슬래시라서 이 조건이 영영 거짓이었다. 그래서 리눅스에서는 통과하고
+     Windows 에서만 헛경보가 났다 — 라이브러리 파일이 자기 자신이 아닌
+     다른 라이브러리의 이름을 쓰는 것처럼 보였기 때문이다.
+     경로는 항상 슬래시로 맞춰 놓고 비교한다.
+
+     이 건너뛰기를 없애면 안 된다. 실제로 걸린 예:
+       firestore.js 의 subFee(clubId, monthKey, cb) 에서 monthKey 는
+       그냥 매개변수 이름인데, scheduleView.js 가 같은 이름의 함수를
+       내보내고 있어서 "import 를 빠뜨렸다"로 보인다. 남남이다. */
+  if (slash(file).includes('/src/lib/')) continue;
+  const rel = slash(file.slice(ROOT.length + 1));
   const raw = readFileSync(file, 'utf8');
   /* 주석과 문자열은 실제 사용이 아니다 — 지우고 본다 */
   const src = raw
@@ -243,7 +257,7 @@ function blankNonCode(raw) {
 
 console.log('[선언 전에 쓰는 값 검사]');
 for (const file of files) {
-  const rel = file.slice(ROOT.length + 1);
+  const rel = slash(file.slice(ROOT.length + 1));
   const src = blankNonCode(readFileSync(file, 'utf8'));
   const lineOf = (idx) => src.slice(0, idx).split('\n').length; // 1부터
 
