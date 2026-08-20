@@ -38,6 +38,7 @@ import { ClubMatchScreen } from '../../src/components/ClubMatchScreen';
 import { CoachScreen } from '../../src/components/CoachScreen';
 import { CoachReviewScreen } from '../../src/components/CoachReviewScreen';
 import { UpdateStatus } from '../../src/components/UpdateStatus';
+import { NotifyStatus } from '../../src/components/NotifyStatus';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card, SectionTitle, Chip, Btn, ListRow, Badge } from '../../src/components/ui';
 import { C, F } from '../../src/lib/theme';
@@ -438,6 +439,7 @@ export default function More() {
             {/* 지금 어떤 버전이 돌고 있는지 — 이게 없으면 "업데이트했는데
                왜 그대로냐"의 원인을 구분할 수 없다 */}
             <SectionTitle>앱 정보</SectionTitle>
+            <NotifyStatus {...{ clubId, me, flash }} />
             <UpdateStatus flash={flash} />
 
             <View style={{ marginTop: 24, alignItems: 'center' }}>

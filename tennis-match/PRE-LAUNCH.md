@@ -41,6 +41,31 @@
       본격적으로 열려면 `@react-native-firebase/auth` + dev build 로
       갈아타야 한다. 사람이 늘기 전에 정해야 데이터 이관이 없다.
 
+- [ ] **⚠️ 안드로이드 FCM 설정이 없다 — 알림이 여기서 막혀 있다** (2026-08-19 확인)
+      빌드하고 확인했더니 회원 문서에 `pushToken` 이 **없었다.**
+      보안 규칙은 아니다(본인이 자기 문서에 쓰는 것을 규칙 테스트 4건으로
+      확인함). `extra.eas.projectId` 도 이제 있다.
+
+      남은 원인은 **FCM 미설정**이다. `app.json` 에 `android.googleServicesFile`
+      이 없고 `google-services.json` 파일도 저장소에 없다.
+      이 앱은 Firebase **웹** SDK 로 데이터만 다루는데, 그건 네이티브
+      FirebaseApp 을 초기화하지 않는다. 안드로이드 푸시는 네이티브 FCM 을
+      쓰므로 빌드에 그 파일이 들어가야 토큰이 나온다.
+
+      할 일
+        1. Firebase 콘솔 → 프로젝트 설정 → 내 앱 → **Android 앱 추가**
+           패키지명은 `com.donghyun.tennismatch` (app.json 과 정확히 같아야 함)
+        2. `google-services.json` 을 받아 프로젝트 루트에 둔다
+        3. app.json 의 android 블록에 `"googleServicesFile": "./google-services.json"`
+           ⚠️ 파일을 먼저 두고 나서 이 줄을 넣는다. 없는 파일을 가리키면 빌드가 깨진다
+        4. `eas credentials` 로 FCM V1 서비스 계정 키를 EAS 에 올린다
+           (Firebase 콘솔 → 프로젝트 설정 → 서비스 계정에서 발급)
+        5. **APK 재빌드** — 네이티브 설정이라 OTA 로는 안 나간다
+        6. 앱에서 [더보기] → 알림 상태 가 `받아서 저장됨` 이 되는지 본다
+
+      `google-services.json` 은 커밋해도 되지만(비밀 값이 아니다), 서비스
+      계정 키는 절대 커밋하지 않는다.
+
 - [ ] **푸시 토큰이 실제로 저장되는지 눈으로 확인** (값은 들어왔다)
       `extra.eas.projectId` 는 이제 app.json 에 있다(`ab8eb046-…`). 없을 때는
       `getExpoPushTokenAsync()` 가 예외를 던지고 그것이 조용히 삼켜져서

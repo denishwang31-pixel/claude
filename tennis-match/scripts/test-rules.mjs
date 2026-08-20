@@ -652,6 +652,22 @@ await T('회원 회비 쓰기 거부',
 await T('비멤버의 클럽 문서 읽기 거부',
   assertFails(getDoc(doc(outsider, 'clubs', CLUB))));
 
+console.log('\n[푸시 토큰 — 본인이 자기 문서에 쓸 수 있어야 알림이 산다]');
+/* 알림이 통째로 죽는 경로가 두 개다: 토큰을 못 받거나, 받아도 저장을 못 하거나.
+   저장 쪽은 규칙이 막으면 조용히 실패하므로 여기서 못박아 둔다. */
+await T('본인이 자기 문서에 pushToken 쓰기 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'),
+    { pushToken: 'ExponentPushToken[aaaa]' })));
+await T('남의 문서에 pushToken 쓰기 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem2'),
+    { pushToken: 'ExponentPushToken[bbbb]' })));
+await T('비멤버가 남의 문서에 pushToken 쓰기 거부',
+  assertFails(updateDoc(doc(outsider, 'clubs', CLUB, 'members', 'mem1'),
+    { pushToken: 'ExponentPushToken[cccc]' })));
+await T('토큰을 쓰면서 role 을 몰래 끼워 넣는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'),
+    { pushToken: 'ExponentPushToken[dddd]', role: '회장' })));
+
 console.log('\n[코치 — 승인이 곧 지급 결정이라 상태는 앱 운영자만]');
 /* 픽스처: 코치 프로필 두 건과 영상 한 건.
    coach1 은 아직 대기, coach2 는 이미 승인된 상태로 둔다. */
