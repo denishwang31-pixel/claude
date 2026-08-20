@@ -412,5 +412,46 @@ console.log('[app.json 이 가리키는 파일 검사]');
   }
 }
 
+/* ============================================================
+   비밀 키가 저장소 안에 있는가
+
+   왜 이름이 아니라 내용을 보나
+     서비스 계정 키(.gitignore 로 막아 둔 것)는 이름을 아무렇게나 바꿔서
+     넣을 수 있다. `key.json`, `firebase.json` 처럼 두면 이름 규칙은
+     그대로 통과한다. 그러면 커밋되고, 한 번 올라간 비밀은 지워도
+     기록에 남는다.
+
+     이 키 하나로 Firestore 전체를 읽고 쓸 수 있다. 보안 규칙도 우회한다.
+     그래서 이름이 아니라 파일 안의 표식으로 찾는다.
+   ============================================================ */
+console.log('[비밀 키가 섞여 들어갔는지 검사]');
+{
+  const SKIP = new Set(['node_modules', '.git', '.expo', 'dist', 'android', 'ios']);
+  const suspects = [];
+  const sweep = (dir) => {
+    for (const name of readdirSync(dir)) {
+      if (SKIP.has(name)) continue;
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) { sweep(full); continue; }
+      if (extname(full) !== '.json') continue;
+      let body;
+      try { body = readFileSync(full, 'utf8'); } catch (e) { continue; }
+      /* 구글 서비스 계정 키의 확실한 표식 두 가지 */
+      if (body.includes('"type"') && body.includes('service_account')) {
+        suspects.push(slash(full.slice(ROOT.length + 1)));
+      } else if (body.includes('-----BEGIN PRIVATE KEY-----')) {
+        suspects.push(slash(full.slice(ROOT.length + 1)));
+      }
+    }
+  };
+  sweep(ROOT);
+
+  scanned += 1;
+  ok(suspects.length === 0,
+    `서비스 계정 키로 보이는 파일이 저장소 안에 있습니다: ${suspects.join(', ')}\n`
+    + '      이 키 하나로 Firestore 전체를 읽고 쓸 수 있습니다(보안 규칙도 우회).\n'
+    + '      커밋하지 말고 프로젝트 밖으로 옮기세요. 이미 커밋했다면 키를 폐기하고 새로 발급하세요.');
+}
+
 console.log(`\n임포트 검증: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

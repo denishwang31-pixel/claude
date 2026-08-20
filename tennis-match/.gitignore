@@ -15,3 +15,11 @@ firebase-debug.log
 .firebaserc
 android/
 ios/
+
+# ---- 서비스 계정 키 — 절대 커밋 금지 ----
+# Firebase 콘솔 → 프로젝트 설정 → 서비스 계정 → 새 비공개 키 생성 으로 받는 JSON.
+# 이 파일 하나로 Firestore 전체를 읽고 쓸 수 있다. 보안 규칙도 우회한다.
+# (google-services.json 은 이것과 달리 비밀이 아니므로 커밋한다)
+*-firebase-adminsdk-*.json
+*service-account*.json
+*serviceAccount*.json
