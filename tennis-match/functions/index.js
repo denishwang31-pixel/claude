@@ -212,12 +212,84 @@ async function sendRsvpAsk(clubRef, meetingRef, meeting, targetIds, { auto } = {
 }
 
 /** 수동 — 총무가 [투표 요청]을 누르면 요청서 한 장이 생긴다 */
+/* ---------------- 테스트 알림 ----------------
+
+   왜 필요한가
+     "알림이 안 와요"의 원인은 앱 쪽(토큰을 못 받음)일 수도, 서버 쪽
+     (토큰을 못 찾음)일 수도, Expo 쪽(토큰이 죽음)일 수도 있다. 앱만 보면
+     어느 쪽인지 알 수 없어서 며칠을 헤매게 된다.
+
+     여기서는 서버가 "그 회원 문서에서 실제로 무엇을 읽었는지"를 결과에
+     그대로 적어 돌려준다. 토큰이 없으면 없다고, Expo 가 거절하면 그
+     사유를 적는다. 앱은 그걸 화면에 띄운다.
+
+   보내는 대상은 요청한 본인뿐이다. 이 통로로 남에게 알림을 쏠 수 없다. */
+async function runTestPush(clubRef, uid) {
+  const snap = await clubRef.collection('members').doc(uid).get();
+  if (!snap.exists) return { status: 'failed', reason: 'no-member', detail: '회원 문서를 찾을 수 없습니다' };
+
+  const token = snap.data().pushToken;
+  if (!token) {
+    return {
+      status: 'failed',
+      reason: 'no-token',
+      detail: '서버가 이 회원 문서에서 pushToken 을 찾지 못했습니다. '
+        + '앱에서 [알림 확인]을 눌러 토큰을 저장하세요.',
+    };
+  }
+  if (!String(token).startsWith('ExponentPushToken')) {
+    return { status: 'failed', reason: 'bad-token', detail: `토큰 모양이 이상합니다: ${String(token).slice(0, 24)}…` };
+  }
+
+  /* sendPush 는 실패를 로그로만 남긴다. 여기서는 Expo 응답을 그대로 받아야
+     하므로 직접 호출한다 — 화면에 사유를 보여 주는 것이 이 기능의 전부다. */
+  try {
+    const res = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([{
+        to: token,
+        title: '🎾 테스트 알림',
+        body: '이 알림이 보이면 푸시가 정상입니다.',
+        data: { type: 'test' },
+        sound: 'default',
+      }]),
+    });
+    const text = await res.text();
+    if (!res.ok) return { status: 'failed', reason: 'expo-http', detail: `${res.status} ${text.slice(0, 300)}` };
+
+    const json = JSON.parse(text);
+    const ticket = json && json.data && json.data[0];
+    if (ticket && ticket.status === 'error') {
+      const why = (ticket.details && ticket.details.error) || ticket.message || 'unknown';
+      if (why === 'DeviceNotRegistered') await dropDeadToken(token);
+      return { status: 'failed', reason: `expo-${why}`, detail: ticket.message || why };
+    }
+    return {
+      status: 'done',
+      sent: 1,
+      detail: `Expo 접수 완료 (${(ticket && ticket.id) || 'ok'}). 몇 초 안에 도착합니다.`,
+      tokenTail: String(token).slice(-10),
+    };
+  } catch (e) {
+    return { status: 'failed', reason: 'exception', detail: String((e && e.message) || e) };
+  }
+}
+
 exports.onPushJobCreated = onDocumentCreated(
   { ...REGION, document: 'clubs/{clubId}/pushJobs/{jobId}' },
   async (event) => {
     const job = event.data?.data();
-    if (!job || job.type !== 'rsvpAsk' || !job.meetingId) return;
+    if (!job) return;
     const { clubId } = event.params;
+
+    if (job.type === 'test') {
+      const result = await runTestPush(db.collection('clubs').doc(clubId), job.by);
+      await event.data.ref.update({ ...result, doneAt: new Date() }).catch(() => {});
+      return;
+    }
+
+    if (job.type !== 'rsvpAsk' || !job.meetingId) return;
     const clubRef = db.collection('clubs').doc(clubId);
     const meetingRef = clubRef.collection('meetings').doc(job.meetingId);
     try {

@@ -652,6 +652,22 @@ await T('회원 회비 쓰기 거부',
 await T('비멤버의 클럽 문서 읽기 거부',
   assertFails(getDoc(doc(outsider, 'clubs', CLUB))));
 
+console.log('\n[테스트 알림 일감 — 남에게 쏘는 통로가 되면 안 된다]');
+await T('운영진이 본인 이름으로 테스트 일감 만들기 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'tj1'),
+    { type: 'test', by: 'owner1', status: 'queued' })));
+await T('남의 이름으로 테스트 일감 만들기 거부',
+  assertFails(setDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'tj2'),
+    { type: 'test', by: 'mem1', status: 'queued' })));
+await T('일반 회원의 테스트 일감 생성 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'pushJobs', 'tj3'),
+    { type: 'test', by: 'mem1', status: 'queued' })));
+await T('모르는 종류의 일감 거부',
+  assertFails(setDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'tj4'),
+    { type: 'spam', by: 'owner1', status: 'queued' })));
+await T('클라이언트가 결과를 조작하는 것 거부(update 전면 차단)',
+  assertFails(updateDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'tj1'), { status: 'done' })));
+
 console.log('\n[푸시 토큰 — 본인이 자기 문서에 쓸 수 있어야 알림이 산다]');
 /* 알림이 통째로 죽는 경로가 두 개다: 토큰을 못 받거나, 받아도 저장을 못 하거나.
    저장 쪽은 규칙이 막으면 조용히 실패하므로 여기서 못박아 둔다. */

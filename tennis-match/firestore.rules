@@ -185,11 +185,14 @@ service cloud.firestore {
          요청서를 한 장 남기고 서버가 대신 보낸다. 아무나 만들 수 있으면
          전체 알림을 마음대로 쏘는 통로가 되므로 운영진만 만든다.
          결과(status·sent)는 서버가 쓴다 — 앱에서는 못 고친다. */
+      /* 서버에 시키는 일감. 클라이언트는 만들기만 하고 결과는 서버가 적는다.
+         type 'test' 는 본인에게 테스트 알림 한 건을 보내는 것이다 —
+         이 통로로 남에게 알림을 쏠 수 없게 by 가 본인이어야 한다. */
       match /pushJobs/{jobId} {
         allow read: if isClubAdmin(clubId);
         allow create: if isClubAdmin(clubId)
           && request.resource.data.by == request.auth.uid
-          && request.resource.data.type == 'rsvpAsk';
+          && request.resource.data.type in ['rsvpAsk', 'test'];
         allow update, delete: if false;
       }
 

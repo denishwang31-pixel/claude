@@ -938,3 +938,19 @@ export const subMyGearOrders = (uid, cb) => {
 
 export const addGearOrder = (data) => addDoc(collection(db, 'gearOrders'), data);
 export const patchGearOrder = (id, patch) => updateDoc(doc(db, 'gearOrders', id), patch);
+
+/* ---------- 테스트 알림 ----------
+   서버에 일감을 하나 만들고, 서버가 그 문서에 결과를 적어 준다.
+   앱은 그 문서를 구독해 "서버가 무엇을 봤는지"를 그대로 보여 준다. */
+export const requestTestPush = (clubId, uid) =>
+  addDoc(collection(db, 'clubs', clubId, 'pushJobs'), {
+    type: 'test',
+    by: uid,
+    status: 'queued',
+    createdAt: serverTimestamp(),
+  });
+
+export const subPushJob = (clubId, jobId, cb) =>
+  onSnapshot(doc(db, 'clubs', clubId, 'pushJobs', jobId),
+    (d) => cb(d.exists() ? { id: d.id, ...d.data() } : null),
+    () => cb(null));
