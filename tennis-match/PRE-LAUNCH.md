@@ -345,6 +345,41 @@
 
 ## E. 이미 처리된 것 — 다시 조사하지 않기 위해 남긴다
 
+- [x] **함수 배포가 "Timeout after 10000" 으로 막히던 것 — 로컬 Node 버전** (2026-08-21)
+      `firebase deploy --only functions` 가 이 오류로 죽었다.
+
+      ```
+      Error: User code failed to load. Cannot determine backend specification.
+      Timeout after 10000.
+      ```
+
+      **코드 문제가 아니다.** 같은 코드를 리눅스에서 `require` 하면 278ms 에
+      함수 15개가 정상 로드된다. 배포 전 "탐색" 단계에서 CLI 가 로컬 Node 로
+      함수를 띄우고 localhost 로 함수 목록을 물어보는데, 그 응답을 10초 안에
+      못 받은 것이다.
+
+      원인은 **로컬 Node 24 vs 선언된 Node 22**. Node 17 부터 `localhost` 가
+      IPv6(::1) 로 먼저 해석되는데 서버는 IPv4 에 붙어서 서로 못 만난다.
+      Windows 에서 특히 잘 난다.
+
+      **당장 푸는 법** (그 창에서만 유효)
+      ```
+      set NODE_OPTIONS=--dns-result-order=ipv4first
+      firebase deploy --only functions
+      ```
+
+      **제대로 푸는 법**: 로컬 Node 를 22 로 맞춘다(nvm-windows).
+      런타임과 같은 버전을 쓰면 이 부류가 다시 안 생긴다.
+      맞춘 뒤에는 `functions/node_modules` 를 지우고 다시 설치한다.
+
+      ⚠️ `functions/package.json` 의 `engines.node` 는 **배포될 런타임**이다.
+      로컬에 맞추려고 이 값을 24 로 올리면 안 된다 — 서버 런타임이 바뀐다.
+
+      (2026-08-18 에도 같은 오류를 만났는데 그때는 firebase-functions 5 → 7
+      업그레이드로 풀렸다. 증상이 같아도 원인이 다를 수 있다는 뜻이다.
+      먼저 `cd functions && node -e "require('./index.js')"` 로 코드부터
+      가려내면 헛다리를 짚지 않는다.)
+
 - [x] **코치 · 코트 정보 · 간편송금 · 용품 드랍십 뼈대** (2026-08-19)
       한 번에 들어온 요구 여섯 가지 중 앱 안에서 끝나는 것을 만들었다.
 
