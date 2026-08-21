@@ -9,6 +9,7 @@
 import {
   onAuthStateChanged, signOut,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously,
+  deleteUser, reauthenticateWithCredential, EmailAuthProvider,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig';
@@ -97,3 +98,65 @@ export async function linkUserToClub(uid, clubId, profile) {
 }
 
 export const logout = () => signOut(auth);
+
+/* ============================================================
+   계정 삭제
+
+   순서가 중요하다
+     본인 확인 → 클럽 정리 → 개인정보 삭제 → 로그인 계정 삭제
+
+   왜 본인 확인이 가장 먼저인가
+     Firebase 는 마지막 로그인이 오래된 계정의 삭제를 거부한다
+     (auth/requires-recent-login). 그걸 마지막에 만나면 이미 데이터는
+     지워졌는데 계정만 남는 최악의 상태가 된다. 그래서 맨 앞에서
+     한 번 확인해 두고 시작한다.
+   ============================================================ */
+
+/** 지금 로그인한 사람의 이메일 (익명 계정이면 빈 문자열) */
+export const currentEmail = () => auth.currentUser?.email || '';
+
+/** 익명(체험) 계정인가 — 비밀번호가 없으므로 본인 확인을 건너뛴다 */
+export const isAnonymousUser = () => !!auth.currentUser?.isAnonymous;
+
+/**
+ * 본인 확인. 이메일 계정이면 비밀번호를 다시 받는다.
+ * @returns {{ok: boolean, reason?: string}}
+ */
+export async function reauthenticate(password) {
+  const user = auth.currentUser;
+  if (!user) return { ok: false, reason: '로그인 상태가 아닙니다' };
+  if (user.isAnonymous) return { ok: true };          // 확인할 비밀번호가 없다
+  if (!user.email) return { ok: true };               // 이메일이 아닌 방식
+  if (!password) return { ok: false, reason: '비밀번호를 입력하세요' };
+  try {
+    await reauthenticateWithCredential(
+      user, EmailAuthProvider.credential(user.email, password),
+    );
+    return { ok: true };
+  } catch (e) {
+    const code = e?.code || '';
+    if (code.includes('wrong-password') || code.includes('invalid-credential')) {
+      return { ok: false, reason: '비밀번호가 맞지 않습니다' };
+    }
+    if (code.includes('too-many-requests')) {
+      return { ok: false, reason: '시도가 너무 많습니다. 잠시 후 다시 해 주세요' };
+    }
+    return { ok: false, reason: e?.message || String(e) };
+  }
+}
+
+/** 로그인 계정 자체를 지운다 — 되돌릴 수 없다 */
+export async function deleteAuthUser() {
+  const user = auth.currentUser;
+  if (!user) return { ok: false, reason: '로그인 상태가 아닙니다' };
+  try {
+    await deleteUser(user);
+    return { ok: true };
+  } catch (e) {
+    const code = e?.code || '';
+    if (code.includes('requires-recent-login')) {
+      return { ok: false, reason: '본인 확인이 만료되었습니다. 다시 로그인한 뒤 시도해 주세요' };
+    }
+    return { ok: false, reason: e?.message || String(e) };
+  }
+}

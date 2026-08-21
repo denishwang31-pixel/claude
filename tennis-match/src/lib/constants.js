@@ -300,6 +300,8 @@ export const SCREEN = {
   pairs: '커플·고정 페어',
   matchcfg: '대진 설정',
   settings: '클럽 설정',
+  legal: '약관·개인정보',
+  deleteaccount: '계정 삭제',
   more: '더보기',
   schedule: '일정',
   match: '대진표',

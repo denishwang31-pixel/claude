@@ -954,3 +954,47 @@ export const subPushJob = (clubId, jobId, cb) =>
   onSnapshot(doc(db, 'clubs', clubId, 'pushJobs', jobId),
     (d) => cb(d.exists() ? { id: d.id, ...d.data() } : null),
     () => cb(null));
+
+/* ============================================================
+   계정 삭제 — 클럽 정리와 개인정보 삭제
+
+   회원 문서를 지우지 않고 "비워서" 남기는 이유는 accountDelete.js 머리말에
+   적어 두었다. 요약하면 지난 대진표·정산의 이름이 전부 "(탈퇴)"가 되어
+   남의 기록까지 못 읽게 되기 때문이다.
+   ============================================================ */
+
+/** 회장 자리를 넘긴다 — 지정된 사람들을 모두 회장으로 */
+export async function promoteToPresidents(clubId, memberIds) {
+  if (!clubId || !memberIds?.length) return;
+  const batch = writeBatch(db);
+  memberIds.forEach((id) => {
+    batch.update(D(clubId, 'members', id), {
+      role: ROLES.PRESIDENT,
+      roles: arrayUnion(ROLES.PRESIDENT),
+    });
+  });
+  await batch.commit();
+}
+
+/** 클럽 소유자를 바꾼다 — 첫 번째 승계자에게 */
+export const handOverClub = (clubId, newOwnerId) =>
+  updateDoc(doc(db, 'clubs', clubId), { ownerId: newOwnerId || '' });
+
+/** 아무도 안 남은 클럽 — 검색에서 빼고 닫는다 */
+export async function closeEmptyClub(clubId, patch) {
+  await updateDoc(doc(db, 'clubs', clubId), patch);
+  /* 공개 목록에서도 빼야 검색에 안 뜬다 */
+  try {
+    await setDoc(doc(db, 'clubDirectory', clubId), { searchable: false }, { merge: true });
+  } catch (e) { /* 목록에 없을 수도 있다 */ }
+}
+
+/** 회원 문서를 비운다 — 이름은 남기고 연락 수단은 지운다 */
+export async function wipeMember(clubId, uid, keep, wipeFields) {
+  const patch = { ...keep };
+  wipeFields.forEach((f) => { patch[f] = deleteField(); });
+  await updateDoc(D(clubId, 'members', uid), patch);
+}
+
+/** users/{uid} 삭제 — 이걸 지워야 재가입해도 옛 클럽으로 끌려가지 않는다 */
+export const deleteUserDoc = (uid) => deleteDoc(doc(db, 'users', uid));
