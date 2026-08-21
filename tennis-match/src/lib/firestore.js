@@ -998,3 +998,35 @@ export async function wipeMember(clubId, uid, keep, wipeFields) {
 
 /** users/{uid} 삭제 — 이걸 지워야 재가입해도 옛 클럽으로 끌려가지 않는다 */
 export const deleteUserDoc = (uid) => deleteDoc(doc(db, 'users', uid));
+
+/* ============================================================
+   앱 운영 — 앱 운영자 명단과 공개 클럽 목록
+
+   왜 앱 안에서 다루나
+     예전에는 둘 다 Firebase 콘솔에서만 손댈 수 있었다. 그러면
+       · 내가 사라지면 아무도 용품·코치를 관리할 수 없다(인수인계 불가)
+       · 시험 삼아 만든 클럽을 검색에서 빼려면 클럽마다 계정을 갈아타야 한다
+     둘 다 실제로 겪은 불편이라 앱으로 올렸다.
+   ============================================================ */
+
+export const subAppAdmins = (cb) =>
+  onSnapshot(collection(db, 'appAdmins'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+
+/** 앱 운영자로 세운다. uid 를 정확히 알아야 한다 — 이름으로는 못 찾는다. */
+export const addAppAdmin = (uid, note) =>
+  setDoc(doc(db, 'appAdmins', uid), {
+    note: note || '', addedAt: serverTimestamp(),
+  }, { merge: true });
+
+/** 내린다. 규칙이 "스스로는 못 내린다"를 막고 있다. */
+export const removeAppAdmin = (uid) => deleteDoc(doc(db, 'appAdmins', uid));
+
+/** 공개 클럽 목록 전체 — 앱 운영자가 정리할 때 쓴다(숨긴 것까지 본다) */
+export const subAllClubDirectory = (cb) =>
+  onSnapshot(collection(db, 'clubDirectory'), (s) =>
+    cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+
+/** 검색 노출을 켜고 끈다 */
+export const setClubSearchable = (clubId, searchable) =>
+  setDoc(doc(db, 'clubDirectory', clubId), { searchable: !!searchable }, { merge: true });

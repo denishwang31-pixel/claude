@@ -31,7 +31,12 @@ function nextSaturday() {
  * @param clubId   대상 클럽
  * @param withDemo true면 데모 회원/모임까지, false면 코트+규칙만(실사용)
  */
-export async function seedClub(clubId, withDemo = true) {
+/* 기본값이 false 인 이유
+   예전에는 true 였다. 지금 부르는 곳(온보딩)은 항상 false 를 넘기므로
+   실제로 가짜 회원이 들어간 적은 없다. 다만 나중에 누가 인자를 빼고
+   부르면 그 순간 남의 클럽에 모르는 이름이 생긴다. 그것만큼 신뢰를
+   빨리 깎는 것이 없어서 기본값을 뒤집어 둔다. */
+export async function seedClub(clubId, withDemo = false) {
   const batch = writeBatch(db);
 
   // 편성 규칙 기본값

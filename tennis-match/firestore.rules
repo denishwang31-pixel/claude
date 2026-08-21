@@ -299,7 +299,10 @@ service cloud.firestore {
        - 등록·수정: 해당 클럽 운영진. 클럽 생성 시점에 생성자는 이미 회장이다. */
     match /clubDirectory/{clubId} {
       allow read: if signedIn();
-      allow write: if isClubAdmin(clubId);
+      /* 앱 운영자도 쓸 수 있다 — 시험 삼아 만든 클럽이나 방치된 클럽을
+         검색에서 빼려면 그 클럽 안으로 들어가지 않고도 가능해야 한다.
+         (클럽마다 계정을 갈아타며 끄는 것은 현실적이지 않다) */
+      allow write: if isClubAdmin(clubId) || isAppAdmin();
     }
 
     /* ---------- 클럽 교류전(루트) ----------
@@ -344,10 +347,19 @@ service cloud.firestore {
     /* ---------- 앱 운영자 명단(루트) ----------
        - 별도 로그인은 없다. 평소처럼 이메일로 로그인하고, 이 컬렉션에
          본인 uid 문서가 있으면 앱 운영자 권한이 켜진다.
-       - 문서 생성은 Firebase 콘솔에서만(클라이언트 쓰기 전면 차단). */
+
+       - 처음 한 명은 Firebase 콘솔에서 직접 만든다(그래야 시작할 수 있다).
+         그 뒤로는 **앱 운영자가 앱 안에서** 다른 사람을 세우고 내릴 수 있다.
+         콘솔에서만 가능하게 두면 인수인계가 불가능해진다 — 내가 사라지면
+         아무도 용품·코치를 관리할 수 없다.
+
+       - 스스로를 내리는 것은 막는다. 마지막 운영자가 자기를 내리면
+         아무도 남지 않고, 그때는 콘솔로 들어가는 수밖에 없다. */
     match /appAdmins/{uid} {
       allow read: if signedIn();
-      allow write: if false;
+      allow create: if isAppAdmin();
+      allow update: if isAppAdmin();
+      allow delete: if isAppAdmin() && request.auth.uid != uid;
     }
 
     /* ---------- 용품(루트, 앱 공용) ----------

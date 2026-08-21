@@ -62,7 +62,7 @@ const QUICK = [
 ];
 
 export default function Home() {
-  const { clubId, me, viewMode, setViewMode, resetOnboarding } = useApp();
+  const { clubId, me, viewMode, setViewMode, isAppAdmin, resetOnboarding } = useApp();
   const bottomPad = useBottomPad();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -244,8 +244,13 @@ export default function Home() {
           </View>
         </View>
 
-        {/* 보기 모드 — 운영 담당에게만. 나보다 위 역할은 미리볼 수 없다 */}
-        {realStaff && myViewModes.length > 1 && (
+        {/* 보기 모드 — 앱 운영자에게만 보인다.
+
+            원래 내가 두 화면(운영진/회원)을 번갈아 확인하려고 넣은 장치다.
+            실제 클럽 운영진이 보면 "내가 지금 운영진인가 회원인가"를 헷갈리고,
+            모드를 바꿔 둔 채 잊으면 "메뉴가 사라졌다"고 하게 된다.
+            기능이 아니라 개발 도구이므로 앱 운영자에게만 남긴다. */}
+        {isAppAdmin && realStaff && myViewModes.length > 1 && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}

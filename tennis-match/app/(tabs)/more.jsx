@@ -40,6 +40,7 @@ import { CoachReviewScreen } from '../../src/components/CoachReviewScreen';
 import { UpdateStatus } from '../../src/components/UpdateStatus';
 import { NotifyStatus } from '../../src/components/NotifyStatus';
 import { DeleteAccount } from '../../src/components/DeleteAccountScreen';
+import { AppOps } from '../../src/components/AppOpsScreen';
 import { Legal } from '../../src/components/LegalScreen';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card, SectionTitle, Chip, Btn, ListRow, Badge } from '../../src/components/ui';
@@ -106,6 +107,7 @@ const MENU_GROUPS = [
     appAdminOnly: true,
     items: [
       ['coachreview', 'ntrp', SCREEN.coachreview, '영상 승인 · 광고비 청구·수납'],
+      ['appops', 'settings', SCREEN.appops, '앱 운영자 인수인계 · 클럽 검색 노출'],
     ],
   },
   {
@@ -303,6 +305,7 @@ export default function More() {
       case 'courts': return <Courts {...{ clubId, courts, isAdmin, flash }} />;
       case 'coaches': return <CoachScreen {...{ uid: me, flash }} />;
       case 'coachreview': return <CoachReviewScreen {...{ uid: me, flash }} />;
+      case 'appops': return <AppOps {...{ me, flash }} />;
       case 'legal': return <Legal />;
       case 'deleteaccount': return <DeleteAccount {...{ clubId, me, members, flash }} />;
       case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, myRole: realRole, flash }} />;

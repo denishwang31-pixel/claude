@@ -474,10 +474,17 @@ await T('앱 운영자의 용품 삭제 허용',
   assertSucceeds(deleteDoc(doc(appAdmin, 'gear', 'g1'))));
 await T('앱 운영자 명단 조회 허용(내 권한 확인용)',
   assertSucceeds(getDoc(doc(mem1, 'appAdmins', 'appboss'))));
-await T('앱 운영자 명단 자가 등록 거부(콘솔 전용)',
+await T('앱 운영자 명단 자가 등록 거부',
   assertFails(setDoc(doc(mem1, 'appAdmins', 'mem1'), { note: '내가 운영자' })));
-await T('앱 운영자도 명단 추가 거부(콘솔 전용)',
-  assertFails(setDoc(doc(appAdmin, 'appAdmins', 'mem1'), { note: '승격' })));
+/* 2026-08-21 정책 변경: 앱 운영자는 앱 안에서 인수인계할 수 있어야 한다.
+   예전에는 콘솔에서만 가능해서 내가 사라지면 아무도 관리할 수 없었다.
+   ⚠️ 여기서 mem1 을 승격시키면 뒤따르는 광고 집계 테스트가 통째로 무너진다
+      (mem1 이 앱 운영자가 되어 "회원은 못 본다"가 거짓이 된다).
+      실제로 그렇게 깨졌다. 승격 대상은 아무 데도 안 쓰는 uid 로 둔다. */
+await T('앱 운영자가 명단에 다른 사람을 추가 허용(인수인계)',
+  assertSucceeds(setDoc(doc(appAdmin, 'appAdmins', 'spare-admin'), { note: '승격' })));
+await T('추가한 사람을 다시 내리기 허용',
+  assertSucceeds(deleteDoc(doc(appAdmin, 'appAdmins', 'spare-admin'))));
 
 console.log('\n[광고 집계(루트 /adStats)]');
 await T('회원의 노출/클릭 집계 기록 허용',
@@ -651,6 +658,32 @@ await T('회원 회비 쓰기 거부',
   assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'fees', '2026-07'), { paid: { mem1: true } })));
 await T('비멤버의 클럽 문서 읽기 거부',
   assertFails(getDoc(doc(outsider, 'clubs', CLUB))));
+
+console.log('\n[앱 운영자 명단 — 인수인계는 되되, 아무나 되면 안 된다]');
+await T('앱 운영자가 다른 사람을 앱 운영자로 세우기 허용',
+  assertSucceeds(setDoc(doc(appAdmin, 'appAdmins', 'newboss'), { note: '인수인계' })));
+await T('일반 회원이 스스로 앱 운영자가 되는 것 거부',
+  assertFails(setDoc(doc(mem1, 'appAdmins', 'mem1'), { note: '내가 왕' })));
+await T('클럽 회장이라도 앱 운영자를 세우는 것 거부',
+  assertFails(setDoc(doc(owner, 'appAdmins', 'owner1'), { note: '회장이니까' })));
+await T('앱 운영자가 남을 내리는 것 허용',
+  assertSucceeds(deleteDoc(doc(appAdmin, 'appAdmins', 'newboss'))));
+await T('앱 운영자가 스스로를 내리는 것 거부 — 마지막 한 명이면 아무도 안 남는다',
+  assertFails(deleteDoc(doc(appAdmin, 'appAdmins', 'appboss'))));
+await T('일반 회원의 앱 운영자 삭제 거부',
+  assertFails(deleteDoc(doc(mem1, 'appAdmins', 'appboss'))));
+
+console.log('\n[공개 클럽 목록 — 앱 운영자도 노출을 끌 수 있다]');
+await env.withSecurityRulesDisabled(async (ctx) => {
+  await setDoc(doc(ctx.firestore(), 'clubDirectory', 'club9'),
+    { name: '남의클럽', searchable: true });
+});
+await T('앱 운영자가 남의 클럽 노출을 끄는 것 허용',
+  assertSucceeds(setDoc(doc(appAdmin, 'clubDirectory', 'club9'), { searchable: false }, { merge: true })));
+await T('그 클럽 운영진의 수정은 그대로 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubDirectory', CLUB), { searchable: true }, { merge: true })));
+await T('무관한 회원의 남의 클럽 목록 수정 거부',
+  assertFails(setDoc(doc(mem1, 'clubDirectory', 'club9'), { searchable: true }, { merge: true })));
 
 console.log('\n[테스트 알림 일감 — 남에게 쏘는 통로가 되면 안 된다]');
 await T('운영진이 본인 이름으로 테스트 일감 만들기 허용',

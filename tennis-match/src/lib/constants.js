@@ -288,6 +288,7 @@ export const SCREEN = {
   courts: '코트 검색',
   coaches: '코치 찾기',
   coachreview: '코치 승인·광고비',
+  appops: '앱 운영 관리',
   joinreq: '가입 신청',
   invite: '클럽 초대',
   attendance: '출석',
