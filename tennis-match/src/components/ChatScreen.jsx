@@ -16,11 +16,11 @@
 
    말풍선은 플랫폼 관례를 따른다 — 내 메시지는 오른쪽 채움, 상대는 왼쪽 회색.
    ============================================================ */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, FlatList, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
-import { subMessages, sendMessage, deleteMessage } from '../lib/firestore';
+import { subMessages, latestMessageAt, sendMessage, deleteMessage } from '../lib/firestore';
 import { Touchable, isAndroid, HIT } from './native';
 import { Chip } from './ui';
 import { C, S, R, F } from '../lib/theme';
@@ -45,24 +45,31 @@ export function Chat({ clubId, me, meVal, members, venues = [], isAdmin, flash }
   const [channel, setChannel] = useState('');   // '' = 전체
   const listRef = useRef(null);
 
+  /* 보고 있는 채널만 서버에서 걸러 받는다.
+
+     예전에는 전체에서 최근 300개를 받아 화면에서 나눴다. 코트장이 셋인데
+     한 채널에서 대화가 몰리면 300개가 그 채널로 다 차서, 다른 채널은
+     최근 글까지 안 보이기 시작한다 — 오류도 없이 조용히. */
   useEffect(() => {
     if (!clubId) return undefined;
-    const unsub = subMessages(clubId, setAll, 300);
+    const unsub = subMessages(clubId, setAll, { channel, max: 100 });
     return () => unsub && unsub();
-  }, [clubId]);
+  }, [clubId, channel]);
 
-  /* 채널별로 갈라서 본다.
+  const messages = all;
 
-     서버에서 채널로 걸러 오지 않고 최근 300개를 받아 여기서 나눈다.
-     채널 조건을 붙이면 복합 색인이 필요한데, 동호회 채팅 분량에서는
-     그만한 값어치가 없다. 대신 받는 개수를 넉넉히 잡았다. */
-  const messages = useMemo(
-    () => all.filter((m) => (m.channel || '') === channel),
-    [all, channel],
-  );
+  /* 채널 칩의 점 — 채널마다 마지막 글이 있는지.
+     구독이 한 채널만 보므로 목록에서는 알 수 없다. 채널당 1건씩
+     따로 물어본다(화면을 열 때 한 번). */
+  const [lastAt, setLastAt] = useState({});
+  useEffect(() => {
+    if (!clubId) return;
+    latestMessageAt(clubId, ['', ...venues.map((v) => v.id)])
+      .then(setLastAt)
+      .catch(() => setLastAt({}));
+  }, [clubId, venues.length]);
 
-  /* 안 읽은 채널 표시용 — 채널마다 최근 메시지가 있는지 */
-  const hasMsg = (ch) => all.some((m) => (m.channel || '') === ch);
+  const hasMsg = (ch) => !!lastAt[ch || ''];
 
   const channelName = channel
     ? (venues.find((v) => v.id === channel)?.name || '코트장')

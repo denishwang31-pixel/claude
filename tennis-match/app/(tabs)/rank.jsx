@@ -7,15 +7,54 @@ import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { computeStats } from '../../src/lib/matchmaking';
+import { loadMeetingsRange } from '../../src/lib/firestore';
+import { mergeMeetings, WINDOW_MONTHS } from '../../src/lib/meetingWindow';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
-import { Card, SectionTitle } from '../../src/components/ui';
+import { Card, SectionTitle, Btn, Chip } from '../../src/components/ui';
 import { C } from '../../src/lib/theme';
 
 export default function Rank() {
   const { clubId, me, viewMode } = useApp();
   const bottomPad = useBottomPad();
   const router = useRouter();
-  const { club, members, meetings, meVal, nameOf } = useClub(clubId, me, { viewMode });
+  const {
+    club, members, meetings: recent, meetingsFrom, meVal, nameOf,
+  } = useClub(clubId, me, { viewMode });
+
+  /* ---------- 랭킹은 "전체 기록"이어야 한다 ----------
+     앱이 실시간으로 들고 있는 모임은 최근 1년치뿐이다(useClub 참고).
+     그대로 쓰면 "클럽 랭킹"이라고 적어 놓고 최근 1년만 세게 된다.
+     숫자가 멀쩡히 떠 있어서 아무도 잘렸다는 것을 모른다.
+
+     그래서 두 가지를 한다.
+       1. 안 불러왔을 때는 제목에 "최근 1년"이라고 적는다
+       2. [전체 기록 불러오기]로 예전 것을 한 번만 읽어 합친다
+     예전 경기는 이미 끝난 것이라 실시간일 이유가 없다. */
+  const [older, setOlder] = useState(null);      // null = 아직 안 불러옴
+  const [loading, setLoading] = useState(false);
+  const [loadErr, setLoadErr] = useState('');
+
+  const meetings = useMemo(
+    () => (older ? mergeMeetings(recent, older) : recent),
+    [recent, older],
+  );
+
+  const loadAll = async () => {
+    if (loading || older) return;
+    setLoading(true);
+    setLoadErr('');
+    try {
+      /* 클럽이 생기기 전으로 넉넉히 잡는다 — 시작일을 따로 저장하지 않는다 */
+      const list = await loadMeetingsRange(clubId, '2000-01-01', meetingsFrom);
+      setOlder(list);
+    } catch (e) {
+      /* older 는 null 로 둔다 — 빈 배열을 넣으면 "전체 기록"이라고 표시된
+         채로 예전 경기가 하나도 없는 것이 된다. 실패는 실패로 보여야 한다. */
+      setLoadErr('예전 기록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   /* 더보기에서 들어온 화면이므로 뒤로가기는 더보기로 */
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/more'));
@@ -65,6 +104,30 @@ export default function Rank() {
           <Tab v="me" label="내 커리어" />
           <Tab v="wrap" label="시즌 결산" />
         </View>
+
+        {/* 무엇을 세고 있는지 밝힌다. 시즌 결산은 올해만 세므로 해당 없다. */}
+        {view !== 'wrap' && (
+          <Card flat style={{ marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Chip tone={older ? 'green' : 'outline'}>
+                {older ? '전체 기록' : `최근 ${WINDOW_MONTHS}개월`}
+              </Chip>
+              <Text style={{ flex: 1, fontSize: 11, color: C.sub, lineHeight: 16 }}>
+                {older
+                  ? `${meetings.length}건을 모두 세었습니다`
+                  : `${meetingsFrom} 이후 ${meetings.length}건만 세고 있습니다`}
+              </Text>
+              {!older && (
+                <Btn small tone="ghost" disabled={loading} onPress={loadAll}>
+                  {loading ? '불러오는 중' : '전체 불러오기'}
+                </Btn>
+              )}
+            </View>
+            {!!loadErr && (
+              <Text style={{ fontSize: 11, color: C.danger, marginTop: 8 }}>{loadErr}</Text>
+            )}
+          </Card>
+        )}
 
         {view === 'rank' && (
           <Card>

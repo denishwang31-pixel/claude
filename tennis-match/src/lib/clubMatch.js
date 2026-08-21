@@ -193,6 +193,103 @@ export function diagnose(hostRoster, guestRoster, cfg) {
   };
 }
 
+/* ============================================================
+   지나간 초대 — 목록이 쓰레기통이 되지 않게
+
+   상대 클럽이 수락도 거절도 안 하면 "수락 대기"로 영원히 남는다.
+   경기 날짜가 지나도 남아 있으니, 몇 달 뒤 교류전 목록을 열면 지난
+   초대가 위에 잔뜩 쌓여 이번 주 경기를 못 찾는다.
+
+   ⚠️ 지우지는 않는다
+     "그때 우리가 초대했는데 답이 없었다"는 사실 자체가 정보다.
+     상대 클럽과 다음 이야기를 할 때 근거가 되기도 한다. 그래서
+     지우는 대신 지난 것으로 접어 둔다.
+
+   ⚠️ 서버에 상태를 바꿔 쓰지 않는다
+     날짜가 지났다는 것은 문서를 안 고쳐도 날짜만 보면 안다. 굳이
+     매일 도는 작업을 만들어 status 를 'expired' 로 바꾸면, 그 작업이
+     한 번 실패하면 목록이 다시 뒤엉킨다. 화면에서 판단한다.
+   ============================================================ */
+
+/** 답을 못 받은 채 경기 날짜가 지났는가 */
+export function isStale(m, today) {
+  if (!m || m.status !== CM_STATUS.PENDING) return false;
+  const d = String(m.date || '');
+  return !!d && !!today && d < today;
+}
+
+/** 이미 끝났거나 접어 둘 것인가 — 목록을 위아래로 가르는 기준 */
+export function isArchived(m, today) {
+  if (!m) return false;
+  if (m.status === CM_STATUS.DONE
+    || m.status === CM_STATUS.DECLINED
+    || m.status === CM_STATUS.CANCELED) return true;
+  if (isStale(m, today)) return true;
+  /* 수락해 놓고 결과를 안 넣은 채 날짜가 지난 것도 접는다 —
+     결과는 나중에도 넣을 수 있게 열어 두되 목록 위를 차지하지 않게 */
+  return m.status === CM_STATUS.ACCEPTED && !!m.date && m.date < today;
+}
+
+/** 목록을 진행 중 / 지난 것으로 가른다 */
+export function splitMatches(list, today) {
+  const live = [];
+  const past = [];
+  (list || []).forEach((m) => (isArchived(m, today) ? past : live).push(m));
+  const byDate = (a, b) => String(a.date || '').localeCompare(String(b.date || ''));
+  return {
+    live: live.sort(byDate),
+    past: past.sort((a, b) => byDate(b, a)),   // 지난 것은 최근 것부터
+  };
+}
+
+/** 접어 둔 이유 — 아무 설명 없이 아래로 내려가면 사라진 것으로 보인다 */
+export function archiveReason(m, today) {
+  if (isStale(m, today)) return '답을 받지 못한 채 날짜가 지났습니다';
+  if (m?.status === CM_STATUS.DECLINED) return '상대 클럽이 거절했습니다';
+  if (m?.status === CM_STATUS.CANCELED) return '개설한 클럽이 취소했습니다';
+  if (m?.status === CM_STATUS.DONE) return '종료된 교류전입니다';
+  /* 수락된 것은 날짜가 지났을 때만 접힌다. 날짜를 안 보고 답하면
+     다음 달 경기에도 "날짜가 지났습니다"가 붙는다. */
+  if (m?.status === CM_STATUS.ACCEPTED && !!m.date && m.date < today) {
+    return '경기 날짜가 지났습니다';
+  }
+  return '';
+}
+
+/* ============================================================
+   상대 클럽 회원 이름의 보관
+
+   교류전 문서는 루트(clubMatches)에 있어서 두 클럽이 같이 본다. 그래서
+   상대 클럽 회원의 이름·성별이 우리 클럽 밖의 문서에 복사되어 남는다.
+   상대가 앱을 지워도 이 기록은 남는다.
+
+   개인정보처리방침에 적은 보관 기간(경기 후 1년)을 여기서 판단한다.
+   실제 삭제는 운영진이 [지난 교류전 정리]로 하거나, 나중에 서버 작업이
+   같은 함수를 써서 한다. 기준이 두 군데로 갈라지지 않게 여기 둔다.
+   ============================================================ */
+
+/** 명단을 지워도 되는 시점이 지났는가 (경기 후 KEEP_DAYS 일) */
+export const ROSTER_KEEP_DAYS = 365;
+
+export function rosterExpired(m, today, days = ROSTER_KEEP_DAYS) {
+  const d = String(m?.date || '');
+  if (!d || !today) return false;
+  const gap = Math.round(
+    (new Date(`${today}T00:00:00`) - new Date(`${d}T00:00:00`)) / 86400000,
+  );
+  return gap > days;
+}
+
+/** 이름을 지운 뒤에도 경기 기록은 읽혀야 한다 — 자리만 남긴다 */
+export function scrubRoster(roster) {
+  return (roster || []).map((p, i) => ({
+    id: p?.id || `x${i + 1}`,
+    name: `선수${i + 1}`,
+    gender: p?.gender || '',
+    scrubbed: true,
+  }));
+}
+
 /** 초대 알림 문구 — 상대 클럽 운영진에게 간다 */
 export function inviteMessage(m) {
   return {
@@ -214,5 +311,7 @@ export default {
   CM_STATUS, CM_STATUS_LABEL, CM_KIND, SCORING, END_GAMES, DEFAULT_CM_CONFIG,
   normalizeConfig, describeConfig, isHost, isGuest, canManage, canRespond,
   rosterSideFor, hostFillsBothRosters, rosterGuideFor, validateInvite, diagnose,
+  isStale, isArchived, splitMatches, archiveReason,
+  ROSTER_KEEP_DAYS, rosterExpired, scrubRoster,
   inviteMessage, responseMessage,
 };

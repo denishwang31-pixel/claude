@@ -18,7 +18,7 @@
      직접 추가한다. scripts/fetch-courts.mjs 주석 참고.
    ============================================================ */
 
-import { SEOUL_COURTS } from './courtsSeoul.generated.js';
+import { SEOUL_COURTS, SEOUL_COURTS_FETCHED_AT } from './courtsSeoul.generated.js';
 
 /** 코트 표면 — 검색 필터에 쓴다 */
 export const SURFACE = { HARD: '하드', CLAY: '클레이', TURF: '인조잔디', INDOOR: '실내' };
@@ -344,5 +344,50 @@ export const searchCourts = (q = {}, list = ALL_COURTS) => {
 };
 
 /** 지역을 한 줄로 — "서울 서초구 반포동" */
+/* ============================================================
+   이 목록이 얼마나 오래되었나
+
+   공공 코트는 수시로 늘고 줄고, 예약 주소도 바뀐다. 한 시점에 긁어 온
+   값을 그대로 들고 있으면 링크가 조용히 죽는다 — 눌러 보기 전에는
+   아무도 모르고, 눌러 본 사람은 앱이 고장 났다고 생각한다.
+
+   그래서 두 가지를 한다.
+     1. 받아 온 날짜를 같이 굽고(scripts/fetch-courts.mjs), 오래되면
+        화면에 그렇다고 적는다. 틀릴 수 있다는 것을 미리 말하는 편이
+        틀린 것을 모르는 것보다 낫다.
+     2. 이용자가 "링크가 안 열린다"를 신고할 수 있게 한다. 수백 곳을
+        직접 확인할 수는 없으므로, 실제로 가려던 사람이 알려 주는 것이
+        가장 빠르다.
+   ============================================================ */
+
+/** 이 정도 지나면 다시 받아야 한다고 본다 */
+export const COURT_DATA_STALE_DAYS = 180;
+
+export function courtDataAge(today, fetchedAt = SEOUL_COURTS_FETCHED_AT) {
+  if (!fetchedAt) {
+    return { fetchedAt: '', days: null, stale: false, never: true };
+  }
+  const days = Math.round(
+    (new Date(`${today}T00:00:00`) - new Date(`${fetchedAt}T00:00:00`)) / 86400000,
+  );
+  return {
+    fetchedAt,
+    days: Number.isFinite(days) ? days : null,
+    stale: Number.isFinite(days) && days > COURT_DATA_STALE_DAYS,
+    never: false,
+  };
+}
+
+/** 화면에 띄울 한 줄. 최신이면 빈 문자열 — 멀쩡할 때 잔소리하지 않는다. */
+export function courtDataNote(today, fetchedAt = SEOUL_COURTS_FETCHED_AT) {
+  const a = courtDataAge(today, fetchedAt);
+  if (a.never) return '공공 코트 목록을 아직 받지 않았습니다 — 직접 등록한 코트만 검색됩니다';
+  if (a.stale) {
+    return `코트 정보를 ${a.fetchedAt}에 받았습니다. `
+      + '그 사이 바뀐 곳이 있을 수 있으니 예약 전에 확인해 주세요';
+  }
+  return '';
+}
+
 export const courtRegionText = (c) =>
   [c.sido, c.gungu, c.dong].filter(Boolean).join(' ');

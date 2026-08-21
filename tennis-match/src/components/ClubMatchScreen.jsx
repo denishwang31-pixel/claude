@@ -20,6 +20,7 @@ import {
   CM_STATUS, CM_STATUS_LABEL, CM_KIND, SCORING, END_GAMES,
   normalizeConfig, describeConfig, isHost, isGuest, canManage, canRespond,
   rosterSideFor, hostFillsBothRosters, rosterGuideFor, validateInvite, diagnose,
+  splitMatches, isArchived, archiveReason, rosterExpired, scrubRoster,
 } from '../lib/clubMatch';
 import {
   generateTypedTeamMatches, blankTeamMatches, emptySlots,
@@ -48,6 +49,16 @@ const STATUS_TONE = {
    목록
    ============================================================ */
 function MatchList({ items, clubId, onOpen, onCreate, isAdmin }) {
+  /* 지난 것을 아래로 접는다.
+
+     상대가 수락도 거절도 안 하면 "수락 대기"로 영원히 남는다. 몇 달
+     지나면 답 없는 초대가 위에 잔뜩 쌓여서 이번 주 경기를 못 찾는다.
+     지우지는 않는다 — "초대했는데 답이 없었다"도 정보다. */
+  const [showPast, setShowPast] = useState(false);
+  const { live, past } = useMemo(
+    () => splitMatches(items, today()), [items],
+  );
+
   /* 받은 초대를 맨 위로. 답을 기다리는 쪽이 가장 급하다. */
   const sorted = useMemo(() => {
     const rank = (m) => {
@@ -56,14 +67,52 @@ function MatchList({ items, clubId, onOpen, onCreate, isAdmin }) {
       if (m.status === CM_STATUS.PENDING) return 2;
       return 3;
     };
-    return [...items].sort((a, b) => rank(a) - rank(b)
+    return [...live].sort((a, b) => rank(a) - rank(b)
       || String(b.date || '').localeCompare(String(a.date || '')));
-  }, [items, clubId]);
+  }, [live, clubId]);
+
+  const shown = showPast ? [...sorted, ...past] : sorted;
+
+  /* 보관 기간(경기 후 1년)이 지났는데 아직 이름이 남아 있는 것 */
+  const [scrubbing, setScrubbing] = useState(false);
+  const scrubbable = useMemo(
+    () => past.filter((m) => rosterExpired(m, today())
+      && [...(m.hostRoster || []), ...(m.guestRoster || [])].some((p) => p && !p.scrubbed)),
+    [past],
+  );
+
+  const scrubOld = () => Alert.alert(
+    '선수 이름 지우기',
+    `${scrubbable.length}건의 지난 교류전에서 양쪽 선수 이름을 지웁니다.\n`
+    + '경기 결과와 승패 기록은 그대로 남습니다.\n\n되돌릴 수 없습니다.',
+    [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '지우기',
+        style: 'destructive',
+        onPress: async () => {
+          setScrubbing(true);
+          try {
+            for (const m of scrubbable) {
+              // eslint-disable-next-line no-await-in-loop
+              await updateClubMatch(m.id, {
+                hostRoster: scrubRoster(m.hostRoster),
+                guestRoster: scrubRoster(m.guestRoster),
+                rosterScrubbedAt: today(),
+              });
+            }
+          } finally {
+            setScrubbing(false);
+          }
+        },
+      },
+    ],
+  );
 
   return (
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ paddingBottom: 96 }}>
-        {sorted.map((m) => {
+        {shown.map((m) => {
           const mine = isHost(m, clubId);
           const other = mine
             ? (m.guestClubName || '상대 클럽')
@@ -99,11 +148,44 @@ function MatchList({ items, clubId, onOpen, onCreate, isAdmin }) {
                   수락 여부를 알려 주세요 →
                 </Text>
               )}
+              {!!archiveReason(m, today()) && isArchived(m, today()) && (
+                <Text style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>
+                  {archiveReason(m, today())}
+                </Text>
+              )}
             </Card>
           );
         })}
 
-        {sorted.length === 0 && (
+        {past.length > 0 && (
+          <Btn full tone="ghost" onPress={() => setShowPast(!showPast)}>
+            {showPast ? '지난 교류전 접기' : `지난 교류전 ${past.length}건 보기`}
+          </Btn>
+        )}
+
+        {/* 상대 클럽 선수 이름 정리.
+
+           교류전 문서는 루트(clubMatches)에 있어서 두 클럽이 같이 본다.
+           그래서 상대 클럽 회원의 이름·성별이 우리 클럽 밖의 기록에
+           남고, 상대가 앱을 지워도 남는다. 개인정보처리방침에 "경기일로부터
+           1년"이라고 적었으니 지울 길이 실제로 있어야 한다.
+           결과는 남기고 이름만 "선수1"로 바꾼다 — 지난 승패 기록까지
+           사라지면 두 클럽 모두 손해다. */}
+        {isAdmin && showPast && scrubbable.length > 0 && (
+          <Card style={{ marginTop: 10, backgroundColor: C.fill }}>
+            <Text style={{ fontSize: 12, color: C.sub, lineHeight: 18 }}>
+              1년이 지난 교류전 {scrubbable.length}건에 상대 클럽 선수 이름이
+              남아 있습니다. 개인정보처리방침에 적은 보관 기간이 지났습니다.
+            </Text>
+            <View style={{ marginTop: 10 }}>
+              <Btn small tone="outline" disabled={scrubbing} onPress={scrubOld}>
+                {scrubbing ? '정리하는 중…' : `이름 지우고 결과만 남기기 (${scrubbable.length}건)`}
+              </Btn>
+            </View>
+          </Card>
+        )}
+
+        {shown.length === 0 && (
           <EmptyState
             icon="🤝"
             title="교류전이 없습니다"

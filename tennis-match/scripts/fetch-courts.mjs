@@ -120,6 +120,7 @@ const file = `/* 자동 생성 — 직접 고치지 마세요.
    갱신: SEOUL_OPEN_API_KEY=<키> node scripts/fetch-courts.mjs
    출처: 서울 열린데이터광장 ListPublicReservationSport
    생성: ${new Date().toISOString().slice(0, 10)} · ${courts.length}건 */
+export const SEOUL_COURTS_FETCHED_AT = '${new Date().toISOString().slice(0, 10)}';
 export const SEOUL_COURTS = ${JSON.stringify(courts, null, 2)};
 `;
 

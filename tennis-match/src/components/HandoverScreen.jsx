@@ -9,10 +9,10 @@
 
    전임 총무는 회비 권한만 내려놓고 운영진으로 남는다 — 갑자기 아무것도
    못 보게 되면 인수인계 자체가 안 된다. */
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, Alert } from 'react-native';
 import { ROLES, normalizeRole } from '../lib/constants';
-import { handOverManager } from '../lib/firestore';
+import { handOverManager, countMeetings } from '../lib/firestore';
 import { useOptionSheet } from './native';
 import { Card, SectionTitle, Chip, Btn, StatCard } from './ui';
 import { C, S, F } from '../lib/theme';
@@ -31,17 +31,32 @@ export function Handover({
     () => active.find((m) => normalizeRole(m.role) === ROLES.MANAGER), [active],
   );
 
-  /* 클럽에 쌓인 기록 — "총무가 바뀌어도 남는다"를 눈으로 보여 준다 */
+  /* 클럽에 쌓인 기록 — "총무가 바뀌어도 남는다"를 눈으로 보여 준다.
+
+     ⚠️ meetings 는 최근 1년치만 구독된 목록이다(useClub 의 창).
+        길이로 세면 통산이 아니라 1년치가 나오는데, 바로 위에
+        "총무가 바뀌어도 남습니다"라고 적혀 있어 거짓말이 된다.
+        그래서 총 건수는 서버에 세어 달라고 한다 — 문서를 읽지 않으므로
+        200건이든 2000건이든 비용은 같다. */
+  const [meetingCount, setMeetingCount] = useState(null);
+  useEffect(() => {
+    if (!clubId) return;
+    countMeetings(clubId)
+      .then(setMeetingCount)
+      .catch(() => setMeetingCount(null));
+  }, [clubId]);
+
   const archive = useMemo(() => {
     const months = new Set(fees.map((f) => String(f.id).slice(0, 7)).filter(Boolean));
     const years = new Set(fees.map((f) => String(f.id).slice(0, 4)).filter(Boolean));
     return {
       members: active.length,
-      meetings: meetings.length,
+      /* 못 세었으면 '—'. 1년치를 통산인 척 보여 주지 않는다. */
+      meetings: meetingCount === null ? '—' : meetingCount,
       feeMonths: months.size,
       years: years.size,
     };
-  }, [active, meetings, fees]);
+  }, [active, meetingCount, fees]);
 
   const pick = () => sheet.open({
     title: '새 총무를 고르세요',

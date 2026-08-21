@@ -330,6 +330,27 @@ service cloud.firestore {
       allow write: if isClubAdmin(clubId) || isAppAdmin();
     }
 
+    /* 코트 정보 신고 — "링크가 안 열린다"를 이용자가 알려 준다.
+
+       코트 목록은 한 시점에 긁어 온 값이라 조용히 틀려진다. 수백 곳을
+       직접 확인할 수는 없으니 실제로 가려던 사람이 알려 주는 것이 가장
+       빠르다. 앱 운영자가 모아서 보고 다음 갱신에 반영한다.
+
+       ⚠️ 남의 신고를 읽지 못하게 한다
+         신고에는 by(uid) 가 들어간다. 누가 어느 코트를 보려 했는지는
+         남이 알 일이 아니다. 목록은 앱 운영자만 본다.
+       ⚠️ 고치거나 지우지 못하게 한다
+         신고를 낸 사람이 나중에 내용을 바꾸면 기록의 뜻이 없어진다.
+         처리 표시(status)는 앱 운영자만 한다. */
+    match /courtReports/{reportId} {
+      allow read: if isAppAdmin();
+      allow create: if signedIn()
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.status == 'open';
+      allow update: if isAppAdmin();
+      allow delete: if false;
+    }
+
     /* ---------- 클럽 교류전(루트) ----------
        두 클럽이 같이 보는 문서다. 클럽 하위에 두면 상대가 읽을 수 없어서
        루트에 두고, 두 클럽의 사람에게만 연다.

@@ -312,7 +312,7 @@ export default function More() {
           } : null,
         }} />
       );
-      case 'courts': return <Courts {...{ clubId, courts, isAdmin, flash }} />;
+      case 'courts': return <Courts {...{ clubId, courts, me, isAdmin, flash }} />;
       case 'coaches': return <CoachScreen {...{ uid: me, flash }} />;
       case 'coachreview': return <CoachReviewScreen {...{ uid: me, flash }} />;
       case 'appops': return <AppOps {...{ me, flash }} />;

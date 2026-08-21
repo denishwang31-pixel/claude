@@ -17,6 +17,7 @@ import {
 } from '../lib/firestore';
 import { DEFAULT_RULES } from '../lib/matchmaking';
 import { feeDocKey } from '../lib/scope';
+import { windowStart, WINDOW_MONTHS } from '../lib/meetingWindow';
 import {
   isStaffRole, canAppointRole, isGuestId, guestUid, ROLES,
   normalizeRole, canSeeFees, canSeeAllVenues, VIEW_MODE_ROLE,
@@ -49,6 +50,18 @@ export function useClub(clubId, me, opts = {}) {
      지금까지 쌓인 문서를 그대로 읽는다 — 이전과 완전히 같다. */
   const feeScopeId = opts.feeScopeId || null;
 
+  /* ---------- 모임을 얼마나 들고 있을 것인가 ----------
+     예전에는 클럽의 모임을 전부 실시간 구독했다. 주 2회 × 2년이면
+     200건이고 앱을 켤 때마다 전부 읽는다. 최근 1년 + 미래만 든다.
+
+     ⚠️ 그보다 오래된 것이 필요한 화면(지난 연도 랭킹 등)은
+        loadMeetingsRange 로 따로 읽고, 그렇다고 화면에 적어야 한다.
+        말없이 자르면 재작년 랭킹이 조용히 0이 된다. */
+  const meetingsFrom = useMemo(
+    () => windowStart(new Date().toISOString().slice(0, 10), WINDOW_MONTHS),
+    [],
+  );
+
   const [club, setClub] = useState(null);
   const [members, setMembers] = useState([]);
   const [meetings, setMeetings] = useState([]);
@@ -70,7 +83,7 @@ export function useClub(clubId, me, opts = {}) {
     const unsubs = [
       subClub(clubId, setClub),
       subMembers(clubId, (v) => { setMembers(v); setLoading(false); }),
-      subMeetings(clubId, setMeetings),
+      subMeetings(clubId, setMeetings, meetingsFrom),
       subPosts(clubId, setPosts),
       subCourts(clubId, setCourts),
       subRules(clubId, setRuleKeys),
@@ -82,7 +95,7 @@ export function useClub(clubId, me, opts = {}) {
       subPolls(clubId, setPolls),
     ];
     return () => unsubs.forEach((u) => u && u());
-  }, [clubId, feeMonth, feeScopeId]);
+  }, [clubId, feeMonth, feeScopeId, meetingsFrom]);
 
   // 게스트 모집은 루트 공개 컬렉션(FIX-05) — clubId 무관하게 구독
   useEffect(() => {
@@ -200,7 +213,7 @@ export function useClub(clubId, me, opts = {}) {
   }, [members, meetings]);
 
   return {
-    club, members, meetings, posts, guestPosts, courts, rules, fee,
+    club, members, meetings, meetingsFrom, posts, guestPosts, courts, rules, fee,
     pairs, tournaments, venues, matchConfig, polls, meVal,
     isAdmin, realStaff, canAppoint, isPresident, viewMode, nameOf, genderOf, loading,
     myLeadVenues, myVenues, scopeVenues,

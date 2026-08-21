@@ -17,7 +17,7 @@
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
   onSnapshot, query, where, orderBy, limit, serverTimestamp, arrayUnion,
-  runTransaction, deleteField, writeBatch, increment,
+  runTransaction, deleteField, writeBatch, increment, getCountFromServer,
 } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { ROLES, GUEST_STATUS, JOIN_STATUS } from './constants';
@@ -33,9 +33,48 @@ export const subClub = (clubId, cb) =>
 export const subMembers = (clubId, cb) =>
   onSnapshot(C(clubId, 'members'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
 
-export const subMeetings = (clubId, cb) =>
-  onSnapshot(C(clubId, 'meetings'), (s) =>
-    cb(s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.date || '').localeCompare(b.date || ''))));
+/**
+ * 모임 실시간 구독 — 최근 창(window)만.
+ *
+ * ⚠️ fromDate 없이 부르면 예전처럼 전부 구독한다. 주 2회 × 2년이면
+ *    200건이고, 앱을 켤 때마다 전부 읽는다. useClub 이 항상 창을
+ *    넘겨 주므로 실제로는 잘린 범위만 온다.
+ *
+ * 창보다 오래된 것은 loadMeetingsRange 로 필요할 때 한 번만 읽는다.
+ * 이유는 src/lib/meetingWindow.js 머리말 참고 — 그냥 자르면 재작년
+ * 랭킹이 조용히 0이 된다.
+ */
+export const subMeetings = (clubId, cb, fromDate = null) =>
+  onSnapshot(
+    fromDate
+      ? query(C(clubId, 'meetings'), where('date', '>=', fromDate))
+      : C(clubId, 'meetings'),
+    (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''))),
+  );
+
+/**
+ * 모임 총 건수 — 문서를 읽지 않고 세기만 한다.
+ *
+ * 인수인계 화면이 "우리 클럽에 쌓인 기록"으로 보여 주는 숫자다.
+ * 구독은 최근 1년만 하므로 목록 길이로 세면 통산이 아니라 1년치가 된다.
+ * "총무가 바뀌어도 남습니다"라고 적어 놓고 1년치를 보여 주면 거짓말이다.
+ */
+export const countMeetings = async (clubId) => {
+  const snap = await getCountFromServer(C(clubId, 'meetings'));
+  return snap.data().count;
+};
+
+/** 지난 모임을 한 번만 읽는다 (랭킹의 지난 연도, 인수인계 자료 등) */
+export const loadMeetingsRange = async (clubId, from, to) => {
+  const snap = await getDocs(query(
+    C(clubId, 'meetings'),
+    where('date', '>=', String(from)),
+    where('date', '<=', String(to)),
+  ));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+};
 
 export const subPosts = (clubId, cb) =>
   onSnapshot(C(clubId, 'posts'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
@@ -290,15 +329,53 @@ export const closePoll = (clubId, pollId, closed = true) =>
 export const deletePoll = (clubId, pollId) => deleteDoc(D(clubId, 'polls', pollId));
 
 /* ============================================================
-   클럽 채팅 — 최근 메시지만 실시간으로 받는다.
-   전체를 구독하면 오래된 클럽일수록 앱이 무거워지므로 200개로 자른다.
+   클럽 채팅 — 채널(코트장)별로 서버에서 걸러 받는다.
+
+   예전에는 전체에서 최근 300개를 받아 화면에서 채널로 나눴다. 채널
+   조건을 붙이면 복합 색인이 필요해서 미뤄 둔 것이었다. 그런데 코트장이
+   세 곳이고 한 채널에서 대화가 몰리면, 300개가 그 채널로 다 차서
+   다른 채널은 최근 글까지 사라진다 — 조용히, 오류 없이.
+
+   이제 채널 조건 + 시간 정렬로 서버에서 받는다. 색인은
+   firestore.indexes.json 에 있다(channel ASC, createdAt DESC).
+   ⚠️ 색인을 배포하지 않으면 이 구독은 실패한다. onSnapshot 의 오류
+      콜백이 빈 목록을 주므로 화면이 죽지는 않지만 대화가 안 보인다.
    ============================================================ */
-export const subMessages = (clubId, cb, max = 200) =>
+export const subMessages = (clubId, cb, { channel = '', max = 100 } = {}) =>
   onSnapshot(
-    query(C(clubId, 'messages'), orderBy('createdAt', 'desc'), limit(max)),
+    query(
+      C(clubId, 'messages'),
+      where('channel', '==', channel || ''),
+      orderBy('createdAt', 'desc'),
+      limit(max),
+    ),
     (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() })).reverse()),
     () => cb([]),
   );
+
+/**
+ * 채널마다 마지막 글이 언제인지 — 채널 칩의 점 표시용.
+ *
+ * 채널당 1건씩만 읽는다. 코트장이 셋이면 4번(전체 포함) × 1건이라
+ * 300개를 받아 훑던 것보다 싸다. 화면을 열 때 한 번만 부른다.
+ */
+export const latestMessageAt = async (clubId, channels = ['']) => {
+  const out = {};
+  await Promise.all(channels.map(async (ch) => {
+    try {
+      const snap = await getDocs(query(
+        C(clubId, 'messages'),
+        where('channel', '==', ch || ''),
+        orderBy('createdAt', 'desc'),
+        limit(1),
+      ));
+      out[ch || ''] = snap.empty ? null : (snap.docs[0].data().createdAt || null);
+    } catch (e) {
+      out[ch || ''] = null;      // 색인이 아직 없으면 점만 안 뜬다
+    }
+  }));
+  return out;
+};
 
 export const sendMessage = (clubId, data) =>
   addDoc(C(clubId, 'messages'), { ...data, createdAt: serverTimestamp() });
@@ -829,6 +906,41 @@ export const searchClubs = async (keyword, max = 40) => {
     .filter((c) => (c.nameLower || '').includes(q) || (c.regionLower || '').includes(q))
     .slice(0, max);
 };
+
+/* ============================================================
+   코트 정보 신고 — 링크가 죽었다, 없어진 코트다
+
+   코트 목록은 한 시점에 긁어 온 값이라 조용히 틀려진다. 수백 곳을
+   직접 확인할 수는 없으니, 실제로 가려던 사람이 알려 주는 것이 가장
+   빠르다. 앱 운영자가 모아서 보고 다음 갱신 때 반영한다.
+
+   루트에 두는 이유: 코트는 클럽 소유가 아니다. 어느 클럽 회원이
+   신고하든 같은 코트에 대한 신고다.
+   ============================================================ */
+export const REPORT_KINDS = ['링크가 안 열림', '없어진 코트', '정보가 다름', '기타'];
+
+export const reportCourt = (court, kind, note, by) =>
+  addDoc(collection(db, 'courtReports'), {
+    courtName: court?.name || '',
+    sido: court?.sido || '',
+    gungu: court?.gungu || '',
+    link: court?.link || court?.searchUrl || '',
+    kind: String(kind || '기타'),
+    note: String(note || '').slice(0, 300),
+    by: by || '',
+    status: 'open',
+    createdAt: serverTimestamp(),
+  });
+
+export const subCourtReports = (cb) =>
+  onSnapshot(
+    query(collection(db, 'courtReports'), where('status', '==', 'open'), limit(200)),
+    (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    () => cb([]),
+  );
+
+export const resolveCourtReport = (id) =>
+  updateDoc(doc(db, 'courtReports', id), { status: 'done' });
 
 export const getClubDirectory = async (clubId) => {
   const snap = await getDoc(doc(db, 'clubDirectory', clubId));

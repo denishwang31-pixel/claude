@@ -4,7 +4,7 @@ import { View, Text, TextInput, Pressable, Linking } from 'react-native';
 import {
   addPost, addComment, addGuestPost, deleteGuestPost, applyToGuestPost, cancelApplication,
   confirmApplicant, subApplicants, updateMeeting, addCourt, deleteCourt,
-  subClubDirectory, subCoaches,
+  subClubDirectory, subCoaches, reportCourt, REPORT_KINDS,
 } from '../lib/firestore';
 import { GUEST_STATUS } from '../lib/constants';
 import { DateField, TimeField, Label } from './pickers';
@@ -13,10 +13,11 @@ import { geocodeAddress } from '../lib/kakao';
 import { KakaoMapCourts } from './KakaoMapCourts';
 import {
   ALL_COURTS, SURFACE_FILTERS, searchCourts, courtSidos, courtGungus, courtDongs,
-  courtLink, linkKind, courtRegionText,
+  courtLink, linkKind, courtRegionText, courtDataNote,
 } from '../lib/courtData';
 import { buildCourtIndex, courtInfo, courtInfoLine, lessonsByDay } from '../lib/courtInfo';
 import { publicCoaches, lessonSlotText } from '../lib/coach';
+import { useOptionSheet } from './native';
 import { Card, SectionTitle, Chip, Btn, Field, Avatar } from './ui';
 import { C, R, F } from '../lib/theme';
 
@@ -470,7 +471,8 @@ function CourtWho({ info, expanded, onToggle }) {
   );
 }
 
-export function Courts({ clubId, courts, isAdmin, flash }) {
+export function Courts({ clubId, courts, me = '', isAdmin, flash }) {
+  const sheet = useOptionSheet();
   const [sido, setSido] = useState(null);
   const [gungu, setGungu] = useState(null);
   const [dong, setDong] = useState(null);
@@ -518,8 +520,32 @@ export function Courts({ clubId, courts, isAdmin, flash }) {
     return Linking.openURL(url);
   };
 
+  /* 코트 정보 신고 */
+  const report = (c) => sheet.open({
+    title: `${c.name} — 무엇이 잘못되었나요?`,
+    options: REPORT_KINDS.map((k) => ({ key: k, label: k })),
+    onSelect: async (o) => {
+      try {
+        await reportCourt(c, o.key, '', me);
+        flash('알려 주셔서 고맙습니다. 확인 후 반영하겠습니다');
+      } catch (e) {
+        flash('신고를 보내지 못했습니다');
+      }
+    },
+  });
+
+  /* 목록이 오래되었으면 미리 말한다 — 틀릴 수 있다는 것을 모르는 것보다
+     낫다. 최신이면 아무 말도 하지 않는다(멀쩡할 때 잔소리하지 않는다). */
+  const freshness = courtDataNote(new Date().toISOString().slice(0, 10));
+
   return (
     <View>
+      {freshness ? (
+        <Card style={{ backgroundColor: C.fill, marginBottom: 12 }}>
+          <Text style={{ fontSize: 11.5, color: C.sub, lineHeight: 17 }}>{freshness}</Text>
+        </Card>
+      ) : null}
+
       {/* 1단계: 시/도 */}
       <Label hint="아래 단계를 안 골라도 검색됩니다">지역</Label>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -627,6 +653,15 @@ export function Courts({ clubId, courts, isAdmin, flash }) {
               {isAdmin && c.mine && (
                 <Pressable onPress={() => deleteCourt(clubId, c.id)}>
                   <Text style={{ fontSize: 11, color: C.faint }}>삭제</Text>
+                </Pressable>
+              )}
+              {/* 신고 — 목록은 한 시점에 긁어 온 값이라 조용히 틀려진다.
+                 수백 곳을 직접 확인할 수는 없으니, 실제로 가려던 사람이
+                 알려 주는 것이 가장 빠르다. 우리 클럽이 등록한 코트는
+                 직접 고치면 되므로 신고 대상이 아니다. */}
+              {!c.mine && (
+                <Pressable onPress={() => report(c)}>
+                  <Text style={{ fontSize: 10.5, color: C.faint }}>정보 신고</Text>
                 </Pressable>
               )}
             </View>

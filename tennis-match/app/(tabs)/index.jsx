@@ -14,6 +14,7 @@ import { useApp } from '../_layout';
 import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
 import { useVenueScope } from '../../src/hooks/useVenueScope';
+import { WINDOW_MONTHS } from '../../src/lib/meetingWindow';
 import { computeStats } from '../../src/lib/matchmaking';
 import { weatherFor } from '../../src/lib/weather';
 import {
@@ -539,7 +540,12 @@ export default function Home() {
         {/* 내 기록 */}
         {myStat?.games > 0 && (
           <>
-            <SectionTitle right={<Chip tone="outline" onPress={() => router.push('/(tabs)/rank')}>자세히</Chip>}>
+            {/* 홈은 최근 1년치 모임만 들고 있다(useClub 의 창).
+               "내 기록"이라고만 적으면 통산 기록으로 읽힌다. 랭킹 화면에서
+               [전체 불러오기]를 누르면 통산이 나온다. */}
+            <SectionTitle
+              hint={`최근 ${WINDOW_MONTHS}개월 기준 · 통산은 [내 기록·랭킹]에서`}
+              right={<Chip tone="outline" onPress={() => router.push('/(tabs)/rank')}>자세히</Chip>}>
               내 기록
             </SectionTitle>
             <Card>

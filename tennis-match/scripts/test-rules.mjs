@@ -886,6 +886,40 @@ await T('앱 운영자의 상태 변경 허용',
 await T('회원의 주문 삭제 거부',
   assertFails(deleteDoc(doc(mem1, 'gearOrders', 'o1'))));
 
+/* ============================================================
+   코트 정보 신고 — 누가 어느 코트를 보려 했는지는 남이 알 일이 아니다
+   ============================================================ */
+console.log('\n[코트 정보 신고]');
+await T('회원의 신고 접수 허용',
+  assertSucceeds(setDoc(doc(mem1, 'courtReports', 'r1'),
+    { courtName: '염곡', kind: '링크가 안 열림', by: 'mem1', status: 'open' })));
+await T('남의 이름으로 신고 거부',
+  assertFails(setDoc(doc(mem1, 'courtReports', 'r2'),
+    { courtName: '염곡', kind: '기타', by: 'mem2', status: 'open' })));
+await T('처리 완료 상태로 바로 넣는 것 거부',
+  assertFails(setDoc(doc(mem1, 'courtReports', 'r3'),
+    { courtName: '염곡', kind: '기타', by: 'mem1', status: 'done' })));
+await T('비로그인 신고 거부',
+  assertFails(setDoc(doc(anon, 'courtReports', 'r4'),
+    { courtName: '염곡', kind: '기타', by: 'x', status: 'open' })));
+
+/* 신고에는 uid 가 들어간다. 목록이 열려 있으면 "누가 어느 코트를
+   보려 했는지"가 남에게 보인다. */
+await T('본인 신고라도 읽기 거부(앱 운영자 전용)',
+  assertFails(getDoc(doc(mem1, 'courtReports', 'r1'))));
+await T('남의 신고 목록 열람 거부',
+  assertFails(getDocs(collection(outsider, 'courtReports'))));
+await T('앱 운영자의 신고 목록 열람 허용',
+  assertSucceeds(getDocs(collection(appAdmin, 'courtReports'))));
+
+/* 낸 사람이 나중에 내용을 바꾸면 기록의 뜻이 없어진다 */
+await T('신고자 본인의 수정 거부',
+  assertFails(updateDoc(doc(mem1, 'courtReports', 'r1'), { note: '역시 됩니다' })));
+await T('앱 운영자의 처리 표시 허용',
+  assertSucceeds(updateDoc(doc(appAdmin, 'courtReports', 'r1'), { status: 'done' })));
+await T('앱 운영자도 신고 삭제 거부(기록은 남는다)',
+  assertFails(deleteDoc(doc(appAdmin, 'courtReports', 'r1'))));
+
 await env.cleanup();
 console.log(`\n규칙 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);
