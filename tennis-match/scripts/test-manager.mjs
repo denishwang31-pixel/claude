@@ -310,5 +310,80 @@ console.log('\n[앱 ↔ 서버 사본 대조]');
   console.log(`  (사본 대조 ${compared}건)`);
 }
 
+/* ============================================================
+   하이어라키도 사본이 둘이다
+
+   매일 도는 독촉 작업이 "이 코트장은 얼마를, 누구에게, 어느 문서에"를
+   판단한다. 앱과 서버가 다른 답을 내면 총무 화면에는 미납으로 보이는데
+   알림은 안 가거나(또는 그 반대), 발송 기록이 다른 문서에 쌓여 같은
+   단계가 두 번 나간다. 둘 다 아무도 눈치채지 못한 채 벌어진다.
+   ============================================================ */
+console.log('\n[하이어라키 앱 ↔ 서버 사본 대조]');
+{
+  const { createRequire } = await import('node:module');
+  const require = createRequire(import.meta.url);
+  const srv = require('../functions/scope.js');
+  const app = await import('../src/lib/scope.js');
+
+  const CLUB_FLAT = { settings: { feeAmount: 30000, feeDueDay: 10 } };
+  const CLUB_VENUE = {
+    settings: {
+      feeScope: 'venue', feeAmount: 30000, feeDueDay: 10, notify: { fee: true, guest: false },
+    },
+  };
+  const VENUES = [
+    { id: 'v1', name: '염곡' },
+    { id: 'v2', name: '수도공고', feeAmount: 20000, feeDueDay: 25, notify: { fee: false } },
+  ];
+  const MEMBERS = [
+    { id: 'a', venueIds: ['v1'], status: '활동' },
+    { id: 'b', venueIds: ['v2'], status: '활동' },
+    { id: 'c', status: '활동' },
+    { id: 'd', venueIds: ['v1'], status: '탈퇴' },
+  ];
+
+  const CASES = {
+    feeScopeOf: [[CLUB_FLAT], [CLUB_VENUE], [null], [{}]],
+    feeRule: [
+      [CLUB_FLAT, null], [CLUB_VENUE, VENUES[0]], [CLUB_VENUE, VENUES[1]],
+      [null, null], [{ settings: { feeDueDay: 0 } }, null],
+      [{ settings: { feeDueDay: 99 } }, null], [{ settings: { feeAmount: '이만원' } }, null],
+      [{ settings: { feeAmount: 30000 } }, { feeAmount: 0 }],
+    ],
+    billingScopes: [
+      [CLUB_FLAT, VENUES], [CLUB_VENUE, VENUES], [CLUB_VENUE, []], [null, null],
+    ],
+    feeDocKey: [['2026-08', null], ['2026-08', 'v1'], ['2026', null]],
+    membersInScope: [
+      [MEMBERS, null], [MEMBERS, 'v1'], [MEMBERS, 'v2'], [null, 'v1'],
+    ],
+    notifyRule: [
+      [CLUB_VENUE, null, 'fee'], [CLUB_VENUE, VENUES[1], 'fee'],
+      [CLUB_VENUE, VENUES[0], 'fee'], [CLUB_FLAT, null, 'guest'],
+      [CLUB_VENUE, VENUES[1], 'notice'], [CLUB_FLAT, null, '없는종류'],
+    ],
+  };
+
+  let n = 0;
+  Object.entries(CASES).forEach(([fn, argSets]) => {
+    if (typeof srv[fn] !== 'function') { ok(false, `서버 scope 에 ${fn} 없음`); return; }
+    argSets.forEach((args, i) => {
+      n += 1;
+      const a = JSON.stringify(app[fn](...args));
+      const b = JSON.stringify(srv[fn](...args));
+      ok(a === b, `${fn} #${i + 1} 앱=서버 (앱 ${a} / 서버 ${b})`);
+    });
+  });
+
+  /* 알림 종류 표 — 서버는 화면 문구를 안 옮기므로 뜻이 담긴 칸만 본다.
+     audience 가 어긋나면 코트장별로 잘라야 할 알림이 전체로 나간다. */
+  const strip = (k) => ({ key: k.key, audience: k.audience, def: k.def, force: k.force });
+  ok(JSON.stringify(app.NOTIFY_KINDS.map(strip))
+     === JSON.stringify(srv.NOTIFY_KINDS.map(strip)),
+  '알림 종류 표(대상·기본값·강제)가 같다');
+  ok(JSON.stringify(app.FEE_SCOPE) === JSON.stringify(srv.FEE_SCOPE), '청구 단위 키가 같다');
+  console.log(`  (하이어라키 대조 ${n}건)`);
+}
+
 console.log(`\n총무 기능 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

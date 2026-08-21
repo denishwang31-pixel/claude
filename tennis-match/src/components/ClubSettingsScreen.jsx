@@ -13,7 +13,11 @@
    ============================================================ */
 import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { updateClubSettings, saveClubProfile, updateVenue } from '../lib/firestore';
+import {
+  updateClubSettings, saveClubProfile, updateVenue, saveFeeScope, saveClubNotify,
+} from '../lib/firestore';
+import { FEE_SCOPE } from '../lib/scope';
+import { FeeScopeChooser, NotifyPrefs } from './ScopeControls';
 import {
   DEFAULT_SETTINGS, roundsFromSettings, roundTimes, toMinutes,
 } from '../lib/schedule';
@@ -365,6 +369,41 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
           </View>
         </View>
       </Card>
+
+      {/* ---------- 회비를 어느 단위로 걷는가 ----------
+          코트장을 두 곳 이상 굴리면 "염곡은 3만원, 수도공고는 2만원"이
+          생긴다. 그렇다고 기본값을 바꾸면 코트장 두 곳에 나가는 사람이
+          갑자기 두 배를 내게 된다 — 그래서 명시적으로 고르게 한다. */}
+      {hasVenues && (
+        <>
+          <SectionTitle hint="코트장이 여러 곳일 때만 의미가 있습니다">회비 청구 단위</SectionTitle>
+          <FeeScopeChooser
+            club={club} venues={venues} readOnly={!isAdmin}
+            onChange={async (v) => {
+              try {
+                await saveFeeScope(clubId, v);
+                flash(v === FEE_SCOPE.VENUE
+                  ? '코트장마다 걷습니다 — 코트장별 금액은 [코트장 관리]에서'
+                  : '클럽 하나로 걷습니다');
+              } catch (e) { flash('바꾸지 못했습니다'); }
+            }}
+          />
+        </>
+      )}
+
+      {/* ---------- 알림 종류 (전체) ----------
+          코트장마다 다르게 하려면 [코트장 관리]에서 그 코트장만 바꾼다.
+          여기 값이 아무 것도 안 정한 코트장의 기본값이 된다. */}
+      <SectionTitle hint="코트장마다 다르게 하려면 [코트장 관리]에서">알림 종류</SectionTitle>
+      <NotifyPrefs
+        club={club} venue={null} readOnly={!isAdmin}
+        onChange={async (key, value) => {
+          try {
+            await saveClubNotify(clubId, key, value);
+            flash(value ? '켰습니다' : '껐습니다');
+          } catch (e) { flash('바꾸지 못했습니다'); }
+        }}
+      />
 
       {/* ---------- 납부 받을 곳 ----------
           여기를 채워야 회원의 [내 회비]에 [납부하기] 버튼이 생긴다.

@@ -12,7 +12,15 @@ import { weatherFor } from '../../src/lib/weather';
 import {
   setRsvp, addMeeting, addMeetingsBatch, updateMeeting, updateMeetingsFrom,
   deleteMeeting, deleteMeetingsBulk, subGear, requestRsvp,
+  applyToTournament, cancelTournamentApply,
 } from '../../src/lib/firestore';
+import {
+  KIND, KINDS, buildAgenda, filterAgenda, countByKind, canApply,
+  shiftMonth as shiftAgendaMonth,
+} from '../../src/lib/agenda';
+import {
+  AgendaControls, CalendarView, TournamentCard, GuestCard, DayList,
+} from '../../src/components/AgendaViews';
 import {
   normalizeAsk, pendingVoters, askDateFor,
 } from '../../src/lib/rsvpAsk';
@@ -42,8 +50,10 @@ export default function Schedule() {
   const { clubId, me, viewMode } = useApp();
   const bottomPad = useBottomPad();
   const router = useRouter();
-  const { club, members, meetings, venues, isAdmin, scopeVenues, nameOf, tournaments, meVal } =
-    useClub(clubId, me, { viewMode });
+  const {
+    club, members, meetings, venues, isAdmin, scopeVenues, nameOf,
+    tournaments, guestPosts, meVal,
+  } = useClub(clubId, me, { viewMode });
   const { venueId, setVenueId } = useVenueScope(scopeVenues);
   const settings = { ...DEFAULT_SETTINGS, ...(club?.settings || {}) };
   const [nd, setNd] = useState(null);
@@ -52,6 +62,12 @@ export default function Schedule() {
   const [expanded, setExpanded] = useState(null);   // 명단을 펼친 모임
   const [toast, setToast] = useState(null);
   const [ads, setAds] = useState([]);
+  /* 목록 ↔ 달력. 기본은 목록 — 지금까지 쓰던 화면이 그대로 열려야 한다.
+     달력은 "이번 달에 뭐가 몇 개 있나"를 볼 때 넘어가는 곳이다. */
+  const [view, setView] = useState('list');
+  const [kinds, setKinds] = useState(KINDS.map((k) => k.key));
+  const [calMonth, setCalMonth] = useState(() => today().slice(0, 7));
+  const [pickedDate, setPickedDate] = useState(null);
   const sheet = useOptionSheet();
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
 
@@ -171,10 +187,91 @@ export default function Schedule() {
 
   const closeForm = () => { setOpen(false); setEditing(null); };
 
-  /* 대회는 단발성 이벤트라 정기 모임 목록에 섞이면 묻힌다 — 위에 따로 */
-  const upcomingTournaments = (tournaments || [])
-    .filter((t) => t.status !== 'done' && (!t.date || t.date >= today()))
-    .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  /* ---------- 우리 모임 · 대회 · 게스트 모집을 한 줄로 ----------
+
+     예전에는 대회가 [더보기] 안에 있었고, 게스트 모집은 또 다른 메뉴에
+     있었다. 그런데 회원이 궁금한 것은 "이번 주 토요일에 뭐가 있지?"
+     하나다. 흩어져 있으면 대회가 열린 줄도 모르고 지나간다 — 대회는
+     신청 기간이 짧아서 한 번 놓치면 끝이다.
+
+     대회를 별도 메뉴로 두지 않은 이유는 src/lib/agenda.js 머리말 참고. */
+  const agendaAll = useMemo(() => buildAgenda(
+    { meetings, tournaments, guestPosts },
+    {
+      today: today(), me, clubId, isAdmin,
+      venueName: (id) => venues.find((v) => v.id === id)?.name || '',
+    },
+  ), [meetings, tournaments, guestPosts, me, clubId, isAdmin, venues]);
+
+  const agenda = useMemo(
+    () => filterAgenda(agendaAll, { kinds, venueId, scopeIds }),
+    [agendaAll, kinds, venueId, scopeIds],
+  );
+  const counts = useMemo(
+    () => countByKind(filterAgenda(agendaAll, { venueId, scopeIds })),
+    [agendaAll, venueId, scopeIds],
+  );
+
+  /* 목록 보기에서는 지난 것을 빼고 가까운 순서로. 달력 보기는 그 달
+     전체를 보여 준다 — 지난 주에 무엇이 있었는지도 달력에서는 정보다. */
+  const upcomingAgenda = useMemo(
+    () => agenda.filter((it) => it.kind !== KIND.MEETING && (!it.date || it.date >= today())),
+    [agenda],
+  );
+  const dayItems = useMemo(
+    () => (pickedDate ? agenda.filter((it) => it.date === pickedDate) : []),
+    [agenda, pickedDate],
+  );
+
+  /* ---------- 대회 참가 신청 ----------
+     현황이 보여야 신청을 한다. 그래서 카드에서 바로 누른다 — 대회
+     화면까지 들어가야 신청할 수 있으면 그 화면을 여는 사람만 신청한다. */
+  const applyTo = (item) => {
+    const gate = canApply(item.raw, me, today());
+    if (!gate.ok) return flash(gate.reason);
+    if (!meVal) return flash('프로필을 먼저 등록하세요');
+    const fee = Number(item.raw?.signup?.fee) || 0;
+    return Alert.alert(
+      '대회 참가 신청',
+      `${item.title}\n${item.date ? `${item.date} ` : ''}${item.sub}`
+      + (fee ? `\n\n참가비 ${fee.toLocaleString()}원 — 운영진이 안내합니다.` : ''),
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '신청',
+          onPress: async () => {
+            try {
+              await applyToTournament(clubId, item.id, me, meVal);
+              flash('참가 신청을 보냈습니다');
+            } catch (e) { flash('신청하지 못했습니다'); }
+          },
+        },
+      ],
+    );
+  };
+
+  const cancelApply = (item) => Alert.alert(
+    '신청 취소', `${item.title} 참가 신청을 취소할까요?`,
+    [
+      { text: '아니요', style: 'cancel' },
+      {
+        text: '취소하기',
+        style: 'destructive',
+        onPress: async () => {
+          await cancelTournamentApply(clubId, item.id, me);
+          flash('신청을 취소했습니다');
+        },
+      },
+    ],
+  );
+
+  const openTournament = () => router.push({
+    pathname: '/(tabs)/more', params: { open: 'tournament', from: 'schedule' },
+  });
+  const openGuest = () => router.push({
+    pathname: '/(tabs)/more', params: { open: 'guest', from: 'schedule' },
+  });
+
 
   /* 안드로이드 뒤로 = 등록 폼이 열려 있으면 폼부터 닫는다.
 
@@ -316,6 +413,186 @@ export default function Schedule() {
     );
   };
 
+  /* 모임 카드 하나.
+
+     함수로 빼 둔 이유: 목록 보기와 달력 보기가 같은 카드를 그린다.
+     달력에서 날짜를 누르면 그날 모임이 아래에 뜨는데, 거기에 다른
+     모양의 카드가 나오면 같은 모임인지 알아보기 어렵다. 그리고
+     참석 투표 같은 것을 두 벌 관리하게 된다. */
+  const meetingCard = (mt) => {
+            const w = weatherFor(mt.date, mt.forecast);
+            const sum = rsvpSummary(members, mt);
+            const mine = mt.rsvp?.[me];
+            const canMine = canRsvpSelf(meVal, mt);
+            const blocked = rsvpBlockReason(meVal, mt, venueNameOf(mt));
+            const isOpen = expanded === mt.id;
+            return (
+              <Card key={mt.id} style={{ marginBottom: 10, opacity: mt.canceled ? 0.5 : 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '700', fontSize: 15 }}>
+                      {Number(mt.date.slice(5, 7))}/{Number(mt.date.slice(8, 10))}({dowName(mt.date)}) {mt.time}
+                      {mt.canceled ? ' · 우천취소' : ''}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
+                      {venueNameOf(mt) || mt.place || '장소 미정'} · 코트 {mt.courts}면 · {mt.rounds}타임
+                      {mt.recurring ? ' · 정기' : ''}
+                    </Text>
+                  </View>
+                  {w && (
+                    <View style={{ alignItems: 'center' }}>
+                      <Text style={{ fontSize: 20 }}>{w.icon}</Text>
+                      <Text style={{ fontSize: 10, color: C.sub }}>{w.temp}°/{w.rain}%</Text>
+                    </View>
+                  )}
+                  {isAdmin && (
+                    <Pressable onPress={() => meetingMenu(mt)} hitSlop={10}
+                      style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 18, color: C.faint }}>⋯</Text>
+                    </Pressable>
+                  )}
+                </View>
+
+                {!mt.canceled && (
+                  <>
+                    {/* 내 참석 — 내가 속한 코트장의 모임에서만 누른다.
+                       운영진은 모든 코트를 보지만, 안 나가는 코트에 자기
+                       참석을 넣으면 그 코트 대진에 잡히고 당일에 빈다. */}
+                    {canMine ? (
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                        {RSVP_OPTS.map(([v, label]) => (
+                          <Pressable key={v}
+                            onPress={() => { setRsvp(clubId, mt.id, me, v, me); flash(`${label} 처리`); }}
+                            style={{
+                              flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center',
+                              backgroundColor: mine === v ? C.green : '#f5f5f4',
+                            }}>
+                            <Text style={{ fontWeight: '700', fontSize: 13, color: mine === v ? '#fff' : C.sub }}>
+                              {label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    ) : !!blocked && (
+                      <Text style={{ fontSize: 11, color: C.faint, marginTop: 10 }}>{blocked}</Text>
+                    )}
+
+                    {/* 현황 한 줄 — 명단을 안 그려도 상태를 안다 */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
+                      <Chip tone="green">참석 {sum.going}</Chip>
+                      <Chip tone="default">불참 {sum.no}</Chip>
+                      {sum.none > 0 && <Chip tone="warn">미응답 {sum.none}</Chip>}
+                      <View style={{ flex: 1 }} />
+                      <Pressable onPress={() => setExpanded(isOpen ? null : mt.id)} hitSlop={8}>
+                        <Text style={{ fontSize: 11.5, color: C.green, fontWeight: '700' }}>
+                          {isOpen ? '접기' : '명단'}
+                        </Text>
+                      </Pressable>
+                    </View>
+
+                    {/* 펼쳤을 때만 사람을 그린다.
+                       예전에는 모임마다 회원 전원 칩을 그렸다. 모임 100건 ×
+                       회원 200명이면 칩 2만 개고, 화면이 열리는 데서 걸린다. */}
+                    {isOpen && (
+                      <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingTop: 10 }}>
+                        <Text style={{ fontSize: 10.5, color: C.faint, marginBottom: 6 }}>
+                          대상 {sum.target}명
+                          {venueNameOf(mt) ? ` · ${venueNameOf(mt)} 소속` : ' · 전체'}
+                        </Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+                          {Object.entries(mt.rsvp || {}).filter(([, v]) => v === RSVP.YES).map(([id]) => (
+                            <Avatar key={id} id={id} nameOf={nameOf} members={members} />
+                          ))}
+                          {(mt.guests || []).map((g) => (
+                            <Avatar key={g.uid || g.name} id={'g:' + (g.uid || g.name)} nameOf={nameOf} members={members} />
+                          ))}
+                          {sum.going === 0 && (
+                            <Text style={{ fontSize: 11.5, color: C.faint }}>아직 참석자가 없습니다.</Text>
+                          )}
+                        </View>
+
+                        {isAdmin && (
+                          <View style={{ marginTop: 12 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 10.5, color: C.faint }}>
+                                  {askCfg.enabled && askDateFor(mt, askCfg)
+                                    ? `자동 요청 ${askDateFor(mt, askCfg)} ${askCfg.time}`
+                                    : '자동 요청 꺼짐'}
+                                  {mt.rsvpAsk?.count ? ` · ${mt.rsvpAsk.count}회 발송` : ''}
+                                </Text>
+                              </View>
+                              <Btn small tone={sum.none ? 'primary' : 'ghost'} onPress={() => askRsvp(mt)}>
+                                투표 요청
+                              </Btn>
+                            </View>
+
+                            <Text style={{ fontSize: 10, color: C.faint, marginTop: 10, marginBottom: 6 }}>
+                              이름을 눌러 대신 처리 (참석 ↔ 불참)
+                            </Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+                              {membersForMeeting(members, mt).map((m) => {
+                                const v = mt.rsvp?.[m.id];
+                                const on = v === RSVP.YES;
+                                return (
+                                  <Pressable key={m.id}
+                                    onPress={() => setRsvp(clubId, mt.id, m.id, on ? RSVP.NO : RSVP.YES, me)}
+                                    style={{
+                                      paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+                                      backgroundColor: on ? C.green : v === RSVP.NO ? '#fee2e2' : '#f5f5f4',
+                                    }}>
+                                    <Text style={{
+                                      fontSize: 11, fontWeight: '700',
+                                      color: on ? '#fff' : v === RSVP.NO ? '#b91c1c' : C.sub,
+                                    }}>
+                                      {m.name}{on ? ' ✓' : ''}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+
+                            <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
+                              {/* 일괄 처리는 이 모임 대상자에게만. rsvpBy 도 같이 덮는다 —
+                                 안 그러면 운영진이 누른 변경이 "회원이 마음을 바꿨다"로
+                                 읽혀 운영진에게 알림이 되돌아온다. */}
+                              <Btn small tone="ghost" onPress={() => {
+                                const map = { ...(mt.rsvp || {}) };
+                                const by = { ...(mt.rsvpBy || {}) };
+                                membersForMeeting(members, mt).forEach((m) => {
+                                  map[m.id] = RSVP.YES; by[m.id] = me;
+                                });
+                                updateMeeting(clubId, mt.id, { rsvp: map, rsvpBy: by });
+                                flash('대상자 전원 참석 처리');
+                              }}>전원 참석</Btn>
+                              <Btn small tone="ghost" onPress={() => {
+                                updateMeeting(clubId, mt.id, { rsvp: {}, rsvpBy: {} });
+                                flash('참석 초기화');
+                              }}>초기화</Btn>
+                            </View>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </>
+                )}
+              </Card>
+            );
+  };
+
+  /* 종류가 섞인 목록을 그린다. 모임은 원래 카드를 그대로 쓴다 —
+     달력에서 눌렀을 때 다른 모양이 나오면 같은 모임인지 알기 어렵다. */
+  const agendaItem = (it) => {
+    if (it.kind === KIND.MEETING) return meetingCard(it.raw);
+    if (it.kind === KIND.TOURNAMENT) {
+      return (
+        <TournamentCard key={it.key} item={it} today={today()} onOpen={openTournament}
+          apply={() => applyTo(it)} cancel={() => cancelApply(it)} />
+      );
+    }
+    return <GuestCard key={it.key} item={it} today={today()} onOpen={openGuest} />;
+  };
+
   const preview = nd && nd.repeat !== 'none' && nd.date && nd.until
     ? expandRecurrence(nd.date, nd.until, nd.repeat) : [];
 
@@ -340,220 +617,77 @@ export default function Schedule() {
 
         <AdBanner ads={ads} slot={AD_SLOTS.SCHEDULE} variant="strip" style={{ marginBottom: S.md }} />
 
-        {/* 대회 — 정기 모임과 성격이 달라 목록 맨 위에 따로 둔다 */}
-        {upcomingTournaments.length > 0 && (
+        {/* 보기 전환(목록/달력)과 종류 거르기 */}
+        <AgendaControls
+          view={view} setView={(v) => { setView(v); setPickedDate(null); }}
+          kinds={kinds} setKinds={setKinds} counts={counts}
+          monthKey={calMonth}
+          onShiftMonth={(d) => { setCalMonth(shiftAgendaMonth(calMonth, d)); setPickedDate(null); }}
+        />
+
+        {view === 'calendar' ? (
           <>
-            <SectionTitle>대회</SectionTitle>
-            {upcomingTournaments.map((t) => (
-              <Card key={t.id} style={{ marginBottom: 10, borderColor: C.green, borderWidth: 1 }}
-                onPress={() => router.push({ pathname: '/(tabs)/more', params: { open: 'tournament', from: 'schedule' } })}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Icon name="tournament" size={19} color={C.green} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: '700', fontSize: 14 }}>{t.name || '클럽 대회'}</Text>
-                    <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
-                      {t.date || '날짜 미정'}{t.date ? `(${dowName(t.date)})` : ''}
-                      {t.courts ? ` · ${t.courts}면` : ''}
-                      {t.roster?.length ? ` · 참가 ${t.roster.length}명` : ''}
-                    </Text>
-                  </View>
-                  <Icon name="forward" size={15} color={C.faint} />
-                </View>
-              </Card>
-            ))}
-            <SectionTitle>정기 모임</SectionTitle>
+            <CalendarView
+              monthKey={calMonth} items={agenda} today={today()}
+              selected={pickedDate} onSelect={setPickedDate}
+            />
+            {!pickedDate && (
+              <Text style={{
+                fontSize: 11.5, color: C.faint, textAlign: 'center', marginTop: 10,
+              }}>
+                날짜를 누르면 그날 일정이 아래에 나옵니다
+              </Text>
+            )}
+            <DayList date={pickedDate} items={dayItems} today={today()} renderItem={agendaItem} />
           </>
-        )}
+        ) : (
+          <>
+            {/* 대회·게스트 모집 — 날짜가 정해진 단발 일정이라 위에 모아 둔다.
+               정기 모임 사이에 섞이면 묻히고, 대회는 놓치면 끝이다. */}
+            {upcomingAgenda.length > 0 && (
+              <>
+                <SectionTitle hint="신청 현황이 함께 보입니다">대회 · 게스트 모집</SectionTitle>
+                {upcomingAgenda.map(agendaItem)}
+                {kinds.includes(KIND.MEETING) && <SectionTitle>정기 모임</SectionTitle>}
+              </>
+            )}
 
-        {byMonth.map((grp) => (
-          <View key={grp.key}>
-            <SectionTitle right={
-              <Text style={{ fontSize: 11, color: C.faint }}>{grp.items.length}건</Text>
-            }>{grp.label}</SectionTitle>
+            {kinds.includes(KIND.MEETING) && (
+              <>
+                {byMonth.map((grp) => (
+                  <View key={grp.key}>
+                    <SectionTitle right={
+                      <Text style={{ fontSize: 11, color: C.faint }}>{grp.items.length}건</Text>
+                    }>{grp.label}</SectionTitle>
 
-            {grp.items.map((mt) => {
-              const w = weatherFor(mt.date, mt.forecast);
-              const sum = rsvpSummary(members, mt);
-              const mine = mt.rsvp?.[me];
-              const canMine = canRsvpSelf(meVal, mt);
-              const blocked = rsvpBlockReason(meVal, mt, venueNameOf(mt));
-              const isOpen = expanded === mt.id;
-              return (
-                <Card key={mt.id} style={{ marginBottom: 10, opacity: mt.canceled ? 0.5 : 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontWeight: '700', fontSize: 15 }}>
-                        {Number(mt.date.slice(5, 7))}/{Number(mt.date.slice(8, 10))}({dowName(mt.date)}) {mt.time}
-                        {mt.canceled ? ' · 우천취소' : ''}
-                      </Text>
-                      <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
-                        {venueNameOf(mt) || mt.place || '장소 미정'} · 코트 {mt.courts}면 · {mt.rounds}타임
-                        {mt.recurring ? ' · 정기' : ''}
-                      </Text>
-                    </View>
-                    {w && (
-                      <View style={{ alignItems: 'center' }}>
-                        <Text style={{ fontSize: 20 }}>{w.icon}</Text>
-                        <Text style={{ fontSize: 10, color: C.sub }}>{w.temp}°/{w.rain}%</Text>
-                      </View>
-                    )}
-                    {isAdmin && (
-                      <Pressable onPress={() => meetingMenu(mt)} hitSlop={10}
-                        style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ fontSize: 18, color: C.faint }}>⋯</Text>
-                      </Pressable>
-                    )}
+                    {grp.items.map(meetingCard)}
                   </View>
+                ))}
 
-                  {!mt.canceled && (
-                    <>
-                      {/* 내 참석 — 내가 속한 코트장의 모임에서만 누른다.
-                         운영진은 모든 코트를 보지만, 안 나가는 코트에 자기
-                         참석을 넣으면 그 코트 대진에 잡히고 당일에 빈다. */}
-                      {canMine ? (
-                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                          {RSVP_OPTS.map(([v, label]) => (
-                            <Pressable key={v}
-                              onPress={() => { setRsvp(clubId, mt.id, me, v, me); flash(`${label} 처리`); }}
-                              style={{
-                                flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center',
-                                backgroundColor: mine === v ? C.green : '#f5f5f4',
-                              }}>
-                              <Text style={{ fontWeight: '700', fontSize: 13, color: mine === v ? '#fff' : C.sub }}>
-                                {label}
-                              </Text>
-                            </Pressable>
-                          ))}
-                        </View>
-                      ) : !!blocked && (
-                        <Text style={{ fontSize: 11, color: C.faint, marginTop: 10 }}>{blocked}</Text>
-                      )}
+                {/* 더보기 — 이번 달만 먼저 보여준 이유를 같이 적는다 */}
+                {hasMore && (
+                  <Btn full tone="ghost" onPress={() => setMonths(months + MONTH_STEP)}>
+                    {`3개월 더 보기 (${hidden}건 더 있음)`}
+                  </Btn>
+                )}
+                {!hasMore && months > 1 && upcoming.length > 0 && (
+                  <Text style={{ fontSize: 11, color: C.faint, textAlign: 'center', marginTop: 4 }}>
+                    예정된 일정을 모두 표시했습니다
+                  </Text>
+                )}
+              </>
+            )}
 
-                      {/* 현황 한 줄 — 명단을 안 그려도 상태를 안다 */}
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
-                        <Chip tone="green">참석 {sum.going}</Chip>
-                        <Chip tone="default">불참 {sum.no}</Chip>
-                        {sum.none > 0 && <Chip tone="warn">미응답 {sum.none}</Chip>}
-                        <View style={{ flex: 1 }} />
-                        <Pressable onPress={() => setExpanded(isOpen ? null : mt.id)} hitSlop={8}>
-                          <Text style={{ fontSize: 11.5, color: C.green, fontWeight: '700' }}>
-                            {isOpen ? '접기' : '명단'}
-                          </Text>
-                        </Pressable>
-                      </View>
-
-                      {/* 펼쳤을 때만 사람을 그린다.
-                         예전에는 모임마다 회원 전원 칩을 그렸다. 모임 100건 ×
-                         회원 200명이면 칩 2만 개고, 화면이 열리는 데서 걸린다. */}
-                      {isOpen && (
-                        <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingTop: 10 }}>
-                          <Text style={{ fontSize: 10.5, color: C.faint, marginBottom: 6 }}>
-                            대상 {sum.target}명
-                            {venueNameOf(mt) ? ` · ${venueNameOf(mt)} 소속` : ' · 전체'}
-                          </Text>
-                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-                            {Object.entries(mt.rsvp || {}).filter(([, v]) => v === RSVP.YES).map(([id]) => (
-                              <Avatar key={id} id={id} nameOf={nameOf} members={members} />
-                            ))}
-                            {(mt.guests || []).map((g) => (
-                              <Avatar key={g.uid || g.name} id={'g:' + (g.uid || g.name)} nameOf={nameOf} members={members} />
-                            ))}
-                            {sum.going === 0 && (
-                              <Text style={{ fontSize: 11.5, color: C.faint }}>아직 참석자가 없습니다.</Text>
-                            )}
-                          </View>
-
-                          {isAdmin && (
-                            <View style={{ marginTop: 12 }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                <View style={{ flex: 1 }}>
-                                  <Text style={{ fontSize: 10.5, color: C.faint }}>
-                                    {askCfg.enabled && askDateFor(mt, askCfg)
-                                      ? `자동 요청 ${askDateFor(mt, askCfg)} ${askCfg.time}`
-                                      : '자동 요청 꺼짐'}
-                                    {mt.rsvpAsk?.count ? ` · ${mt.rsvpAsk.count}회 발송` : ''}
-                                  </Text>
-                                </View>
-                                <Btn small tone={sum.none ? 'primary' : 'ghost'} onPress={() => askRsvp(mt)}>
-                                  투표 요청
-                                </Btn>
-                              </View>
-
-                              <Text style={{ fontSize: 10, color: C.faint, marginTop: 10, marginBottom: 6 }}>
-                                이름을 눌러 대신 처리 (참석 ↔ 불참)
-                              </Text>
-                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-                                {membersForMeeting(members, mt).map((m) => {
-                                  const v = mt.rsvp?.[m.id];
-                                  const on = v === RSVP.YES;
-                                  return (
-                                    <Pressable key={m.id}
-                                      onPress={() => setRsvp(clubId, mt.id, m.id, on ? RSVP.NO : RSVP.YES, me)}
-                                      style={{
-                                        paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
-                                        backgroundColor: on ? C.green : v === RSVP.NO ? '#fee2e2' : '#f5f5f4',
-                                      }}>
-                                      <Text style={{
-                                        fontSize: 11, fontWeight: '700',
-                                        color: on ? '#fff' : v === RSVP.NO ? '#b91c1c' : C.sub,
-                                      }}>
-                                        {m.name}{on ? ' ✓' : ''}
-                                      </Text>
-                                    </Pressable>
-                                  );
-                                })}
-                              </View>
-
-                              <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
-                                {/* 일괄 처리는 이 모임 대상자에게만. rsvpBy 도 같이 덮는다 —
-                                   안 그러면 운영진이 누른 변경이 "회원이 마음을 바꿨다"로
-                                   읽혀 운영진에게 알림이 되돌아온다. */}
-                                <Btn small tone="ghost" onPress={() => {
-                                  const map = { ...(mt.rsvp || {}) };
-                                  const by = { ...(mt.rsvpBy || {}) };
-                                  membersForMeeting(members, mt).forEach((m) => {
-                                    map[m.id] = RSVP.YES; by[m.id] = me;
-                                  });
-                                  updateMeeting(clubId, mt.id, { rsvp: map, rsvpBy: by });
-                                  flash('대상자 전원 참석 처리');
-                                }}>전원 참석</Btn>
-                                <Btn small tone="ghost" onPress={() => {
-                                  updateMeeting(clubId, mt.id, { rsvp: {}, rsvpBy: {} });
-                                  flash('참석 초기화');
-                                }}>초기화</Btn>
-                              </View>
-                            </View>
-                          )}
-                        </View>
-                      )}
-                    </>
-                  )}
-                </Card>
-              );
-            })}
-          </View>
-        ))}
-
-        {/* 더보기 — 이번 달만 먼저 보여준 이유를 같이 적는다 */}
-        {hasMore && (
-          <Btn full tone="ghost" onPress={() => setMonths(months + MONTH_STEP)}>
-            {`3개월 더 보기 (${hidden}건 더 있음)`}
-          </Btn>
-        )}
-        {!hasMore && months > 1 && upcoming.length > 0 && (
-          <Text style={{ fontSize: 11, color: C.faint, textAlign: 'center', marginTop: 4 }}>
-            예정된 일정을 모두 표시했습니다
-          </Text>
-        )}
-
-        {upcoming.length === 0 && (
-          <EmptyState
-            icon="📅"
-            title={venueId ? '이 코트장에 예정된 모임이 없습니다' : '예정된 모임이 없습니다'}
-            body={isAdmin
-              ? '오른쪽 아래 [＋ 새 모임] 버튼으로 등록하세요. 정기 모임이면 기한까지 한 번에 만들 수 있습니다.'
-              : '운영진이 일정을 등록하면 여기에 표시됩니다.'}
-          />
+            {upcoming.length === 0 && upcomingAgenda.length === 0 && (
+              <EmptyState
+                icon="📅"
+                title={venueId ? '이 코트장에 예정된 일정이 없습니다' : '예정된 일정이 없습니다'}
+                body={isAdmin
+                  ? '오른쪽 아래 [＋ 새 모임] 버튼으로 등록하세요. 정기 모임이면 기한까지 한 번에 만들 수 있습니다.'
+                  : '운영진이 일정을 등록하면 여기에 표시됩니다.'}
+              />
+            )}
+          </>
         )}
 
       </ScrollView>

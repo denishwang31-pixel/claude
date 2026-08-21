@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import {
   initializeTestEnvironment, assertSucceeds, assertFails,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, deleteField } from 'firebase/firestore';
 
 const env = await initializeTestEnvironment({
   projectId: 'demo-tennis-rules',
@@ -209,6 +209,44 @@ await T('회원의 대회 읽기 허용',
   assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'tournaments', 't1'))));
 await T('회원의 대회 결과 조작 거부',
   assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'tournaments', 't1'), { status: 'finished' })));
+
+/* ---- 대회 참가 신청 ----
+   회원이 자기 칸만 쓸 수 있어야 한다. 신청하는 척하며 정원을 늘리거나
+   남의 신청을 지우는 것을 여기서 막는다. */
+await T('회원의 본인 참가 신청 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'tournaments', 't1'),
+    { 'applicants.mem1': { name: '회원1', at: '2026-09-01' } })));
+await T('회원의 본인 신청 취소 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'tournaments', 't1'),
+    { 'applicants.mem1': deleteField() })));
+await T('남의 이름으로 신청 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'tournaments', 't1'),
+    { 'applicants.mem2': { name: '회원2' } })));
+await T('신청과 함께 정원 고치기 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'tournaments', 't1'),
+    { 'applicants.mem1': { name: '회원1' }, signup: { open: true, cap: 999 } })));
+await T('총무의 모집 설정 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'tournaments', 't1'),
+    { signup: { open: true, cap: 16, deadline: '2099-02-25', fee: 20000, note: '' } })));
+
+/* 남의 신청을 지우는 것 — 정원 마감 직전에 남을 밀어내는 짓을 막는다.
+   먼저 규칙을 끄고 남의 신청을 심어 둔다(그래야 지울 것이 생긴다). */
+await env.withSecurityRulesDisabled(async (ctx) => {
+  await setDoc(doc(ctx.firestore(), 'clubs', CLUB, 'tournaments', 't1'),
+    { applicants: { mem2: { name: '회원2' } } }, { merge: true });
+});
+await T('남의 신청 지우기 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'tournaments', 't1'),
+    { 'applicants.mem2': deleteField() })));
+await T('내 신청을 넣으면서 남의 신청 지우기 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'tournaments', 't1'),
+    { applicants: { mem1: { name: '회원1' } } })));
+await T('남의 신청이 있어도 내 신청은 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'tournaments', 't1'),
+    { 'applicants.mem1': { name: '회원1' } })));
+await T('비회원의 참가 신청 거부',
+  assertFails(updateDoc(doc(outsider, 'clubs', CLUB, 'tournaments', 't1'),
+    { 'applicants.other9': { name: '남' } })));
 // Firestore 는 중첩 배열 불가 → 객체 배열로 저장(firestore.js setPairs 가 변환)
 await T('총무의 커플/페어 설정 허용',
   assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'meta', 'pairs'),

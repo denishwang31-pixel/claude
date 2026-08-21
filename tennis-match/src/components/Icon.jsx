@@ -55,6 +55,7 @@ const MAP = {
   search: 'search-outline',
   time: 'time-outline',
   calendar: 'calendar-clear-outline',
+  list: 'list-outline',
   lock: 'lock-closed-outline',
   share: 'share-social-outline',
   copy: 'copy-outline',

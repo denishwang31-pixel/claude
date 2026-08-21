@@ -16,6 +16,7 @@ import {
   subPolls, setMemberRole,
 } from '../lib/firestore';
 import { DEFAULT_RULES } from '../lib/matchmaking';
+import { feeDocKey } from '../lib/scope';
 import {
   isStaffRole, canAppointRole, isGuestId, guestUid, ROLES,
   normalizeRole, canSeeFees, canSeeAllVenues, VIEW_MODE_ROLE,
@@ -43,6 +44,10 @@ const monthKeyNow = () => new Date().toISOString().slice(0, 7);
 export function useClub(clubId, me, opts = {}) {
   const feeMonth = opts.feeMonth || monthKeyNow();
   const viewMode = opts.viewMode || null; // 'staff' | 'member' | null(실제 역할)
+  /* 회비를 코트장별로 걷는 클럽이면 청구 단위마다 문서가 따로 있다.
+     feeDocKey(월, null) 은 월 그대로라서, 코트장을 안 쓰는 클럽은
+     지금까지 쌓인 문서를 그대로 읽는다 — 이전과 완전히 같다. */
+  const feeScopeId = opts.feeScopeId || null;
 
   const [club, setClub] = useState(null);
   const [members, setMembers] = useState([]);
@@ -69,7 +74,7 @@ export function useClub(clubId, me, opts = {}) {
       subPosts(clubId, setPosts),
       subCourts(clubId, setCourts),
       subRules(clubId, setRuleKeys),
-      subFee(clubId, feeMonth, setFee),
+      subFee(clubId, feeDocKey(feeMonth, feeScopeId), setFee),
       subPairs(clubId, (p) => setPairsState({ couples: p?.couples || [], fixedPairs: p?.fixedPairs || [] })),
       subTournaments(clubId, setTournaments),
       subVenues(clubId, setVenues),
@@ -77,7 +82,7 @@ export function useClub(clubId, me, opts = {}) {
       subPolls(clubId, setPolls),
     ];
     return () => unsubs.forEach((u) => u && u());
-  }, [clubId, feeMonth]);
+  }, [clubId, feeMonth, feeScopeId]);
 
   // 게스트 모집은 루트 공개 컬렉션(FIX-05) — clubId 무관하게 구독
   useEffect(() => {

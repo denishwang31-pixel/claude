@@ -35,6 +35,9 @@ const {
 } = require('./rsvpAsk');
 const { inviteMessage, responseMessage } = require('./clubMatch');
 const { planAutoSend, unpaidMembers, summaryForManager } = require('./dunning');
+const {
+  billingScopes, membersInScope, feeDocKey, notifyRule,
+} = require('./scope');
 
 /** 운영 담당 — 참석 변경·미납 현황 같은 운영 알림을 받는 사람 */
 const isStaff = (role) => role === '회장' || role === '총무' || role === '운영진';
@@ -461,59 +464,78 @@ exports.dailyFeeDunning = onSchedule(
 
     for (const club of clubs.docs) {
       try {
-        const settings = club.data().settings || {};
-        const dueDay = Number(settings.feeDueDay) || 10;
-        const account = settings.feeAccount || '';
+        const clubData = { id: club.id, ...club.data() };
 
         const logRef = club.ref.collection('meta').doc('dunning');
-        const [logDoc, feeDoc, memberSnap] = await Promise.all([
+        const [logDoc, memberSnap, venueSnap] = await Promise.all([
           logRef.get(),
-          club.ref.collection('fees').doc(month).get(),
           club.ref.collection('members').get(),
+          club.ref.collection('venues').get(),
         ]);
         const sent = logDoc.exists ? (logDoc.data().sent || {}) : {};
-        const paid = feeDoc.exists ? (feeDoc.data().paid || {}) : {};
-        const amount = (feeDoc.exists && feeDoc.data().amount)
-          || settings.feeAmount || 30000;
         const members = memberSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const venues = venueSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        /* 보낼지 말지, 누구에게, 무슨 문구로 — 전부 공용 모듈이 정한다.
-           auto:false 단계(최종 안내)와 중복 발송도 여기서 걸러진다. */
-        const plan = planAutoSend({
-          clubName: club.data().name,
-          monthKey: month,
-          today,
-          dueDay,
-          amount,
-          members,
-          paidMap: paid,
-          sent,
-          account,
-        });
-        if (!plan.recipients.length || !plan.message) continue;
+        /* ---------- 청구 단위마다 한 번씩 ----------
+           코트장을 안 쓰는 클럽은 단위가 하나(id=null)뿐이고, 그때 문서
+           이름은 기간 그대로라서 예전과 완전히 같은 문서를 읽는다.
+           코트장마다 걷는 클럽은 금액·납부일·대상자·발송 기록이 단위마다
+           따로 간다 — 염곡 1차를 보냈다고 수도공고까지 보낸 것으로
+           기록되면 그 코트는 영영 안내를 못 받는다. */
+        for (const scope of billingScopes(clubData, venues)) {
+          const venue = venues.find((v) => v.id === scope.id) || null;
 
-        const wanted = new Set(plan.recipients.map((m) => m.id));
-        const tokens = members
-          .filter((m) => wanted.has(m.id))
-          .map((m) => m.pushToken)
-          .filter(Boolean);
-        if (!tokens.length) continue;
+          /* 이 코트장에서 회비 알림을 꺼 두었으면 보내지 않는다.
+             끄고도 자동 발송이 나가면 끈 의미가 없다. */
+          if (!notifyRule(clubData, venue, 'fee').on) continue;
 
-        await sendPush(tokens, plan.message.title, plan.message.body,
-          { type: 'fee', month, stage: plan.stage.key });
-        await logRef.set(
-          { sent: { [month]: { [plan.stage.key]: today } } },
-          { merge: true },
-        );
+          const docKey = feeDocKey(month, scope.id);
+          const feeDoc = await club.ref.collection('fees').doc(docKey).get();
+          const paid = feeDoc.exists ? (feeDoc.data().paid || {}) : {};
+          const amount = (feeDoc.exists && feeDoc.data().amount) || scope.amount;
+          const scoped = membersInScope(members, scope.id);
 
-        // 2차 단계에서는 총무에게 현황을 요약해 준다
-        if (plan.stage.key === 'second') {
-          const staff = members.filter((m) => m.role === '회장' || m.role === '총무');
-          const staffPush = staff.map((m) => m.pushToken).filter(Boolean);
-          if (staffPush.length) {
-            const unpaid = unpaidMembers(members, paid);
-            const sum = summaryForManager(club.data().name, month, unpaid, amount);
-            await sendPush(staffPush, sum.title, sum.body, { type: 'fee-summary', month });
+          /* 보낼지 말지, 누구에게, 무슨 문구로 — 전부 공용 모듈이 정한다.
+             auto:false 단계(최종 안내)와 중복 발송도 여기서 걸러진다. */
+          const plan = planAutoSend({
+            clubName: scope.id ? `${clubData.name || '클럽'} ${scope.name}` : clubData.name,
+            monthKey: month,
+            today,
+            dueDay: scope.dueDay,
+            amount,
+            members: scoped,
+            paidMap: paid,
+            sent,
+            account: scope.account,
+          });
+          if (!plan.recipients.length || !plan.message) continue;
+
+          const wanted = new Set(plan.recipients.map((m) => m.id));
+          const tokens = scoped
+            .filter((m) => wanted.has(m.id))
+            .map((m) => m.pushToken)
+            .filter(Boolean);
+          if (!tokens.length) continue;
+
+          await sendPush(tokens, plan.message.title, plan.message.body,
+            { type: 'fee', month, scope: scope.id || '', stage: plan.stage.key });
+          await logRef.set(
+            { sent: { [docKey]: { [plan.stage.key]: today } } },
+            { merge: true },
+          );
+
+          // 2차 단계에서는 총무에게 현황을 요약해 준다
+          if (plan.stage.key === 'second') {
+            const staff = members.filter((m) => m.role === '회장' || m.role === '총무');
+            const staffPush = staff.map((m) => m.pushToken).filter(Boolean);
+            if (staffPush.length) {
+              const unpaid = unpaidMembers(scoped, paid);
+              const sum = summaryForManager(
+                scope.id ? `${clubData.name || '클럽'} ${scope.name}` : clubData.name,
+                month, unpaid, amount,
+              );
+              await sendPush(staffPush, sum.title, sum.body, { type: 'fee-summary', month });
+            }
           }
         }
       } catch (e) {

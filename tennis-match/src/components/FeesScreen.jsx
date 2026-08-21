@@ -14,6 +14,8 @@ import { FEE_CYCLE } from '../lib/constants';
 import { DateField, Label } from './pickers';
 import { VenuePicker } from './VenuePicker';
 import { DuesPools } from './DuesPoolScreen';
+import { billingScopes, membersInScope, feeDocKey } from '../lib/scope';
+import { BillingScopeTabs } from './ScopeControls';
 import { Card, SectionTitle, Chip, Btn, Field } from './ui';
 import { C, S } from '../lib/theme';
 
@@ -26,7 +28,7 @@ const EXPENSE_CATS = ['코트 대관', '공·소모품', '경조사', '회식', 
 export function Fees({
   clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash,
   venues = [], seeFees = true, seeAllVenues = true, myLeadVenues = [],
-  pools = [],
+  pools = [], scopeId = null, setScopeId = () => {},
 }) {
   const [cycle, setCycle] = useState(FEE_CYCLE.MONTHLY);
   const [tab, setTab] = useState('income'); // income | expense | pool
@@ -64,24 +66,36 @@ export function Fees({
     );
   }
 
-  const amount = fee.amount
-    || (cycle === FEE_CYCLE.YEARLY ? club?.settings?.feeYearly : club?.settings?.feeAmount)
-    || (cycle === FEE_CYCLE.YEARLY ? 300000 : 30000);
-  const active = members.filter((m) => m.status === '활동' || !m.status);
+  /* ---------- 청구 단위 ----------
+     코트장마다 걷는 클럽이면 명단도 금액도 단위마다 다르다.
+     클럽 하나로 걷으면 단위가 하나뿐이라 탭이 아예 안 보인다. */
+  const scopes = billingScopes(club, venues);
+  const scope = scopes.find((x) => x.id === scopeId) || scopes[0];
+
+  /* 연납은 아직 코트장별로 나누지 않는다 — 연회비를 코트장마다 다르게
+     걷는 클럽을 아직 본 적이 없다. 필요해지면 그때 venue.feeYearly 를
+     더한다(scope.resolve 가 이미 그 모양이다). */
+  const amount = cycle === FEE_CYCLE.YEARLY
+    ? (fee.amount || club?.settings?.feeYearly || 300000)
+    : (fee.amount || scope.amount);
+  const active = membersInScope(members, scope.id);
   const paidMap = fee.paid || {};
   const periodKey = cycle === FEE_CYCLE.YEARLY ? feeMonth.slice(0, 4) : feeMonth;
+  /* 저장·구독하는 문서 이름. 전체(scope.id=null)면 기간 그대로라서
+     지금까지 쌓인 문서를 그대로 읽고 쓴다. */
+  const feeKey = feeDocKey(periodKey, scope.id);
 
   const togglePaid = (id) => {
     const next = { ...paidMap, [id]: !paidMap[id] };
     // 이전 상태를 같이 넘긴다 — 바뀐 사람만 개인 문서에 반영하기 위해
-    setFeePaid(clubId, periodKey, next, amount, paidMap);
+    setFeePaid(clubId, feeKey, next, amount, paidMap);
   };
 
   const runMatch = () => {
     let hit = 0;
     const next = { ...paidMap };
     active.forEach((m) => { if (m.name && paste.includes(m.name)) { next[m.id] = true; hit++; } });
-    setFeePaid(clubId, periodKey, next, amount, paidMap);
+    setFeePaid(clubId, feeKey, next, amount, paidMap);
     setPaste('');
     flash(`${hit}명 입금자명 매칭 완료`);
   };
@@ -118,6 +132,13 @@ export function Fees({
 
   return (
     <View>
+      {/* 청구 단위 — 코트장마다 걷는 클럽에서만 보인다.
+         아래 [지출]의 코트장 필터와는 다른 것이다: 여기는 "누구에게
+         얼마를 걷는가", 저기는 "이 지출이 어느 코트 것인가". */}
+      {cycle === FEE_CYCLE.MONTHLY && (
+        <BillingScopeTabs scopes={scopes} value={scope.id} onChange={setScopeId} />
+      )}
+
       {/* 납부 주기 */}
       <Card>
         <Label>납부 주기</Label>

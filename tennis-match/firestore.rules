@@ -210,7 +210,32 @@ service cloud.firestore {
       // 대회: 읽기 멤버, 생성·편집(스코어/대진)은 총무
       match /tournaments/{tournamentId} {
         allow read: if isClubMember(clubId);
-        allow write: if isClubAdmin(clubId);
+        allow create, delete: if isClubAdmin(clubId);
+
+        /* 참가 신청 — 회원이 자기 칸만 쓴다.
+
+           신청자를 하위 컬렉션이 아니라 문서 안의 맵으로 둔 이유는
+           src/lib/firestore.js 의 applyToTournament 주석 참고
+           (일정 화면이 대회마다 "몇 자리 남음"을 그려야 한다).
+
+           ⚠️ 여기서 막는 것
+             · 남의 이름으로 신청하기 (applicants.{내 uid} 만)
+             · 신청하는 척하며 정원·마감일 고치기 (건드린 키가 그것 하나여야)
+             · 대진표·점수 고치기 (같은 이유)
+
+           diff().affectedKeys() 는 최상위 키만 본다. applicants 맵 전체가
+           하나의 키라서, "applicants 만 건드렸다"는 것으로는 남의 칸을
+           지우는 것을 못 막는다. 그래서 내 칸 외의 신청자 목록이 그대로인지
+           키 개수가 아니라 나머지 키 집합으로 확인한다. */
+        allow update: if isClubAdmin(clubId)
+          || (
+            isClubMember(clubId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['applicants'])
+            && request.resource.data.get('applicants', {}).keys().removeAll([request.auth.uid])
+               .hasOnly(resource.data.get('applicants', {}).keys().removeAll([request.auth.uid]))
+            && resource.data.get('applicants', {}).keys().removeAll([request.auth.uid])
+               .hasOnly(request.resource.data.get('applicants', {}).keys().removeAll([request.auth.uid]))
+          );
       }
 
       // 코트장(복수 운영): 읽기 멤버, 등록·수정은 운영진

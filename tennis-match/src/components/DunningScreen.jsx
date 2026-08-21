@@ -5,13 +5,19 @@
      · 미납자 본인에게만 개별로 간다. 단체 공지로 명단이 뿌려지지 않는다.
      · 마지막 단계는 자동으로 안 나간다. 총무가 보고 누른다.
      · 같은 단계는 한 번만. 이미 보냈으면 버튼이 막힌다. */
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, Alert, Pressable } from 'react-native';
 import {
   DUN_STAGES, DUN_STAGE, dueDateOf, stageFor, unpaidMembers, recipientsFor,
   messageFor, canSend, periodLabel,
 } from '../lib/dunning';
-import { markDunningSent, saveFeePolicy, resolveFeeClaim, setFeePaid } from '../lib/firestore';
+import {
+  markDunningSent, saveFeePolicy, saveVenueFee, resolveFeeClaim, setFeePaid,
+} from '../lib/firestore';
+import {
+  billingScopes, membersInScope, feeDocKey, notifyRule,
+} from '../lib/scope';
+import { BillingScopeTabs } from './ScopeControls';
 import { Label } from './pickers';
 import { Card, SectionTitle, Chip, Btn, Field, StatCard } from './ui';
 import { C, S, R, F } from '../lib/theme';
@@ -20,30 +26,59 @@ const today = () => new Date().toISOString().slice(0, 10);
 const won = (n) => `${Number(n || 0).toLocaleString()}원`;
 
 export function Dunning({
-  clubId, club, members, fee, periodKey, amount, sentLog = {}, claims = [], isAdmin, flash,
+  clubId, club, members, fee, periodKey, sentLog = {}, claims = [], isAdmin, flash,
+  venues = [], scopeId = null, setScopeId = () => {},
 }) {
-  const dueDay = club?.settings?.feeDueDay || 10;
-  const account = club?.settings?.feeAccount || '';
+  /* ---------- 어느 단위로 걷는가 ----------
+     코트장마다 걷는 클럽이면 청구 단위가 여러 개다. 금액·납부일·계좌·
+     대상자가 단위마다 다르므로, 화면도 한 번에 하나만 다룬다.
+     코트장을 안 쓰는 클럽은 단위가 하나뿐이라 탭 자체가 안 보인다. */
+  const scopes = useMemo(() => billingScopes(club, venues), [club, venues]);
+  const scope = scopes.find((s) => s.id === scopeId) || scopes[0];
+  const venue = venues.find((v) => v.id === scope.id) || null;
+  const docKey = feeDocKey(periodKey, scope.id);
+
+  const { amount, dueDay, account } = scope;
   const [policy, setPolicy] = useState({ dueDay: String(dueDay), account });
   const [editing, setEditing] = useState(false);
 
+  /* 청구 단위를 바꾸면 편집값도 그 단위의 것으로 갈아 끼운다.
+     안 그러면 염곡 납부일을 띄워 놓고 수도공고에 저장하게 된다. */
+  useEffect(() => {
+    setPolicy({ dueDay: String(dueDay), account });
+    setEditing(false);
+  }, [scope.id, dueDay, account]);
+
+  /* 알림 하이어라키 — 이 코트장에서 회비 알림을 꺼 두었으면 안 나간다.
+     끄고도 발송 버튼이 눌리면 "껐는데 왜 갔냐"가 된다. */
+  const feeNotify = notifyRule(club, venue, 'fee');
+
   const paid = fee?.paid || {};
   const active = useMemo(
-    () => members.filter((m) => !m.status || m.status === '활동'), [members],
+    () => membersInScope(members, scope.id), [members, scope.id],
   );
   const unpaid = useMemo(() => unpaidMembers(active, paid), [active, paid]);
   const dueDate = dueDateOf(periodKey, dueDay);
   const todayStage = stageFor(periodKey, today(), dueDay);
 
   const send = (stage) => {
-    const gate = canSend(stage, periodKey, sentLog);
+    if (!feeNotify.on) {
+      return flash(venue
+        ? `${venue.name}에서 회비 알림을 꺼 두었습니다`
+        : '회비 알림이 꺼져 있습니다 — [설정] → [알림 종류]');
+    }
+    const gate = canSend(stage, docKey, sentLog);
     if (!gate.ok) return flash(gate.reason);
 
     const to = recipientsFor(stage, active, paid);
     if (!to.length) return flash('보낼 대상이 없습니다');
 
     const msg = messageFor(stage, {
-      clubName: club?.name, monthKey: periodKey, amount, dueDate, account,
+      clubName: scope.id ? `${club?.name || '클럽'} ${scope.name}` : club?.name,
+      monthKey: periodKey,
+      amount,
+      dueDate,
+      account,
     });
 
     return Alert.alert(
@@ -56,7 +91,7 @@ export function Dunning({
         {
           text: '발송',
           onPress: async () => {
-            await markDunningSent(clubId, periodKey, stage.key, today());
+            await markDunningSent(clubId, docKey, stage.key, today());
             flash(`${to.length}명에게 ${stage.label} 발송 요청됨`);
           },
         },
@@ -77,15 +112,35 @@ export function Dunning({
 
   return (
     <View>
+      {/* 청구 단위 — 코트장마다 걷는 클럽에서만 보인다 */}
+      <BillingScopeTabs scopes={scopes} value={scope.id} onChange={setScopeId} />
+
+      {!feeNotify.on && (
+        <Card style={{ backgroundColor: C.warnBg, marginBottom: 10 }}>
+          <Text style={{ fontSize: 12, color: C.warn, fontWeight: '700' }}>
+            회비 알림이 꺼져 있습니다
+          </Text>
+          <Text style={{ fontSize: 11.5, color: C.text, marginTop: 5, lineHeight: 17 }}>
+            {venue
+              ? `${venue.name}에서 껐습니다. [코트장 관리] → ${venue.name} → [이 코트장만 다르게]에서 다시 켤 수 있습니다.`
+              : '[설정] → [알림 종류]에서 다시 켤 수 있습니다.'}
+            {'\n'}현황은 그대로 보이지만 발송은 되지 않습니다.
+          </Text>
+        </Card>
+      )}
+
       <Card>
-        <Text style={F.bodyBold}>{periodLabel(periodKey)} 회비 현황</Text>
+        <Text style={F.bodyBold}>
+          {periodLabel(periodKey)} 회비 현황
+          {scope.id ? ` · ${scope.name}` : ''}
+        </Text>
         <View style={{ flexDirection: 'row', gap: S.sm, marginTop: 10 }}>
           <StatCard value={active.length - unpaid.length} label="납부" />
           <StatCard value={unpaid.length} label="미납" />
           <StatCard value={won(unpaid.length * amount).replace('원', '')} label="미수금" />
         </View>
         <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 12 }}>
-          납부 기한 {dueDate}
+          {won(amount)} · 납부 기한 {dueDate}
           {todayStage ? ` · 오늘은 "${todayStage.label}" 발송일입니다` : ''}
         </Text>
       </Card>
@@ -123,7 +178,7 @@ export function Dunning({
                           text: '납부 처리',
                           onPress: async () => {
                             const next = { ...(fee?.paid || {}), [c.memberId]: true };
-                            await setFeePaid(clubId, c.period, next, amount, fee?.paid || {});
+                            await setFeePaid(clubId, feeDocKey(c.period, scope.id), next, amount, fee?.paid || {});
                             await resolveFeeClaim(clubId, c.memberId, c.period);
                             flash('납부 처리했습니다');
                           },
@@ -146,10 +201,10 @@ export function Dunning({
 
       <SectionTitle hint="총무 이름이 아니라 클럽 이름으로 나갑니다">알림 단계</SectionTitle>
       {DUN_STAGES.map((stage) => {
-        const gate = canSend(stage, periodKey, sentLog);
+        const gate = canSend(stage, docKey, sentLog);
         const to = recipientsFor(stage, active, paid);
         const isToday = todayStage?.key === stage.key;
-        const sentAt = sentLog?.[periodKey]?.[stage.key];
+        const sentAt = sentLog?.[docKey]?.[stage.key];
         return (
           <Card key={stage.key} style={{
             marginTop: 8,
@@ -208,7 +263,16 @@ export function Dunning({
             </View>
             <View style={{ flexDirection: 'row', gap: S.sm, marginTop: 12 }}>
               <Btn small onPress={async () => {
-                await saveFeePolicy(clubId, policy);
+                /* 코트장 단위로 보고 있으면 그 코트장 값을 고친다.
+                   여기서 클럽 값을 고치면 다른 코트장 납부일까지 같이
+                   바뀐다 — 화면에는 이 코트장 이름이 떠 있는데. */
+                if (scope.id) {
+                  await saveVenueFee(clubId, scope.id, {
+                    feeAmount: amount, feeDueDay: policy.dueDay, feeAccount: policy.account,
+                  });
+                } else {
+                  await saveFeePolicy(clubId, policy);
+                }
                 setEditing(false);
                 flash('저장되었습니다');
               }}>저장</Btn>

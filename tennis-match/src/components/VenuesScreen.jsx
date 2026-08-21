@@ -1,8 +1,13 @@
 /* 코트장 관리 — 클럽이 여러 곳을 운영할 때
    코트장별 면수 · 운영시간 · 타임 길이 · 리드(담당자) 지정 */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { addVenue, updateVenue, deleteVenue, publishClubDirectory } from '../lib/firestore';
+import {
+  addVenue, updateVenue, deleteVenue, publishClubDirectory,
+  saveVenueFee, saveVenueNotify,
+} from '../lib/firestore';
+import { feeScopeOf, FEE_SCOPE } from '../lib/scope';
+import { NotifyPrefs, VenueFeeOverride, VenueOverrideBadges } from './ScopeControls';
 import { roundsFromSettings, toMinutes, DEFAULT_SETTINGS } from '../lib/schedule';
 import { normalizeRoundMinutes, roundMinutesLabel } from '../lib/constants';
 import { RoundMinutesPicker } from './RoundMinutesPicker';
@@ -84,6 +89,32 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
   const [draft, setDraft] = useState(blankVenue(settings));
   const [editId, setEditId] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
+  /* 어느 코트장의 "따로 정하기"를 펼쳐 두었나 */
+  const [tuning, setTuning] = useState(null);
+  const [feeDraft, setFeeDraft] = useState({ feeAmount: '', feeDueDay: '', feeAccount: '' });
+  const feeByVenue = feeScopeOf(club) === FEE_SCOPE.VENUE;
+
+  /* 펼칠 때마다 그 코트장의 현재 값을 담는다.
+     ⚠️ 빈 문자열은 "안 정함"이다 — 0 으로 채우면 회비 0원인 코트장이
+        되어 버린다(scope.resolve 참고). */
+  useEffect(() => {
+    const v = venues.find((x) => x.id === tuning);
+    const txt = (n) => (n === undefined || n === null || n === '' ? '' : String(n));
+    setFeeDraft({
+      feeAmount: txt(v?.feeAmount),
+      feeDueDay: txt(v?.feeDueDay),
+      feeAccount: v?.feeAccount || '',
+    });
+  }, [tuning]);
+
+  /* 빈칸은 저장하지 않고 지운다. 그래야 다시 전체 설정을 따라간다.
+     (지우기와 0 저장을 나누는 일은 saveVenueFee 안에서 한다) */
+  const saveFee = async (v) => {
+    try {
+      await saveVenueFee(clubId, v.id, feeDraft);
+      flash(`${v.name} 회비 설정을 저장했습니다`);
+    } catch (e) { flash('저장하지 못했습니다'); }
+  };
 
   const nameOf = (id) => members.find((m) => m.id === id)?.name;
 
@@ -159,6 +190,7 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
                     리드: {nameOf(v.leadId) || '미지정'}
                   </Chip>
                 </View>
+                <VenueOverrideBadges club={club} venue={v} />
               </View>
               {isAdmin && (
                 <View style={{ gap: 6 }}>
@@ -173,6 +205,56 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
                 </View>
               )}
             </View>
+
+            {/* 이 코트장만 다르게 — 회비·알림.
+               접어 두는 이유: 대부분의 코트장은 전체 설정을 그대로 쓴다.
+               항상 펼쳐 두면 "여기도 뭔가 정해야 하나" 싶어진다. */}
+            {isAdmin && (
+              <Pressable onPress={() => setTuning(tuning === v.id ? null : v.id)}
+                style={{
+                  marginTop: 10, paddingTop: 10,
+                  borderTopWidth: 1, borderTopColor: C.border,
+                  flexDirection: 'row', alignItems: 'center',
+                }}>
+                <Text style={{ flex: 1, fontSize: 12, color: C.sub, fontWeight: '700' }}>
+                  이 코트장만 다르게 (회비 · 알림)
+                </Text>
+                <Text style={{ fontSize: 12, color: C.faint }}>
+                  {tuning === v.id ? '접기' : '펼치기'}
+                </Text>
+              </Pressable>
+            )}
+
+            {isAdmin && tuning === v.id && (
+              <View style={{ marginTop: 10 }}>
+                {feeByVenue ? (
+                  <>
+                    <VenueFeeOverride club={club} draft={feeDraft} setDraft={setFeeDraft} />
+                    <View style={{ marginTop: 10 }}>
+                      <Btn small onPress={() => saveFee(v)}>회비 저장</Btn>
+                    </View>
+                  </>
+                ) : (
+                  <Text style={{ fontSize: 11.5, color: C.sub, lineHeight: 18 }}>
+                    지금은 회비를 <Text style={{ fontWeight: '700' }}>클럽 하나로</Text> 걷고 있어서
+                    코트장별 금액을 쓰지 않습니다. 나누려면 [설정] → [회비 청구 단위]에서
+                    "코트장마다"를 고르세요.
+                  </Text>
+                )}
+
+                <SectionTitle>알림</SectionTitle>
+                <NotifyPrefs
+                  club={club} venue={v}
+                  onChange={async (key, value) => {
+                    try {
+                      await saveVenueNotify(clubId, v.id, key, value);
+                      flash(value === null ? '전체 설정을 따릅니다'
+                        : value ? '켰습니다' : '껐습니다');
+                    } catch (e) { flash('바꾸지 못했습니다'); }
+                  }}
+                />
+              </View>
+            )}
           </Card>
         );
       })}

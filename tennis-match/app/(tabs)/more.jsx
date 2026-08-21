@@ -15,6 +15,7 @@ import {
   subHandoverHistory, loadAllFees, subFeeClaims, subDuesPools,
 } from '../../src/lib/firestore';
 import { JOIN_STATUS, normalizeRole, SCREEN } from '../../src/lib/constants';
+import { feeRule } from '../../src/lib/scope';
 import { Board, Guest, Courts } from '../../src/components/MoreScreens';
 import { Members } from '../../src/components/MembersScreen';
 import { Fees } from '../../src/components/FeesScreen';
@@ -167,6 +168,10 @@ export default function More() {
     router.setParams({ open: '', from: '' });
   }), [navigation]);
   const [feeMonth, setFeeMonth] = useState(new Date().toISOString().slice(0, 7));
+  /* 회비를 코트장마다 걷는 클럽에서 지금 보고 있는 청구 단위.
+     null = 전체 한 몫. 코트장을 안 쓰는 클럽은 이 값이 계속 null 이라
+     읽는 문서 이름도 예전과 똑같다(scope.feeDocKey). */
+  const [feeScopeId, setFeeScopeId] = useState(null);
   const [toast, setToast] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
   /* 총무 도구용 자료 — 회비 메뉴를 볼 수 있는 사람만 구독한다 */
@@ -183,7 +188,7 @@ export default function More() {
     club, members, meetings, posts, guestPosts, courts, fee, pairs, tournaments,
     venues, matchConfig, rules, polls, meVal, isAdmin, canAppoint, nameOf, realRole,
     seeFees, seeAllVenues, myLeadVenues,
-  } = useClub(clubId, me, { feeMonth, viewMode });
+  } = useClub(clubId, me, { feeMonth, feeScopeId, viewMode });
   const { stats } = useMemo(() => computeStats(members, meetings), [members, meetings]);
 
   /* 대기 중인 가입 신청 건수 — 메뉴에 배지로 표시 */
@@ -242,7 +247,9 @@ export default function More() {
 
   const renderSub = () => {
     switch (sub) {
-      case 'tournament': return <Tournaments {...{ clubId, members, venues, tournaments, isAdmin, flash }} />;
+      case 'tournament': return (
+        <Tournaments {...{ clubId, members, venues, tournaments, isAdmin, me, meVal, flash }} />
+      );
       case 'clubmatch': return (
         <ClubMatchScreen
           {...{ clubId, me, members, isAdmin, flash }}
@@ -265,14 +272,16 @@ export default function More() {
       case 'reconcile': return (
         <Reconcile {...{
           clubId, club, members, fee, periodKey: feeMonth, aliases: feeAliases, flash,
-          amount: fee.amount || club?.settings?.feeAmount || 30000,
+          /* 코트장마다 걷는 클럽이면 지금 보고 있는 단위의 금액을 쓴다.
+             클럽 기본값을 쓰면 2만원 코트에서 3만원으로 대사하게 된다. */
+          amount: fee.amount || feeRule(club, venues.find((v) => v.id === feeScopeId)).amount,
         }} />
       );
       case 'dunning': return (
         <Dunning {...{
           clubId, club, members, fee, periodKey: feeMonth, sentLog: dunningLog, flash,
-          amount: fee.amount || club?.settings?.feeAmount || 30000,
           isAdmin: seeFees, claims: feeClaims,
+          venues, scopeId: feeScopeId, setScopeId: setFeeScopeId,
         }} />
       );
       case 'settlement': return (
@@ -288,6 +297,7 @@ export default function More() {
         <Fees {...{
           clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash,
           venues, seeFees, seeAllVenues, myLeadVenues, pools: duesPools,
+          scopeId: feeScopeId, setScopeId: setFeeScopeId,
         }} />
       );
       case 'board': return <Board {...{ clubId, posts, meVal, me, isAdmin, flash }} />;

@@ -401,6 +401,39 @@ export const updateTournament = (clubId, id, patch) =>
 
 export const deleteTournament = (clubId, id) => deleteDoc(D(clubId, 'tournaments', id));
 
+/* ---- 대회 참가 신청 ----
+   신청자를 하위 컬렉션이 아니라 대회 문서 안의 맵으로 둔다. 일정 화면이
+   대회 카드마다 "몇 자리 남음"을 그려야 하는데, 하위 컬렉션이면 대회
+   수만큼 구독이 늘어난다. 클럽 대회 참가자는 많아야 수십 명이라
+   문서 하나에 들어간다. */
+
+/** 모집 열기·닫기, 정원·마감일·참가비 (운영진) */
+export const saveTournamentSignup = (clubId, id, signup) =>
+  updateDoc(D(clubId, 'tournaments', id), {
+    signup: {
+      open: !!signup.open,
+      cap: Math.max(0, Number(signup.cap) || 0),
+      deadline: signup.deadline || '',
+      fee: Math.max(0, Number(signup.fee) || 0),
+      note: signup.note || '',
+    },
+  });
+
+/** 신청 — 본인 칸만 쓴다 (규칙에서도 본인 uid 만 허용) */
+export const applyToTournament = (clubId, id, uid, who = {}) =>
+  updateDoc(D(clubId, 'tournaments', id), {
+    [`applicants.${uid}`]: {
+      name: who.name || '',
+      gender: who.gender || '',
+      grade: who.grade || '',
+      at: new Date().toISOString(),
+    },
+  });
+
+/** 신청 취소 — 본인이 뺀다 */
+export const cancelTournamentApply = (clubId, id, uid) =>
+  updateDoc(D(clubId, 'tournaments', id), { [`applicants.${uid}`]: deleteField() });
+
 /* PHASE 3 — 본인 푸시 토큰 저장(규칙: 본인 문서 update 허용) */
 export const savePushToken = (clubId, memberId, token) =>
   updateDoc(D(clubId, 'members', memberId), { pushToken: token });
@@ -514,6 +547,48 @@ export const saveFeePolicy = (clubId, { dueDay, account }) =>
     'settings.feeDueDay': Number(dueDay) || 10,
     'settings.feeAccount': account || '',
   });
+
+/** 회비를 클럽 하나로 걷을지 코트장마다 걷을지 (scope.FEE_SCOPE) */
+export const saveFeeScope = (clubId, scope) =>
+  updateDoc(doc(db, 'clubs', clubId), { 'settings.feeScope': scope });
+
+/**
+ * 알림 종류 켜기/끄기 — 클럽(전체) 층.
+ *
+ * ⚠️ 값이 null 이면 그 키를 지운다. "설정한 적 없음"과 "꺼 둠"은
+ *    다른 상태라서(scope.notifyRule 참고), false 로 덮어쓰면 아래층이
+ *    위층을 따라갈 길이 없어진다.
+ */
+export const saveClubNotify = (clubId, key, value) =>
+  updateDoc(doc(db, 'clubs', clubId), {
+    [`settings.notify.${key}`]: value === null ? deleteField() : !!value,
+  });
+
+/** 알림 종류 — 코트장 층. 같은 이유로 null 이면 키를 지운다. */
+export const saveVenueNotify = (clubId, venueId, key, value) =>
+  updateDoc(D(clubId, 'venues', venueId), {
+    [`notify.${key}`]: value === null ? deleteField() : !!value,
+  });
+
+/**
+ * 코트장별 회비 — 빈칸은 저장이 아니라 삭제다.
+ *
+ * ⚠️ 빈칸을 0 으로 저장하면 "회비 0원인 코트장"이 되고, 전체 설정을
+ *    다시 따라갈 방법이 없어진다. 0 은 실제로 쓰이는 값이라(무료 공공
+ *    코트) 빈칸과 같은 뜻으로 뭉뚱그릴 수 없다.
+ */
+export const saveVenueFee = (clubId, venueId, { feeAmount, feeDueDay, feeAccount }) => {
+  const num = (v) => {
+    const raw = String(v ?? '').trim();
+    return raw === '' ? deleteField() : Math.max(0, Math.round(Number(raw) || 0));
+  };
+  const acc = String(feeAccount ?? '').trim();
+  return updateDoc(D(clubId, 'venues', venueId), {
+    feeAmount: num(feeAmount),
+    feeDueDay: num(feeDueDay),
+    feeAccount: acc === '' ? deleteField() : acc,
+  });
+};
 
 /** 결산에 쓸 회비 기록 전체 (기간 필터는 화면에서) */
 export const loadAllFees = async (clubId) => {

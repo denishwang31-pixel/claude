@@ -19,6 +19,7 @@ import { TeamLeague } from './TeamLeagueScreen';
 import { MatchGrid } from './MatchGrid';
 import { DateField, Label } from './pickers';
 import { AppButton, Touchable, Segmented, useOptionSheet } from './native';
+import { TournamentSignup } from './TournamentSignup';
 import { Card, SectionTitle, Chip, Btn, Field, EmptyState, Divider } from './ui';
 import { C, S, R, F } from '../lib/theme';
 
@@ -754,7 +755,9 @@ function KdkView({ clubId, t, isAdmin, flash }) {
   );
 }
 
-export function Tournaments({ clubId, members, venues = [], tournaments, isAdmin, flash }) {
+export function Tournaments({
+  clubId, members, venues = [], tournaments, isAdmin, me = '', meVal = null, flash,
+}) {
   const [view, setView] = useState('list'); // list | create | detail
   const [openId, setOpenId] = useState(null);
 
@@ -820,6 +823,12 @@ export function Tournaments({ clubId, members, venues = [], tournaments, isAdmin
         ) : (
           <Knockout clubId={clubId} t={t} isAdmin={isAdmin} nameOfEntry={nameOfEntry} flash={flash} />
         )}
+
+        {/* 참가 신청 — 모집을 열면 일정 화면에서 바로 신청할 수 있다.
+           예전에는 운영진이 단톡방에서 받아 적어 명단에 넣었다. */}
+        <TournamentSignup
+          clubId={clubId} t={t} me={me} meVal={meVal} isAdmin={isAdmin} flash={flash}
+        />
 
         {isAdmin && (
           <View style={{ marginTop: 20, alignItems: 'center' }}>
