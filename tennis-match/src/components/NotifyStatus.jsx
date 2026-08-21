@@ -73,6 +73,32 @@ export function NotifyStatus({ clubId, me, flash }) {
           </Text>
         )}
 
+        {/* 어디에 저장했는지 —
+            토큰은 "지금 들어와 있는 클럽"의 내 문서에 저장된다. 클럽이
+            여러 개면 Firestore 에서 엉뚱한 클럽을 열어 놓고 "토큰이
+            없다"고 하게 된다. 실제로 그렇게 한 번 헤맸다.
+            그래서 찾아갈 경로를 그대로 적어 둔다. */}
+        {!!res?.ok && (
+          <Pressable onPress={async () => {
+            await Clipboard.setStringAsync(`clubs/${clubId}/members/${me}`);
+            flash?.('경로를 복사했습니다');
+          }}>
+            <View style={{ marginTop: 10, backgroundColor: C.fill, borderRadius: 8, padding: 10 }}>
+              <Text style={{ fontSize: 10.5, color: C.sub, fontWeight: '700' }}>
+                저장된 곳 (눌러서 복사)
+              </Text>
+              <Text style={{ fontSize: 10.5, color: C.text, marginTop: 4 }} selectable>
+                clubs/{clubId}/members/{me}
+              </Text>
+              <Text style={{ fontSize: 10, color: C.faint, marginTop: 6, lineHeight: 14 }}>
+                Firestore 에서 이 경로를 그대로 따라가면 pushToken 이 있습니다.
+                클럽이 여러 개면 다른 클럽에는 없습니다 — 지금 들어와 있는
+                클럽에만 저장됩니다.
+              </Text>
+            </View>
+          </Pressable>
+        )}
+
         {!!res && !res.ok && (
           <View style={{ marginTop: 12, backgroundColor: C.dangerBg, borderRadius: 8, padding: 10 }}>
             <Text style={{ fontSize: 12, color: C.danger, fontWeight: '700' }}>
