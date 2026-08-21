@@ -887,6 +887,31 @@ await T('회원의 주문 삭제 거부',
   assertFails(deleteDoc(doc(mem1, 'gearOrders', 'o1'))));
 
 /* ============================================================
+   공개 대회 — 협회·지자체가 여는 큰 대회 게시판.
+   아무나 올리면 광고판이 되고, 요강이 틀린 대회에 헛걸음한 사람이
+   앱을 탓하게 된다. 그래서 등록은 앱 운영자만.
+   ============================================================ */
+console.log('\n[공개 대회]');
+await T('앱 운영자의 대회 등록 허용',
+  assertSucceeds(setDoc(doc(appAdmin, 'openTournaments', 'op1'),
+    { name: '2026 던롭 X-OPEN', sido: '서울', startDate: '2099-10-10' })));
+await T('회원의 대회 읽기 허용',
+  assertSucceeds(getDoc(doc(mem1, 'openTournaments', 'op1'))));
+await T('타 클럽 사용자도 읽기 허용(클럽과 무관한 정보다)',
+  assertSucceeds(getDocs(collection(outsider, 'openTournaments'))));
+await T('비로그인 읽기 거부',
+  assertFails(getDoc(doc(anon, 'openTournaments', 'op1'))));
+await T('클럽 운영진의 대회 등록 거부(앱 운영자 전용)',
+  assertFails(setDoc(doc(owner, 'openTournaments', 'op2'),
+    { name: '우리가 올린 대회', startDate: '2099-10-10' })));
+await T('회원의 대회 수정 거부',
+  assertFails(updateDoc(doc(mem1, 'openTournaments', 'op1'), { name: '바뀜' })));
+await T('회원의 대회 삭제 거부',
+  assertFails(deleteDoc(doc(mem1, 'openTournaments', 'op1'))));
+await T('앱 운영자의 대회 수정 허용',
+  assertSucceeds(updateDoc(doc(appAdmin, 'openTournaments', 'op1'), { signupTo: '2099-10-01' })));
+
+/* ============================================================
    코트 정보 신고 — 누가 어느 코트를 보려 했는지는 남이 알 일이 아니다
    ============================================================ */
 console.log('\n[코트 정보 신고]');

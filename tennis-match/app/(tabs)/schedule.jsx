@@ -617,6 +617,39 @@ export default function Schedule() {
 
         <AdBanner ads={ads} slot={AD_SLOTS.SCHEDULE} variant="strip" style={{ marginBottom: S.md }} />
 
+        {/* 협회·오픈 대회로 가는 문 한 짝.
+
+           ⚠️ 여기가 외부 대회가 이 화면에 개입하는 전부다. 목록에도
+              달력에도 들어가지 않는다. 이유는 두 가지.
+                1. 성격이 다르다. 우리 일정은 "내가 가야 하는 것",
+                   오픈 대회는 "관심 있으면 나가는 것"이다. 한 줄에
+                   섞으면 화요일 정기 모임과 전국대회가 같은 무게로 보인다.
+                2. 양이 다르다. 전국 대회는 한 달에 수십 건, 우리 일정은
+                   여덟 번이다. 섞으면 우리 일정이 묻히고 달력은 거의
+                   모든 날에 점이 찍혀 쓸모가 없어진다.
+
+           목록을 여기서 구독하지 않는 것도 일부러다. 일정 화면은 모든
+           회원이 매일 여는 곳이라, 여기에 루트 컬렉션 구독을 하나 더
+           붙이면 읽기 비용이 사람 수만큼 곱해진다. 건수는 넘어간
+           화면에서 센다. */}
+        <Card flat style={{ marginBottom: S.md }}
+          onPress={() => router.push({
+            pathname: '/(tabs)/more', params: { open: 'opens', from: 'schedule' },
+          })}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Icon name="tournament" size={17} color={C.sub} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.text }}>
+                협회·오픈 대회 찾아보기
+              </Text>
+              <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
+                KTA·시도협회·기업 대회 — 우리 클럽 일정과는 따로 봅니다
+              </Text>
+            </View>
+            <Icon name="forward" size={14} color={C.faint} />
+          </View>
+        </Card>
+
         {/* 보기 전환(목록/달력)과 종류 거르기 */}
         <AgendaControls
           view={view} setView={(v) => { setView(v); setPickedDate(null); }}

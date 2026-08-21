@@ -908,6 +908,35 @@ export const searchClubs = async (keyword, max = 40) => {
 };
 
 /* ============================================================
+   공개 대회 — 협회·지자체·스폰서가 여는 큰 대회 (루트 openTournaments)
+
+   ⚠️ clubs/{id}/tournaments 와 완전히 다른 컬렉션이다.
+      그쪽은 우리 클럽이 우리끼리 여는 대회고, 여기는 밖에서 열리는
+      대회를 "이런 게 있다"고 알려 주는 게시판이다. 대진도 명단도
+      우리가 갖지 않고, 신청은 주최 측 사이트에서 한다.
+      섞이면 안 되는 이유는 src/lib/openTournament.js 머리말 참고.
+
+   루트에 두는 이유: 클럽 소유가 아니다. 어느 클럽 사람이든 같은 것을 본다.
+   앱 운영자만 등록·수정한다 — 아무나 올리면 광고판이 된다.
+   ============================================================ */
+export const subOpenTournaments = (cb) =>
+  onSnapshot(
+    query(collection(db, 'openTournaments'), limit(300)),
+    (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    () => cb([]),
+  );
+
+export const addOpenTournament = (data, by) =>
+  addDoc(collection(db, 'openTournaments'), {
+    ...data, createdBy: by || '', createdAt: serverTimestamp(),
+  });
+
+export const updateOpenTournament = (id, patch) =>
+  updateDoc(doc(db, 'openTournaments', id), { ...patch, updatedAt: serverTimestamp() });
+
+export const deleteOpenTournament = (id) => deleteDoc(doc(db, 'openTournaments', id));
+
+/* ============================================================
    코트 정보 신고 — 링크가 죽었다, 없어진 코트다
 
    코트 목록은 한 시점에 긁어 온 값이라 조용히 틀려진다. 수백 곳을

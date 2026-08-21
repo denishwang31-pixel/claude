@@ -13,7 +13,7 @@
     "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-rules.mjs\"",
     "test:kdk": "node scripts/test-kdk.mjs",
     "test:team": "node scripts/test-team.mjs",
-    "test:all": "npm run test:imports && npm run test:labels && npm run test:engine && npm run test:kdk && npm run test:team && npm run test:tournament && npm run test:schedule && npm run test:courts && npm run test:venue && npm run test:reconcile && npm run test:manager && npm run test:duespool && npm run test:rsvp && npm run test:clubmatch && npm run test:league && npm run test:scheduleview && npm run test:roles && npm run test:coach && npm run test:delete && npm run test:scope && npm run test:agenda && npm run test:scale",
+    "test:all": "npm run test:imports && npm run test:labels && npm run test:engine && npm run test:kdk && npm run test:team && npm run test:tournament && npm run test:schedule && npm run test:courts && npm run test:venue && npm run test:reconcile && npm run test:manager && npm run test:duespool && npm run test:rsvp && npm run test:clubmatch && npm run test:league && npm run test:scheduleview && npm run test:roles && npm run test:coach && npm run test:delete && npm run test:scope && npm run test:agenda && npm run test:scale && npm run test:opens",
     "courts:seoul": "node scripts/fetch-courts.mjs",
     "test:courts": "node scripts/test-courts.mjs",
     "test:venue": "node scripts/test-venue-scope.mjs",
@@ -31,7 +31,8 @@
     "test:delete": "node scripts/test-delete.mjs",
     "test:scope": "node scripts/test-scope.mjs",
     "test:agenda": "node scripts/test-agenda.mjs",
-    "test:scale": "node scripts/test-scale.mjs"
+    "test:scale": "node scripts/test-scale.mjs",
+    "test:opens": "node scripts/test-opens.mjs"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "^8.0.1",

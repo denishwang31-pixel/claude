@@ -37,6 +37,7 @@ import { Polls } from '../../src/components/PollScreen';
 import { Chat } from '../../src/components/ChatScreen';
 import { ClubMatchScreen } from '../../src/components/ClubMatchScreen';
 import { CoachScreen } from '../../src/components/CoachScreen';
+import { OpenTournaments } from '../../src/components/OpenTournamentsScreen';
 import { CoachReviewScreen } from '../../src/components/CoachReviewScreen';
 import { UpdateStatus } from '../../src/components/UpdateStatus';
 import { NotifyStatus } from '../../src/components/NotifyStatus';
@@ -99,6 +100,7 @@ const MENU_GROUPS = [
       ['guest', 'guest', SCREEN.guest, '모든 클럽이 함께 보는 공개 게시판'],
       ['courts', 'courts', SCREEN.courts, '주변 공공·사설 테니스장 찾기'],
       ['coaches', 'ntrp', SCREEN.coaches, '지역별로 코치를 찾고 레슨 영상 보기'],
+      ['opens', 'tournament', SCREEN.opens, '협회·지자체·기업이 여는 큰 대회'],
     ],
   },
   {
@@ -247,6 +249,7 @@ export default function More() {
 
   const renderSub = () => {
     switch (sub) {
+      case 'opens': return <OpenTournaments {...{ me, isAppAdmin, flash }} />;
       case 'tournament': return (
         <Tournaments {...{ clubId, members, venues, tournaments, isAdmin, me, meVal, flash }} />
       );
