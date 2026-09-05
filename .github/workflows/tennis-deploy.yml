@@ -18,6 +18,15 @@ name: 테니스매치 배포
 on:
   workflow_dispatch:
     inputs:
+      # ⚠️ 위의 [Use workflow from] 이 아니라 **이 값**이 배포된다.
+      #    저 드롭다운은 "workflow 정의를 어느 브랜치에서 읽을까"를 정할 뿐인데,
+      #    기본값이 이 저장소의 기본 브랜치(가계부)라서 그대로 두기 쉽다.
+      #    실제로 그렇게 눌렀다가 tennis-match 폴더가 없어 시작하자마자 죽었다.
+      #    그래서 배포할 코드는 저 드롭다운과 떼어 놓고 여기서 받는다.
+      ref:
+        description: '배포할 브랜치 (위 Use workflow from 과 무관하게 이 값이 배포됩니다)'
+        type: string
+        default: 'claude/tennis-app-roadmap-review-oxol8b'
       rules:
         description: 'Firestore 보안 규칙'
         type: boolean
@@ -61,6 +70,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # 브랜치를 잘못 골랐을 때 "No such file or directory" 대신
+      # 무엇이 잘못됐는지 읽을 수 있게 알려 준다.
+      # working-directory 를 . 로 되돌리는 이유: 아래 defaults 가 tennis-match 인데,
+      # 그 폴더가 없는 것이 지금 확인하려는 바로 그 상황이다. 그대로 두면
+      # 이 검사 자체가 같은 에러로 죽어서 아무것도 못 알려 준다.
+      - name: 테니스 앱이 이 브랜치에 있는지 확인
+        working-directory: .
+        run: |
+          if [ ! -f tennis-match/package.json ]; then
+            echo "::error::'${{ inputs.ref }}' 브랜치에는 테니스 앱(tennis-match 폴더)이 없습니다. [배포할 브랜치] 칸에 claude/tennis-app-roadmap-review-oxol8b 를 넣고 다시 실행하세요."
+            exit 1
+          fi
+          echo "배포할 브랜치: ${{ inputs.ref }}"
 
       - uses: actions/setup-node@v4
         with:
@@ -170,6 +195,8 @@ jobs:
             echo "| 색인 | ${{ inputs.indexes }} |"
             echo "| 서버 함수 | ${{ inputs.functions }} |"
             echo "| OTA (${{ inputs.channel }}) | ${{ inputs.ota }} |"
+            echo ""
+            echo "브랜치: \`${{ inputs.ref }}\`"
             echo ""
             echo "커밋: \`$(git log -1 --pretty='%h %s')\`"
           } >> "$GITHUB_STEP_SUMMARY"
