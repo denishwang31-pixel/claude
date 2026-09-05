@@ -1,0 +1,54 @@
+# 테니스매치 — 검증만 (배포 없음)
+#
+# 언제 도는가
+#   tennis-match/ 안의 것이 바뀐 푸시마다. 다른 폴더(가계부 등)를 고쳤을
+#   때는 안 돈다 — 이 저장소에는 여러 프로젝트가 같이 들어 있다.
+#
+# 왜 배포와 나눴는가
+#   검증은 자주 돌수록 좋고 위험이 없다. 배포는 사람이 판단해서 눌러야
+#   한다. 하나로 합치면 작업 중인 커밋이 실서비스로 나간다.
+name: 테니스매치 검증
+
+on:
+  push:
+    paths:
+      - 'tennis-match/**'
+      - '.github/workflows/tennis-test.yml'
+  pull_request:
+    paths:
+      - 'tennis-match/**'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: tennis-match
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tennis-match/package-lock.json
+
+      # 보안 규칙 테스트는 Firestore 에뮬레이터로 돌고, 그 에뮬레이터는
+      # Java 로 만들어져 있다. 없으면 규칙 285건이 통째로 안 돈다.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - run: npm ci
+
+      # 순수 로직 검사 — 2,700건 남짓. 30초 안에 끝난다.
+      - name: 로직 검증
+        run: npm run test:all
+
+      # 보안 규칙 — 여기가 뚫리면 남의 회비·연락처가 보인다.
+      # 에뮬레이터를 띄워야 해서 위와 나눠 둔다(실패 지점을 구분하려고).
+      - name: 보안 규칙 검증
+        run: npx --yes firebase-tools emulators:exec --only firestore "node scripts/test-rules.mjs"

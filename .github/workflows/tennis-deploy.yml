@@ -1,0 +1,165 @@
+# 테니스매치 — 배포 (손으로 누른다)
+#
+# 왜 자동이 아닌가
+#   푸시할 때마다 배포하면 작업 중인 커밋이 실서비스로 나간다. 보안
+#   규칙이나 서버 함수는 반쯤 만든 상태로 나가면 회원 화면이 바로 깨진다.
+#   그래서 GitHub 웹에서 [Run workflow] 를 눌러야 돈다 — 태블릿 브라우저에서도
+#   버튼 하나면 된다.
+#
+# 배포 전에 검증을 다시 돌린다
+#   푸시 때 이미 돌았더라도 한 번 더 돌린다. 그 사이에 다른 커밋이
+#   들어왔을 수 있고, 배포는 되돌리기가 비싸다.
+#
+# ⚠️ 색인(indexes)을 빼먹지 말 것
+#   채팅이 채널별 서버 필터를 쓴다. 색인 없이 규칙만 올리면 대화가
+#   조용히 안 보인다 — 오류도 안 뜬다.
+name: 테니스매치 배포
+
+on:
+  workflow_dispatch:
+    inputs:
+      rules:
+        description: 'Firestore 보안 규칙'
+        type: boolean
+        default: true
+      indexes:
+        description: 'Firestore 색인 (채팅에 필요)'
+        type: boolean
+        default: true
+      functions:
+        description: 'Cloud Functions (푸시 알림·회비 독촉)'
+        type: boolean
+        default: true
+      ota:
+        description: 'OTA 업데이트 (eas update — 앱 화면 반영)'
+        type: boolean
+        default: true
+      channel:
+        description: 'OTA 채널'
+        type: choice
+        options: [preview, production]
+        default: preview
+
+defaults:
+  run:
+    working-directory: tennis-match
+
+concurrency:
+  # 같은 것을 두 번 겹쳐 배포하지 않는다
+  group: tennis-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tennis-match/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - run: npm ci
+
+      # ---------- 배포 전 검증 ----------
+      - name: 로직 검증
+        run: npm run test:all
+
+      - name: 보안 규칙 검증
+        run: npx --yes firebase-tools emulators:exec --only firestore "node scripts/test-rules.mjs"
+
+      # ---------- Firebase ----------
+      # 서비스 계정 키를 파일로 떨군다.
+      # ⚠️ printf 로 쓴다. echo '${{ secrets.X }}' 로 쓰면 JSON 안의
+      #    따옴표가 셸에서 해석되어 깨지거나, 최악의 경우 명령이 섞인다.
+      - name: Firebase 인증 준비
+        if: inputs.rules || inputs.indexes || inputs.functions
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT 시크릿이 비어 있습니다."
+            exit 1
+          fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          node -e "JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP+'/sa.json','utf8'))" \
+            || { echo "::error::서비스 계정 JSON 형식이 아닙니다. 파일 내용을 그대로 붙여넣었는지 확인하세요."; exit 1; }
+
+      # 서버 함수는 CLI 가 소스를 훑어 어떤 함수가 있는지 알아내는데,
+      # 그때 functions/node_modules 가 있어야 한다. 없으면
+      # "Failed to load function definition" 으로 배포가 막힌다.
+      - name: 서버 함수 의존성 설치
+        if: inputs.functions
+        run: npm ci --prefix functions
+
+      # ⚠️ `[ 조건 ] && 명령` 꼴로 쓰면 안 된다. GitHub 는 bash -e 로 돌리는데,
+      #    마지막 줄의 조건이 거짓이면 그 줄이 실패로 끝나 단계 전체가 죽는다.
+      #    "함수는 배포 안 함"을 골랐다는 이유로 배포가 실패한다.
+      - name: 배포할 대상 정하기
+        id: targets
+        run: |
+          T=""
+          if [ "${{ inputs.rules }}" = "true" ]; then T="$T,firestore:rules"; fi
+          if [ "${{ inputs.indexes }}" = "true" ]; then T="$T,firestore:indexes"; fi
+          if [ "${{ inputs.functions }}" = "true" ]; then T="$T,functions"; fi
+          T="${T#,}"
+          echo "list=$T" >> "$GITHUB_OUTPUT"
+          echo "배포 대상: ${T:-(없음)}"
+
+      - name: Firebase 배포
+        if: steps.targets.outputs.list != ''
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          # --force 를 쓰는 이유: 소스에서 사라진 함수를 지울지 물어보는데,
+          # 비대화형에서는 그 물음에 답할 수가 없어 배포가 멈춘다.
+          # 대신 "함수 이름을 바꾸면 옛 함수가 지워진다"는 뜻이므로,
+          # 함수를 지우거나 이름을 바꾼 커밋은 배포 후 로그를 확인할 것.
+          npx --yes firebase-tools deploy \
+            --only "${{ steps.targets.outputs.list }}" \
+            --project tennis-match-52b31 \
+            --non-interactive \
+            --force
+
+      - name: 인증 파일 지우기
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"
+
+      # ---------- OTA (앱 화면 반영) ----------
+      # eas-cli 는 EXPO_TOKEN 을 알아서 읽는다. 따로 로그인하지 않는다.
+      - name: OTA 업데이트
+        if: inputs.ota
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN 시크릿이 비어 있습니다."
+            exit 1
+          fi
+          npx --yes eas-cli@latest update \
+            --branch "${{ inputs.channel }}" \
+            --message "$(git log -1 --pretty=%s)" \
+            --non-interactive
+
+      - name: 결과 요약
+        if: always()
+        run: |
+          {
+            echo "### 배포 결과"
+            echo ""
+            echo "| 항목 | 여부 |"
+            echo "|---|---|"
+            echo "| 보안 규칙 | ${{ inputs.rules }} |"
+            echo "| 색인 | ${{ inputs.indexes }} |"
+            echo "| 서버 함수 | ${{ inputs.functions }} |"
+            echo "| OTA (${{ inputs.channel }}) | ${{ inputs.ota }} |"
+            echo ""
+            echo "커밋: \`$(git log -1 --pretty='%h %s')\`"
+          } >> "$GITHUB_STEP_SUMMARY"
