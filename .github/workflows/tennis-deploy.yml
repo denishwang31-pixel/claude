@@ -182,29 +182,59 @@ jobs:
           npx --yes firebase-tools@$FIREBASE_TOOLS deploy \
             --only functions --project tennis-match-52b31 --non-interactive --force
 
-      # 권한 때문에 막힌 것이면, 어디서 무엇을 눌러야 하는지까지 적어 준다.
-      # "Missing permissions" 만 보고 IAM 콘솔을 찾아 들어가는 것은
-      # 이 앱을 만드는 일과 아무 상관 없는 헤맴이다.
-      - name: 함수 배포가 막혔을 때 안내
-        if: steps.dep_functions.outcome == 'failure'
+      # 권한 때문에 막힌 것이면 무엇을 해야 하는지 한 자리에 모아 준다.
+      #
+      # ⚠️ 처음에는 iam.serviceAccounts.ActAs 하나만 짚어 뒀는데, 그것을
+      #    풀고 나니 serviceusage 403 이, 그 다음엔 Cloud Build API 가
+      #    나왔다. 오류가 나올 때마다 권한을 하나씩 더하는 것은 헤맴이다.
+      #    그래서 필요한 것을 처음부터 다 적는다.
+      - name: 배포가 막혔을 때 안내
+        if: >-
+          steps.dep_rules.outcome == 'failure'
+          || steps.dep_indexes.outcome == 'failure'
+          || steps.dep_functions.outcome == 'failure'
         run: |
           {
-            echo "### 서버 함수 배포가 막혔습니다"
+            echo "### 배포가 막혔습니다 — 대개 권한 문제입니다"
             echo ""
-            echo "권한 문제라면 위 로그에 \`iam.serviceAccounts.ActAs\` 가 보입니다."
-            echo "Cloud Functions 는 함수가 돌아갈 계정을 대신해서 움직여야 하는데,"
-            echo "Firebase 서비스 계정에는 그 권한이 기본으로 없습니다."
+            echo "위 로그에서 이런 말이 보이면 전부 같은 뿌리입니다."
             echo ""
-            echo "**고치는 법** — 프로젝트 소유자가 한 번만 하면 됩니다."
-            echo "1. https://console.cloud.google.com/iam-admin/iam?project=tennis-match-52b31"
-            echo "2. \`firebase-adminsdk-...@tennis-match-52b31.iam.gserviceaccount.com\` 줄의 연필(수정)"
-            echo "3. [다른 역할 추가] → **서비스 계정 사용자** (Service Account User)"
-            echo "4. 저장 → 이 workflow 를 다시 실행"
+            echo "| 로그에 보이는 말 | 뜻 |"
+            echo "|---|---|"
+            echo "| \`Permission denied to get service\` | API 상태를 볼 권한이 없음 |"
+            echo "| \`permission to enable APIs\` | API 를 켤 권한이 없음 |"
+            echo "| \`iam.serviceAccounts.ActAs\` | 함수 실행 계정을 대신할 권한이 없음 |"
             echo ""
-            echo "그 전까지는 **Cloud Functions 체크만 끄고** 실행하면"
-            echo "규칙·색인·OTA 는 정상적으로 올라갑니다."
-            echo "(서버 함수는 푸시 알림과 회비 자동 독촉만 담당하므로,"
-            echo " 화면 기능은 그것 없이도 전부 동작합니다.)"
+            echo "#### 1. 서비스 계정에 역할 주기 (한 번만)"
+            echo ""
+            echo "https://console.cloud.google.com/iam-admin/iam?project=tennis-match-52b31"
+            echo ""
+            echo "\`firebase-adminsdk-...@tennis-match-52b31.iam.gserviceaccount.com\` 줄의"
+            echo "연필(수정)을 누르고 아래 역할을 더합니다."
+            echo ""
+            echo "- **편집자** (Editor) — 규칙·색인·API 확인이 모두 여기 포함됩니다"
+            echo "- **서비스 계정 사용자** (Service Account User) — 함수 배포용"
+            echo ""
+            echo "> 편집자는 권한이 넓습니다. 좁게 가려면 편집자 대신"
+            echo "> **Firebase 관리자** + **Service Usage 소비자** +"
+            echo "> **Cloud Functions 관리자** 를 주면 됩니다."
+            echo "> 다만 조합이 늘수록 빠진 것을 찾느라 더 헤매게 됩니다."
+            echo ""
+            echo "#### 2. Cloud Build API 켜기 (서버 함수만 해당)"
+            echo ""
+            echo "https://console.cloud.google.com/apis/library/cloudbuild.googleapis.com?project=tennis-match-52b31"
+            echo ""
+            echo "파란 **사용 설정** 버튼을 누릅니다. 이미 켜져 있으면 그냥 넘어가세요."
+            echo ""
+            echo "#### 그 전에 지금 당장 하고 싶다면"
+            echo ""
+            echo "**Cloud Functions 체크만 끄고** 실행하면 규칙·색인·OTA 는 올라갑니다."
+            echo "서버 함수는 푸시 알림과 회비 자동 독촉만 담당하므로,"
+            echo "화면 기능은 그것 없이도 전부 동작합니다."
+            echo ""
+            echo "> ⚠️ 이 화면이 이상한 한국어로 보이면 브라우저 자동 번역이 켜져"
+            echo "> 있는 것입니다(\"색인\"이 \"색깔\"로 바뀌는 식). 주소창 옆 번역"
+            echo "> 아이콘에서 끄면 원문이 보입니다."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 인증 파일 지우기
