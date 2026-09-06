@@ -257,12 +257,40 @@ jobs:
           && steps.dep_rules.outcome != 'failure'
           && steps.dep_indexes.outcome != 'failure'
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_TOKEN_RAW: ${{ secrets.EXPO_TOKEN }}
         run: |
-          if [ -z "$EXPO_TOKEN" ]; then
+          if [ -z "$EXPO_TOKEN_RAW" ]; then
             echo "::error::EXPO_TOKEN 시크릿이 비어 있습니다."
             exit 1
           fi
+
+          # ⚠️ 붙여넣을 때 줄바꿈이나 공백이 딸려 들어오는 일이 흔하다.
+          #    웹에서 토큰을 복사하면 끝에 개행이 붙기 쉽고, 태블릿에서
+          #    길게 눌러 선택하면 더 그렇다.
+          #
+          #    그대로 두면 eas-cli 가 그 값을 HTTP 헤더에 실으려다
+          #      *** is not a legal HTTP header value
+          #      Error: GraphQL request failed.
+          #    로 죽는다. 실제로 이렇게 한 번 막혔다. 토큰이 맞는지
+          #    틀린지와 아무 상관 없는 오류라 원인을 찾기가 어렵다.
+          #
+          #    Expo 토큰에는 공백이 들어갈 일이 없으므로 전부 걷어낸다.
+          EXPO_TOKEN="$(printf '%s' "$EXPO_TOKEN_RAW" | tr -d '[:space:]')"
+          export EXPO_TOKEN
+
+          # 길이만 확인한다. 값 자체는 절대 찍지 않는다.
+          # 잘려서 저장된 토큰은 아래 인증 오류로 가기 전에 여기서 잡는다.
+          if [ "${#EXPO_TOKEN}" -lt 20 ]; then
+            echo "::error::EXPO_TOKEN 이 너무 짧습니다(${#EXPO_TOKEN}자). 값이 잘려서 저장된 것 같습니다. 시크릿을 지우고 다시 넣어 주세요."
+            exit 1
+          fi
+          if [ "${#EXPO_TOKEN}" -ne "${#EXPO_TOKEN_RAW}" ]; then
+            echo "EXPO_TOKEN 에서 공백·줄바꿈을 걷어냈습니다 (${#EXPO_TOKEN_RAW}자 → ${#EXPO_TOKEN}자)."
+          fi
+
+          # eas-cli 는 버전을 고정하지 않는다. 이 개발 환경에서는 expo.dev
+          # 접속이 막혀 있어 특정 버전을 검증할 수 없기 때문이다. 검증하지
+          # 않은 버전을 고정하는 것은 최신을 쓰는 것보다 나쁘다.
           npx --yes eas-cli@latest update \
             --branch "${{ inputs.channel }}" \
             --message "$(git log -1 --pretty=%s)" \
