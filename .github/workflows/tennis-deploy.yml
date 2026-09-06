@@ -137,19 +137,41 @@ jobs:
       # ⚠️ `[ 조건 ] && 명령` 꼴로 쓰면 안 된다. GitHub 는 bash -e 로 돌리는데,
       #    마지막 줄의 조건이 거짓이면 그 줄이 실패로 끝나 단계 전체가 죽는다.
       #    "함수는 배포 안 함"을 골랐다는 이유로 배포가 실패한다.
-      - name: 배포할 대상 정하기
-        id: targets
+      # ---------- Firebase 배포 ----------
+      # ⚠️ 셋을 한 번에 올리지 않는다.
+      #    처음에는 --only "rules,indexes,functions" 로 묶어서 올렸다.
+      #    그랬더니 함수 권한(iam.serviceAccounts.ActAs) 하나가 없다는 이유로
+      #    전체가 중단되어, 규칙도 색인도 못 올라갔다. 권한이 필요한 범위가
+      #    셋이 서로 다르므로(규칙·색인은 Firestore, 함수는 IAM·Cloud Build)
+      #    따로 올리고 결과를 모아서 판정한다.
+      #
+      #    continue-on-error 는 "실패를 눈감아 준다"가 아니다. 뒤의 단계까지
+      #    가 보고 무엇이 되고 무엇이 안 됐는지 다 알려 준 다음, 마지막
+      #    [배포 결과 판정]에서 실패로 끝낸다.
+      - name: Firestore 보안 규칙
+        id: dep_rules
+        if: inputs.rules
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
-          T=""
-          if [ "${{ inputs.rules }}" = "true" ]; then T="$T,firestore:rules"; fi
-          if [ "${{ inputs.indexes }}" = "true" ]; then T="$T,firestore:indexes"; fi
-          if [ "${{ inputs.functions }}" = "true" ]; then T="$T,functions"; fi
-          T="${T#,}"
-          echo "list=$T" >> "$GITHUB_OUTPUT"
-          echo "배포 대상: ${T:-(없음)}"
+          npx --yes firebase-tools@$FIREBASE_TOOLS deploy \
+            --only firestore:rules --project tennis-match-52b31 --non-interactive
 
-      - name: Firebase 배포
-        if: steps.targets.outputs.list != ''
+      - name: Firestore 색인
+        id: dep_indexes
+        if: inputs.indexes
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          npx --yes firebase-tools@$FIREBASE_TOOLS deploy \
+            --only firestore:indexes --project tennis-match-52b31 --non-interactive
+
+      - name: Cloud Functions
+        id: dep_functions
+        if: inputs.functions
+        continue-on-error: true
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
@@ -158,10 +180,32 @@ jobs:
           # 대신 "함수 이름을 바꾸면 옛 함수가 지워진다"는 뜻이므로,
           # 함수를 지우거나 이름을 바꾼 커밋은 배포 후 로그를 확인할 것.
           npx --yes firebase-tools@$FIREBASE_TOOLS deploy \
-            --only "${{ steps.targets.outputs.list }}" \
-            --project tennis-match-52b31 \
-            --non-interactive \
-            --force
+            --only functions --project tennis-match-52b31 --non-interactive --force
+
+      # 권한 때문에 막힌 것이면, 어디서 무엇을 눌러야 하는지까지 적어 준다.
+      # "Missing permissions" 만 보고 IAM 콘솔을 찾아 들어가는 것은
+      # 이 앱을 만드는 일과 아무 상관 없는 헤맴이다.
+      - name: 함수 배포가 막혔을 때 안내
+        if: steps.dep_functions.outcome == 'failure'
+        run: |
+          {
+            echo "### 서버 함수 배포가 막혔습니다"
+            echo ""
+            echo "권한 문제라면 위 로그에 \`iam.serviceAccounts.ActAs\` 가 보입니다."
+            echo "Cloud Functions 는 함수가 돌아갈 계정을 대신해서 움직여야 하는데,"
+            echo "Firebase 서비스 계정에는 그 권한이 기본으로 없습니다."
+            echo ""
+            echo "**고치는 법** — 프로젝트 소유자가 한 번만 하면 됩니다."
+            echo "1. https://console.cloud.google.com/iam-admin/iam?project=tennis-match-52b31"
+            echo "2. \`firebase-adminsdk-...@tennis-match-52b31.iam.gserviceaccount.com\` 줄의 연필(수정)"
+            echo "3. [다른 역할 추가] → **서비스 계정 사용자** (Service Account User)"
+            echo "4. 저장 → 이 workflow 를 다시 실행"
+            echo ""
+            echo "그 전까지는 **Cloud Functions 체크만 끄고** 실행하면"
+            echo "규칙·색인·OTA 는 정상적으로 올라갑니다."
+            echo "(서버 함수는 푸시 알림과 회비 자동 독촉만 담당하므로,"
+            echo " 화면 기능은 그것 없이도 전부 동작합니다.)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 인증 파일 지우기
         if: always()
@@ -169,8 +213,19 @@ jobs:
 
       # ---------- OTA (앱 화면 반영) ----------
       # eas-cli 는 EXPO_TOKEN 을 알아서 읽는다. 따로 로그인하지 않는다.
+      # ⚠️ 규칙·색인이 실패했으면 앱 화면만 새로 내보내지 않는다.
+      #    새 화면은 새 규칙을 전제로 만들어져 있다. 규칙이 옛 것인 채로
+      #    화면만 바뀌면, [대회 찾기] 같은 새 화면이 읽기 거부를 당해
+      #    "빈 화면"으로 보인다. 오류도 안 뜨니 원인을 찾기 어렵다.
+      #
+      #    함수 실패는 막지 않는다. 함수는 푸시 알림·회비 독촉이라
+      #    화면 동작과 무관하다.
       - name: OTA 업데이트
-        if: inputs.ota
+        id: dep_ota
+        if: >-
+          inputs.ota
+          && steps.dep_rules.outcome != 'failure'
+          && steps.dep_indexes.outcome != 'failure'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
@@ -186,17 +241,44 @@ jobs:
       - name: 결과 요약
         if: always()
         run: |
+          st() {
+            case "$1" in
+              success) echo "✅ 성공" ;;
+              failure) echo "❌ 실패" ;;
+              skipped|"") echo "— 건너뜀" ;;
+              *) echo "$1" ;;
+            esac
+          }
           {
             echo "### 배포 결과"
             echo ""
-            echo "| 항목 | 여부 |"
+            echo "| 항목 | 결과 |"
             echo "|---|---|"
-            echo "| 보안 규칙 | ${{ inputs.rules }} |"
-            echo "| 색인 | ${{ inputs.indexes }} |"
-            echo "| 서버 함수 | ${{ inputs.functions }} |"
-            echo "| OTA (${{ inputs.channel }}) | ${{ inputs.ota }} |"
+            echo "| 보안 규칙 | $(st '${{ steps.dep_rules.outcome }}') |"
+            echo "| 색인 | $(st '${{ steps.dep_indexes.outcome }}') |"
+            echo "| 서버 함수 | $(st '${{ steps.dep_functions.outcome }}') |"
+            echo "| OTA (${{ inputs.channel }}) | $(st '${{ steps.dep_ota.outcome }}') |"
             echo ""
             echo "브랜치: \`${{ inputs.ref }}\`"
             echo ""
             echo "커밋: \`$(git log -1 --pretty='%h %s')\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # 하나라도 실패했으면 job 을 실패로 끝낸다.
+      # 부분 성공을 초록 체크로 두면, 규칙이 안 올라간 것을 모르고 넘어간다.
+      - name: 배포 결과 판정
+        if: always()
+        run: |
+          # ⚠️ 여기서도 `[ 조건 ] && 명령` 을 쓰지 않는다. bash -e 에서
+          #    마지막 줄이 거짓이면 그 자체로 실패가 되어, "다 성공했는데
+          #    판정 단계가 죽는" 일이 생긴다. 앞서 같은 함정을 한 번 밟았다.
+          BAD=""
+          if [ "${{ steps.dep_rules.outcome }}" = "failure" ]; then BAD="$BAD 보안규칙"; fi
+          if [ "${{ steps.dep_indexes.outcome }}" = "failure" ]; then BAD="$BAD 색인"; fi
+          if [ "${{ steps.dep_functions.outcome }}" = "failure" ]; then BAD="$BAD 서버함수"; fi
+          if [ "${{ steps.dep_ota.outcome }}" = "failure" ]; then BAD="$BAD OTA"; fi
+          if [ -n "$BAD" ]; then
+            echo "::error::실패한 항목:$BAD — 위 Summary 를 확인하세요."
+            exit 1
+          fi
+          echo "모두 성공했습니다."
