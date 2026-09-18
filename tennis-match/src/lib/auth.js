@@ -10,6 +10,7 @@ import {
   onAuthStateChanged, signOut,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously,
   deleteUser, reauthenticateWithCredential, EmailAuthProvider,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig';
@@ -37,6 +38,35 @@ export async function signUpEmail(email, password) {
 export async function signInEmail(email, password) {
   const res = await signInWithEmailAndPassword(auth, email.trim(), password);
   return res.user.uid;
+}
+
+/**
+ * 비밀번호 재설정 메일 보내기.
+ *
+ * ⚠️ 가입되지 않은 이메일이어도 "안 보냈다"고 말하지 않는다.
+ *    그렇게 말하면 아무나 이메일을 넣어 보며 "이 사람이 이 앱을
+ *    쓰는가"를 알아낼 수 있다(계정 존재 여부 노출). 화면에서는
+ *    보냈든 아니든 같은 문구를 보여 준다.
+ *
+ * @returns {{ok: boolean, reason?: string}} — ok=false 는 형식 오류나
+ *          네트워크 문제일 때만. "그런 계정 없음"은 ok=true 로 돌린다.
+ */
+export async function sendReset(email) {
+  const to = String(email || '').trim();
+  if (!to) return { ok: false, reason: '이메일을 입력해 주세요' };
+  try {
+    await sendPasswordResetEmail(auth, to);
+    return { ok: true };
+  } catch (e) {
+    const code = e?.code || '';
+    if (code.includes('user-not-found')) return { ok: true };   // 위 ⚠️ 참고
+    if (code.includes('invalid-email')) return { ok: false, reason: '이메일 형식을 확인해 주세요' };
+    if (code.includes('too-many-requests')) {
+      return { ok: false, reason: '시도가 너무 많습니다. 잠시 후 다시 해 주세요' };
+    }
+    if (code.includes('network')) return { ok: false, reason: '네트워크 연결을 확인해 주세요' };
+    return { ok: false, reason: '메일을 보내지 못했습니다. 잠시 후 다시 시도해 주세요' };
+  }
 }
 
 /** 체험 모드(익명) 로그인 → uid.

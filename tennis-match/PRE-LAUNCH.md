@@ -30,6 +30,13 @@
         수집 항목이 늘었는데 방침이 그대로면 실제와 달라진다. 그 상태가
         발각되면 경고 후 앱이 내려간다. 특히 결제·배송지를 붙일 때.
 
+      **가입할 때 동의를 받는다** (2026-09-18)
+        예전에는 문서만 있고 **동의를 받지 않은 채** 가입시켰다. 개인정보를
+        모으면서 동의를 안 받는 것이라 법에도 심사에도 걸린다. 지금은
+        회원가입 화면에서 체크를 해야 [가입하기]가 눌린다. 전문은 그
+        자리에서 바로 열어 읽을 수 있다 — 읽으러 나갔다가 쓰던 것이
+        날아가면 아무도 안 읽는다.
+
 - [ ] **Firebase 보호는 규칙이 하고 있다 — App Check 를 붙일지 정한다**
       (2026-08-19 정정) `firebaseConfig.js` 에는 이미 **실제 키**가 들어 있다.
       자리표시자가 아니다.
@@ -188,31 +195,52 @@
 - [ ] **Blaze 요금제** — Cloud Functions 를 쓰는 순간 필수다. 무료 쿼터
       안에서 돌지만 카드 등록은 되어 있어야 한다.
 
-- [ ] **소셜 로그인 (카카오 · 구글 · 네이버)** — 앱 쪽 판단 로직은 넣었다
-      (`src/lib/social.js`). 지금은 키가 없어 버튼이 **안 그려진다**.
-      눌러도 안 되는 버튼을 두면 앱이 고장 난 줄 알기 때문이다.
+- [ ] **소셜 로그인 (카카오 · 네이버 · 구글 · 애플)** — 앱 쪽 판단 로직과
+      버튼은 넣었다 (`src/lib/social.js`, `src/components/SocialButtons.jsx`,
+      검사 80건). 지금은 키가 없어 버튼이 **안 그려진다**. 눌러도 안 되는
+      버튼을 두면 앱이 고장 난 줄 알기 때문이다.
+
+      ⚠️ **애플이 선택이 아닌 이유** — 애플 심사 지침 4.8. iOS 앱이
+      카카오·구글 같은 제3자 로그인을 하나라도 제공하면 "애플로 로그인"도
+      반드시 있어야 한다. 없으면 반려된다. 빌드를 다 만들어 제출한 뒤에
+      알게 되면 되돌리는 비용이 크므로, `appleGap()` 이 그 상태를 미리
+      잡아 준다. 안드로이드에는 이 의무가 없어서 애플 버튼은 iOS 에서만
+      그린다.
 
       받아야 하는 것
-        카카오  developers.kakao.com → 앱 생성 → Android 플랫폼 등록
+        카카오  developers.kakao.com → 앱 생성 → Android/iOS 플랫폼 등록
                 (패키지명 + 키 해시) → 카카오 로그인 켜기 → Redirect URI
+                → 동의항목에서 닉네임·이메일 필수로(이메일은 별도 검수)
                 → REST API 키 · 네이티브 앱 키
+        네이버  developers.naver.com → 애플리케이션 등록 → 네이버 로그인
+                사용 → 패키지명 등록 → Client ID · Secret
+                ⚠️ 검수 전에는 개발자 본인 계정으로만 로그인된다
         구글    Firebase 콘솔 → Authentication → Google 사용 설정
                 → Google Cloud 에서 Android OAuth 클라이언트(SHA-1 지문)
+                ⚠️ SHA-1 은 EAS 빌드가 쓰는 키의 것 — 로컬 디버그 키가 아니다
                 → 웹 클라이언트 ID · 안드로이드 클라이언트 ID
-        네이버  developers.naver.com → 애플리케이션 등록 → 네이버 로그인
-                사용 → Android 패키지명 → Client ID · Secret
+        애플    Apple Developer Program 가입(연 $99)이 먼저다
+                → App ID 에 Sign In with Apple 켜기 → Services ID
+                → Sign in with Apple 키(.p8 — 받을 수 있는 기회가 한 번뿐)
+                → Firebase 콘솔 Apple 제공자에 서비스ID·팀ID·키ID·.p8
+                → app.json 에 `"usesAppleSignIn": true`
 
       코드로 해야 하는 것 (키가 온 뒤)
-        · `expo-auth-session` + `expo-web-browser` 추가
+        · `expo-auth-session` + `expo-web-browser`, iOS 는
+          `expo-apple-authentication` 추가
+        · `src/lib/socialSignIn.js` 를 만들어 실제 로그인 흐름을 붙인다.
+          결정(어느 버튼을 그릴지)은 이미 `social.js` 에 있으므로
+          흐름만 쓰면 된다. 화면은 손댈 필요 없다.
         · 카카오·네이버는 Firebase 가 모르는 제공자다. 받은 토큰을 검증해
           Firebase 커스텀 토큰으로 바꿔 주는 Cloud Function 이 하나 필요하다.
-          구글은 Firebase 기본 제공자라 서버가 필요 없다.
+          → **서버 함수 배포 권한이 먼저 풀려 있어야 한다**(위 D 항목).
+          구글·애플은 Firebase 기본 제공자라 서버가 필요 없다.
         · `SOCIAL_CONFIG` 에 키를 넣는다. 코드에 직접 적지 말고 app.json 의
-          extra 나 EAS 시크릿에서 읽어 넣는다.
+          extra 나 EAS 시크릿에서 읽어 넣는다 — 검사가 이걸 지키는지 본다.
 
-      ⚠️ **APK 를 새로 빌드해야 한다.** 네이티브 모듈이 들어가므로
-      `eas update` (OTA) 로는 안 나간다. `needsNativeRebuild()` 가 이걸
-      코드에서도 알려 준다.
+      ⚠️ **새 빌드가 필요하다.** 네이티브 모듈이 들어가므로 `eas update`
+      (OTA) 로는 안 나간다. `needsNativeRebuild()` 가 이걸 코드에서도
+      알려 준다.
 
 - [ ] **앱 안에서 카드 결제 (PG 계약)** — 회비를 "납부" 누르면 카드로 결제되고
       자동으로 납부 처리되는 것. 사업자등록증 · 정산계좌 · PG 심사가 필요하고

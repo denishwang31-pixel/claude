@@ -169,7 +169,16 @@ export const Field = ({ style, error, suffix, ...props }) => {
           style={[{ flex: 1, paddingVertical: 12, fontSize: 15, color: C.text }, inner]}
           {...props}
         />
-        {!!suffix && <Text style={{ fontSize: 13, color: C.sub, fontWeight: '600' }}>{suffix}</Text>}
+        {/* 접미사가 글자면 감싸 주고, 컴포넌트면 그대로 둔다.
+            ⚠️ 무조건 <Text> 로 감싸면 안 된다. 비밀번호 [보기] 단추처럼
+               누를 수 있는 것을 넣었을 때, Text 안의 Pressable 은
+               안드로이드에서 눌리지 않는 일이 있다 — 보이기는 해서
+               "왜 안 눌리지"로 한참 헤맨다. */}
+        {suffix !== null && suffix !== undefined && suffix !== false && (
+          typeof suffix === 'string' || typeof suffix === 'number'
+            ? <Text style={{ fontSize: 13, color: C.sub, fontWeight: '600' }}>{suffix}</Text>
+            : suffix
+        )}
       </View>
       {!!error && <Text style={{ fontSize: 11, color: C.danger, marginTop: 4 }}>{error}</Text>}
     </View>
