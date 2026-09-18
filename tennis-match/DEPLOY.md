@@ -38,6 +38,15 @@ Firebase 를 대신 조작할 로봇 계정이다.
 3. 생성 직후 한 번만 보이는 값을 복사
 4. GitHub Secrets 에 이름 `EXPO_TOKEN`, 값은 붙여넣기
 
+⚠️ 이 값은 **수십 자짜리 한 줄**이다. `{` 로 시작하거나 여러 줄이면
+서비스 계정 JSON 을 잘못 넣은 것이다 — 실제로 한 번 이렇게 들어가서
+OTA 가 `The bearer token is invalid.` 로 막혔다. 두 시크릿을 연달아
+넣을 때 특히 헷갈린다. 지금은 workflow 가 이 경우를 이름 붙여 잡아 준다.
+
+이미 넣은 시크릿을 고치려면: Settings → Secrets and variables → Actions
+→ `EXPO_TOKEN` 옆 연필 → 새 값 붙여넣기 → Update secret. 값을 다시
+볼 수는 없으므로, 확신이 없으면 Expo 에서 토큰을 새로 만들어 넣는다.
+
 ---
 
 ## 매번 하는 것 — 버튼 한 번
