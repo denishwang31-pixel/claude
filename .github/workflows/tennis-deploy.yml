@@ -288,6 +288,23 @@ jobs:
             echo "EXPO_TOKEN 에서 공백·줄바꿈을 걷어냈습니다 (${#EXPO_TOKEN_RAW}자 → ${#EXPO_TOKEN}자)."
           fi
 
+          # ⚠️ 엉뚱한 값이 들어 있는 경우. 실제로 한 번 막혔다 —
+          #    EXPO_TOKEN 에 2,393자짜리 값이 들어 있었고, eas-cli 는
+          #      The bearer token is invalid.
+          #    라고만 말했다. Expo 토큰은 수십 자짜리 한 줄이다. 수천 자면
+          #    Firebase 서비스 계정 JSON 을 여기에 잘못 넣은 것이다
+          #    (그 파일이 딱 그 길이다). 두 시크릿을 태블릿에서 연달아
+          #    넣다 보면 생기는 실수라, 여기서 이름을 불러 잡아 준다.
+          case "$EXPO_TOKEN" in
+            "{"*)
+              echo "::error::EXPO_TOKEN 에 JSON 이 들어 있습니다. Firebase 서비스 계정 파일을 여기에 넣은 것 같습니다. EXPO_TOKEN 은 https://expo.dev/settings/access-tokens 에서 만든 한 줄짜리 토큰이어야 합니다. 시크릿을 지우고 다시 넣어 주세요."
+              exit 1 ;;
+          esac
+          if [ "${#EXPO_TOKEN}" -gt 200 ]; then
+            echo "::error::EXPO_TOKEN 이 너무 깁니다(${#EXPO_TOKEN}자). Expo 토큰은 수십 자입니다. 다른 값을 넣은 것 같으니 https://expo.dev/settings/access-tokens 에서 새로 만들어 다시 넣어 주세요."
+            exit 1
+          fi
+
           # eas-cli 는 버전을 고정하지 않는다. 이 개발 환경에서는 expo.dev
           # 접속이 막혀 있어 특정 버전을 검증할 수 없기 때문이다. 검증하지
           # 않은 버전을 고정하는 것은 최신을 쓰는 것보다 나쁘다.
