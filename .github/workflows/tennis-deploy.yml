@@ -101,14 +101,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 이 커밋을 내보낼 것인가만 정한다.
+  #
+  # 아직 내보낼 때가 아닌 커밋을 위한 비상구다. 커밋 "제목"에 [배포안함]
+  # 을 넣으면 그 푸시는 통째로 건너뛴다. 버튼으로 부른 것은 사람이
+  # 의도한 것이므로 이 검사를 받지 않는다.
+  #
+  # ⚠️ 제목(첫 줄)만 본다. 메시지 전체를 보면 이 표시를 *설명하는* 문장
+  #    때문에 배포가 건너뛰어진다. 이 기능을 넣은 커밋 본문에 사용법을
+  #    적었다가 실제로 그렇게 됐다 — 게다가 건너뛴 run 은 빨강이 아니라
+  #    회색이라, 배포가 안 된 것을 한참 모른다.
+  #
+  # ⚠️ 커밋 메시지를 ${{ }} 로 스크립트 안에 직접 박지 않는다. 메시지에
+  #    따옴표나 $(...) 가 들어 있으면 그대로 실행된다. env 로 넘겨서 받는다.
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - id: check
+        # 이 job 은 checkout 을 안 하므로 tennis-match 폴더가 없다.
+        # 위 defaults 를 그대로 두면 폴더가 없어 이 검사 자체가 죽는다.
+        working-directory: .
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          SUBJECT="$(printf '%s' "$MSG" | head -1)"
+          if [ "$EVENT" = "push" ] && printf '%s' "$SUBJECT" | grep -qF '[배포안함]'; then
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### 배포를 건너뛰었습니다"
+              echo ""
+              echo "커밋 제목에 \`[배포안함]\` 이 있습니다."
+              echo ""
+              echo "> $SUBJECT"
+              echo ""
+              echo "내보내려면 이 표시 없이 다시 푸시하거나, Actions 에서 손으로 실행하세요."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy:
     runs-on: ubuntu-latest
-    # 아직 내보낼 때가 아닌 커밋을 위한 비상구. 커밋 메시지에 [배포안함]
-    # 을 넣으면 그 푸시는 통째로 건너뛴다. 버튼으로 부른 것은 사람이
-    # 의도한 것이므로 이 검사를 받지 않는다.
-    if: >-
-      github.event_name != 'push'
-      || !contains(github.event.head_commit.message, '[배포안함]')
+    needs: guard
+    if: needs.guard.outputs.go == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
