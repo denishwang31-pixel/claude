@@ -1,14 +1,22 @@
-# 테니스매치 — 배포 (손으로 누른다)
+# 테니스매치 — 배포
 #
-# 왜 자동이 아닌가
-#   푸시할 때마다 배포하면 작업 중인 커밋이 실서비스로 나간다. 보안
-#   규칙이나 서버 함수는 반쯤 만든 상태로 나가면 회원 화면이 바로 깨진다.
-#   그래서 GitHub 웹에서 [Run workflow] 를 눌러야 돈다 — 태블릿 브라우저에서도
-#   버튼 하나면 된다.
+# 두 가지로 돈다
+#   자동   작업 브랜치에 푸시하면 바로 돈다. 버튼을 누를 사람이 없어도
+#          앱 화면(OTA)과 보안 규칙·색인이 따라 올라간다. 태블릿만 있는
+#          환경에서 "고쳤는데 반영을 못 하는" 상태를 없애려는 것이다.
+#   버튼   [Run workflow] 로 손으로. 무엇을 올릴지 하나씩 고를 수 있고,
+#          production 채널로 내보내는 것은 이쪽으로만 할 수 있다.
 #
-# 배포 전에 검증을 다시 돌린다
-#   푸시 때 이미 돌았더라도 한 번 더 돌린다. 그 사이에 다른 커밋이
-#   들어왔을 수 있고, 배포는 되돌리기가 비싸다.
+# ⚠️ 자동으로 도는 것이 위험하지 않은 이유
+#   1. 배포 앞에 검증이 있다. 로직 테스트와 보안 규칙 테스트가 먼저 돌고,
+#      하나라도 깨지면 그 자리에서 멈춘다 — 배포 단계까지 가지 않는다.
+#   2. 자동일 때 OTA 는 preview 채널로만 나간다. preview 는 내부 테스트
+#      앱이다. 스토어에 올라간 앱(production)은 손으로 눌러야만 바뀐다.
+#   3. 자동일 때 서버 함수는 올리지 않는다. 함수는 되돌리기가 비싸고
+#      권한도 따로 필요해서, 사람이 보고 있을 때만 올린다.
+#
+#   그래도 내보내고 싶지 않은 커밋이 있으면 커밋 메시지에 [배포안함] 을
+#   넣는다. 그 푸시는 통째로 건너뛴다.
 #
 # ⚠️ 색인(indexes)을 빼먹지 말 것
 #   채팅이 채널별 서버 필터를 쓴다. 색인 없이 규칙만 올리면 대화가
@@ -16,6 +24,15 @@
 name: 테니스매치 배포
 
 on:
+  # 자동. 이 브랜치가 테니스 앱의 작업 브랜치다.
+  # ⚠️ push 로 도는 workflow 는 "푸시된 브랜치의" 정의로 돈다. 기본
+  #    브랜치의 사본은 버튼 화면을 그릴 때만 쓰인다. 그래도 둘을 같이
+  #    맞춰 둔다 — 갈라지면 버튼과 자동이 서로 다르게 동작한다.
+  push:
+    branches: [claude/tennis-app-roadmap-review-oxol8b]
+    paths:
+      - 'tennis-match/**'
+      - '.github/workflows/tennis-deploy.yml'
   workflow_dispatch:
     inputs:
       # ⚠️ 위의 [Use workflow from] 이 아니라 **이 값**이 배포된다.
@@ -56,6 +73,24 @@ on:
 env:
   FIREBASE_TOOLS: '15.27.0'
 
+  # ⚠️ push 로 들어오면 inputs 가 통째로 비어 있다. 아래 단계들이 전부
+  #    inputs.rules 같은 값을 보고 있으므로, 그대로 두면 자동 배포가
+  #    "아무것도 안 올리고 성공"으로 끝난다 — 제일 나쁜 실패다. 오류도
+  #    안 뜨고, 초록 체크를 보고 반영된 줄 알게 된다.
+  #
+  #    그래서 "무엇을 올릴 것인가"를 여기 한 곳에서 정하고, 단계들은
+  #    이 값만 본다. 읽는 법:
+  #      버튼이면  사용자가 고른 값
+  #      푸시면    규칙·색인·OTA 는 올리고, 함수는 올리지 않는다
+  DO_RULES:     ${{ github.event_name != 'workflow_dispatch' || inputs.rules }}
+  DO_INDEXES:   ${{ github.event_name != 'workflow_dispatch' || inputs.indexes }}
+  DO_OTA:       ${{ github.event_name != 'workflow_dispatch' || inputs.ota }}
+  DO_FUNCTIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.functions || false }}
+  # 자동일 때 production 으로 나가는 길은 없다. 스토어 앱을 사람 없이
+  # 바꾸는 일은 없어야 한다.
+  CHANNEL:      ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'preview' }}
+  DEPLOY_REF:   ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+
 defaults:
   run:
     working-directory: tennis-match
@@ -68,10 +103,16 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # 아직 내보낼 때가 아닌 커밋을 위한 비상구. 커밋 메시지에 [배포안함]
+    # 을 넣으면 그 푸시는 통째로 건너뛴다. 버튼으로 부른 것은 사람이
+    # 의도한 것이므로 이 검사를 받지 않는다.
+    if: >-
+      github.event_name != 'push'
+      || !contains(github.event.head_commit.message, '[배포안함]')
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ env.DEPLOY_REF }}
 
       # 브랜치를 잘못 골랐을 때 "No such file or directory" 대신
       # 무엇이 잘못됐는지 읽을 수 있게 알려 준다.
@@ -82,10 +123,11 @@ jobs:
         working-directory: .
         run: |
           if [ ! -f tennis-match/package.json ]; then
-            echo "::error::'${{ inputs.ref }}' 브랜치에는 테니스 앱(tennis-match 폴더)이 없습니다. [배포할 브랜치] 칸에 claude/tennis-app-roadmap-review-oxol8b 를 넣고 다시 실행하세요."
+            echo "::error::'$DEPLOY_REF' 에는 테니스 앱(tennis-match 폴더)이 없습니다. [배포할 브랜치] 칸에 claude/tennis-app-roadmap-review-oxol8b 를 넣고 다시 실행하세요."
             exit 1
           fi
-          echo "배포할 브랜치: ${{ inputs.ref }}"
+          echo "배포 대상: $DEPLOY_REF (${{ github.event_name == 'push' && '푸시 자동' || '버튼' }})"
+          echo "올릴 것 — 규칙:$DO_RULES 색인:$DO_INDEXES 함수:$DO_FUNCTIONS OTA:$DO_OTA($CHANNEL)"
 
       - uses: actions/setup-node@v4
         with:
@@ -115,7 +157,7 @@ jobs:
       # ⚠️ printf 로 쓴다. echo '${{ secrets.X }}' 로 쓰면 JSON 안의
       #    따옴표가 셸에서 해석되어 깨지거나, 최악의 경우 명령이 섞인다.
       - name: Firebase 인증 준비
-        if: inputs.rules || inputs.indexes || inputs.functions
+        if: env.DO_RULES == 'true' || env.DO_INDEXES == 'true' || env.DO_FUNCTIONS == 'true'
         env:
           SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
@@ -131,7 +173,7 @@ jobs:
       # 그때 functions/node_modules 가 있어야 한다. 없으면
       # "Failed to load function definition" 으로 배포가 막힌다.
       - name: 서버 함수 의존성 설치
-        if: inputs.functions
+        if: env.DO_FUNCTIONS == 'true'
         run: npm ci --prefix functions
 
       # ⚠️ `[ 조건 ] && 명령` 꼴로 쓰면 안 된다. GitHub 는 bash -e 로 돌리는데,
@@ -150,7 +192,7 @@ jobs:
       #    [배포 결과 판정]에서 실패로 끝낸다.
       - name: Firestore 보안 규칙
         id: dep_rules
-        if: inputs.rules
+        if: env.DO_RULES == 'true'
         continue-on-error: true
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
@@ -160,7 +202,7 @@ jobs:
 
       - name: Firestore 색인
         id: dep_indexes
-        if: inputs.indexes
+        if: env.DO_INDEXES == 'true'
         continue-on-error: true
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
@@ -170,7 +212,7 @@ jobs:
 
       - name: Cloud Functions
         id: dep_functions
-        if: inputs.functions
+        if: env.DO_FUNCTIONS == 'true'
         continue-on-error: true
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
@@ -253,7 +295,7 @@ jobs:
       - name: OTA 업데이트
         id: dep_ota
         if: >-
-          inputs.ota
+          env.DO_OTA == 'true'
           && steps.dep_rules.outcome != 'failure'
           && steps.dep_indexes.outcome != 'failure'
         env:
@@ -309,7 +351,7 @@ jobs:
           # 접속이 막혀 있어 특정 버전을 검증할 수 없기 때문이다. 검증하지
           # 않은 버전을 고정하는 것은 최신을 쓰는 것보다 나쁘다.
           npx --yes eas-cli@latest update \
-            --branch "${{ inputs.channel }}" \
+            --branch "$CHANNEL" \
             --message "$(git log -1 --pretty=%s)" \
             --non-interactive
 
@@ -332,9 +374,11 @@ jobs:
             echo "| 보안 규칙 | $(st '${{ steps.dep_rules.outcome }}') |"
             echo "| 색인 | $(st '${{ steps.dep_indexes.outcome }}') |"
             echo "| 서버 함수 | $(st '${{ steps.dep_functions.outcome }}') |"
-            echo "| OTA (${{ inputs.channel }}) | $(st '${{ steps.dep_ota.outcome }}') |"
+            echo "| OTA ($CHANNEL) | $(st '${{ steps.dep_ota.outcome }}') |"
             echo ""
-            echo "브랜치: \`${{ inputs.ref }}\`"
+            echo "방식: ${{ github.event_name == 'push' && '푸시 자동 배포' || '버튼(수동)' }}"
+            echo ""
+            echo "브랜치: \`$DEPLOY_REF\`"
             echo ""
             echo "커밋: \`$(git log -1 --pretty='%h %s')\`"
           } >> "$GITHUB_STEP_SUMMARY"
