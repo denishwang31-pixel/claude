@@ -48,7 +48,7 @@ const GOOGLE_DISCOVERY = {
 export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
   const clientId = String(config?.googleAndroidClientId || '').trim();
   if (!clientId) {
-    return { ok: false, error: '구글 로그인 설정이 빠져 있습니다(안드로이드 클라이언트 ID).' };
+    return { ok: false, error: '[G1] 구글 로그인 설정이 빠져 있습니다(안드로이드 클라이언트 ID).' };
   }
 
   /* ---- 1. 네이티브 모듈 불러오기 (여기서만) ---- */
@@ -64,13 +64,13 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
   } catch (e) {
     return {
       ok: false,
-      error: '이 앱에는 구글 로그인 기능이 들어 있지 않습니다. 최신 버전을 새로 설치해 주세요.',
+      error: '[G2] 이 앱에는 구글 로그인 기능이 들어 있지 않습니다. 최신 버전을 새로 설치해 주세요.',
     };
   }
 
   const redirectUri = googleRedirectUri(applicationId);
   if (!redirectUri) {
-    return { ok: false, error: '앱 패키지명을 읽지 못했습니다. 앱을 다시 설치해 주세요.' };
+    return { ok: false, error: '[G3] 앱 패키지명을 읽지 못했습니다. 앱을 다시 설치해 주세요.' };
   }
 
   /* ---- 2. 로그인 창 ---- */
@@ -86,24 +86,36 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
     });
     result = await request.promptAsync(GOOGLE_DISCOVERY);
   } catch (e) {
-    return { ok: false, error: googleErrorText(e) || '구글 로그인 창을 열지 못했습니다.' };
+    return { ok: false, error: `[G4] 구글 로그인 창을 열지 못했습니다. ${googleErrorText(e)}`.trim() };
   }
 
   if (!result || result.type === 'dismiss' || result.type === 'cancel') {
     return { ok: false, cancelled: true, error: '' };
   }
+  if (result.type === 'locked') {
+    /* 앞선 시도가 아직 안 끝났다. 창을 닫고 다시 누르면 풀린다. */
+    return { ok: false, error: '[G5] 앞선 로그인 시도가 아직 열려 있습니다. 앱을 닫았다 다시 열어 주세요.' };
+  }
   if (result.type === 'error') {
+    /* ⚠️ 구글이 보낸 원문 코드를 그대로 붙인다. 이게 없으면
+       redirect_uri_mismatch·invalid_client·access_denied 가 전부 같은
+       "거부되었습니다" 한 줄로 보여서, 고칠 곳이 콘솔의 어느 화면인지
+       알 수가 없다. 이 값들은 비밀이 아니다 — 키가 아니라 오류 이름이다. */
+    const code = String(result.error?.code || result.params?.error || '');
     const desc = String(result.error?.description || result.error?.message || '');
-    if (/redirect_uri_mismatch/i.test(desc)) {
+    if (/redirect_uri_mismatch/i.test(`${code} ${desc}`)) {
       return {
         ok: false,
-        error: '구글에 등록된 주소와 맞지 않습니다. 구글 클라우드의 안드로이드 클라이언트에 패키지명과 SHA-1 이 제대로 들어갔는지 확인해 주세요.',
+        error: `[G6] 구글에 등록된 주소와 맞지 않습니다. 구글 클라우드의 안드로이드 클라이언트에 패키지명과 SHA-1 이 제대로 들어갔는지 확인해 주세요.\n앱이 쓰는 주소: ${redirectUri}`,
       };
     }
-    return { ok: false, error: googleErrorText(result.error) || '구글이 로그인을 거부했습니다.' };
+    return {
+      ok: false,
+      error: `[G7] 구글이 로그인을 거부했습니다. (${code || '이유 없음'})\n${desc}`.trim(),
+    };
   }
   if (result.type !== 'success' || !result.params?.code) {
-    return { ok: false, error: '구글에서 인증 코드를 받지 못했습니다.' };
+    return { ok: false, error: `[G8] 구글에서 인증 코드를 받지 못했습니다. (${result.type})` };
   }
 
   /* ---- 3. 코드를 토큰으로 ---- */
@@ -119,10 +131,12 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
     }, GOOGLE_DISCOVERY);
     idToken = token?.idToken || '';
   } catch (e) {
-    return { ok: false, error: googleErrorText(e) || '구글 토큰을 받지 못했습니다.' };
+    /* 여기서 실패하면 창은 떴다는 뜻이다 — 즉 클라이언트 ID 자체는 맞다.
+       원문을 붙여 둔다. invalid_grant / invalid_client 가 갈린다. */
+    return { ok: false, error: `[G9] 구글 토큰을 받지 못했습니다.\n${String(e?.message || e || '')}`.trim() };
   }
   if (!idToken) {
-    return { ok: false, error: '구글이 로그인 정보를 주지 않았습니다. 클라이언트 ID 설정을 확인해 주세요.' };
+    return { ok: false, error: '[G10] 구글이 로그인 정보를 주지 않았습니다. 클라이언트 ID 설정을 확인해 주세요.' };
   }
 
   /* ---- 4. Firebase 계정으로 ---- */
@@ -134,7 +148,10 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
     const res = await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
     return { ok: true, uid: res.user.uid };
   } catch (e) {
-    return { ok: false, error: googleErrorText(e) };
+    /* 구글은 통과했고 Firebase 가 거부한 자리다. 고칠 곳이 구글
+       클라우드가 아니라 Firebase 콘솔이라는 뜻이라 꼭 구분해야 한다. */
+    const code = String(e?.code || '');
+    return { ok: false, error: `[G11] ${googleErrorText(e)}${code ? `\n(${code})` : ''}` };
   }
 }
 

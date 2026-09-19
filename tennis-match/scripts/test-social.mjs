@@ -299,5 +299,28 @@ ok(!!appJson?.expo?.slug, 'app.json 이 그대로 있다');
 ok(/\.\.\.config/.test(cfgSrc), 'app.config.js 가 app.json 설정을 그대로 펼친다');
 ok(/\.\.\.config\.extra/.test(cfgSrc), 'extra 도 덮어쓰지 않고 이어 붙인다');
 
+console.log('[실패 문구마다 단계 번호가 붙어 있다]');
+/* ⚠️ 구글 로그인은 이 개발 환경에서 돌려 볼 수 없다. 기기에서 실패하면
+   화면에 뜬 한 줄이 유일한 단서다. 그런데 "구글 로그인에 실패했습니다"
+   같은 문구가 여러 자리에서 똑같이 나오면, 그 한 줄을 받아도 어디서
+   멈췄는지 알 수 없다 — 고칠 곳이 구글 클라우드인지 Firebase 인지,
+   키 문제인지 주소 문제인지 갈라지지 않는다.
+
+   실제로 그래서 한 바퀴를 헛돌았다. 그래서 자리마다 [G숫자] 를 붙인다.
+   사용자가 "G7 나온다" 한 마디만 해 주면 볼 곳이 하나로 좁혀진다.
+   번호가 겹치면 그 뜻이 사라지므로 겹침도 같이 막는다. */
+const signInSrc = readFileSync(resolve(ROOT, 'src/lib/socialSignIn.js'), 'utf8');
+/* error 가 빈 문자열인 자리는 "사용자가 창을 닫았다"는 뜻이라 제외한다. */
+const failLines = signInSrc
+  .split('\n')
+  .filter((ln) => /error:\s*[`'"]/.test(ln) && !/error:\s*['"]['"]/.test(ln));
+ok(failLines.length >= 8, `실패 문구를 여러 자리에서 낸다 (${failLines.length}곳)`);
+failLines.forEach((ln) => {
+  ok(/\[G\d+\]/.test(ln), `실패 문구에 단계 번호가 있다 — ${ln.trim().slice(0, 44)}…`);
+});
+const stages = (signInSrc.match(/\[G\d+\]/g) || []);
+ok(stages.length === new Set(stages).size,
+  `단계 번호가 겹치지 않는다 (${stages.join(' ')})`);
+
 console.log(`\n소셜 로그인 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);
