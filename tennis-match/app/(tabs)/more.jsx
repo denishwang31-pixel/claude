@@ -40,6 +40,7 @@ import { CoachScreen } from '../../src/components/CoachScreen';
 import { OpenTournaments } from '../../src/components/OpenTournamentsScreen';
 import { CoachReviewScreen } from '../../src/components/CoachReviewScreen';
 import { UpdateStatus } from '../../src/components/UpdateStatus';
+import { SocialStatus } from '../../src/components/SocialStatus';
 import { NotifyStatus } from '../../src/components/NotifyStatus';
 import { DeleteAccount } from '../../src/components/DeleteAccountScreen';
 import { AppOps } from '../../src/components/AppOpsScreen';
@@ -462,6 +463,8 @@ export default function More() {
             <SectionTitle>앱 정보</SectionTitle>
             <NotifyStatus {...{ clubId, me, flash }} />
             <UpdateStatus flash={flash} />
+            {/* 소셜 로그인 키가 실제로 앱에 박혔는지 — 추측하지 않으려고 둔다 */}
+            <SocialStatus />
 
             <View style={{ marginTop: 24, alignItems: 'center' }}>
               <Pressable onPress={logout}><Text style={{ color: C.danger, fontSize: 13, fontWeight: '600' }}>로그아웃</Text></Pressable>
