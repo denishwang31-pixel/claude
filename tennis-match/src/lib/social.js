@@ -152,6 +152,39 @@ export const SOCIAL_CONFIG = {
   tokenEndpoint: '',
 };
 
+/**
+ * 빌드에 심어진 키를 읽어 설정을 만든다.
+ *
+ * 키는 저장소에 없다. GitHub Secrets → 빌드 workflow → app.config.js 의
+ * extra.social → 여기로 흘러온다. 그래서 이 함수는 "그 흐름 끝에서 받은
+ * 물건"을 정리하는 일만 한다.
+ *
+ * ⚠️ 이 파일은 순수하게 둔다 — expo-constants 를 여기서 import 하지
+ *    않는다. 네이티브 모듈을 끌어들이면 node 로 도는 검사에서 못 부른다.
+ *    실제로 Constants 를 읽는 것은 src/lib/socialConfig.js 한 곳뿐이고,
+ *    그쪽이 읽은 값을 이 함수에 넘긴다.
+ *
+ * ⚠️ 모르는 이름은 버린다. extra 는 빌드 설정에서 오는 값이라 오타가
+ *    조용히 섞여 들어오기 쉽다. 그대로 받아 두면 "키를 넣었는데 버튼이
+ *    안 나온다"가 되고, 그때 오타를 찾기가 어렵다.
+ */
+export function configFromExtra(extra) {
+  const out = { ...SOCIAL_CONFIG };
+  const src = extra && typeof extra === 'object' ? extra : {};
+  Object.keys(SOCIAL_CONFIG).forEach((k) => {
+    const v = src[k];
+    if (typeof v === 'string' && v.trim()) out[k] = v.trim();
+  });
+  return out;
+}
+
+/** extra 에 들어 있는 모르는 이름들 — 오타를 찾을 때 쓴다 */
+export function unknownKeys(extra) {
+  const src = extra && typeof extra === 'object' ? extra : {};
+  const known = new Set(Object.keys(SOCIAL_CONFIG));
+  return Object.keys(src).filter((k) => !known.has(k)).sort();
+}
+
 /* ---------------- 무엇을 그릴 것인가 ---------------- */
 
 const filled = (v) => !!String(v ?? '').trim();
@@ -273,6 +306,7 @@ export const SETUP = {
 export default {
   PROVIDERS, PROVIDER_ORDER, PROVIDER_LABEL, PROVIDER_SHORT, PROVIDER_STYLE,
   REQUIREMENTS, SOCIAL_CONFIG,
+  configFromExtra, unknownKeys,
   providerReady, enabledProviders, missingFor,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 };

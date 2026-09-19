@@ -6,12 +6,18 @@
      2. iOS 에 카카오·네이버만 켜고 제출하는 것. 애플 심사 지침 4.8
         위반이라 반려된다 — 코드는 멀쩡한데 떨어진다.
    ============================================================ */
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   PROVIDERS, PROVIDER_ORDER, PROVIDER_LABEL, PROVIDER_SHORT, PROVIDER_STYLE,
   REQUIREMENTS, SOCIAL_CONFIG,
+  configFromExtra, unknownKeys,
   providerReady, enabledProviders, missingFor,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 } from '../src/lib/social.js';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.log('  ✗', m); } };
@@ -146,6 +152,70 @@ console.log('[키는 저장소에 없어야 한다]');
 Object.entries(SOCIAL_CONFIG).forEach(([k, v]) => {
   ok(v === '', `SOCIAL_CONFIG.${k} 가 비어 있다 — 실제 키는 app.json/EAS 시크릿에서 넣는다`);
 });
+
+console.log('[빌드가 넘겨준 값을 읽는다]');
+/* 키는 GitHub Secrets → 빌드 → app.config.js 의 extra.social → 앱,
+   이 순서로 흘러온다. 중간에 하나라도 어긋나면 "키를 넣었는데 버튼이
+   안 나온다"가 되는데, 그때 원인을 찾기가 아주 어렵다. */
+eq(configFromExtra(undefined), SOCIAL_CONFIG, 'extra 가 없으면 기본값(전부 빈 값)');
+eq(configFromExtra(null), SOCIAL_CONFIG, 'null 이어도 터지지 않는다');
+eq(configFromExtra('문자열'), SOCIAL_CONFIG, '엉뚱한 타입이어도 터지지 않는다');
+eq(configFromExtra({}), SOCIAL_CONFIG, '빈 객체면 기본값');
+
+const fromBuild = configFromExtra({
+  googleWebClientId: 'web-1', googleAndroidClientId: '  and-1  ',
+});
+eq(fromBuild.googleWebClientId, 'web-1', '넣은 값이 들어온다');
+eq(fromBuild.googleAndroidClientId, 'and-1', '앞뒤 공백은 걷어낸다');
+eq(fromBuild.kakaoRestKey, '', '안 넣은 것은 빈 값 그대로');
+eq(enabledProviders(fromBuild, 'android'), [PROVIDERS.GOOGLE],
+  '구글 키만 넣으면 구글 버튼만 나온다');
+
+/* 빈 문자열·공백만 있는 값은 "안 넣은 것"으로 본다. 환경변수가 설정은
+   됐는데 값이 비어 있는 경우가 흔하다 — 그걸 넣은 것으로 치면 버튼이
+   나오고 눌러도 안 된다. */
+eq(configFromExtra({ googleWebClientId: '' }).googleWebClientId, '',
+  '빈 문자열은 안 넣은 것으로 본다');
+eq(configFromExtra({ googleWebClientId: '   ' }).googleWebClientId, '',
+  '공백만 있어도 안 넣은 것으로 본다');
+eq(configFromExtra({ googleWebClientId: 12345 }).googleWebClientId, '',
+  '문자열이 아니면 무시한다');
+
+eq(unknownKeys({ googleWebClientId: 'a', googleWebClientID: 'b', oops: 'c' }),
+  ['googleWebClientID', 'oops'],
+  '모르는 이름을 짚어 준다 — 대소문자 오타가 제일 흔하다');
+eq(unknownKeys({}), [], '모르는 이름이 없으면 빈 목록');
+eq(configFromExtra({ googleWebClientID: 'b' }).googleWebClientId, '',
+  '⚠️ 대소문자가 다른 이름은 안 먹는다 (그래서 unknownKeys 가 필요하다)');
+
+console.log('[app.config.js 가 같은 이름을 쓴다]');
+/* ⚠️ 이 검사가 이 파일에서 제일 값어치 있다.
+   app.config.js 에서 이름을 하나 잘못 적으면 키가 조용히 버려지고,
+   버튼이 안 나오는 것 말고는 아무 증상이 없다. 빌드도 성공하고
+   오류도 없다. 사람이 찾기 거의 불가능한 종류라 검사로 막는다. */
+const cfgSrc = readFileSync(resolve(ROOT, 'app.config.js'), 'utf8');
+const socialBlock = cfgSrc.slice(cfgSrc.indexOf('social: {'));
+Object.keys(SOCIAL_CONFIG).forEach((k) => {
+  ok(new RegExp(`\\b${k}:`).test(socialBlock),
+    `app.config.js 가 ${k} 를 넘긴다`);
+});
+/* 반대 방향도 본다 — app.config.js 에만 있고 social.js 에 없는 이름 */
+const inCfg = [...socialBlock.matchAll(/^\s{6}([A-Za-z][A-Za-z0-9]*):\s*env\(/gm)]
+  .map((m) => m[1]);
+ok(inCfg.length > 0, `app.config.js 에서 이름을 ${inCfg.length}개 읽었다`);
+inCfg.forEach((k) => {
+  ok(k in SOCIAL_CONFIG,
+    `app.config.js 의 ${k} 는 SOCIAL_CONFIG 에도 있어야 한다`);
+});
+
+console.log('[app.json 을 지우지 않았다]');
+/* app.config.js 가 app.json 을 대체한 것이 아니라 얹은 것이다.
+   설정의 출처는 여전히 app.json 이어야 한다 — 둘로 갈라지면
+   어느 쪽이 이기는지 헷갈리고, 빌드해 보기 전에는 모른다. */
+const appJson = JSON.parse(readFileSync(resolve(ROOT, 'app.json'), 'utf8'));
+ok(!!appJson?.expo?.slug, 'app.json 이 그대로 있다');
+ok(/\.\.\.config/.test(cfgSrc), 'app.config.js 가 app.json 설정을 그대로 펼친다');
+ok(/\.\.\.config\.extra/.test(cfgSrc), 'extra 도 덮어쓰지 않고 이어 붙인다');
 
 console.log(`\n소셜 로그인 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

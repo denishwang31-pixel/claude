@@ -11,9 +11,8 @@
 import React from 'react';
 import { View, Text, Pressable, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  PROVIDER_LABEL, PROVIDER_STYLE, enabledProviders, SOCIAL_CONFIG,
-} from '../lib/social';
+import { PROVIDER_LABEL, PROVIDER_STYLE, enabledProviders } from '../lib/social';
+import { LIVE_SOCIAL_CONFIG } from '../lib/socialConfig';
 import { C, S, R } from '../lib/theme';
 
 /** 버튼 왼쪽 표시. 크기를 맞춰 글자가 가운데에서 흔들리지 않게 한다. */
@@ -76,7 +75,7 @@ export const SocialButton = ({ provider, onPress, disabled }) => {
  * @param divider 위에 "또는" 줄을 붙일지. 버튼이 없으면 이것도 안 나온다.
  */
 export const SocialButtons = ({
-  onPress, disabled, config = SOCIAL_CONFIG, divider = true, style,
+  onPress, disabled, config = LIVE_SOCIAL_CONFIG, divider = true, style,
 }) => {
   /* Platform.OS 를 그대로 넘긴다 — 애플 버튼은 iOS 에서만 나온다.
      웹에서 열었을 때는 'web' 이라 어느 것도 안 나오는데, 이 앱은

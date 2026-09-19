@@ -47,6 +47,33 @@ OTA 가 `The bearer token is invalid.` 로 막혔다. 두 시크릿을 연달아
 → `EXPO_TOKEN` 옆 연필 → 새 값 붙여넣기 → Update secret. 값을 다시
 볼 수는 없으므로, 확신이 없으면 Expo 에서 토큰을 새로 만들어 넣는다.
 
+### 3) 소셜 로그인 키 (선택 — 넣으면 그 버튼이 생긴다)
+
+넣지 않아도 앱은 멀쩡히 돈다. **키가 없는 제공자는 버튼 자체가 안 그려진다.**
+눌러도 아무 일이 없는 버튼을 두지 않으려는 것이다.
+
+GitHub Secrets 에 아래 이름으로 넣는다. 이름이 한 글자라도 다르면 조용히
+무시되므로 그대로 복사해서 쓸 것.
+
+| 시크릿 이름 | 어디서 받나 |
+|---|---|
+| `GOOGLE_WEB_CLIENT_ID` | Firebase 콘솔에서 Google 로그인을 켜면 자동 생성 |
+| `GOOGLE_ANDROID_CLIENT_ID` | Google Cloud → 사용자 인증 정보 → Android (SHA-1 필요) |
+| `KAKAO_REST_KEY` · `KAKAO_NATIVE_KEY` | developers.kakao.com |
+| `NAVER_CLIENT_ID` · `NAVER_CLIENT_SECRET` | developers.naver.com |
+| `APPLE_SERVICE_ID` | Apple Developer → Services ID |
+| `SOCIAL_TOKEN_ENDPOINT` | 카카오·네이버용 서버 함수 주소 |
+
+⚠️ **카카오·네이버는 `SOCIAL_TOKEN_ENDPOINT` 까지 있어야 버튼이 생긴다.**
+Firebase 가 모르는 제공자라, 받은 토큰을 Firebase 계정으로 바꿔 줄 서버
+함수가 필요하다. 구글·애플은 Firebase 기본 제공자라 서버가 필요 없다.
+
+⚠️ **키는 빌드 시점에 앱 안에 박힌다.** 새로 넣거나 바꾸면 OTA 가 아니라
+**새 빌드**를 해야 반영된다. 빌드 로그의 「실리는 소셜 로그인」 단계에서
+무엇이 실렸는지 표로 확인할 수 있다(값 자체는 안 찍힌다).
+
+로컬에서 확인하려면 `node scripts/social-status.mjs`.
+
 ---
 
 ## 평소 — 아무것도 안 해도 된다
