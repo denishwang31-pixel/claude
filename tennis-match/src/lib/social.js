@@ -269,33 +269,47 @@ export function socialReadiness(config = SOCIAL_CONFIG) {
 export const needsNativeRebuild = (config = SOCIAL_CONFIG) =>
   PROVIDER_ORDER.some((p) => providerReady(p, config));
 
-/* ---------------- 구글 주소 만들기 ---------------- */
+/* ---------------- 구글 주소·범위 ---------------- */
 
 /**
- * 안드로이드 OAuth 클라이언트가 요구하는 되돌아올 주소(redirect URI).
+ * 구글에 요청할 권한 범위.
  *
- * 구글은 안드로이드 클라이언트에 대해 "클라이언트 ID 를 거꾸로 뒤집은"
- * 주소만 받아 준다.
- *   123-abc.apps.googleusercontent.com
- *   → com.googleusercontent.apps.123-abc:/oauthredirect
- *
- * ⚠️ 이 변환이 틀리면 로그인 창은 뜨는데 돌아오지 못한다. 구글 쪽
- *    오류 화면에 redirect_uri_mismatch 라고만 나와서, 무엇이 틀렸는지
- *    알기 어렵다. 그래서 규칙을 여기 두고 검사한다.
+ * expo-auth-session 의 Google 제공자가 쓰는 것과 같은 값으로 맞춘다
+ * (node_modules/expo-auth-session/build/providers/Google.js 의
+ *  settings.minimumScopes). 'profile' 같은 줄임말도 대개 통하지만,
+ * 라이브러리가 검증해 둔 형태를 그대로 쓰는 편이 안전하다.
  */
-export function reversedClientId(androidClientId) {
-  const id = String(androidClientId || '').trim();
-  const suffix = '.apps.googleusercontent.com';
-  if (!id.endsWith(suffix)) return '';
-  const head = id.slice(0, -suffix.length);
-  if (!head) return '';
-  return `com.googleusercontent.apps.${head}`;
-}
+export const GOOGLE_SCOPES = [
+  'openid',
+  'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
 
-/** 로그인 창이 끝나고 앱으로 돌아올 주소 */
-export function googleRedirectUri(config = SOCIAL_CONFIG) {
-  const scheme = reversedClientId(config?.googleAndroidClientId);
-  return scheme ? `${scheme}:/oauthredirect` : '';
+/**
+ * 로그인 창이 끝나고 앱으로 돌아올 주소.
+ *
+ * ⚠️ 여기서 한 번 크게 틀렸다.
+ *    예전 규칙은 "클라이언트 ID 를 거꾸로 뒤집은" 주소
+ *    (com.googleusercontent.apps.123-abc:/oauthredirect) 였고, 나도 그렇게
+ *    만들었다. 구글은 그 요청을 "액세스 차단 — 요청이 잘못되었습니다"
+ *    로 거부했다. 화면에는 우리 앱 이름조차 안 나와서 원인을 짐작하기
+ *    어려웠다.
+ *
+ *    지금 규칙은 **패키지명**이다.
+ *      com.donghyun.tennismatch:/oauthredirect
+ *    안드로이드 클라이언트는 패키지명 + SHA-1 로 신원을 확인하므로,
+ *    되돌아올 주소도 패키지명을 쓴다.
+ *
+ *    근거는 추측이 아니라 라이브러리 소스다 —
+ *    expo-auth-session 의 Google 제공자가 정확히 이 형태를 만들고,
+ *    뒤집은 ID 를 만들던 줄은 주석으로 남아 있다.
+ *
+ * ⚠️ 이 주소를 앱이 받을 수 있어야 한다. app.json 의 scheme 에 패키지명을
+ *    함께 넣어 둔 이유가 이것이다. 빼면 창은 떴다가 돌아오지 못한다.
+ */
+export function googleRedirectUri(applicationId) {
+  const id = String(applicationId || '').trim();
+  return id ? `${id}:/oauthredirect` : '';
 }
 
 /* ---------------- 로그인 결과 읽기 ---------------- */
@@ -371,7 +385,7 @@ export default {
   PROVIDERS, PROVIDER_ORDER, PROVIDER_LABEL, PROVIDER_SHORT, PROVIDER_STYLE,
   REQUIREMENTS, SOCIAL_CONFIG,
   configFromExtra, unknownKeys,
-  reversedClientId, googleRedirectUri, googleErrorText,
+  GOOGLE_SCOPES, googleRedirectUri, googleErrorText,
   providerReady, enabledProviders, missingFor,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 };

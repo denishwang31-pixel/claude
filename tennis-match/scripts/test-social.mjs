@@ -13,7 +13,7 @@ import {
   PROVIDERS, PROVIDER_ORDER, PROVIDER_LABEL, PROVIDER_SHORT, PROVIDER_STYLE,
   REQUIREMENTS, SOCIAL_CONFIG,
   configFromExtra, unknownKeys, googleErrorText,
-  reversedClientId, googleRedirectUri,
+  GOOGLE_SCOPES, googleRedirectUri,
   providerReady, enabledProviders, missingFor,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 } from '../src/lib/social.js';
@@ -210,31 +210,45 @@ inCfg.forEach((k) => {
 });
 
 console.log('[구글에게 돌려줄 주소를 만든다]');
-/* ⚠️ 구글은 안드로이드 클라이언트에 대해 "클라이언트 ID 를 거꾸로 뒤집은"
-   주소만 받아 준다. 이 변환이 틀리면 로그인 창은 뜨는데 앱으로 돌아오지
-   못하고, 구글은 redirect_uri_mismatch 라고만 말한다 — 무엇이 틀렸는지
-   알려 주지 않아서 찾기가 아주 어렵다. */
-eq(reversedClientId('123-abc.apps.googleusercontent.com'),
-  'com.googleusercontent.apps.123-abc', '뒤집어서 만든다');
-eq(googleRedirectUri({ googleAndroidClientId: '123-abc.apps.googleusercontent.com' }),
-  'com.googleusercontent.apps.123-abc:/oauthredirect', '되돌아올 주소 전체');
-eq(reversedClientId('  123-abc.apps.googleusercontent.com  '),
-  'com.googleusercontent.apps.123-abc', '앞뒤 공백은 걷어낸다');
+/* ⚠️ 여기서 한 번 크게 틀렸다.
+   예전 규칙(클라이언트 ID 를 거꾸로 뒤집은 주소)으로 만들었더니 구글이
+   "액세스 차단 — 요청이 잘못되었습니다"로 거부했다. 화면에 우리 앱
+   이름조차 안 나와서 원인을 짐작하기 어려웠다.
 
-/* 모양이 아니면 빈 문자열을 돌려준다. 억지로 만들면 창은 뜨는데
-   돌아오지 못하는, 제일 찾기 힘든 실패가 된다. */
-eq(reversedClientId('그냥문자열'), '', '구글 ID 모양이 아니면 빈 문자열');
-eq(reversedClientId('.apps.googleusercontent.com'), '', '앞이 비었으면 빈 문자열');
-eq(reversedClientId(''), '', '빈 값');
-eq(reversedClientId(null), '', 'null 이어도 터지지 않는다');
-eq(reversedClientId(undefined), '', 'undefined 여도 터지지 않는다');
-eq(googleRedirectUri({}), '', '키가 없으면 주소도 없다');
-eq(googleRedirectUri(), '', '설정을 안 줘도 터지지 않는다');
-/* ⚠️ 웹 클라이언트 ID 를 안드로이드 자리에 잘못 넣는 실수가 흔하다.
-   둘 다 같은 꼬리표라 모양만으로는 못 거른다 — 그래서 거르지 않고
-   그대로 만든다. 대신 실패했을 때 문구가 어디를 보라고 말한다. */
-ok(!!reversedClientId('999-web.apps.googleusercontent.com'),
-  '웹 ID 를 넣어도 모양은 같아서 통과한다 (문구로 안내할 수밖에 없다)');
+   지금 규칙은 패키지명이다. 근거는 추측이 아니라 라이브러리 소스다 —
+   expo-auth-session 의 Google 제공자가 정확히 이 형태를 만든다. */
+eq(googleRedirectUri('com.donghyun.tennismatch'),
+  'com.donghyun.tennismatch:/oauthredirect', '패키지명으로 만든다');
+eq(googleRedirectUri('  com.donghyun.tennismatch  '),
+  'com.donghyun.tennismatch:/oauthredirect', '앞뒤 공백은 걷어낸다');
+eq(googleRedirectUri(''), '', '패키지명이 없으면 빈 문자열');
+eq(googleRedirectUri(null), '', 'null 이어도 터지지 않는다');
+eq(googleRedirectUri(undefined), '', 'undefined 여도 터지지 않는다');
+
+/* ⚠️ 뒤집은 클라이언트 ID 는 이제 쓰지 않는다. 실수로 되살아나는 것을
+   막는다 — 한 번 이것 때문에 빌드를 두 번 태웠다. */
+ok(!googleRedirectUri('123-abc.apps.googleusercontent.com')
+  .startsWith('com.googleusercontent.apps.'),
+  '뒤집은 클라이언트 ID 형태를 만들지 않는다');
+
+console.log('[앱이 이 주소를 받을 수 있어야 한다]');
+/* ⚠️ 주소를 맞게 만들어도 앱이 그 scheme 을 등록하지 않으면, 로그인 창은
+   떴다가 돌아오지 못한다. 사용자에게는 "로그인했는데 앱이 그대로"로
+   보이고, 어디가 문제인지 알 길이 없다. 그래서 app.json 과 맞물리는지
+   여기서 본다. */
+const appCfg = JSON.parse(readFileSync(resolve(ROOT, 'app.json'), 'utf8')).expo;
+const pkg = appCfg?.android?.package;
+ok(!!pkg, `app.json 에 패키지명이 있다 (${pkg})`);
+const schemes = Array.isArray(appCfg.scheme) ? appCfg.scheme : [appCfg.scheme];
+ok(schemes.includes(pkg),
+  `scheme 에 패키지명이 들어 있다 — 없으면 로그인 창이 돌아오지 못한다 (${JSON.stringify(schemes)})`);
+ok(schemes.includes('tennismatch'),
+  '원래 쓰던 scheme 도 그대로 있다 — 초대 링크가 이것을 쓴다');
+
+console.log('[구글에 요청하는 권한 범위]');
+ok(GOOGLE_SCOPES.includes('openid'), 'openid 가 들어 있다');
+ok(GOOGLE_SCOPES.some((x) => x.includes('userinfo.email')), '이메일 범위가 들어 있다');
+ok(GOOGLE_SCOPES.some((x) => x.includes('userinfo.profile')), '프로필 범위가 들어 있다');
 
 console.log('[앱이 뜨는 길에 네이티브를 맨 위에서 부르지 않는다]');
 /* ⚠️⚠️ 이 검사가 이 파일에서 제일 중요하다.
@@ -250,7 +264,7 @@ console.log('[앱이 뜨는 길에 네이티브를 맨 위에서 부르지 않�
    누군가 편하다고 맨 위로 옮기면 여기서 막힌다. */
 const NATIVE_ONLY = [
   'expo-auth-session', 'expo-web-browser', 'expo-crypto',
-  'expo-apple-authentication',
+  'expo-apple-authentication', 'expo-application',
 ];
 const START_PATH = [
   'app/login.jsx',
@@ -262,7 +276,10 @@ const START_PATH = [
 START_PATH.forEach((rel) => {
   const src = readFileSync(resolve(ROOT, rel), 'utf8');
   NATIVE_ONLY.forEach((mod) => {
-    const topLevel = new RegExp(`^\\s*import[^\\n]*['"]${mod}`, 'm');
+    /* ⚠️ `import(` 는 미룬 호출이라 걸리면 안 된다. 처음에 이걸 구분하지
+       않아서, 제대로 고친 코드를 검사가 잘못 잡았다.
+       정적 import 만 본다 — import 뒤에 괄호가 오면 동적이다. */
+    const topLevel = new RegExp(`^\\s*import(?!\\s*\\()[^\\n]*['"]${mod}['"]`, 'm');
     ok(!topLevel.test(src),
       `${rel} 가 ${mod} 를 맨 위에서 부르지 않는다`);
   });

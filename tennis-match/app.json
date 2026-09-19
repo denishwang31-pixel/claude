@@ -2,8 +2,11 @@
   "expo": {
     "name": "테니스매치",
     "slug": "tennis-match",
-    "scheme": "tennismatch",
-    "version": "0.2.1",
+    "scheme": [
+      "tennismatch",
+      "com.donghyun.tennismatch"
+    ],
+    "version": "0.2.2",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -11,7 +14,7 @@
     "primaryColor": "#064e3b",
     "android": {
       "package": "com.donghyun.tennismatch",
-      "versionCode": 3,
+      "versionCode": 4,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "INTERNET",

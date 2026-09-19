@@ -28,7 +28,7 @@
       접속이 모두 필요하다. 그래서 "된다"고 장담하지 않는다. 대신
       어디서 멈췄는지 단계마다 다른 문구가 나오게 해 두었다.
    ============================================================ */
-import { googleErrorText, googleRedirectUri } from './social';
+import { googleErrorText, googleRedirectUri, GOOGLE_SCOPES } from './social';
 import { LIVE_SOCIAL_CONFIG } from './socialConfig';
 
 /* 구글 OAuth 주소. 고정값이라 네트워크로 가져올 필요가 없다. */
@@ -47,26 +47,30 @@ const GOOGLE_DISCOVERY = {
  */
 export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
   const clientId = String(config?.googleAndroidClientId || '').trim();
-  const redirectUri = googleRedirectUri(config);
-
   if (!clientId) {
     return { ok: false, error: '구글 로그인 설정이 빠져 있습니다(안드로이드 클라이언트 ID).' };
-  }
-  if (!redirectUri) {
-    /* 클라이언트 ID 모양이 예상과 다르면 여기서 걸린다. 그냥 넘기면
-       로그인 창은 떠도 앱으로 못 돌아온다. */
-    return { ok: false, error: '구글 클라이언트 ID 모양이 올바르지 않습니다. 콘솔에서 복사한 값을 다시 확인해 주세요.' };
   }
 
   /* ---- 1. 네이티브 모듈 불러오기 (여기서만) ---- */
   let AuthSession;
+  let applicationId = '';
   try {
-    AuthSession = await import('expo-auth-session');
+    const [as, app] = await Promise.all([
+      import('expo-auth-session'),
+      import('expo-application'),
+    ]);
+    AuthSession = as;
+    applicationId = app?.applicationId || '';
   } catch (e) {
     return {
       ok: false,
       error: '이 앱에는 구글 로그인 기능이 들어 있지 않습니다. 최신 버전을 새로 설치해 주세요.',
     };
+  }
+
+  const redirectUri = googleRedirectUri(applicationId);
+  if (!redirectUri) {
+    return { ok: false, error: '앱 패키지명을 읽지 못했습니다. 앱을 다시 설치해 주세요.' };
   }
 
   /* ---- 2. 로그인 창 ---- */
@@ -76,7 +80,7 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
     request = new AuthSession.AuthRequest({
       clientId,
       redirectUri,
-      scopes: ['openid', 'profile', 'email'],
+      scopes: GOOGLE_SCOPES,
       responseType: AuthSession.ResponseType.Code,
       usePKCE: true,
     });
