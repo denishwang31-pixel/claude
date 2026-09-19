@@ -36,7 +36,7 @@ import {
   attendingIds, diffDraw, removeGhosts, dropAffected, describeDiff, optionsFor,
 } from '../../src/lib/drawSync';
 import {
-  Card, SectionTitle, Chip, Btn, Field, Avatar, CheckRow,
+  Card, SectionTitle, Chip, Btn, Field, Avatar, CheckRow, HeroCard, HeroPill,
 } from '../../src/components/ui';
 import { C, S, R, F } from '../../src/lib/theme';
 
@@ -462,8 +462,79 @@ export default function Match() {
     },
   });
 
+  /* 내 다음 경기 — 아직 점수가 안 들어간 것 중 가장 이른 것.
+     ⚠️ 코트에서 서서 보는 화면이다. 회원이 알고 싶은 것은 대진표 전체가
+        아니라 "내가 몇 타임 몇 번 코트에서 누구랑 하는가" 하나다.
+        전체 표에서 자기 이름을 찾는 일을 없앤다. */
+  const myNext = useMemo(() => {
+    if (!me) return null;
+    return [...(matches || [])]
+      .filter((m) => [...(m.teamA || []), ...(m.teamB || [])].includes(me))
+      .filter((m) => !m.score)
+      .sort((a, b) => (a.round || 0) - (b.round || 0))[0] || null;
+  }, [matches, me]);
+
+  const myNextTime = myNext ? times.find((t) => t.round === myNext.round) : null;
+
   const Header = (
     <View>
+      {/* ---------- 내 경기 ---------- */}
+      {!!myNext && (
+        <HeroCard style={{ marginBottom: S.md }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <HeroPill>내 경기</HeroPill>
+            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600' }}>
+              {myNext.type || '복식'}
+            </Text>
+          </View>
+
+          <Text style={{
+            color: '#fff', fontSize: 21, fontWeight: '800',
+            marginTop: S.md, letterSpacing: -0.5,
+          }}>
+            {myNext.round}타임 · {myNext.court}번 코트
+          </Text>
+          {!!myNextTime && (
+            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 3 }}>
+              {myNextTime.start} ~ {myNextTime.end}
+            </Text>
+          )}
+
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: S.sm,
+            backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: R.md,
+            padding: S.md, marginTop: S.lg,
+          }}>
+            <View style={{ flex: 1, gap: 4 }}>
+              {(myNext.teamA || []).map((id) => (
+                <Text key={id} numberOfLines={1} style={{
+                  color: '#fff', fontSize: 14,
+                  fontWeight: id === me ? '800' : '600',
+                }}>{nameOf(id)}{id === me ? ' (나)' : ''}</Text>
+              ))}
+            </View>
+            <Text style={{ color: C.lime, fontSize: 15, fontWeight: '800' }}>VS</Text>
+            <View style={{ flex: 1, gap: 4, alignItems: 'flex-end' }}>
+              {(myNext.teamB || []).map((id) => (
+                <Text key={id} numberOfLines={1} style={{
+                  color: '#fff', fontSize: 14,
+                  fontWeight: id === me ? '800' : '600',
+                }}>{nameOf(id)}{id === me ? ' (나)' : ''}</Text>
+              ))}
+            </View>
+          </View>
+
+          {isAdmin && (
+            <View style={{ marginTop: S.md }}>
+              <Btn full tone="lime"
+                icon={<Icon name="edit" size={17} color={C.green} />}
+                onPress={() => { setEditing(myNext.id); setSc({ a: '', b: '' }); }}>
+                결과 입력
+              </Btn>
+            </View>
+          )}
+        </HeroCard>
+      )}
       {/* 코트장 드롭다운 */}
       {venues.length > 0 && (
         <View style={{ marginBottom: 10 }}>

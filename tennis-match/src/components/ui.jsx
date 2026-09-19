@@ -358,3 +358,193 @@ export const CheckRow = ({ checked, onToggle, label, hint }) => (
     </View>
   </Pressable>
 );
+
+/* ============================================================
+   v4 시안용 조각들
+
+   화면마다 비슷한 것을 따로 만들면 금세 달라진다. 시안이 반복해서
+   쓰는 형태를 여기 모아 두고 화면들이 가져다 쓴다.
+   ============================================================ */
+
+/**
+ * 히어로 카드 — 어두운 바탕에 그 화면에서 제일 중요한 것 하나.
+ *
+ * 홈의 "다음 모임", 대진표의 "내 경기"가 이걸 쓴다. 화면을 열었을 때
+ * 눈이 처음 닿는 자리라, 여기에는 지금 당장 할 수 있는 행동을 둔다.
+ */
+export const HeroCard = ({ children, style, onPress }) => {
+  const body = (
+    <View style={[{
+      backgroundColor: C.ink, borderRadius: R.xl, padding: S.xl,
+    }, SHADOW.md, style]}>
+      {children}
+    </View>
+  );
+  return onPress
+    ? <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}>{body}</Pressable>
+    : body;
+};
+
+/** 히어로 안에서 쓰는 작은 라벨 알약 */
+export const HeroPill = ({ children, tone = 'lime' }) => (
+  <View style={{
+    alignSelf: 'flex-start', borderRadius: R.pill,
+    paddingHorizontal: 11, paddingVertical: 5,
+    backgroundColor: tone === 'lime' ? C.green : 'rgba(255,255,255,0.14)',
+  }}>
+    <Text style={{
+      fontSize: 11.5, fontWeight: '800',
+      color: tone === 'lime' ? '#fff' : C.lime,
+    }}>{children}</Text>
+  </View>
+);
+
+/**
+ * 진행 막대.
+ *
+ * ⚠️ 분모가 **실제로 있을 때만** 쓸 것. 시안에는 "14/16명 정원"처럼
+ *    보기 좋은 막대가 있지만, 이 앱의 모임에는 정원 필드가 없다.
+ *    없는 분모를 코트 수로 어림해 그리면 그럴듯한 거짓 숫자가 된다.
+ */
+export const ProgressBar = ({ value, max, tone = 'lime', style }) => {
+  const pct = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
+  return (
+    <View style={[{
+      height: 7, borderRadius: 4, overflow: 'hidden',
+      backgroundColor: tone === 'lime' ? 'rgba(255,255,255,0.18)' : C.fill,
+    }, style]}>
+      <View style={{
+        height: '100%', width: `${pct * 100}%`, borderRadius: 4,
+        backgroundColor: tone === 'lime' ? C.lime : C.green,
+      }} />
+    </View>
+  );
+};
+
+/**
+ * 참석 응답 3지선다 — 한 번에 하나.
+ *
+ * 시안에서 가장 값어치 있는 부분이다. 지금까지는 모임을 눌러 들어가야
+ * 응답할 수 있었는데, 회원이 앱에서 하는 일의 대부분이 이 한 번의
+ * 응답이다. 화면을 열자마자 누를 수 있어야 한다.
+ *
+ * @param value RSVP 값 (없으면 미응답)
+ */
+export const RsvpRow = ({ value, onPick, dark, disabled, options }) => (
+  <View style={{ flexDirection: 'row', gap: 7 }}>
+    {options.map((o) => {
+      const on = value === o.key;
+      return (
+        <Pressable key={o.key}
+          onPress={disabled ? undefined : () => onPick(o.key)}
+          disabled={disabled}
+          accessibilityRole="button"
+          accessibilityState={{ selected: on }}
+          style={({ pressed }) => ({
+            flex: 1, minHeight: TAP.btn, borderRadius: R.md,
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+            backgroundColor: on
+              ? (dark ? '#fff' : C.green)
+              : (dark ? 'rgba(255,255,255,0.13)' : C.fill),
+            opacity: disabled ? 0.4 : pressed ? 0.8 : 1,
+          })}>
+          <Icon name={o.icon} size={16}
+            color={on ? (dark ? C.green : '#fff') : (dark ? '#fff' : C.sub)} />
+          <Text style={{
+            fontSize: 13.5, fontWeight: '700',
+            color: on ? (dark ? C.green : '#fff') : (dark ? '#fff' : C.sub),
+          }}>{o.label}</Text>
+        </Pressable>
+      );
+    })}
+  </View>
+);
+
+/**
+ * 큰 바로가기 타일 — 아이콘 + 제목 + 한 줄 설명.
+ *
+ * 기존 IconTile 은 아이콘과 이름만 있어서 "뭐가 몇 개 있는지"를 알 수
+ * 없었다. 시안처럼 밑줄을 하나 더 두면 들어가 보지 않고도 판단이 된다.
+ */
+export const QuickTile = ({ icon, label, sub, onPress, tone = 'soft', badge }) => (
+  <Pressable onPress={onPress}
+    style={({ pressed }) => ({ flex: 1, opacity: pressed ? 0.7 : 1 })}>
+    <View style={[{
+      backgroundColor: C.surface, borderRadius: R.lg,
+      borderWidth: 1, borderColor: C.border,
+      padding: S.md, minHeight: 84, justifyContent: 'center',
+    }, SHADOW.sm]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{
+          width: 34, height: 34, borderRadius: R.md,
+          backgroundColor: tone === 'soft' ? C.greenSoft : C.fill,
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Icon name={icon} size={18} color={tone === 'soft' ? C.green : C.sub} />
+        </View>
+        {!!badge && <View style={{ marginLeft: 'auto' }}><Badge count={badge} /></View>}
+      </View>
+      <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 9 }}>
+        {label}
+      </Text>
+      {!!sub && (
+        <Text numberOfLines={1} style={{ fontSize: 11.5, color: C.sub, marginTop: 2 }}>{sub}</Text>
+      )}
+    </View>
+  </Pressable>
+);
+
+/** 숫자 타일 — 밝은 바탕. 성적표·회비 요약에 쓴다 */
+export const StatTile = ({ value, label, sub, tone = 'default', style }) => (
+  <View style={[{
+    flex: 1, alignItems: 'center', paddingVertical: S.md, paddingHorizontal: 6,
+    backgroundColor: tone === 'soft' ? C.greenSoft : C.fill,
+    borderRadius: R.md,
+  }, style]}>
+    <Text numberOfLines={1} style={{
+      fontSize: 20, fontWeight: '800', letterSpacing: -0.6,
+      color: tone === 'soft' ? C.green : C.text,
+    }}>{value}</Text>
+    <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '600', color: C.sub, marginTop: 3 }}>
+      {label}
+    </Text>
+    {!!sub && <Text numberOfLines={1} style={{ fontSize: 10.5, color: C.faint, marginTop: 1 }}>{sub}</Text>}
+  </View>
+);
+
+/**
+ * 주간 날짜 띠 — 일정 화면 상단.
+ *
+ * 달력 전체를 펼치지 않고도 이번 주 어디에 뭐가 있는지 보인다.
+ * 점은 그날 일정이 있다는 뜻이다.
+ */
+export const WeekStrip = ({ days, value, onPick }) => (
+  <View style={{ flexDirection: 'row', gap: 5 }}>
+    {days.map((d) => {
+      const on = d.date === value;
+      return (
+        <Pressable key={d.date} onPress={() => onPick(d.date)}
+          style={({ pressed }) => ({ flex: 1, opacity: pressed ? 0.7 : 1 })}>
+          <View style={{
+            alignItems: 'center', paddingVertical: 9, borderRadius: R.md,
+            backgroundColor: on ? C.green : C.surface,
+            borderWidth: 1, borderColor: on ? C.green : C.border,
+          }}>
+            <Text style={{
+              fontSize: 10.5, fontWeight: '700',
+              color: on ? 'rgba(255,255,255,0.8)' : d.tone === 'sun' ? C.danger : d.tone === 'sat' ? C.info : C.faint,
+            }}>{d.dow}</Text>
+            <Text style={{
+              fontSize: 16, fontWeight: '800', marginTop: 2,
+              color: on ? '#fff' : C.text,
+            }}>{d.day}</Text>
+            <View style={{
+              width: 5, height: 5, borderRadius: 3, marginTop: 4,
+              backgroundColor: d.has ? (on ? C.lime : C.green) : 'transparent',
+            }} />
+          </View>
+        </Pressable>
+      );
+    })}
+  </View>
+);

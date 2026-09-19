@@ -404,4 +404,48 @@ export default {
   signupCount, tournamentState, tournamentStatusLine, canApply,
   buildAgenda, filterAgenda, countByKind,
   monthMeta, shiftMonth, monthLabel, calendarGrid, dateHead, ddayOf,
-};
+  weekDays,};
+
+/**
+ * 주간 날짜 띠 — 일정 화면 위쪽에 놓는 7칸.
+ *
+ * 달력을 펼치지 않고도 "이번 주 어디에 뭐가 있나"가 보인다. 달력은
+ * 한 달을 다 그리느라 오늘 주변이 오히려 안 보이고, 목록은 스크롤을
+ * 내려야 다음 날이 나온다. 그 사이를 메우는 것이다.
+ *
+ * ⚠️ 주의 시작을 월요일로 고정하지 않는다. 오늘부터 세는 편이 실제로
+ *    쓸모 있다 — 회원이 궁금한 것은 "이번 주 월요일"이 아니라
+ *    "오늘부터 며칠 안에 뭐가 있나"다.
+ *
+ * @param from  'YYYY-MM-DD' 시작일(보통 오늘)
+ * @param items buildAgenda 가 만든 목록 (date 를 가진 것들)
+ * @returns [{date, day, dow, tone, has}]
+ */
+const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+
+export function weekDays(from, items = [], count = 7) {
+  const base = String(from || '');
+  if (base.length !== 10) return [];
+  const has = new Set(
+    (items || []).map((it) => String(it?.date || '').slice(0, 10)).filter(Boolean),
+  );
+  const out = [];
+  for (let i = 0; i < Math.max(1, count); i += 1) {
+    const d = new Date(`${base}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return [];
+    d.setDate(d.getDate() + i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const date = `${y}-${m}-${day}`;
+    const w = d.getDay();
+    out.push({
+      date,
+      day: d.getDate(),
+      dow: DOW[w],
+      tone: w === 0 ? 'sun' : w === 6 ? 'sat' : null,
+      has: has.has(date),
+    });
+  }
+  return out;
+}

@@ -10,6 +10,7 @@ import {
   signupCount, tournamentState, tournamentStatusLine, canApply,
   buildAgenda, filterAgenda, countByKind,
   monthMeta, shiftMonth, monthLabel, calendarGrid, dateHead, ddayOf, dowName,
+  weekDays,
 } from '../src/lib/agenda.js';
 
 let pass = 0; let fail = 0;
@@ -253,6 +254,35 @@ console.log('\n[아무 데이터도 없을 때]');
   eq(buildAgenda({ tournaments: [{ id: 't', signup: { open: true } }] },
     { today: TODAY, isAdmin: true })[0].date, '', '대회는 날짜 미정이어도 목록에는 둔다');
 }
+
+console.log('[주간 날짜 띠]');
+/* 달력을 펼치지 않고도 이번 주가 보이게 하는 7칸.
+   ⚠️ 주 시작을 월요일로 고정하지 않는다. 회원이 궁금한 것은
+      "이번 주 월요일"이 아니라 "오늘부터 며칠 안에 뭐가 있나"다. */
+const wk = weekDays('2026-09-19', [{ date: '2026-09-19' }, { date: '2026-09-22' }]);
+eq(wk.length, 7, '7칸');
+eq(wk[0].date, '2026-09-19', '오늘부터 시작한다');
+eq(wk[0].dow, '토', '요일 이름');
+eq(wk[0].tone, 'sat', '토요일 표시');
+eq(wk[1].tone, 'sun', '일요일 표시');
+eq(wk[2].tone, null, '평일은 표시 없음');
+ok(wk[0].has, '일정 있는 날에 점');
+ok(wk[3].has, '사흘 뒤에도 점');
+ok(!wk[1].has, '일정 없는 날엔 점 없음');
+eq(wk[6].date, '2026-09-25', '7일째까지 이어진다');
+
+/* 달·해를 넘어가도 이어져야 한다 — 말일 근처에서 깨지기 쉽다 */
+eq(weekDays('2026-09-28', []).map((d) => d.date).slice(0, 4),
+  ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01'],
+  '달을 넘어가도 이어진다');
+eq(weekDays('2026-12-30', [])[2].date, '2027-01-01', '해를 넘어가도 이어진다');
+
+/* 엉뚱한 입력에 터지지 않는다 — 날짜는 서버에서 오고 비어 있을 수 있다 */
+eq(weekDays(''), [], '빈 값이면 빈 목록');
+eq(weekDays(null), [], 'null 이어도 터지지 않는다');
+eq(weekDays('2026-09'), [], '형식이 다르면 빈 목록');
+eq(weekDays('2026-09-19', null).length, 7, '항목이 null 이어도 칸은 그린다');
+ok(weekDays('2026-09-19', []).every((d) => !d.has), '항목이 없으면 점도 없다');
 
 console.log(`\n통합 일정 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

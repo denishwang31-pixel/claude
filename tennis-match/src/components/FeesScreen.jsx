@@ -16,7 +16,8 @@ import { VenuePicker } from './VenuePicker';
 import { DuesPools } from './DuesPoolScreen';
 import { billingScopes, membersInScope, feeDocKey } from '../lib/scope';
 import { BillingScopeTabs } from './ScopeControls';
-import { Card, SectionTitle, Chip, Btn, Field } from './ui';
+import { Card, SectionTitle, Chip, Btn, Field, HeroCard,
+} from './ui';
 import { C, S } from '../lib/theme';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -176,21 +177,44 @@ export function Fees({
         </View>
       )}
 
-      {/* 요약 */}
-      <Card style={{ marginTop: 10, backgroundColor: C.ink, borderColor: C.green }}>
-        <Text style={{ color: C.lime, fontSize: 11, fontWeight: '800' }}>
-          {periodKey} 정산
-          {venueId ? ` · ${visibleVenues.find((v) => v.id === venueId)?.name || ''}` : ' · 전체 코트'}
-        </Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-          {[['수입', income, '#BFE3D3'], ['지출', spent, '#fca5a5'], ['잔액', income - spent, C.lime]].map(([label, v, col]) => (
-            <View key={label} style={{ flex: 1, backgroundColor: C.green, borderRadius: 12, padding: 8, alignItems: 'center' }}>
-              <Text style={{ color: col, fontSize: 14, fontWeight: '700' }}>{Number(v).toLocaleString()}</Text>
-              <Text style={{ color: '#BFE3D3', fontSize: 10 }}>{label}</Text>
-            </View>
-          ))}
+      {/* ---------- 요약 ----------
+
+          시안처럼 잔액을 크게 하나 두고, 수입·지출은 그 아래 작게 둔다.
+          총무가 이 화면에서 제일 먼저 확인하는 것이 "지금 얼마 남았나"다.
+
+          ⚠️ 시안에는 "스마트 자동 입금 대사 · 실시간 · 방금 4건 자동 승인"
+             같은 문구가 있는데, 이 앱의 입금 대사는 은행 내역을 붙여넣어
+             맞추는 방식이고 자동 승인도 없다. 없는 동작을 적어 두면
+             총무가 그걸 믿고 확인을 건너뛴다 — 돈 다루는 화면에서는
+             그게 제일 위험하다. 그래서 문구를 넣지 않았다. */}
+      <HeroCard style={{ marginTop: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ color: C.lime, fontSize: 12, fontWeight: '700' }}>
+            {periodKey} 정산
+            {venueId ? ` · ${visibleVenues.find((v) => v.id === venueId)?.name || ''}` : ' · 전체 코트'}
+          </Text>
         </View>
-      </Card>
+
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 5, marginTop: S.md }}>
+          <Text style={{ color: '#fff', fontSize: 30, fontWeight: '800', letterSpacing: -1 }}>
+            {Number(income - spent).toLocaleString()}
+          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 15, fontWeight: '700', marginBottom: 4 }}>
+            원
+          </Text>
+        </View>
+        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 2 }}>
+          이번 기간 잔액 (수입 − 지출)
+        </Text>
+
+        <View style={{
+          flexDirection: 'row', gap: S.sm, marginTop: S.lg, paddingTop: S.md,
+          borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)',
+        }}>
+          <MoneyCell label="수입" value={income} tone="lime" />
+          <MoneyCell label="지출" value={spent} tone="red" />
+        </View>
+      </HeroCard>
 
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
         <Tab v="income" label="정기 회비" />
@@ -348,3 +372,14 @@ export function Fees({
     </View>
   );
 }
+
+/** 히어로 안의 금액 한 칸 */
+const MoneyCell = ({ label, value, tone }) => (
+  <View style={{ flex: 1 }}>
+    <Text style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.6)' }}>{label}</Text>
+    <Text style={{
+      fontSize: 17, fontWeight: '800', marginTop: 2, letterSpacing: -0.4,
+      color: tone === 'red' ? '#FCA5A5' : C.lime,
+    }}>{Number(value).toLocaleString()}원</Text>
+  </View>
+);

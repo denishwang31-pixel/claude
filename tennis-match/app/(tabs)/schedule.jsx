@@ -15,7 +15,7 @@ import {
   applyToTournament, cancelTournamentApply,
 } from '../../src/lib/firestore';
 import {
-  KIND, KINDS, buildAgenda, filterAgenda, countByKind, canApply,
+  KIND, KINDS, buildAgenda, filterAgenda, countByKind, canApply, weekDays,
   shiftMonth as shiftAgendaMonth,
 } from '../../src/lib/agenda';
 import {
@@ -40,7 +40,7 @@ import { VenuePicker } from '../../src/components/VenuePicker';
 import { Icon } from '../../src/components/Icon';
 import { AppButton, Fab, useOptionSheet } from '../../src/components/native';
 import {
-  Card, SectionTitle, Btn, Field, Avatar, Chip, CheckRow, EmptyState,
+  Card, SectionTitle, Btn, Field, Avatar, Chip, CheckRow, EmptyState, WeekStrip,
 } from '../../src/components/ui';
 import { C, S, R, F } from '../../src/lib/theme';
 
@@ -658,6 +658,28 @@ export default function Schedule() {
           onShiftMonth={(d) => { setCalMonth(shiftAgendaMonth(calMonth, d)); setPickedDate(null); }}
         />
 
+        {/* 주간 날짜 띠 — 목록 보기에서만.
+            달력 보기에는 달력이 이미 있으므로 두 번 그리지 않는다.
+            누르면 그 날짜로 걸러 보고, 같은 날을 다시 누르면 해제된다 —
+            한 번 누르면 풀 방법이 없으면 갇힌 느낌이 든다. */}
+        {view !== 'calendar' && (
+          <View style={{ marginBottom: S.md }}>
+            <WeekStrip
+              days={weekDays(today(), agenda)}
+              value={pickedDate}
+              onPick={(d) => setPickedDate(pickedDate === d ? null : d)}
+            />
+            {!!pickedDate && (
+              <Pressable onPress={() => setPickedDate(null)} hitSlop={8}
+                style={{ alignSelf: 'center', marginTop: 8 }}>
+                <Text style={{ fontSize: 12, color: C.green2, fontWeight: '600' }}>
+                  {pickedDate.slice(5).replace('-', '월 ')}일만 보는 중 · 해제
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+
         {view === 'calendar' ? (
           <>
             <CalendarView
@@ -673,6 +695,10 @@ export default function Schedule() {
             )}
             <DayList date={pickedDate} items={dayItems} today={today()} renderItem={agendaItem} />
           </>
+        ) : pickedDate ? (
+          /* 띠에서 날짜를 고르면 그 날만 본다. 달력 보기가 쓰는 것과
+             같은 조각을 재활용한다 — 같은 일을 두 벌로 만들면 갈라진다. */
+          <DayList date={pickedDate} items={dayItems} today={today()} renderItem={agendaItem} />
         ) : (
           <>
             {/* 대회·게스트 모집 — 날짜가 정해진 단발 일정이라 위에 모아 둔다.

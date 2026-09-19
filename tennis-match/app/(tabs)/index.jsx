@@ -21,6 +21,8 @@ import {
   updateMeeting, subGear, subJoinRequests, subServiceStats, setRsvp,
 } from '../../src/lib/firestore';
 import { dowName } from '../../src/lib/schedule';
+import { ddayOf } from '../../src/lib/agenda';
+import { membersInScope } from '../../src/lib/scope';
 import { canRsvpSelf, rsvpBlockReason } from '../../src/lib/scheduleView';
 import {
   RSVP, viewModesFor, roleTone, JOIN_STATUS, screenRef,
@@ -33,6 +35,7 @@ import { Icon } from '../../src/components/Icon';
 import { useOptionSheet } from '../../src/components/native';
 import {
   Card, SectionTitle, Chip, Btn, IconTile, StatCard, EmptyState, Badge,
+  HeroCard, HeroPill, RsvpRow, QuickTile, StatTile,
 } from '../../src/components/ui';
 import { C, S, R, F, SHADOW } from '../../src/lib/theme';
 
@@ -55,11 +58,15 @@ const MANAGE = [
 ];
 
 /** 매일 쓰는 것만 바로가기로 — 나머지는 [더보기] */
+/* 매일 쓰는 네 가지.
+   시안처럼 이름 아래 한 줄을 더 둔다 — 아이콘과 이름만 있으면
+   "지금 저기에 뭐가 있는지"를 들어가 봐야 안다. 그 한 줄은 지어내지
+   않고 실제 값에서 만든다(아래 quickSub). */
 const QUICK = [
-  ['schedule', '일정', '/(tabs)/schedule'],
-  ['match', '대진표', '/(tabs)/match'],
-  ['chat', '채팅', { more: 'chat' }],
-  ['guest', '게스트', { more: 'guest' }],
+  ['schedule', '일정 · 투표', '/(tabs)/schedule'],
+  ['match', '대진 · 점수', '/(tabs)/match'],
+  ['chat', '클럽 채팅', { more: 'chat' }],
+  ['guest', '게스트 모집', { more: 'guest' }],
 ];
 
 export default function Home() {
@@ -121,8 +128,24 @@ export default function Home() {
 
   const meeting = visible[0];
   const w = meeting ? weatherFor(meeting.date, meeting.forecast) : null;
+
+  /* 다음 모임의 응답 현황.
+     ⚠️ 참석 수에는 게스트를 더한다. 게스트는 rsvp 맵이 아니라 guests 에
+        들어 있어서, 빼면 "14명 온다는데 표에는 11명"이 된다. */
+  const rsvpVals = Object.values(meeting?.rsvp || {});
   const yes = meeting
-    ? Object.values(meeting.rsvp || {}).filter((v) => v === RSVP.YES).length + (meeting.guests?.length || 0) : 0;
+    ? rsvpVals.filter((v) => v === RSVP.YES).length + (meeting.guests?.length || 0) : 0;
+  const maybeCount = rsvpVals.filter((v) => v === RSVP.MAYBE).length;
+  const noCount = rsvpVals.filter((v) => v === RSVP.NO).length;
+  /* 미응답 = 이 코트장 소속 회원 중 아직 안 누른 사람.
+     0 보다 작아지지 않게 막는다 — 명단이 바뀌는 중에 음수가 스칠 수 있다. */
+  const unanswered = meeting
+    ? Math.max(0, membersInScope(members, meeting.venueId || null).length - rsvpVals.length) : 0;
+  const myRsvp = meeting?.rsvp?.[me];
+
+  /* D-day 문구. 계산을 새로 만들지 않고 일정 화면이 쓰는 것을 그대로
+     가져다 쓴다 — 같은 계산이 두 벌이면 반드시 갈라진다. */
+  const ddayText = meeting ? ddayOf(meeting.date, today()) : '';
 
   /* 대회는 단발성 주요 이벤트다. [더보기] 안에 묻혀 있으면 아무도 못 본다.
      다음 모임 바로 아래에 둬서 접근성을 올린다. */
@@ -136,6 +159,22 @@ export default function Home() {
 
   const myStat = stats[me];
   const venueName = (id) => venues.find((v) => v.id === id)?.name;
+
+  /* 타일 밑줄. ⚠️ 없는 숫자를 지어내지 않는다. 셀 수 있는 것만 세고,
+     셀 수 없으면 빈 문자열을 돌려 밑줄 자체를 안 그린다. */
+  const quickSub = (key) => {
+    if (key === 'schedule') {
+      return visible.length ? `예정 ${visible.length}건` : '예정 없음';
+    }
+    if (key === 'match') {
+      return meeting?.matches?.length ? `${meeting.matches.length}경기 편성됨` : '아직 편성 전';
+    }
+    if (key === 'guest') {
+      const open = (guestPosts || []).filter((g) => !g.closed).length;
+      return open ? `모집 중 ${open}건` : '모집 중 없음';
+    }
+    return '';
+  };
 
   /* 화면 이동.
 
@@ -288,64 +327,116 @@ export default function Home() {
           </View>
         )}
 
-        {/* 다음 모임 — 눌러서 대진표로 */}
-        <Pressable disabled={!meeting}
-          onPress={() => goMeeting(meeting)}
-          style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}>
-          <View style={[{ backgroundColor: C.ink, borderRadius: R.xl, padding: S.xl }, SHADOW.md]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: C.lime, fontSize: 11.5, fontWeight: '600', letterSpacing: 0.3 }}>
-                  {seeAllVenues ? '다음 모임 · 전체 코트' : mode === 'lead' ? '다음 모임 · 담당 코트' : '내 다음 모임'}
+        {/* ---------- 다음 모임 (시안의 Now Card) ----------
+
+            시안에서 가장 값어치 있는 부분이다. 회원이 이 앱에서 하는
+            일의 대부분은 "갈까 말까"에 한 번 답하는 것인데, 지금까지는
+            모임을 눌러 들어가야 응답할 수 있었다. 화면을 열자마자
+            누를 수 있게 한다.
+
+            ⚠️ 시안에는 "14 / 16명 정원 · 잔여 2자리" 게이지가 있다.
+               이 앱의 모임에는 정원 필드가 없다. 코트 수로 어림해 그리면
+               그럴듯한 거짓 숫자가 되므로, 분모 없이 실제 응답 수만 적는다.
+               정원을 정말 쓰려면 먼저 기능으로 만들어야 한다. */}
+        <HeroCard onPress={meeting ? () => goMeeting(meeting) : undefined}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <HeroPill>
+              {meeting ? `${ddayText} 모임` : '다음 모임'}
+            </HeroPill>
+            {w && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Icon name="weather" size={16} color={C.lime} />
+                <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12.5, fontWeight: '600' }}>
+                  {w.temp}° · 강수 {w.rain}%
                 </Text>
-                {meeting ? (
-                  <>
-                    <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700', marginTop: 8, letterSpacing: -0.4 }}>
-                      {meeting.date.slice(5).replace('-', '.')} ({dowName(meeting.date)}) {meeting.time}
-                    </Text>
-                    <Text style={{ color: 'rgba(255,255,255,0.66)', fontSize: 12.5, marginTop: 4 }}>
-                      {meeting.place || venueName(meeting.venueId) || '장소 미정'} · 코트 {meeting.courts}면
-                    </Text>
-                  </>
-                ) : (
-                  <Text style={{ color: '#fff', marginTop: 8, fontSize: 14 }}>
-                    {isAdmin ? '예정된 모임이 없습니다' : '참여 예정인 모임이 없습니다'}
-                  </Text>
-                )}
-              </View>
-              {w && (
-                <View style={{ alignItems: 'center', gap: 2 }}>
-                  <Icon name="weather" size={22} color={C.lime2} />
-                  <Text style={{ color: 'rgba(255,255,255,0.66)', fontSize: 11 }}>{w.temp}° · {w.rain}%</Text>
-                </View>
-              )}
-            </View>
-
-            {meeting && (
-              <>
-                <View style={{ flexDirection: 'row', gap: S.sm, marginTop: S.lg }}>
-                  <StatCard tone="dark" value={yes} label="참석 확정" />
-                  <StatCard tone="dark" value={meeting.matches?.length || 0} label="생성된 경기" />
-                  <StatCard tone="dark" value={`${meeting.rounds || 0}`} label="타임" />
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 12 }}>
-                  <Text style={{ color: C.lime, fontSize: 12, fontWeight: '600' }}>대진표 보기</Text>
-                  <Icon name="forward" size={13} color={C.lime} />
-                </View>
-              </>
-            )}
-
-            {w && w.rain >= 60 && isAdmin && meeting && (
-              <View style={{
-                marginTop: S.md, backgroundColor: 'rgba(214,69,93,0.16)', borderRadius: R.md,
-                padding: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              }}>
-                <Text style={{ color: '#F1A7B4', fontSize: 12 }}>우천 예보 — 취소 여부 결정</Text>
-                <Btn small tone="danger" onPress={() => updateMeeting(clubId, meeting.id, { canceled: true })}>우천 취소</Btn>
               </View>
             )}
           </View>
-        </Pressable>
+
+          {meeting ? (
+            <>
+              <Text style={{
+                color: '#fff', fontSize: 23, fontWeight: '800',
+                marginTop: S.md, letterSpacing: -0.6, lineHeight: 30,
+              }}>
+                {`${Number(meeting.date.slice(5, 7))}월 ${Number(meeting.date.slice(8, 10))}일`}
+                {`(${dowName(meeting.date)}) ${meeting.time || ''}`}
+              </Text>
+              <Text style={{ color: 'rgba(255,255,255,0.68)', fontSize: 13, marginTop: 5, lineHeight: 19 }}>
+                {meeting.place || venueName(meeting.venueId) || '장소 미정'}
+                {meeting.courts ? ` · ${meeting.courts}코트` : ''}
+                {meeting.rounds ? ` · ${meeting.rounds}타임` : ''}
+              </Text>
+
+              {/* 응답 현황 — 분모 없이, 있는 값만 */}
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: S.md,
+                marginTop: S.lg, paddingTop: S.md,
+                borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)',
+              }}>
+                <RsvpCount label="참석" value={yes} tone="lime" />
+                <RsvpCount label="미정" value={maybeCount} />
+                <RsvpCount label="불참" value={noCount} />
+                {unanswered > 0 && <RsvpCount label="미응답" value={unanswered} />}
+              </View>
+
+              {/* 1-탭 응답 */}
+              {canRsvpSelf(meVal, meeting) ? (
+                <View style={{ marginTop: S.lg }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11.5, fontWeight: '600', marginBottom: 7 }}>
+                    내 참석 여부 — 누르면 바로 반영됩니다
+                  </Text>
+                  <RsvpRow
+                    dark
+                    value={myRsvp}
+                    onPick={(v) => setRsvp(clubId, meeting.id, me, v, me)}
+                    options={[
+                      { key: RSVP.YES, label: '참석', icon: 'check' },
+                      { key: RSVP.MAYBE, label: '미정', icon: 'info' },
+                      { key: RSVP.NO, label: '불참', icon: 'close' },
+                    ]}
+                  />
+                </View>
+              ) : (
+                !!rsvpBlockReason(meVal, meeting, venueName(meeting.venueId)) && (
+                  <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11.5, marginTop: S.md, lineHeight: 17 }}>
+                    {rsvpBlockReason(meVal, meeting, venueName(meeting.venueId))}
+                  </Text>
+                )
+              )}
+
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                marginTop: S.lg, paddingTop: S.md,
+                borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)',
+              }}>
+                <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>
+                  {meeting.matches?.length
+                    ? `대진 ${meeting.matches.length}경기 생성됨`
+                    : '대진은 아직 짜이지 않았습니다'}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={{ color: C.lime, fontSize: 13, fontWeight: '700' }}>대진표 확인</Text>
+                  <Icon name="forward" size={14} color={C.lime} />
+                </View>
+              </View>
+            </>
+          ) : (
+            <Text style={{ color: 'rgba(255,255,255,0.85)', marginTop: S.md, fontSize: 15, lineHeight: 22 }}>
+              {isAdmin ? '예정된 모임이 없습니다.\n[일정]에서 새 모임을 만들어 보세요.' : '참여 예정인 모임이 없습니다.'}
+            </Text>
+          )}
+
+          {w && w.rain >= 60 && isAdmin && meeting && (
+            <View style={{
+              marginTop: S.md, backgroundColor: 'rgba(220,38,38,0.18)', borderRadius: R.md,
+              padding: S.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: S.sm,
+            }}>
+              <Text style={{ color: '#FCA5A5', fontSize: 12.5, flex: 1 }}>우천 예보 — 취소 여부를 정해 주세요</Text>
+              <Btn small tone="danger" onPress={() => updateMeeting(clubId, meeting.id, { canceled: true })}>우천 취소</Btn>
+            </View>
+          )}
+        </HeroCard>
 
         {/* 다가오는 대회 — 단발성이라 놓치기 쉽다. 다음 모임 바로 다음 자리 */}
         {upcomingTournaments.length > 0 && (
@@ -379,15 +470,19 @@ export default function Home() {
           </>
         )}
 
-        {/* 바로가기 — 매일 쓰는 4개만 */}
-        <Card style={{ marginTop: S.md, paddingVertical: S.lg }}>
-          <View style={{ flexDirection: 'row' }}>
-            {QUICK.map(([key, label, target]) => (
-              <IconTile key={key} icon={key} label={label} width="25%"
-                onPress={() => (typeof target === 'string' ? goScoped(target) : go(target))} />
-            ))}
-          </View>
-        </Card>
+        {/* 바로가기 — 매일 쓰는 4개만. 시안의 2×2 타일 */}
+        <View style={{ flexDirection: 'row', gap: S.sm, marginTop: S.lg }}>
+          {QUICK.slice(0, 2).map(([key, label, target]) => (
+            <QuickTile key={key} icon={key} label={label} sub={quickSub(key)}
+              onPress={() => (typeof target === 'string' ? goScoped(target) : go(target))} />
+          ))}
+        </View>
+        <View style={{ flexDirection: 'row', gap: S.sm, marginTop: S.sm }}>
+          {QUICK.slice(2).map(([key, label, target]) => (
+            <QuickTile key={key} icon={key} label={label} sub={quickSub(key)}
+              onPress={() => (typeof target === 'string' ? goScoped(target) : go(target))} />
+          ))}
+        </View>
 
 
         {/* 클럽 운영 — 예전에는 [더보기]로 넘기는 입구 하나였는데, 한 번 더
@@ -550,10 +645,14 @@ export default function Home() {
             </SectionTitle>
             <Card>
               <View style={{ flexDirection: 'row', gap: S.sm }}>
-                <StatCard value={myStat.games} label="경기" />
-                <StatCard value={myStat.wins} label="승" />
-                <StatCard value={`${Math.round((myStat.wins / myStat.games) * 100)}%`} label="승률" />
+                <StatTile value={myStat.games} label="총 경기수" />
+                <StatTile value={`${myStat.wins}승 ${Math.max(0, myStat.games - myStat.wins)}패`} label="승 / 패" />
+                <StatTile tone="soft"
+                  value={`${Math.round((myStat.wins / myStat.games) * 100)}%`} label="승률" />
               </View>
+              {/* ⚠️ 시안에는 "최고 승률 파트너 · 케미 85%" 줄이 있다.
+                  파트너 궁합을 계산하는 기능이 이 앱에 없다. 숫자를
+                  지어내지 않고 줄 자체를 빼 둔다. 만들면 그때 넣는다. */}
             </Card>
           </>
         )}
@@ -582,3 +681,14 @@ export default function Home() {
     </View>
   );
 }
+
+/** 히어로 안의 응답 숫자 한 칸 */
+const RsvpCount = ({ label, value, tone }) => (
+  <View>
+    <Text style={{
+      fontSize: 19, fontWeight: '800', letterSpacing: -0.5,
+      color: tone === 'lime' ? C.lime : '#fff',
+    }}>{value}</Text>
+    <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 1 }}>{label}</Text>
+  </View>
+);

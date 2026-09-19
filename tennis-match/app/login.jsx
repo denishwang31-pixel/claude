@@ -26,13 +26,14 @@
    ============================================================ */
 import React, { useState } from 'react';
 import {
-  View, Text, Pressable, ScrollView, Modal, Platform,
+  View, Text, Pressable, ScrollView, Modal, Platform, Image,
   KeyboardAvoidingView, ActivityIndicator, LayoutAnimation, UIManager,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '../src/components/Icon';
 import {
   signInEmail, signUpEmail, signInAnon, getMySession, sendReset,
 } from '../src/lib/auth';
@@ -170,37 +171,60 @@ export default function Login() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ flexGrow: 1 }}>
 
-          {/* ---------------- 히어로 ---------------- */}
-          <View style={{
-            backgroundColor: C.ink,
-            paddingTop: insets.top + S.xxl,
-            paddingHorizontal: S.xl,
-            paddingBottom: S.xxl + S.md,
-          }}>
+          {/* ---------------- 히어로 ----------------
+
+              코트 사진 + 로고. 둘 다 앱에 실어 둔 파일이다(assets/brand).
+              ⚠️ 외부 주소로 불러오지 않는다 — 스토어 앱의 첫 화면이
+                 남의 서버 사정에 달리면 안 되고, 비행기 모드에서도
+                 화면이 비면 안 된다.
+
+              사진 위에 글씨를 얹지 않았다. 시안은 사진 위에 제목을
+              올리는데, 사진의 밝기는 기기 밝기와 햇빛에 따라 달라져서
+              어떤 상황에서는 글씨가 사라진다. 글씨는 전부 흰 시트에 둔다. */}
+          <View style={{ height: 224, backgroundColor: C.ink }}>
+            <Image
+              source={require('../assets/brand/court-hero.webp')}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="cover"
+            />
+            {/* 아래로 갈수록 짙어지는 덮개. 시트와 자연스럽게 이어지고,
+                사진이 밝아도 아래쪽 경계가 뭉개지지 않는다. */}
+            <View style={{ ...FILL, backgroundColor: 'rgba(19,42,34,0.28)' }} />
             <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 6,
-              alignSelf: 'flex-start', borderRadius: R.pill,
-              backgroundColor: 'rgba(255,255,255,0.12)',
-              paddingHorizontal: 12, paddingVertical: 7,
+              position: 'absolute', left: 0, right: 0, bottom: 0, height: 90,
+              backgroundColor: 'rgba(19,42,34,0.55)',
+            }} />
+
+            {/* 상단 배지 — 숫자를 적지 않는다.
+                ⚠️ 시안에는 "전국 520+ 클럽 운영 중"이 있는데 사실이 아니다.
+                   첫 화면에 없는 숫자를 적으면 광고로도 문제이고, 아는
+                   사람에게는 앱 전체의 신뢰를 깎는다. 실제로 셀 수 있게
+                   되면 그때 서버 값으로 넣는다. */}
+            <View style={{
+              position: 'absolute', top: insets.top + S.md, left: S.xl,
+              flexDirection: 'row', alignItems: 'center', gap: 7,
+              backgroundColor: 'rgba(255,255,255,0.92)',
+              borderRadius: R.pill, paddingHorizontal: 13, paddingVertical: 7,
             }}>
-              <Ionicons name="tennisball" size={14} color={C.lime} />
-              <Text style={{ color: C.lime, fontSize: 12.5, fontWeight: '700' }}>
-                테니스 클럽 운영, 한 곳에서
+              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: C.green }} />
+              <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.green }}>
+                테니스 클럽 운영 올인원
               </Text>
             </View>
+          </View>
 
-            <Text style={{
-              fontSize: 31, fontWeight: '800', color: '#fff',
-              marginTop: S.lg, lineHeight: 41, letterSpacing: -0.7,
-            }}>
-              코트의 즐거움,{'\n'}운영의 편안함
-            </Text>
-            <Text style={{
-              fontSize: 14.5, color: 'rgba(255,255,255,0.72)',
-              marginTop: S.sm, lineHeight: 21,
-            }}>
-              일정·참석 투표·대진표·회비까지{'\n'}단톡방과 엑셀 없이 한 번에.
-            </Text>
+          {/* 로고 — 사진과 시트 경계에 걸친다 (시안의 엠블럼 자리) */}
+          <View style={{ alignItems: 'center', marginTop: -36, zIndex: 5 }}>
+            <View style={[{
+              width: 72, height: 72, borderRadius: 22, padding: 6,
+              backgroundColor: C.surface,
+            }, SHADOW.md]}>
+              <Image
+                source={require('../assets/brand/logo.png')}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="contain"
+              />
+            </View>
           </View>
 
           {/* ---------------- 시트 ---------------- */}
@@ -208,11 +232,26 @@ export default function Login() {
             flexGrow: 1,
             backgroundColor: C.surface,
             borderTopLeftRadius: R.xxl, borderTopRightRadius: R.xxl,
-            marginTop: -S.xl,
+            marginTop: -S.lg,
             paddingHorizontal: S.xl,
-            paddingTop: S.xl,
+            paddingTop: S.md,
             paddingBottom: insets.bottom + S.xl,
           }, SHADOW.lg]}>
+
+            {/* 브랜드 — 시안처럼 마침표를 브랜드 색으로 */}
+            <View style={{ alignItems: 'center', marginBottom: S.xl }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                <Text style={{
+                  fontSize: 27, fontWeight: '800', color: C.text, letterSpacing: -0.8,
+                }}>테니스매치</Text>
+                <Text style={{
+                  fontSize: 27, fontWeight: '800', color: C.green, letterSpacing: -0.8,
+                }}>.</Text>
+              </View>
+              <Text style={{ fontSize: 14, color: C.sub, marginTop: 5 }}>
+                더 즐겁고 편한 클럽 테니스 라이프
+              </Text>
+            </View>
 
             {!!inviteCode && (
               <View style={{
@@ -330,39 +369,66 @@ export default function Login() {
             )}
 
             {/* ---------------- 둘러보기 ---------------- */}
-            <View style={{ alignItems: 'center', marginTop: S.xxl }}>
-              <Pressable disabled={busy} onPress={demo}
-                style={({ pressed }) => ({
-                  flexDirection: 'row', alignItems: 'center', gap: 6,
-                  minHeight: TAP.btn, paddingHorizontal: 16,
-                  opacity: pressed ? 0.6 : 1,
-                })}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: C.green }}>
-                  계정 없이 둘러보기
-                </Text>
-                <Ionicons name="arrow-forward" size={16} color={C.green} />
-              </Pressable>
-
+            <View style={{ marginTop: S.xl }}>
+              <Btn full cta tone="soft" disabled={busy} onPress={demo}
+                icon={<Icon name="ball" size={19} color={C.green} />}>
+                계정 없이 클럽 둘러보기
+              </Btn>
               <Text style={{
-                fontSize: 12, color: C.faint, textAlign: 'center',
-                marginTop: 2, lineHeight: 18, maxWidth: 320,
+                fontSize: 12.5, color: C.sub, textAlign: 'center',
+                marginTop: 8, lineHeight: 18,
               }}>
-                둘러보기로 만든 기록은 앱을 지우면 사라집니다.
+                게스트 모집 게시판과 코트 검색을 바로 볼 수 있습니다
               </Text>
-
-              {/* 둘러보기도 계정(익명)을 만드는 것이라 동의 근거가 필요하다.
-                  체크박스를 하나 더 두면 구경만 하려는 사람을 막게 되므로,
-                  진행으로 갈음하고 문서로 가는 길을 함께 둔다. */}
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                flexWrap: 'wrap', gap: 4, marginTop: 10,
+              <Text style={{
+                fontSize: 11.5, color: C.faint, textAlign: 'center',
+                marginTop: 3, lineHeight: 17,
               }}>
-                <Text style={{ fontSize: 11.5, color: C.faint }}>계속하면</Text>
-                <LinkText small onPress={() => setLegal('terms')}>이용약관</LinkText>
-                <Text style={{ fontSize: 11.5, color: C.faint }}>및</Text>
-                <LinkText small onPress={() => setLegal('privacy')}>개인정보처리방침</LinkText>
-                <Text style={{ fontSize: 11.5, color: C.faint }}>에 동의하게 됩니다</Text>
-              </View>
+                둘러보기로 만든 기록은 앱을 지우면 사라집니다
+              </Text>
+            </View>
+
+            {/* ---------------- 이 앱이 하는 일 ----------------
+
+                ⚠️ 시안의 세 칸은 "실명 인증 매칭 / NTRP 등급제 / 코트
+                   알림 실시간 빈자리"인데, 셋 다 이 앱에 없는 기능이다.
+                   첫 화면에 없는 기능을 적으면 받은 사람이 그걸 기대하고
+                   들어왔다가 못 찾는다. 실제로 있는 것 세 가지로 바꿨다. */}
+            <View style={[{
+              flexDirection: 'row', marginTop: S.xxl,
+              backgroundColor: C.surface, borderRadius: R.lg,
+              borderWidth: 1, borderColor: C.border,
+              paddingVertical: S.md, paddingHorizontal: S.sm,
+            }, SHADOW.sm]}>
+              {[
+                ['schedule', '일정 · 참석 투표', '누르면 바로 반영'],
+                ['match', '대진 자동 편성', '출전 수까지 고르게'],
+                ['fees', '회비 · 입금 대사', '단톡방 독촉 없이'],
+              ].map(([icon, title, sub]) => (
+                <View key={title} style={{ flex: 1, alignItems: 'center', paddingHorizontal: 3 }}>
+                  <Icon name={icon} size={21} color={C.green} />
+                  <Text numberOfLines={1} style={{
+                    fontSize: 12, fontWeight: '700', color: C.text, marginTop: 6,
+                  }}>{title}</Text>
+                  <Text numberOfLines={1} style={{ fontSize: 10.5, color: C.faint, marginTop: 2 }}>
+                    {sub}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {/* 둘러보기도 계정(익명)을 만드는 것이라 동의 근거가 필요하다.
+                체크박스를 하나 더 두면 구경만 하려는 사람을 막게 되므로,
+                진행으로 갈음하고 문서로 가는 길을 함께 둔다. */}
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              flexWrap: 'wrap', gap: 4, marginTop: S.xl,
+            }}>
+              <Text style={{ fontSize: 11.5, color: C.faint }}>계속 진행 시 테니스매치의</Text>
+              <LinkText small onPress={() => setLegal('terms')}>이용약관</LinkText>
+              <Text style={{ fontSize: 11.5, color: C.faint }}>및</Text>
+              <LinkText small onPress={() => setLegal('privacy')}>개인정보처리방침</LinkText>
+              <Text style={{ fontSize: 11.5, color: C.faint }}>에 동의하게 됩니다</Text>
             </View>
           </View>
         </ScrollView>
