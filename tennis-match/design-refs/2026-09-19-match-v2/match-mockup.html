@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+
+<html lang="ko"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: 'class', theme: { extend: { colors: { 'surface-container': '#eaedff', 'on-tertiary-fixed-variant': '#00513b', 'on-primary-container': '#97e8c5', 'on-surface-variant': '#3f4944', 'on-primary-fixed': '#002115', 'tertiary-fixed-dim': '#8ed5b7', 'tertiary-container': '#216a52', 'surface-tint': '#0f6b4f', 'on-primary-fixed-variant': '#00513a', 'surface-bright': '#faf8ff', 'surface-dim': '#d2d9f4', 'tertiary': '#00513b', 'secondary-container': '#6cf8bb', 'on-background': '#131b2e', 'on-tertiary-fixed': '#002116', 'on-error': '#ffffff', 'on-secondary-fixed-variant': '#005236', 'primary-fixed': '#a1f3cf', 'outline': '#6f7a73', 'surface-container-low': '#f2f3ff', 'outline-variant': '#bec9c2', 'secondary-fixed-dim': '#4edea3', 'surface-variant': '#dae2fd', 'primary-fixed-dim': '#86d7b4', 'secondary-fixed': '#6ffbbe', 'on-surface': '#131b2e', 'surface': '#faf8ff', 'inverse-primary': '#86d7b4', 'on-secondary-fixed': '#002113', 'on-secondary-container': '#00714d', 'on-error-container': '#93000a', 'error-container': '#ffdad6', 'inverse-surface': '#283044', 'secondary': '#006c49', 'surface-container-high': '#e2e7ff', 'on-tertiary': '#ffffff', 'inverse-on-surface': '#eef0ff', 'primary-container': '#0e6b4f', 'primary': '#00513a', 'on-primary': '#ffffff', 'error': '#ba1a1a', 'on-tertiary-container': '#9fe7c8', 'tertiary-fixed': '#a9f1d2', 'background': '#faf8ff', 'surface-container-lowest': '#ffffff', 'on-secondary': '#ffffff', 'surface-container-highest': '#dae2fd' }, borderRadius: { 'DEFAULT': '0.25rem', 'lg': '0.5rem', 'xl': '0.75rem', 'full': '9999px' }, spacing: { 'space-xl': '2.25rem', 'space-sm': '0.5rem', 'gutter': '1rem', 'space-lg': '1.5rem', 'margin': '1.25rem', 'space-md': '1rem', 'space-xs': '0.25rem' }, fontFamily: { 'headline-sm': ['Plus Jakarta Sans'], 'body-sm': ['Inter'], 'headline-md': ['Plus Jakarta Sans'], 'display-mobile': ['Plus Jakarta Sans'], 'headline-lg': ['Plus Jakarta Sans'], 'label-lg': ['Inter'], 'label-md': ['Inter'], 'body-md': ['Inter'], 'body-lg': ['Inter'], 'display': ['Plus Jakarta Sans'], 'label-sm': ['Inter'] }, fontSize: { 'headline-sm': ['18px', { lineHeight: '24px', fontWeight: '600' }], 'body-sm': ['13px', { lineHeight: '18px', fontWeight: '400' }], 'headline-md': ['22px', { lineHeight: '28px', letterSpacing: '-0.01em', fontWeight: '700' }], 'display-mobile': ['30px', { lineHeight: '38px', letterSpacing: '-0.02em', fontWeight: '800' }], 'headline-lg': ['26px', { lineHeight: '34px', letterSpacing: '-0.015em', fontWeight: '700' }], 'label-lg': ['16px', { lineHeight: '20px', letterSpacing: '0.01em', fontWeight: '600' }], 'label-md': ['14px', { lineHeight: '18px', letterSpacing: '0.01em', fontWeight: '600' }], 'body-md': ['15px', { lineHeight: '22px', fontWeight: '400' }], 'body-lg': ['17px', { lineHeight: '26px', fontWeight: '500' }], 'display': ['36px', { lineHeight: '44px', letterSpacing: '-0.02em', fontWeight: '800' }], 'label-sm': ['12px', { lineHeight: '16px', letterSpacing: '0.02em', fontWeight: '600' }] } } } };</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface text-on-surface flex flex-col antialiased selection:bg-secondary-container selection:text-on-secondary-container"><header class="fixed top-0 inset-x-0 z-50 bg-surface/85 backdrop-blur-xl pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 px-margin flex items-center justify-between"><div class="flex items-center gap-space-sm"><img alt="Minimal modern tennis club logo icon emblem for TennisMatch (테니스매치). Geometric stylized tennis ball intersecting with an elegant tennis racket arc or court line, crafted in deep emerald court green (#0E6B4F) and energetic soft mint (#8FD6B8), vector logo on transparent or crisp clean background, premium athletic aesthetics.. Design context: - Primary color: #0e6b4f
+- Font: plusJakartaSans
+- Mode: light
+- Roundness: rounded-md
+. The logo should be visually consistent with these brand tokens." class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1UH1IyCXfO4Il2dRfQM4RdnyYQE-lao2dEHCkmIXZOEOGEPFe-OVKJ3qInxVi2X-Vacp2zK1b8RIuD2jStOcPj2UMDrtFIC7VCaNkO_hBam0D8HZGU8RuU5wDRj7Ywp0ZbCmckwR-IhsCjW30vUgj8SCIGXz0r1_9RKvqcc9hZDQx7AICDu__0U2WTiRIHy-EpCTnKR2gmvbFzuhNOzydmeSi7YqRNno943oS1YlXibrCExGDB4tBqE93n1"/><button class="flex items-center gap-1 min-h-[44px] px-1 text-left active:opacity-75 transition-opacity"><div class="flex flex-col"><div class="flex items-center gap-0.5"><span class="font-headline-sm text-headline-sm text-on-surface tracking-tight truncate max-w-[148px]">과천 스매시 테니스클럽</span><span class="material-symbols-outlined text-outline text-[18px]">expand_more</span></div><span class="font-label-sm text-label-sm text-outline-variant font-medium tracking-wide leading-none">Club Home</span></div></button></div><div class="flex items-center gap-space-xs"><button aria-label="알림" class="relative w-11 h-11 flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container/60 transition-colors"><span class="material-symbols-outlined text-[22px]">notifications</span><span class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-error ring-2 ring-surface"></span></button><div class="flex items-center gap-1.5 pl-1"><div class="relative"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div><span class="absolute -bottom-1 -right-1 px-1 py-0.2 bg-secondary-container text-on-secondary-container text-[9px] font-bold rounded-full font-label-sm leading-tight ring-1 ring-surface">총무</span></div></div></div></div></header><main class="flex flex-col relative w-full pt-16 pb-24 bg-surface min-h-screen"><div class="flex flex-col w-full px-margin pb-12 space-y-space-lg">
+<!-- 1. Header & Date Session Switcher -->
+<section class="flex flex-col gap-space-sm pt-2">
+<div class="flex items-center justify-between">
+<div>
+<div class="flex items-center gap-1.5">
+<span class="inline-block w-2.5 h-2.5 rounded-full bg-secondary"></span>
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">대진표</h1>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">9월 23일(화) 19:00 정기모임 · 과천 관문 2-3면</p>
+</div>
+<div class="flex items-center gap-1">
+<button aria-label="대진표 새로고침" class="w-11 h-11 flex items-center justify-center rounded-xl bg-surface-container-high text-on-surface active:scale-95 transition-transform" id="refreshBtn">
+<span class="material-symbols-outlined text-[22px]">sync</span>
+</button>
+<button aria-label="편성 규칙 설정" class="w-11 h-11 flex items-center justify-center rounded-xl bg-surface-container-high text-on-surface active:scale-95 transition-transform" id="configBtn">
+<span class="material-symbols-outlined text-[22px]">tune</span>
+</button>
+</div>
+</div>
+<!-- Date Pills Horizontal Scroller -->
+<div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 -mx-margin px-margin">
+<button class="flex items-center gap-1 px-4 py-2 rounded-full bg-primary text-on-primary font-label-md text-label-md shrink-0 shadow-sm active:scale-95 transition-transform">
+<span>9.23(화) 오늘</span>
+<span class="material-symbols-outlined text-[16px]">check</span>
+</button>
+<button class="px-4 py-2 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md shrink-0 active:scale-95 transition-transform">
+        9.26(금) 조기
+      </button>
+<button class="px-4 py-2 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md shrink-0 active:scale-95 transition-transform">
+        9.28(일) 가을대회
+      </button>
+<button class="px-4 py-2 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md shrink-0 active:scale-95 transition-transform">
+        10.02(목) 정기
+      </button>
+</div>
+</section>
+<!-- 2. Hero: "내 다음 경기 포커스 카드" (Courtside Sunshine High-Contrast) -->
+<section class="relative rounded-2xl bg-primary-container text-on-primary shadow-md overflow-hidden p-space-lg">
+<div class="absolute -right-8 -top-8 w-36 h-36 rounded-full bg-secondary-container/10 pointer-events-none"></div>
+<div class="flex items-center justify-between mb-3">
+<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm font-bold shadow-sm">
+<span class="inline-block w-2 h-2 rounded-full bg-primary animate-ping"></span>
+        내 경기 D-15분 (준비)
+      </div>
+<span class="font-label-sm text-label-sm text-primary-fixed-dim">혼합복식 · 1세트 매치</span>
+</div>
+<div class="flex items-baseline gap-2 mb-4">
+<h2 class="font-headline-md text-headline-md font-bold tracking-tight text-white">2타임 · 2번 코트</h2>
+<span class="font-body-sm text-body-sm text-on-primary-container">19:40 ~ 20:20 (40분)</span>
+</div>
+<!-- Matchup vs Layout -->
+<div class="grid grid-cols-5 items-center gap-2 bg-black/20 rounded-xl p-3 mb-4">
+<!-- Team A (My Team) -->
+<div class="col-span-2 flex flex-col gap-1.5">
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-sky-300 shrink-0" title="남성"></span>
+<span class="font-label-md text-label-md font-bold text-white truncate">김민준<span class="text-secondary-fixed text-label-sm ml-0.5">(나)</span></span>
+<span class="font-label-sm text-[11px] px-1.5 py-0.2 rounded bg-white/20 text-white font-medium">A</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-rose-300 shrink-0" title="여성"></span>
+<span class="font-label-md text-label-md font-bold text-white truncate">이수현</span>
+<span class="font-label-sm text-[11px] px-1.5 py-0.2 rounded bg-white/20 text-white font-medium">B</span>
+</div>
+</div>
+<!-- VS Badge -->
+<div class="col-span-1 flex flex-col items-center justify-center">
+<span class="font-display text-[18px] font-extrabold text-secondary-fixed tracking-wider">VS</span>
+</div>
+<!-- Team B -->
+<div class="col-span-2 flex flex-col gap-1.5 text-right">
+<div class="flex items-center justify-end gap-1.5">
+<span class="font-label-sm text-[11px] px-1.5 py-0.2 rounded bg-white/20 text-white font-medium">A</span>
+<span class="font-label-md text-label-md font-bold text-white truncate">박준혁</span>
+<span class="w-2.5 h-2.5 rounded-full bg-sky-300 shrink-0" title="남성"></span>
+</div>
+<div class="flex items-center justify-end gap-1.5">
+<span class="font-label-sm text-[11px] px-1.5 py-0.2 rounded bg-white/20 text-white font-medium">B</span>
+<span class="font-label-md text-label-md font-bold text-white truncate">최미경</span>
+<span class="w-2.5 h-2.5 rounded-full bg-rose-300 shrink-0" title="여성"></span>
+</div>
+</div>
+</div>
+<!-- CTAs for the match -->
+<div class="flex gap-2">
+<button class="flex-1 min-h-[50px] flex items-center justify-center gap-2 rounded-xl bg-secondary-container text-on-secondary-container font-label-lg text-label-lg font-bold shadow-sm active:scale-[0.98] transition-transform" onclick="openScoreModal('2타임 2번 코트', '김민준 · 이수현', '박준혁 · 최미경')">
+<span class="material-symbols-outlined text-[20px]">scoreboard</span>
+<span>결과 입력 (스코어)</span>
+</button>
+<button aria-label="경기 규칙 확인" class="w-12 h-[50px] flex items-center justify-center rounded-xl bg-white/15 text-white active:scale-95 transition-transform" onclick="toggleCourtRuleToast()">
+<span class="material-symbols-outlined text-[20px]">info</span>
+</button>
+</div>
+</section>
+<!-- 3. Quick Controls Bar & Stats Summary -->
+<section class="flex flex-col gap-space-sm">
+<!-- View Mode Switcher -->
+<div class="grid grid-cols-3 p-1 rounded-xl bg-surface-container-high">
+<button class="py-2.5 rounded-lg bg-surface text-on-surface font-label-md text-label-md font-bold shadow-sm transition-all text-center">
+        코트별 매트릭스
+      </button>
+<button class="py-2.5 rounded-lg text-on-surface-variant font-label-md text-label-md font-medium transition-all text-center">
+        타임별 목록
+      </button>
+<button class="py-2.5 rounded-lg text-on-surface-variant font-label-md text-label-md font-medium transition-all text-center">
+        출전 배정표
+      </button>
+</div>
+<!-- Match Status Indicators Row -->
+<div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-low text-on-surface font-label-sm text-label-sm shrink-0">
+<span class="material-symbols-outlined text-secondary text-[16px]">sports_tennis</span>
+        복식 4개조 (총 8경기)
+      </span>
+<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-low text-on-surface font-label-sm text-label-sm shrink-0">
+<span class="material-symbols-outlined text-primary text-[16px]">groups</span>
+        참석 16명 <span class="text-on-surface-variant">(남 10 · 여 6)</span>
+</span>
+<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary-container/50 text-on-secondary-container font-label-sm text-label-sm font-semibold shrink-0">
+<span class="material-symbols-outlined text-[16px]">balance</span>
+        2~3경기 균등 배분완료
+      </span>
+</div>
+<!-- Admin Fast Actions (Court Manager Level) -->
+<div class="flex items-center justify-between gap-2 pt-1">
+<button class="flex-1 min-h-[46px] flex items-center justify-center gap-1.5 rounded-xl bg-surface-container-highest text-on-surface font-label-md text-label-md active:scale-95 transition-transform" onclick="handleRegenerateBracket()">
+<span class="material-symbols-outlined text-[18px]">shuffle</span>
+<span>대진 재편성</span>
+</button>
+<button class="flex-1 min-h-[46px] flex items-center justify-center gap-1.5 rounded-xl bg-primary text-on-primary font-label-md text-label-md active:scale-95 transition-transform shadow-sm" onclick="openScoreModal('빠른 스코어', '선택 팀 A', '선택 팀 B')">
+<span class="material-symbols-outlined text-[18px]">edit_note</span>
+<span>간편 결과 입력</span>
+</button>
+</div>
+</section>
+<!-- 4. Interactive Matrix Match Grid (Court-side Ergonomic Grid) -->
+<section class="flex flex-col gap-space-xs">
+<div class="flex items-center justify-between px-1">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">실시간 코트 현황판</h3>
+<span class="font-label-sm text-label-sm text-outline">좌우 스크롤 가능</span>
+</div>
+<!-- Matrix Frame -->
+<div class="w-full overflow-x-auto no-scrollbar rounded-2xl bg-surface-container-lowest shadow-sm">
+<div class="min-w-[540px] flex flex-col">
+<!-- Table Column Headers -->
+<div class="grid grid-cols-12 bg-surface-container-high py-3 px-3 rounded-t-2xl font-label-md text-label-md text-on-surface font-bold items-center text-center">
+<div class="col-span-3 text-left pl-1">타임 / 시간</div>
+<div class="col-span-4 flex items-center justify-center gap-1">
+<span>2번 코트</span>
+<span class="font-label-sm text-[11px] px-1.5 py-0.5 rounded bg-surface-tint text-white font-normal">하드</span>
+</div>
+<div class="col-span-5 flex items-center justify-center gap-1">
+<span>3번 코트</span>
+<span class="font-label-sm text-[11px] px-1.5 py-0.5 rounded bg-surface-tint text-white font-normal">하드</span>
+</div>
+</div>
+<!-- Row 1: 19:00 ~ 19:40 (Finished) -->
+<div class="grid grid-cols-12 px-3 py-3 items-center bg-surface-container-lowest text-center">
+<div class="col-span-3 flex flex-col text-left pl-1">
+<span class="font-label-md text-label-md font-bold text-on-surface">1타임</span>
+<span class="font-body-sm text-[11px] text-on-surface-variant">19:00~19:40</span>
+<span class="inline-flex items-center gap-0.5 text-secondary text-[11px] font-bold mt-0.5">
+<span class="material-symbols-outlined text-[13px]">check_circle</span>종료
+            </span>
+</div>
+<!-- Court 2 -->
+<div class="col-span-4 px-1">
+<div class="flex flex-col p-2 rounded-xl bg-surface-container-low text-left">
+<div class="flex items-center justify-between text-[11px] text-on-surface-variant mb-1 font-medium">
+<span class="px-1 rounded bg-surface-container">혼복</span>
+<span class="font-bold text-primary">6 : 4</span>
+</div>
+<div class="font-label-sm text-label-sm text-on-surface truncate">정우성·한지민</div>
+<div class="font-label-sm text-label-sm text-outline truncate line-through">강동원·김태리</div>
+</div>
+</div>
+<!-- Court 3 -->
+<div class="col-span-5 px-1">
+<div class="flex flex-col p-2 rounded-xl bg-surface-container-low text-left">
+<div class="flex items-center justify-between text-[11px] text-on-surface-variant mb-1 font-medium">
+<span class="px-1 rounded bg-surface-container">남복</span>
+<span class="font-bold text-primary">5 : 6</span>
+</div>
+<div class="font-label-sm text-label-sm text-outline truncate line-through">이병헌·조인성</div>
+<div class="font-label-sm text-label-sm text-on-surface truncate">공유·원빈</div>
+</div>
+</div>
+</div>
+<!-- Row 2: 19:40 ~ 20:20 (Current active - My Match highlighted) -->
+<div class="grid grid-cols-12 px-3 py-3 items-center bg-secondary-container/20">
+<div class="col-span-3 flex flex-col text-left pl-1">
+<div class="flex items-center gap-1">
+<span class="font-label-md text-label-md font-bold text-primary">2타임</span>
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse"></span>
+</div>
+<span class="font-body-sm text-[11px] text-on-surface-variant">19:40~20:20</span>
+<span class="font-label-sm text-[11px] text-primary font-bold mt-0.5">현재 진행</span>
+</div>
+<!-- Court 2 (MY MATCH) -->
+<div class="col-span-4 px-1">
+<div class="relative flex flex-col p-2.5 rounded-xl bg-surface-container-lowest shadow-sm text-left">
+<span class="absolute top-1.5 right-1.5 px-1 rounded bg-primary text-[10px] text-white font-bold">내 경기</span>
+<div class="flex items-center gap-1 text-[11px] text-primary font-semibold mb-1">
+<span>[혼복]</span>
+</div>
+<div class="font-label-sm text-label-sm font-bold text-on-surface truncate">★김민준·이수현</div>
+<div class="font-label-sm text-[11px] text-on-surface-variant truncate">vs 박준혁·최미경</div>
+<button class="mt-2 py-1.5 px-2 rounded-lg bg-primary text-on-primary font-label-sm text-[12px] text-center active:scale-95 transition-transform flex items-center justify-center gap-1 shadow-sm" onclick="openScoreModal('2타임 2번 코트', '김민준 · 이수현', '박준혁 · 최미경')">
+<span class="material-symbols-outlined text-[14px]">edit</span>
+<span>스코어</span>
+</button>
+</div>
+</div>
+<!-- Court 3 -->
+<div class="col-span-5 px-1">
+<div class="flex flex-col p-2.5 rounded-xl bg-surface-container-lowest shadow-sm text-left">
+<div class="flex items-center justify-between text-[11px] text-on-surface-variant mb-1">
+<span class="px-1 rounded bg-surface-container">여복</span>
+<span class="text-secondary font-bold">진행중</span>
+</div>
+<div class="font-label-sm text-label-sm font-semibold text-on-surface truncate">송혜교·전지현</div>
+<div class="font-label-sm text-[11px] text-on-surface-variant truncate">vs 손예진·김고은</div>
+<button class="mt-2 py-1.5 px-2 rounded-lg bg-surface-container-high text-on-surface font-label-sm text-[12px] text-center active:scale-95 transition-transform flex items-center justify-center gap-1" onclick="openScoreModal('2타임 3번 코트', '송혜교 · 전지현', '손예진 · 김고은')">
+<span class="material-symbols-outlined text-[14px]">scoreboard</span>
+<span>입력</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Row 3: 20:20 ~ 21:00 (Upcoming) -->
+<div class="grid grid-cols-12 px-3 py-3 items-center bg-surface-container-lowest">
+<div class="col-span-3 flex flex-col text-left pl-1">
+<span class="font-label-md text-label-md font-bold text-on-surface">3타임</span>
+<span class="font-body-sm text-[11px] text-on-surface-variant">20:20~21:00</span>
+<span class="font-label-sm text-[11px] text-outline mt-0.5">대기</span>
+</div>
+<!-- Court 2 -->
+<div class="col-span-4 px-1">
+<div class="flex flex-col p-2 rounded-xl bg-surface-container-low text-left">
+<span class="text-[11px] text-on-surface-variant mb-0.5 font-medium">[남복]</span>
+<div class="font-label-sm text-label-sm text-on-surface truncate">김민준·공유</div>
+<div class="font-label-sm text-[11px] text-on-surface-variant truncate">vs 조인성·강동원</div>
+</div>
+</div>
+<!-- Court 3 -->
+<div class="col-span-5 px-1">
+<div class="flex flex-col p-2 rounded-xl bg-surface-container-low text-left">
+<span class="text-[11px] text-on-surface-variant mb-0.5 font-medium">[혼복]</span>
+<div class="font-label-sm text-label-sm text-on-surface truncate">이병헌·손예진</div>
+<div class="font-label-sm text-[11px] text-on-surface-variant truncate">vs 정우성·김태리</div>
+</div>
+</div>
+</div>
+<!-- Row 4: 21:00 ~ 21:40 (Final session) -->
+<div class="grid grid-cols-12 px-3 py-3 items-center bg-surface-container-lowest rounded-b-2xl">
+<div class="col-span-3 flex flex-col text-left pl-1">
+<span class="font-label-md text-label-md font-bold text-on-surface">4타임</span>
+<span class="font-body-sm text-[11px] text-on-surface-variant">21:00~21:40</span>
+<span class="font-label-sm text-[11px] text-outline mt-0.5">대기</span>
+</div>
+<!-- Court 2 -->
+<div class="col-span-4 px-1">
+<div class="flex flex-col p-2 rounded-xl bg-surface-container-low text-left">
+<span class="text-[11px] text-on-surface-variant mb-0.5 font-medium">[혼복]</span>
+<div class="font-label-sm text-label-sm text-on-surface truncate">원빈·전지현</div>
+<div class="font-label-sm text-[11px] text-on-surface-variant truncate">vs 박준혁·송혜교</div>
+</div>
+</div>
+<!-- Court 3 (Free/Rally Court) -->
+<div class="col-span-5 px-1">
+<div class="flex items-center justify-center p-3 rounded-xl bg-surface-container text-on-surface-variant font-label-sm text-label-sm gap-1">
+<span class="material-symbols-outlined text-[16px]">sports</span>
+<span>자유 랠리 및 원포인트 레슨</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Matrix Legend Bar -->
+<div class="flex flex-wrap items-center justify-between px-2 py-2 text-on-surface-variant font-label-sm text-[12px] gap-2">
+<div class="flex items-center gap-3">
+<span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>남성</span>
+<span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-rose-400"></span>여성</span>
+<span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-primary"></span>★내 경기</span>
+</div>
+<span class="text-outline">규칙: 6게임 1세트 (노에드 · 5:5 7점 타이브레이크)</span>
+</div>
+</section>
+<!-- 5. Roster Play Count Equalization Summary -->
+<section class="flex flex-col gap-space-xs rounded-2xl bg-surface-container-lowest p-space-md shadow-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[20px]">equalizer</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">출전 균등 현황</h3>
+</div>
+<span class="font-label-sm text-label-sm text-secondary font-bold">편차 1경기 이내 (완벽)</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+      모든 회원이 공평하게 2~3게임을 소화하도록 자동 밸런싱되었습니다.
+    </p>
+<!-- Player Match Badges Grid -->
+<div class="grid grid-cols-2 gap-2 pt-2">
+<!-- Player Pill 1 (Me) -->
+<div class="flex items-center justify-between px-3 py-2 rounded-xl bg-secondary-container/30">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-sky-500"></span>
+<span class="font-label-md text-label-md font-bold text-on-surface">김민준(나)</span>
+</div>
+<span class="font-label-sm text-label-sm px-2 py-0.5 rounded-full bg-primary text-white font-bold">3경기</span>
+</div>
+<!-- Player Pill 2 -->
+<div class="flex items-center justify-between px-3 py-2 rounded-xl bg-surface-container-low">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-rose-400"></span>
+<span class="font-label-md text-label-md text-on-surface">이수현</span>
+</div>
+<span class="font-label-sm text-label-sm px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-bold">2경기</span>
+</div>
+<!-- Player Pill 3 -->
+<div class="flex items-center justify-between px-3 py-2 rounded-xl bg-surface-container-low">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-sky-500"></span>
+<span class="font-label-md text-label-md text-on-surface">박준혁</span>
+</div>
+<span class="font-label-sm text-label-sm px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-bold">3경기</span>
+</div>
+<!-- Player Pill 4 -->
+<div class="flex items-center justify-between px-3 py-2 rounded-xl bg-surface-container-low">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-rose-400"></span>
+<span class="font-label-md text-label-md text-on-surface">최미경</span>
+</div>
+<span class="font-label-sm text-label-sm px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-bold">2경기</span>
+</div>
+</div>
+<!-- Collapsible Toggle Trigger for other 12 members -->
+<button class="flex items-center justify-center gap-1 pt-2 text-primary font-label-sm text-label-sm font-semibold active:opacity-75" id="toggleMoreRoster" onclick="toggleRosterExpand()">
+<span id="rosterToggleText">나머지 12명 배정 현황 더보기</span>
+<span class="material-symbols-outlined text-[18px]" id="rosterToggleIcon">expand_more</span>
+</button>
+<!-- Expanded hidden roster list -->
+<div class="hidden grid-cols-2 gap-2 pt-2 transition-all" id="expandedRoster">
+<div class="flex items-center justify-between px-3 py-2 rounded-xl bg-surface-container-low text-[13px]">
+<span>정우성 (남)</span><span class="font-bold text-on-surface">2경기</span>
+</div>
+<div class="flex items-center justify-between px-3 py-2 rounded-xl bg-surface-container-low text-[13px]">
+<span>한지민 (여)</span><span class="font-bold text-on-surface">2경기</span>
+</div>
+<div class="flex items-center justify-between px-3 py-2 rounded-xl bg-surface-container-low text-[13px]">
+<span>공유 (남)</span><span class="font-bold text-on-surface">3경기</span>
+</div>
+<div class="flex items-center justify-between px-3 py-2 rounded-xl bg-surface-container-low text-[13px]">
+<span>전지현 (여)</span><span class="font-bold text-on-surface">2경기</span>
+</div>
+<div class="flex items-center justify-between px-3 py-2 rounded-xl bg-surface-container-low text-[13px]">
+<span>강동원 (남)</span><span class="font-bold text-on-surface">2경기</span>
+</div>
+<div class="flex items-center justify-between px-3 py-2 rounded-xl bg-surface-container-low text-[13px]">
+<span>김태리 (여)</span><span class="font-bold text-on-surface">2경기</span>
+</div>
+</div>
+</section>
+<!-- 6. ONE-TOUCH QUICK SCORE MODAL (Floats over screen when score input tapped) -->
+<div class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4" id="quickScoreModal">
+<div class="w-full sm:max-w-[440px] bg-surface rounded-t-3xl sm:rounded-3xl p-margin shadow-2xl flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-6 duration-200">
+<!-- Modal Header -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-9 h-9 rounded-xl bg-primary-container text-on-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[20px]">sports_score</span>
+</div>
+<div>
+<h4 class="font-headline-sm text-headline-sm text-on-surface" id="modalMatchTitle">2타임 2번 코트 스코어 입력</h4>
+<p class="font-body-sm text-[12px] text-on-surface-variant">버튼을 탭하여 점수를 빠르게 확정하세요</p>
+</div>
+</div>
+<button class="w-9 h-9 flex items-center justify-center rounded-full bg-surface-container-high text-on-surface" onclick="closeScoreModal()">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<!-- Scoreboard Display -->
+<div class="grid grid-cols-5 items-center bg-surface-container-low p-4 rounded-2xl">
+<!-- Team 1 -->
+<div class="col-span-2 flex flex-col items-center text-center">
+<span class="font-label-md text-label-md font-bold text-on-surface truncate w-full" id="modalTeam1Name">김민준 · 이수현</span>
+<div class="mt-2 flex items-center gap-2">
+<button class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center font-bold text-on-surface text-[18px] active:scale-95" onclick="adjustScore('t1', -1)">-</button>
+<span class="font-display text-[32px] font-extrabold text-primary w-8" id="scoreTeam1">6</span>
+<button class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center font-bold text-on-surface text-[18px] active:scale-95" onclick="adjustScore('t1', 1)">+</button>
+</div>
+</div>
+<!-- Colon Divider -->
+<div class="col-span-1 flex justify-center text-outline font-display text-[26px] font-bold">
+          :
+        </div>
+<!-- Team 2 -->
+<div class="col-span-2 flex flex-col items-center text-center">
+<span class="font-label-md text-label-md font-bold text-on-surface truncate w-full" id="modalTeam2Name">박준혁 · 최미경</span>
+<div class="mt-2 flex items-center gap-2">
+<button class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center font-bold text-on-surface text-[18px] active:scale-95" onclick="adjustScore('t2', -1)">-</button>
+<span class="font-display text-[32px] font-extrabold text-on-surface w-8" id="scoreTeam2">4</span>
+<button class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center font-bold text-on-surface text-[18px] active:scale-95" onclick="adjustScore('t2', 1)">+</button>
+</div>
+</div>
+</div>
+<!-- Fast Quick Preset Score Chips (Courtside 1-Tap) -->
+<div class="flex flex-col gap-1.5">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-medium">자주 쓰는 스코어 프리셋 (원터치)</span>
+<div class="grid grid-cols-4 gap-2">
+<button class="py-2 rounded-xl bg-surface-container-high font-label-md text-label-md text-on-surface active:bg-secondary-container" onclick="applyPreset(6, 0)">6 : 0</button>
+<button class="py-2 rounded-xl bg-surface-container-high font-label-md text-label-md text-on-surface active:bg-secondary-container" onclick="applyPreset(6, 2)">6 : 2</button>
+<button class="py-2 rounded-xl bg-surface-container-high font-label-md text-label-md text-on-surface active:bg-secondary-container" onclick="applyPreset(6, 3)">6 : 3</button>
+<button class="py-2 rounded-xl bg-secondary-container font-label-md text-label-md text-on-secondary-container font-bold" onclick="applyPreset(6, 4)">6 : 4</button>
+<button class="py-2 rounded-xl bg-surface-container-high font-label-md text-label-md text-on-surface active:bg-secondary-container" onclick="applyPreset(4, 6)">4 : 6</button>
+<button class="py-2 rounded-xl bg-surface-container-high font-label-md text-label-md text-on-surface active:bg-secondary-container" onclick="applyPreset(5, 6)">5 : 6</button>
+<button class="py-2 rounded-xl bg-surface-container-high font-label-md text-label-md text-on-surface active:bg-secondary-container" onclick="applyPreset(7, 5)">7 : 5</button>
+<button class="py-2 rounded-xl bg-surface-container-high font-label-md text-label-md text-on-surface active:bg-secondary-container" onclick="applyPreset(7, 6)">7 : 6(TB)</button>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex items-center gap-2 pt-2">
+<button class="w-1/3 min-h-[54px] rounded-xl bg-surface-container-high text-on-surface font-label-lg text-label-lg font-semibold active:scale-95 transition-transform" onclick="closeScoreModal()">
+          취소
+        </button>
+<button class="w-2/3 min-h-[54px] rounded-xl bg-primary text-on-primary font-label-lg text-label-lg font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5" onclick="saveScoreAndClose()">
+<span class="material-symbols-outlined text-[20px]">check</span>
+<span>점수 저장 및 확정</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Toast Notification Element -->
+<div class="fixed bottom-20 inset-x-margin max-w-sm mx-auto z-50 transform translate-y-16 opacity-0 pointer-events-none transition-all duration-300 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-inverse-surface text-inverse-on-surface shadow-xl font-label-md text-label-md" id="courtToast">
+<span class="material-symbols-outlined text-secondary-fixed text-[20px]">check_circle</span>
+<span id="courtToastMsg">대진 결과가 저장되었습니다!</span>
+</div>
+</div>
+<script>
+  let team1Score = 6;
+  let team2Score = 4;
+
+  function showToast(msg) {
+    const toast = document.getElementById('courtToast');
+    const toastMsg = document.getElementById('courtToastMsg');
+    if (!toast) return;
+    toastMsg.textContent = msg;
+    toast.classList.remove('translate-y-16', 'opacity-0', 'pointer-events-none');
+    toast.classList.add('translate-y-0', 'opacity-100');
+    setTimeout(() => {
+      toast.classList.add('translate-y-16', 'opacity-0', 'pointer-events-none');
+      toast.classList.remove('translate-y-0', 'opacity-100');
+    }, 2400);
+  }
+
+  function openScoreModal(title, team1, team2) {
+    document.getElementById('modalMatchTitle').textContent = title + ' 스코어';
+    document.getElementById('modalTeam1Name').textContent = team1;
+    document.getElementById('modalTeam2Name').textContent = team2;
+    team1Score = 6;
+    team2Score = 4;
+    updateScoreDisplay();
+    document.getElementById('quickScoreModal').classList.remove('hidden');
+  }
+
+  function closeScoreModal() {
+    document.getElementById('quickScoreModal').classList.add('hidden');
+  }
+
+  function adjustScore(team, delta) {
+    if (team === 't1') {
+      team1Score = Math.max(0, Math.min(15, team1Score + delta));
+    } else {
+      team2Score = Math.max(0, Math.min(15, team2Score + delta));
+    }
+    updateScoreDisplay();
+  }
+
+  function applyPreset(s1, s2) {
+    team1Score = s1;
+    team2Score = s2;
+    updateScoreDisplay();
+  }
+
+  function updateScoreDisplay() {
+    document.getElementById('scoreTeam1').textContent = team1Score;
+    document.getElementById('scoreTeam2').textContent = team2Score;
+  }
+
+  function saveScoreAndClose() {
+    closeScoreModal();
+    showToast('2타임 스코어 (' + team1Score + ' : ' + team2Score + ')가 반영되었습니다.');
+  }
+
+  function toggleCourtRuleToast() {
+    showToast('1세트 6게임 매치 (노에드, 5:5 7점 타이브레이크)');
+  }
+
+  function handleRegenerateBracket() {
+    showToast('참석 인원 기준 대진이 균등 재편성되었습니다.');
+  }
+
+  function toggleRosterExpand() {
+    const panel = document.getElementById('expandedRoster');
+    const text = document.getElementById('rosterToggleText');
+    const icon = document.getElementById('rosterToggleIcon');
+    if (panel.classList.contains('hidden')) {
+      panel.classList.remove('hidden');
+      panel.classList.add('grid');
+      text.textContent = '참석자 목록 접기';
+      icon.textContent = 'expand_less';
+    } else {
+      panel.classList.add('hidden');
+      panel.classList.remove('grid');
+      text.textContent = '나머지 12명 배정 현황 더보기';
+      icon.textContent = 'expand_more';
+    }
+  }
+
+  document.getElementById('refreshBtn')?.addEventListener('click', () => {
+    showToast('실시간 코트 대진표를 갱신했습니다.');
+  });
+</script></main><nav class="fixed bottom-0 inset-x-0 z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-2px_12px_rgba(0,0,0,0.04)]" data-active-classes="text-primary font-bold"><div class="flex justify-between items-center h-16 px-2"><a class="flex flex-col items-center justify-center min-w-[50px] min-h-[44px] flex-1 text-on-surface-variant transition-colors active:scale-95" data-path="club-home" href="#"><span class="material-symbols-outlined text-[22px]">home</span><span class="font-label-sm text-[11px] leading-tight mt-0.5">홈</span></a><a class="flex flex-col items-center justify-center min-w-[50px] min-h-[44px] flex-1 text-on-surface-variant transition-colors active:scale-95" data-path="club-schedule" href="#"><span class="material-symbols-outlined text-[22px]">calendar_today</span><span class="font-label-sm text-[11px] leading-tight mt-0.5">일정</span></a><a class="flex flex-col items-center justify-center min-w-[50px] min-h-[44px] flex-1 text-on-surface-variant transition-colors active:scale-95" data-path="match-brackets" href="#"><span class="material-symbols-outlined text-[22px]">sports_tennis</span><span class="font-label-sm text-[11px] leading-tight mt-0.5">대진</span></a><a class="flex flex-col items-center justify-center min-w-[50px] min-h-[44px] flex-1 text-on-surface-variant transition-colors active:scale-95" data-path="club-gear" href="#"><span class="material-symbols-outlined text-[22px]">shopping_bag</span><span class="font-label-sm text-[11px] leading-tight mt-0.5">용품</span></a><a class="flex flex-col items-center justify-center min-w-[50px] min-h-[44px] flex-1 text-on-surface-variant transition-colors active:scale-95" data-path="one-point-tips" href="#"><span class="material-symbols-outlined text-[22px]">play_circle</span><span class="font-label-sm text-[11px] leading-tight mt-0.5">원포인트</span></a><a class="flex flex-col items-center justify-center min-w-[50px] min-h-[44px] flex-1 text-on-surface-variant transition-colors active:scale-95" data-path="club-more" href="#"><span class="material-symbols-outlined text-[22px]">grid_view</span><span class="font-label-sm text-[11px] leading-tight mt-0.5">더보기</span></a></div></nav></body></html>

@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+
+<html lang="ko"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@600;700;800&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#faf8ff;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-secondary": "#ffffff", "secondary": "#006c49", "on-primary-fixed-variant": "#00513a", "on-primary": "#ffffff", "on-surface-variant": "#3f4944", "primary-container": "#0e6b4f", "secondary-fixed-dim": "#4edea3", "on-secondary-fixed": "#002113", "on-primary-container": "#97e8c5", "on-error": "#ffffff", "inverse-surface": "#283044", "on-surface": "#131b2e", "on-error-container": "#93000a", "outline-variant": "#bec9c2", "secondary-fixed": "#6ffbbe", "primary": "#00513a", "on-tertiary": "#ffffff", "tertiary-fixed-dim": "#8ed5b7", "tertiary": "#00513b", "outline": "#6f7a73", "surface-tint": "#0f6b4f", "surface-container-highest": "#dae2fd", "surface-dim": "#d2d9f4", "primary-fixed": "#a1f3cf", "on-tertiary-fixed": "#002116", "surface-bright": "#faf8ff", "primary-fixed-dim": "#86d7b4", "surface": "#faf8ff", "on-tertiary-container": "#9fe7c8", "surface-container-low": "#f2f3ff", "on-background": "#131b2e", "tertiary-container": "#216a52", "surface-variant": "#dae2fd", "error-container": "#ffdad6", "tertiary-fixed": "#a9f1d2", "surface-container-high": "#e2e7ff", "inverse-on-surface": "#eef0ff", "on-secondary-container": "#00714d", "inverse-primary": "#86d7b4", "on-secondary-fixed-variant": "#005236", "surface-container": "#eaedff", "on-tertiary-fixed-variant": "#00513b", "surface-container-lowest": "#ffffff", "on-primary-fixed": "#002115", "background": "#faf8ff", "secondary-container": "#6cf8bb", "error": "#ba1a1a" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-xl": "2.25rem", "space-sm": "0.5rem", "space-md": "1rem", "gutter": "1rem", "margin": "1.25rem", "space-xs": "0.25rem", "space-lg": "1.5rem" }, "fontFamily": { "headline-md": ["Plus Jakarta Sans"], "display": ["Plus Jakarta Sans"], "label-md": ["Inter"], "body-lg": ["Inter"], "headline-sm": ["Plus Jakarta Sans"], "label-lg": ["Inter"], "label-sm": ["Inter"], "body-md": ["Inter"], "body-sm": ["Inter"], "headline-lg": ["Plus Jakarta Sans"], "display-mobile": ["Plus Jakarta Sans"] }, "fontSize": { "headline-md": ["22px", {"lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "700"}], "display": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "800"}], "label-md": ["14px", {"lineHeight": "18px", "letterSpacing": "0.01em", "fontWeight": "600"}], "body-lg": ["17px", {"lineHeight": "26px", "fontWeight": "500"}], "headline-sm": ["18px", {"lineHeight": "24px", "fontWeight": "600"}], "label-lg": ["16px", {"lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600"}], "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600"}], "body-md": ["15px", {"lineHeight": "22px", "fontWeight": "400"}], "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}], "headline-lg": ["26px", {"lineHeight": "34px", "letterSpacing": "-0.015em", "fontWeight": "700"}], "display-mobile": ["30px", {"lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "800"}] } } } };</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-on-surface flex flex-col min-h-screen"><header class="fixed top-0 inset-x-0 z-50 bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] pt-safe"><div class="h-16 px-margin flex items-center justify-between"><div class="flex items-center gap-space-sm"><img alt="Minimal modern tennis club logo icon emblem for TennisMatch (테니스매치). Geometric stylized tennis ball intersecting with an elegant tennis racket arc or court line, crafted in deep emerald court green (#0E6B4F) and energetic soft mint (#8FD6B8), vector logo on transparent or crisp clean background, premium athletic aesthetics.. Design context: - Primary color: #0e6b4f
+- Font: plusJakartaSans
+- Mode: light
+- Roundness: rounded-md
+. The logo should be visually consistent with these brand tokens." class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1UH1IyCXfO4Il2dRfQM4RdnyYQE-lao2dEHCkmIXZOEOGEPFe-OVKJ3qInxVi2X-Vacp2zK1b8RIuD2jStOcPj2UMDrtFIC7VCaNkO_hBam0D8HZGU8RuU5wDRj7Ywp0ZbCmckwR-IhsCjW30vUgj8SCIGXz0r1_9RKvqcc9hZDQx7AICDu__0U2WTiRIHy-EpCTnKR2gmvbFzuhNOzydmeSi7YqRNno943oS1YlXibrCExGDB4tBqE93n1"/><div class="flex flex-col"><span class="font-label-sm text-label-sm text-primary font-bold leading-none tracking-tight">테니스매치</span><button class="flex items-center gap-space-xs text-left group" type="button"><span class="font-headline-sm text-headline-sm text-on-surface font-bold truncate max-w-[130px]">양재 센트럴 클럽</span><span class="material-symbols-outlined text-[18px] text-on-surface-variant group-hover:text-primary transition-colors">keyboard_arrow_down</span></button></div></div><div class="flex items-center gap-space-xs"><span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm font-semibold tracking-wide">총무</span><button class="w-11 h-11 flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors relative" type="button"><span class="material-symbols-outlined text-[24px]">notifications</span><span class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest"></span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface"><div class="flex flex-col w-full">
+<!-- Month Nav, Filter & View Controls -->
+<section class="px-margin pt-space-md pb-space-sm flex flex-col gap-space-md">
+<!-- Month Navigation Bar -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<button aria-label="이전 달" class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container hover:bg-surface-container-high transition-colors active:scale-95 text-on-surface" type="button">
+<span class="material-symbols-outlined text-[22px]">chevron_left</span>
+</button>
+<span class="font-headline-md text-headline-md text-on-surface tracking-tight px-1">2026년 9월</span>
+<button aria-label="다음 달" class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container hover:bg-surface-container-high transition-colors active:scale-95 text-on-surface" type="button">
+<span class="material-symbols-outlined text-[22px]">chevron_right</span>
+</button>
+</div>
+<div class="flex items-center gap-space-xs">
+<button class="h-9 px-3 rounded-full bg-surface-container-high text-on-surface font-label-md text-label-md hover:bg-surface-dim transition-colors active:scale-95 flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-[16px] text-primary">calendar_today</span>
+<span>오늘</span>
+</button>
+<!-- View Toggle (List vs Calendar) -->
+<div class="flex bg-surface-container p-1 rounded-full" id="viewModeToggle">
+<button class="h-8 px-3 rounded-full bg-primary text-on-primary font-label-sm text-label-sm shadow-sm flex items-center gap-1 transition-all" id="toggleTimeline" type="button">
+<span class="material-symbols-outlined text-[16px]">view_timeline</span>
+<span>목록</span>
+</button>
+<button class="h-8 px-3 rounded-full text-on-surface-variant font-label-sm text-label-sm hover:text-on-surface flex items-center gap-1 transition-all" id="toggleCalendar" type="button">
+<span class="material-symbols-outlined text-[16px]">calendar_month</span>
+<span>달력</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Venue Quick Selector Dropdown -->
+<div class="relative">
+<button class="w-full h-12 px-4 rounded-xl bg-surface-container-lowest shadow-sm flex items-center justify-between text-left active:bg-surface-container-low transition-colors" type="button">
+<div class="flex items-center gap-space-xs min-w-0">
+<span class="material-symbols-outlined text-primary text-[20px] shrink-0">stadium</span>
+<span class="font-body-md text-body-md text-on-surface font-semibold truncate">과천 관문 2·3면 (야간 조명 4타임)</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-[20px] shrink-0">unfold_more</span>
+</button>
+</div>
+<!-- Category Filter Chips -->
+<div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 -mx-margin px-margin">
+<button class="h-9 px-3.5 rounded-full bg-primary text-on-primary font-label-md text-label-md whitespace-nowrap shadow-sm shrink-0 flex items-center gap-1.5" type="button">
+<span>전체</span>
+<span class="px-1.5 py-0.2 text-xs rounded-full bg-on-primary/20">8</span>
+</button>
+<button class="h-9 px-3.5 rounded-full bg-surface-container text-on-surface font-label-md text-label-md whitespace-nowrap hover:bg-surface-container-high transition-colors shrink-0 flex items-center gap-1.5" type="button">
+<span class="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+<span>정기 운동</span>
+<span class="text-on-surface-variant font-body-sm text-body-sm">6</span>
+</button>
+<button class="h-9 px-3.5 rounded-full bg-surface-container text-on-surface font-label-md text-label-md whitespace-nowrap hover:bg-surface-container-high transition-colors shrink-0 flex items-center gap-1.5" type="button">
+<span class="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+<span>클럽 대회</span>
+<span class="text-on-surface-variant font-body-sm text-body-sm">1</span>
+</button>
+<button class="h-9 px-3.5 rounded-full bg-surface-container text-on-surface font-label-md text-label-md whitespace-nowrap hover:bg-surface-container-high transition-colors shrink-0 flex items-center gap-1.5" type="button">
+<span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
+<span>게스트 모집</span>
+<span class="text-on-surface-variant font-body-sm text-body-sm">1</span>
+</button>
+</div>
+</section>
+<!-- Horizontal Weekly Interactive Date Strip -->
+<section class="px-margin py-space-xs mb-space-sm">
+<div class="flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar py-1">
+<!-- Day 21 (Mon) -->
+<button class="flex flex-col items-center justify-center min-w-[44px] py-2 px-1 rounded-xl bg-surface-container-lowest text-on-surface shadow-sm active:scale-95 transition-all" type="button">
+<span class="font-label-sm text-label-sm text-on-surface-variant">월</span>
+<span class="font-headline-sm text-headline-sm font-bold mt-0.5">21</span>
+<span class="w-1.5 h-1.5 rounded-full bg-transparent mt-1"></span>
+</button>
+<!-- Day 22 (Tue) -->
+<button class="flex flex-col items-center justify-center min-w-[44px] py-2 px-1 rounded-xl bg-surface-container-lowest text-on-surface shadow-sm active:scale-95 transition-all" type="button">
+<span class="font-label-sm text-label-sm text-on-surface-variant">화</span>
+<span class="font-headline-sm text-headline-sm font-bold mt-0.5">22</span>
+<span class="w-1.5 h-1.5 rounded-full bg-transparent mt-1"></span>
+</button>
+<!-- Day 23 (Today - Wed) Active Selected -->
+<button class="flex flex-col items-center justify-center min-w-[48px] py-2.5 px-1.5 rounded-xl bg-primary text-on-primary shadow-md active:scale-95 transition-all relative" type="button">
+<span class="font-label-sm text-label-sm text-secondary-container font-semibold">오늘</span>
+<span class="font-headline-sm text-headline-sm font-extrabold mt-0.5 text-on-primary">23</span>
+<span class="w-1.5 h-1.5 rounded-full bg-secondary-container mt-1"></span>
+</button>
+<!-- Day 24 (Thu) -->
+<button class="flex flex-col items-center justify-center min-w-[44px] py-2 px-1 rounded-xl bg-surface-container-lowest text-on-surface shadow-sm active:scale-95 transition-all" type="button">
+<span class="font-label-sm text-label-sm text-on-surface-variant">목</span>
+<span class="font-headline-sm text-headline-sm font-bold mt-0.5">24</span>
+<span class="w-1.5 h-1.5 rounded-full bg-transparent mt-1"></span>
+</button>
+<!-- Day 25 (Fri) -->
+<button class="flex flex-col items-center justify-center min-w-[44px] py-2 px-1 rounded-xl bg-surface-container-lowest text-on-surface shadow-sm active:scale-95 transition-all" type="button">
+<span class="font-label-sm text-label-sm text-on-surface-variant">금</span>
+<span class="font-headline-sm text-headline-sm font-bold mt-0.5">25</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary mt-1"></span>
+</button>
+<!-- Day 26 (Sat) -->
+<button class="flex flex-col items-center justify-center min-w-[44px] py-2 px-1 rounded-xl bg-surface-container-lowest text-blue-600 shadow-sm active:scale-95 transition-all" type="button">
+<span class="font-label-sm text-label-sm text-blue-500 font-semibold">토</span>
+<span class="font-headline-sm text-headline-sm font-bold mt-0.5">26</span>
+<span class="w-1.5 h-1.5 rounded-full bg-transparent mt-1"></span>
+</button>
+<!-- Day 27 (Sun) Tournament -->
+<button class="flex flex-col items-center justify-center min-w-[44px] py-2 px-1 rounded-xl bg-surface-container-lowest text-error shadow-sm active:scale-95 transition-all" type="button">
+<span class="font-label-sm text-label-sm text-error font-semibold">일</span>
+<span class="font-headline-sm text-headline-sm font-bold mt-0.5">27</span>
+<span class="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1"></span>
+</button>
+</div>
+</section>
+<!-- Urgent Action Hero Card: Nearest Meeting RSVP -->
+<section class="px-margin mb-space-md">
+<div class="relative overflow-hidden rounded-2xl bg-surface-container-lowest shadow-md p-space-md flex flex-col gap-space-md">
+<!-- Decorative Emerald Court Glow Background Tint -->
+<div class="absolute -top-16 -right-16 w-44 h-44 rounded-full bg-secondary-container/25 blur-2xl pointer-events-none"></div>
+<!-- Card Header: Tag & Weather -->
+<div class="flex items-start justify-between gap-space-xs relative z-10">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="px-2.5 py-1 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm font-bold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+            오늘 야간 모임
+          </span>
+<span class="px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant font-label-sm text-label-sm">
+            정기 모임
+          </span>
+</div>
+<!-- Weather Widget -->
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-low text-on-surface font-label-sm text-label-sm shadow-xs shrink-0">
+<span class="material-symbols-outlined text-amber-500 text-[18px]">sunny</span>
+<span class="font-bold">21°C 맑음</span>
+<span class="text-on-surface-variant text-[11px]">(강수 10%)</span>
+</div>
+</div>
+<!-- Title & Time & Court Info -->
+<div class="flex flex-col gap-1 relative z-10">
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight font-extrabold leading-snug">
+          9월 23일(화) 19:00 정기 야간 모임
+        </h2>
+<div class="flex items-center gap-2 text-on-surface-variant font-body-md text-body-md mt-1">
+<span class="material-symbols-outlined text-primary text-[19px]">location_on</span>
+<span class="font-semibold text-on-surface">과천 관문체육공원 2·3코트</span>
+<span class="text-on-surface-variant">|</span>
+<span>4개 매치 타임</span>
+</div>
+</div>
+<!-- Attendee Stats Bar & Roster Preview -->
+<div class="p-3.5 rounded-xl bg-surface-container-low flex flex-col gap-2.5 relative z-10">
+<div class="flex items-center justify-between font-label-md text-label-md">
+<div class="flex items-center gap-2">
+<span class="text-on-surface font-bold">참석 확정 현황</span>
+<span class="text-primary font-extrabold">14 / 16명</span>
+<span class="text-on-surface-variant font-normal text-xs">(남 9 · 여 5)</span>
+</div>
+<span class="text-error font-bold text-xs bg-error-container text-on-error-container px-2 py-0.5 rounded-md">
+            잔여 2자리
+          </span>
+</div>
+<!-- Progress Gauge -->
+<div class="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
+<div class="bg-primary h-full rounded-full transition-all duration-500" style="width: 87.5%"></div>
+</div>
+<!-- Avatars & Attendee Summary -->
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center -space-x-2 overflow-hidden">
+<img class="inline-block h-7 w-7 rounded-full ring-2 ring-surface-container-lowest object-cover" data-alt="Close up portrait photo of an energetic Korean middle-aged male tennis enthusiast smiling brightly in a white polo shirt under sunny court lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCFXRa9HmuKzCQN5RYqwjomgpDcvXU4Qh5caLHLRZjCZxpbnTpmMlfXnXrfdrARjtfi5hXxjOP_Aca5o5pumFD-i4TaGO1byMBZFRK77cYNBWslKhsNQIGYLQ6FCZ44BvHnHkmdG3rlnGDh4rkXc62xY6EjAJeFfFnvBcEnZXgpVv9qysLRCDBm0Ib6vajOyF44jyLs9GvKvvKt_tpvvwAbS24n9L7qe0iGuktt8pX9"/>
+<img class="inline-block h-7 w-7 rounded-full ring-2 ring-surface-container-lowest object-cover" data-alt="Portrait photo of a cheerful Korean woman in tennis sportswear with a sun visor on outdoor court, smiling warmly at camera" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDMUEMgM38sW2KoIYUI0fXJLvlJfSYqMvkeEe0Q9-VFBoiB0YGT0fltl1UYjicJpqI5ULYVypzlKInnClGjs_DRlC0CgfdwMsJuCluheocHDc5r6yX-NHRkj6wwwNJcxkYHjY_gF-DceilAdhJDbPYu4s_Zy4IEaxKheNUPKDlj7nUJBQc6Z7JKEuSnHVIbE3TWIpWIcwuhZBNR1mbYUoB99TO09qPoDRRL8xxngZSH"/>
+<img class="inline-block h-7 w-7 rounded-full ring-2 ring-surface-container-lowest object-cover" data-alt="Portrait of an athletic Korean senior club tennis player wearing athletic sunglasses and green sportswear, confident and relaxed" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCcyvtenHOuZIL0zFyta9SEhnI7BrCQ2U9a9IaSfM2IEuDvOgeGfJfgm2LDfDbNm6lK3ft2pgUUvQoE0nJ72R27QvBioKm2cRqDrT-2oiIjum7NRnD6y8lGAfqFyI33XKtHO9q5OmE6BqkNgMmka-BkRvb_Aw5gKXuLyNFTEFbeVYwyaVf1Rw-GAs481GrsupFOSRKqPfuFHT6ZLeRU1O3NkRfoYlIbQUEEPMsd7ElR"/>
+<div class="flex items-center justify-center h-7 w-7 rounded-full ring-2 ring-surface-container-lowest bg-surface-container-high text-[11px] font-bold text-on-surface">
+              +11
+            </div>
+</div>
+<button class="font-label-sm text-label-sm text-primary font-bold flex items-center gap-0.5 hover:underline" type="button">
+<span>참석자 전원 보기</span>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</button>
+</div>
+</div>
+<!-- Instant 1-Tap RSVP Big Touch Targets (52px high for court readability) -->
+<div class="flex flex-col gap-2 pt-1 relative z-10" id="rsvpContainer">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-semibold">내 참석 여부 응답 (1-탭 즉시 반영)</span>
+<div class="grid grid-cols-3 gap-2">
+<!-- Button 1: Attend (Active Selected State) -->
+<button class="h-13 py-3 px-2 rounded-xl bg-primary text-on-primary font-label-md text-label-md font-bold flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all ring-offset-2" id="rsvpAttend" type="button">
+<span class="material-symbols-outlined text-[20px]">check_circle</span>
+<span>참석 확정</span>
+</button>
+<!-- Button 2: Undecided -->
+<button class="h-13 py-3 px-2 rounded-xl bg-surface-container text-on-surface-variant font-label-md text-label-md font-semibold flex items-center justify-center gap-1 hover:bg-surface-container-high active:scale-95 transition-all" id="rsvpMaybe" type="button">
+<span class="material-symbols-outlined text-[18px]">help</span>
+<span>미정</span>
+</button>
+<!-- Button 3: Decline -->
+<button class="h-13 py-3 px-2 rounded-xl bg-surface-container text-on-surface-variant font-label-md text-label-md font-semibold flex items-center justify-center gap-1 hover:bg-surface-container-high active:scale-95 transition-all" id="rsvpDecline" type="button">
+<span class="material-symbols-outlined text-[18px]">cancel</span>
+<span>불참</span>
+</button>
+</div>
+</div>
+<!-- Card Action Footer -->
+<div class="pt-2 flex items-center justify-between border-t-0">
+<a class="w-full h-11 rounded-xl bg-primary-container text-on-primary flex items-center justify-center gap-1.5 font-label-md text-label-md font-bold shadow-xs hover:bg-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">sports_tennis</span>
+<span>당일 복식 대진표 확인하기</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</a>
+</div>
+</div>
+</section>
+<!-- Organizer Quick Batch Reminder Banner (총무 편의 도구) -->
+<section class="px-margin mb-space-md">
+<div class="rounded-xl bg-surface-container-high p-3.5 flex items-center justify-between gap-space-sm shadow-xs">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-9 h-9 rounded-full bg-surface-container-lowest flex items-center justify-center text-primary shrink-0 shadow-xs">
+<span class="material-symbols-outlined text-[20px]">notifications_active</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-label-sm font-bold text-on-surface truncate">총무 전용 응답 독려 알림</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">아직 미응답한 회원 3명이 있습니다</span>
+</div>
+</div>
+<button class="h-9 px-3 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm font-bold shrink-0 hover:bg-primary-container active:scale-95 transition-all flex items-center gap-1" onclick="alert('미응답 회원 3명에게 카카오 알림톡 참석 확인 리마인더를 발송했습니다.')" type="button">
+<span>독려 전송</span>
+<span class="material-symbols-outlined text-[16px]">send</span>
+</button>
+</div>
+</section>
+<!-- Upcoming Schedule Agenda Timeline -->
+<section class="px-margin flex flex-col gap-space-md pb-space-lg">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-sm text-headline-sm text-on-surface font-bold flex items-center gap-2">
+<span>예정된 일정</span>
+<span class="text-xs px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-bold">4건</span>
+</h3>
+<span class="font-body-sm text-body-sm text-on-surface-variant">정렬: 날짜순</span>
+</div>
+<!-- Timeline Cards Container -->
+<div class="flex flex-col gap-space-sm">
+<!-- Agenda Card 1: 금주 금요일 조기 모임 -->
+<article class="rounded-xl bg-surface-container-lowest p-space-md shadow-sm flex flex-col gap-space-sm hover:shadow-md transition-shadow">
+<div class="flex items-start justify-between">
+<div class="flex flex-col">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-primary"></span>
+<span class="font-label-sm text-label-sm text-primary font-bold">정기 운동</span>
+<span class="text-on-surface-variant text-xs">·</span>
+<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant">정원 마감</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-on-surface font-bold mt-1">
+              9월 26일(금) 06:00 새벽 조기 테니스
+            </h4>
+</div>
+<span class="font-label-sm text-label-sm font-bold px-2.5 py-1 rounded-lg bg-surface-container-low text-on-surface">
+            D-3
+          </span>
+</div>
+<div class="flex flex-col gap-1 text-on-surface-variant font-body-sm text-body-sm">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">location_on</span>
+<span>과천 관문 실외 1코트</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">group</span>
+<span>참석 <strong class="text-on-surface">8/8명 전원 마감</strong> (대기 1명)</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-2 border-t-0">
+<div class="flex items-center gap-1 text-xs text-primary font-semibold">
+<span class="material-symbols-outlined text-[16px]">check</span>
+<span>회원님 참석 신청 완료</span>
+</div>
+<button class="h-9 px-3 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-sm font-semibold hover:bg-surface-container-high transition-colors" type="button">
+            참석 명단 보기
+          </button>
+</div>
+</article>
+<!-- Agenda Card 2: 2026 가을 월례대회 (Tournament Special Card) -->
+<article class="relative overflow-hidden rounded-xl bg-surface-container-lowest p-space-md shadow-sm flex flex-col gap-space-sm hover:shadow-md transition-shadow">
+<!-- Tournament Accent Stripe -->
+<div class="absolute top-0 left-0 bottom-0 w-1.5 bg-amber-500"></div>
+<div class="flex items-start justify-between pl-1">
+<div class="flex flex-col">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-label-sm text-label-sm font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-amber-600">emoji_events</span>
+                클럽 공식 대회
+              </span>
+<span class="font-label-sm text-label-sm text-error font-bold">D-5 신청 마감</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-on-surface font-extrabold mt-1">
+              9월 28일(일) 14:00 2026 가을 월례대회 (KDK 개인전)
+            </h4>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-2 p-3 rounded-lg bg-surface-container-low pl-3 font-body-sm text-body-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[17px] text-amber-600">stadium</span>
+<span>관문 전코트 4면 대관</span>
+</div>
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[17px] text-amber-600">paid</span>
+<span class="font-bold text-on-surface">참가비 20,000원</span>
+</div>
+<div class="flex items-center gap-1.5 text-on-surface-variant col-span-2">
+<span class="material-symbols-outlined text-[17px] text-amber-600">groups</span>
+<span>현재 <strong class="text-on-surface">24명 참가 신청</strong> (선착순 32명 정원)</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1 pl-1">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant">경기 방식</span>
+<span class="font-label-md text-label-md font-bold text-on-surface">KDK 개인 복식 5게임제</span>
+</div>
+<button class="h-10 px-4 rounded-xl bg-amber-500 text-white font-label-md text-label-md font-bold shadow-sm hover:bg-amber-600 active:scale-95 transition-all flex items-center gap-1" type="button">
+<span>대회 참가 신청</span>
+<span class="material-symbols-outlined text-[18px]">how_to_reg</span>
+</button>
+</div>
+</article>
+<!-- Agenda Card 3: 게스트 충원 매치 -->
+<article class="rounded-xl bg-surface-container-lowest p-space-md shadow-sm flex flex-col gap-space-sm hover:shadow-md transition-shadow">
+<div class="flex items-start justify-between">
+<div class="flex flex-col">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+<span class="font-label-sm text-label-sm text-blue-600 font-bold">게스트 모집</span>
+<span class="text-on-surface-variant text-xs">·</span>
+<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">남 1 / 여 1 모집중</span>
+</div>
+<h4 class="font-headline-sm text-headline-sm text-on-surface font-bold mt-1">
+              9월 30일(화) 19:00 게스트 충원 매치
+            </h4>
+</div>
+<span class="font-label-sm text-label-sm font-bold px-2.5 py-1 rounded-lg bg-surface-container-low text-on-surface">
+            D-7
+          </span>
+</div>
+<div class="flex flex-col gap-1 text-on-surface-variant font-body-sm text-body-sm">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">location_on</span>
+<span>과천 문원 실외코트 2면</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">sports</span>
+<span>모집 수준: NTRP 2.5 ~ 3.5 클럽 동호인</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-2">
+<span class="font-body-sm text-body-sm text-on-surface-variant">게스트 참가비: 10,000원</span>
+<button class="h-9 px-3 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-sm font-semibold hover:bg-surface-container-high transition-colors" type="button">
+            게스트 현황 확인
+          </button>
+</div>
+</article>
+</div>
+</section>
+<!-- Floating Action Button for Organizers: Add Schedule -->
+<div class="fixed bottom-20 right-margin z-40">
+<button class="h-14 px-5 rounded-full bg-primary text-on-primary shadow-xl flex items-center gap-2 hover:bg-primary-container active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[24px]">add</span>
+<span class="font-label-lg text-label-lg font-bold">새 모임 등록</span>
+</button>
+</div>
+</div>
+<script>
+  // Simple micro-interactions for 1-Tap RSVP states & View Switcher
+  (function() {
+    const attendBtn = document.getElementById('rsvpAttend');
+    const maybeBtn = document.getElementById('rsvpMaybe');
+    const declineBtn = document.getElementById('rsvpDecline');
+    const buttons = [attendBtn, maybeBtn, declineBtn];
+
+    function resetRSVP() {
+      buttons.forEach(btn => {
+        if (!btn) return;
+        btn.className = 'h-13 py-3 px-2 rounded-xl bg-surface-container text-on-surface-variant font-label-md text-label-md font-semibold flex items-center justify-center gap-1 hover:bg-surface-container-high active:scale-95 transition-all';
+      });
+    }
+
+    if (attendBtn) {
+      attendBtn.addEventListener('click', function() {
+        resetRSVP();
+        this.className = 'h-13 py-3 px-2 rounded-xl bg-primary text-on-primary font-label-md text-label-md font-bold flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all';
+      });
+    }
+
+    if (maybeBtn) {
+      maybeBtn.addEventListener('click', function() {
+        resetRSVP();
+        this.className = 'h-13 py-3 px-2 rounded-xl bg-surface-variant text-on-surface font-label-md text-label-md font-bold flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all';
+      });
+    }
+
+    if (declineBtn) {
+      declineBtn.addEventListener('click', function() {
+        resetRSVP();
+        this.className = 'h-13 py-3 px-2 rounded-xl bg-error-container text-on-error-container font-label-md text-label-md font-bold flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all';
+      });
+    }
+
+    // View Switcher Active Styles
+    const toggleTimeline = document.getElementById('toggleTimeline');
+    const toggleCalendar = document.getElementById('toggleCalendar');
+
+    if (toggleTimeline && toggleCalendar) {
+      toggleTimeline.addEventListener('click', function() {
+        this.className = 'h-8 px-3 rounded-full bg-primary text-on-primary font-label-sm text-label-sm shadow-sm flex items-center gap-1 transition-all';
+        toggleCalendar.className = 'h-8 px-3 rounded-full text-on-surface-variant font-label-sm text-label-sm hover:text-on-surface flex items-center gap-1 transition-all';
+      });
+
+      toggleCalendar.addEventListener('click', function() {
+        this.className = 'h-8 px-3 rounded-full bg-primary text-on-primary font-label-sm text-label-sm shadow-sm flex items-center gap-1 transition-all';
+        toggleTimeline.className = 'h-8 px-3 rounded-full text-on-surface-variant font-label-sm text-label-sm hover:text-on-surface flex items-center gap-1 transition-all';
+      });
+    }
+  })();
+</script></main><nav class="fixed bottom-0 inset-x-0 z-50 pb-safe bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_-2px_12px_rgba(14,107,79,0.06)]" data-active-classes="text-primary font-bold"><div class="flex justify-between items-center h-16 px-space-xs"><a class="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 h-full text-on-surface-variant transition-colors" data-path="home" href="#"><span class="material-symbols-outlined text-[22px]">home</span><span class="font-label-sm text-label-sm truncate">홈</span></a><a aria-current="page" class="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 h-full transition-colors text-primary font-bold" data-path="schedule" href="#"><span class="material-symbols-outlined text-[22px]">calendar_month</span><span class="font-label-sm text-label-sm truncate">일정</span></a><a class="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 h-full text-on-surface-variant transition-colors" data-path="match" href="#"><span class="material-symbols-outlined text-[22px]">sports_tennis</span><span class="font-label-sm text-label-sm truncate">대진</span></a><a class="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 h-full text-on-surface-variant transition-colors" data-path="gear" href="#"><span class="material-symbols-outlined text-[22px]">inventory_2</span><span class="font-label-sm text-label-sm truncate">용품</span></a><a class="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 h-full text-on-surface-variant transition-colors" data-path="fees" href="#"><span class="material-symbols-outlined text-[22px]">payments</span><span class="font-label-sm text-label-sm truncate">회비</span></a><a class="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 h-full text-on-surface-variant transition-colors" data-path="more" href="#"><span class="material-symbols-outlined text-[22px]">more_horiz</span><span class="font-label-sm text-label-sm truncate">더보기</span></a></div></nav></body></html>
