@@ -12,7 +12,7 @@
    ============================================================ */
 import React from 'react';
 import { View, Text, Pressable, TextInput, ScrollView, StyleSheet } from 'react-native';
-import { C, S, R, F, SHADOW } from '../lib/theme';
+import { C, S, R, F, SHADOW, TAP } from '../lib/theme';
 import { isGuestId } from '../lib/constants';
 import { Icon } from './Icon';
 
@@ -22,8 +22,11 @@ export const Card = ({ children, style, flat, onPress }) => {
     <View
       style={[
         {
+          /* 검토 반영: 카드는 경계선과 옅은 그늘을 함께 쓴다.
+             그늘만 두면 밝은 화면에서 윤곽이 사라지고, 경계선만 두면
+             납작해 보인다. 둘을 아주 약하게 겹친다. */
           backgroundColor: C.surface, borderRadius: R.lg, padding: S.lg,
-          borderWidth: flat ? 1 : 0, borderColor: C.border,
+          borderWidth: 1, borderColor: C.border,
         },
         flat ? null : SHADOW.sm,
         style,
@@ -68,10 +71,10 @@ export const Chip = ({ children, tone = 'default', onPress, style }) => {
     <View
       style={[{
         alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center',
-        paddingHorizontal: 10, paddingVertical: 5, borderRadius: R.pill,
+        paddingHorizontal: 12, paddingVertical: 6, borderRadius: R.pill,
         backgroundColor: t.bg, borderWidth: t.border ? 1 : 0, borderColor: t.border,
       }, style]}>
-      <Text style={{ fontSize: 12, fontWeight: '700', color: t.fg }}>{children}</Text>
+      <Text style={{ fontSize: 12.5, fontWeight: '700', color: t.fg }}>{children}</Text>
     </View>
   );
   return onPress
@@ -110,22 +113,37 @@ const BTN_TONES = {
   outline: { bg: 'transparent', fg: C.green, border: C.green },
   danger: { bg: C.danger, fg: '#fff' },
 };
-export const Btn = ({ children, onPress, tone = 'primary', full, small, disabled, style }) => {
+/**
+ * 버튼.
+ *
+ * ⚠️ 높이를 줄이지 말 것 (theme.js 의 TAP 참고). 코트에서 서서 누른다.
+ * @param cta  화면의 주 행동일 때. 더 높고 굵다.
+ * @param icon 글자 왼쪽에 놓을 것
+ */
+export const Btn = ({ children, onPress, tone = 'primary', full, small, cta, disabled, icon, style }) => {
   const t = BTN_TONES[tone] || BTN_TONES.primary;
+  const h = small ? TAP.small : cta ? TAP.cta : TAP.btn;
   return (
     <Pressable
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
+      accessibilityRole="button"
       style={({ pressed }) => ([{
         backgroundColor: t.bg, borderRadius: R.md,
+        flexDirection: 'row', gap: 7,
         alignItems: 'center', justifyContent: 'center',
         borderWidth: t.border ? 1.5 : 0, borderColor: t.border,
-        paddingHorizontal: small ? 14 : 18,
-        minHeight: small ? 34 : 46,
+        paddingHorizontal: small ? 14 : 20,
+        minHeight: h,
         alignSelf: full ? 'stretch' : 'flex-start',
         opacity: disabled ? 0.35 : pressed ? 0.82 : 1,
       }, style])}>
-      <Text style={{ color: t.fg, fontWeight: '600', fontSize: small ? 13 : 15 }}>{children}</Text>
+      {icon}
+      <Text style={{
+        color: t.fg, fontWeight: '700',
+        fontSize: small ? 13.5 : cta ? 16 : 15,
+        letterSpacing: -0.2,
+      }}>{children}</Text>
     </Pressable>
   );
 };
@@ -148,7 +166,12 @@ const OUTER_KEYS = [
   'marginHorizontal', 'marginVertical',
 ];
 
-export const Field = ({ style, error, suffix, ...props }) => {
+export const Field = ({ style, error, suffix, onFocus, onBlur, ...props }) => {
+  /* 포커스를 직접 들고 있는 이유: 검토 문서가 "포커스 시 2px 그린 테두리 +
+     바깥 링"을 요구한다. RN 의 TextInput 은 그 상태를 밖으로 주지 않으므로
+     여기서 잡아서 껍데기에 칠한다. 바깥 링은 두 번째 View 로 흉내 낸다 —
+     RN 에는 CSS 의 box-shadow spread 가 없다. */
+  const [focused, setFocused] = React.useState(false);
   const flat = StyleSheet.flatten(style) || {};
   const outer = {};
   const inner = {};
@@ -156,17 +179,28 @@ export const Field = ({ style, error, suffix, ...props }) => {
     if (OUTER_KEYS.includes(k)) outer[k] = v; else inner[k] = v;
   });
 
+  const line = error ? C.danger : focused ? C.green : C.border;
   return (
     <View style={outer}>
       <View style={{
-        flexDirection: 'row', alignItems: 'center',
-        backgroundColor: C.fill, borderRadius: R.md,
-        borderWidth: 1, borderColor: error ? C.danger : 'transparent',
-        paddingHorizontal: 12,
+        borderRadius: R.md + 3,
+        /* 포커스 링. 평소에는 투명이라 자리만 차지한다 — 눌렀을 때
+           칸이 들썩이지 않게 하려고 늘 같은 두께를 둔다. */
+        borderWidth: 3,
+        borderColor: focused && !error ? 'rgba(16,185,129,0.18)' : 'transparent',
       }}>
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          backgroundColor: C.surface, borderRadius: R.md,
+          borderWidth: focused || error ? 2 : 1.5, borderColor: line,
+          paddingHorizontal: 14,
+          minHeight: TAP.field,
+        }}>
         <TextInput
           placeholderTextColor={C.faint}
-          style={[{ flex: 1, paddingVertical: 12, fontSize: 15, color: C.text }, inner]}
+          onFocus={(e) => { setFocused(true); onFocus?.(e); }}
+          onBlur={(e) => { setFocused(false); onBlur?.(e); }}
+          style={[{ flex: 1, paddingVertical: 12, fontSize: 16, color: C.text }, inner]}
           {...props}
         />
         {/* 접미사가 글자면 감싸 주고, 컴포넌트면 그대로 둔다.
@@ -179,8 +213,14 @@ export const Field = ({ style, error, suffix, ...props }) => {
             ? <Text style={{ fontSize: 13, color: C.sub, fontWeight: '600' }}>{suffix}</Text>
             : suffix
         )}
+        </View>
       </View>
-      {!!error && <Text style={{ fontSize: 11, color: C.danger, marginTop: 4 }}>{error}</Text>}
+      {!!error && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5, marginLeft: 3 }}>
+          <Icon name="alert" size={13} color={C.danger} />
+          <Text style={{ fontSize: 13, color: C.danger, flex: 1 }}>{error}</Text>
+        </View>
+      )}
     </View>
   );
 };
