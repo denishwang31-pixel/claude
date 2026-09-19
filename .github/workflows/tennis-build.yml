@@ -86,6 +86,22 @@ jobs:
       - name: 로직 검증
         run: npm run test:all
 
+      # 네이티브 설정 점검. EAS 도 빌드 중에 같은 것을 돌리는데, 그쪽 결과는
+      # expo.dev 로그 안에 묻혀서 "무엇이 걸렸는지"를 읽기가 번거롭다.
+      # 여기서 미리 돌려 두면 GitHub 로그에 그대로 남는다.
+      #
+      # ⚠️ 실패해도 빌드를 막지 않는다(continue-on-error). expo doctor 는
+      #    경고다 — 버전이 권장과 다르다는 것 정도로 30분짜리 빌드를
+      #    막으면 아무 빌드도 못 한다. EAS 쪽도 같은 이유로 경고 처리한다.
+      #
+      #    실제로 한 번 혼선이 있었다. EAS 화면의 영어 안내가
+      #    "Doctor 검사가 실패해도 빌드는 실패하지 않는다" 인데, 브라우저
+      #    자동 번역이 이걸 정반대로 옮겨서 빌드가 멈춘 줄 알았다.
+      - name: 네이티브 설정 점검 (경고만)
+        id: doctor
+        continue-on-error: true
+        run: npx --yes expo-doctor@latest
+
       - name: 빌드
         id: build
         continue-on-error: true
@@ -162,6 +178,7 @@ jobs:
             echo "**4. 네이티브 설정이 틀렸다**"
             echo ""
             echo "\`app.json\` 의 plugins·권한·패키지명을 최근에 고쳤다면 그쪽을 먼저 보세요."
+            echo "위 **네이티브 설정 점검** 단계의 로그에 무엇이 걸렸는지 그대로 나옵니다."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 결과 요약
@@ -173,6 +190,7 @@ jobs:
             echo "| 항목 | 값 |"
             echo "|---|---|"
             echo "| 결과 | ${{ steps.build.outcome == 'success' && '✅ 요청됨' || '❌ 막힘' }} |"
+            echo "| 설정 점검 | ${{ steps.doctor.outcome == 'success' && '✅ 이상 없음' || '⚠️ 경고 있음 (빌드는 진행됨)' }} |"
             echo "| 대상 | ${{ inputs.platform }} |"
             echo "| 종류 | ${{ inputs.profile }} |"
             echo "| 브랜치 | \`${{ inputs.ref }}\` |"
