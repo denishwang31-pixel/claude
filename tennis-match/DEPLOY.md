@@ -179,6 +179,23 @@ OTA 는 자바스크립트만 바꾼다. 아래를 건드렸으면 앱을 **새�
 파일 경로가 아니라 **파일 내용**을 붙여넣어야 한다. `{` 로 시작해서
 `}` 로 끝나는 글이다.
 
+**서버 함수가 일부만 실패했다**
+
+전부 다시 할 필요가 없다. 로그에서
+`Functions deploy had errors with the following functions:` 를 찾으면 막힌 것만
+적혀 있고, 거기 없는 함수는 **이미 올라갔다**. 권한을 고친 뒤 다시 돌리면
+막혔던 것만 새로 붙는다.
+
+⚠️ **예약 함수 3개만 막히는 경우가 흔하다** (`dailyFeeDunning` 회비 독촉,
+`autoRsvpAsk` 참석 투표 요청, `updateForecasts` 날씨). 이 셋은 "매일 몇 시에"
+도는 것이라 Cloud Scheduler 작업을 함께 만들어야 하는데, 그 권한이 따로다.
+로그에 `cloudscheduler.jobs.update` 가 보이면 서비스 계정에
+**Cloud Scheduler 관리자** 역할을 더하면 된다.
+
+실제로 이것 때문에 한 번 돌아갔다. 15개 중 12개가 올라갔는데 안내문이
+"대개 권한 문제입니다"라고만 해서, 전부 실패한 줄 알고 엉뚱한 역할을 찾았다.
+지금은 workflow 안내가 로그에 찍히는 권한 이름과 줄 역할을 짝지어 보여 준다.
+
 **`Failed to load function definition`**
 서버 함수가 자기 의존성을 못 찾는 것이다. workflow 가 `npm ci --prefix functions`
 로 미리 깔아 두므로 보통 안 나지만, `functions/package-lock.json` 이
