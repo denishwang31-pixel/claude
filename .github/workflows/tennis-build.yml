@@ -1,0 +1,216 @@
+# 테니스매치 — 새 앱 빌드 (APK/IPA)
+#
+# 배포(tennis-deploy.yml)와 왜 따로 두나
+#   성격이 완전히 다르다.
+#     배포  2~3분. 푸시하면 자동. 하루에 몇 번이든.
+#     빌드  20~40분. 손으로만. EAS 무료 한도가 월 몇 회뿐이다.
+#   같은 파일에 두면 "배포하려다 실수로 빌드가 돌아" 한도를 태운다.
+#   그래서 자동 방아쇠(push)를 아예 달지 않는다 — workflow_dispatch 뿐이다.
+#
+# 언제 빌드가 필요한가
+#   OTA(eas update)는 자바스크립트만 바꾼다. 아래를 건드렸으면 OTA 로는
+#   안 나가고 앱을 새로 깔아야 한다.
+#     · 새 네이티브 라이브러리 (expo-auth-session, expo-apple-authentication …)
+#     · app.json 의 권한·아이콘·패키지 이름·plugins
+#     · google-services.json 교체
+#   ⚠️ 이때 JS 만 OTA 로 내보내면 기존 앱이 없는 모듈을 찾다가 죽는다.
+#      순서는 반드시 "빌드 → 설치 → 그다음 OTA" 다.
+#
+# ⚠️ 첫 안드로이드 빌드는 키스토어가 없어서 막힐 수 있다
+#    비대화형에서는 "새 키스토어를 만들까요?"에 답할 수가 없다. 그때는
+#    expo.dev 에서 먼저 하나 만들어 두면 된다 — 아래 실패 안내가 그 길을
+#    알려 준다. 태블릿 브라우저에서 할 수 있다.
+name: 테니스매치 빌드
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: '빌드할 브랜치'
+        type: string
+        default: 'claude/tennis-app-roadmap-review-oxol8b'
+      platform:
+        description: '무엇을 만들까'
+        type: choice
+        options: [android, ios, all]
+        default: android
+      profile:
+        description: '빌드 종류 (preview = 내부 테스트용 APK)'
+        type: choice
+        options: [preview, production, development]
+        default: preview
+      wait:
+        description: '빌드가 끝날 때까지 기다리기 (20~40분. 끄면 링크만 받고 바로 끝난다)'
+        type: boolean
+        default: false
+
+env:
+  EAS_CLI: 'latest'
+
+defaults:
+  run:
+    working-directory: tennis-match
+
+concurrency:
+  # 빌드를 겹쳐 돌리지 않는다. 한도가 아깝다.
+  group: tennis-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: 테니스 앱이 이 브랜치에 있는지 확인
+        working-directory: .
+        run: |
+          if [ ! -f tennis-match/package.json ]; then
+            echo "::error::'${{ inputs.ref }}' 에는 테니스 앱(tennis-match 폴더)이 없습니다. [빌드할 브랜치] 칸을 확인하세요."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tennis-match/package-lock.json
+
+      - run: npm ci
+
+      # ⚠️ 빌드 전에 검증을 돌린다.
+      #    빌드는 30분이 걸리고 EAS 한도를 쓴다. 로직이 깨진 채로 구워서
+      #    30분 뒤에 아는 것보다, 1분 만에 여기서 멈추는 편이 훨씬 싸다.
+      - name: 로직 검증
+        run: npm run test:all
+
+      - name: 빌드
+        id: build
+        continue-on-error: true
+        env:
+          # ⚠️ 붙여넣을 때 줄바꿈·공백이 딸려 온다. 그대로 두면 eas-cli 가
+          #    HTTP 헤더에 실으려다 "is not a legal HTTP header value" 로
+          #    죽는데, 토큰이 맞고 틀리고와 무관한 오류라 원인을 찾기 어렵다.
+          #    (tennis-deploy.yml 의 OTA 단계에 같은 검사가 있다. 둘 다
+          #     같은 시크릿을 쓰므로 검사도 같이 유지할 것)
+          EXPO_TOKEN_RAW: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN_RAW" ]; then
+            echo "::error::EXPO_TOKEN 시크릿이 비어 있습니다."
+            exit 1
+          fi
+          EXPO_TOKEN="$(printf '%s' "$EXPO_TOKEN_RAW" | tr -d '[:space:]')"
+          export EXPO_TOKEN
+
+          case "$EXPO_TOKEN" in
+            "{"*)
+              echo "::error::EXPO_TOKEN 에 JSON 이 들어 있습니다. Firebase 서비스 계정 파일을 여기에 넣은 것 같습니다. https://expo.dev/settings/access-tokens 에서 만든 한 줄짜리 토큰이어야 합니다."
+              exit 1 ;;
+          esac
+          if [ "${#EXPO_TOKEN}" -lt 20 ] || [ "${#EXPO_TOKEN}" -gt 200 ]; then
+            echo "::error::EXPO_TOKEN 길이가 이상합니다(${#EXPO_TOKEN}자). Expo 토큰은 수십 자입니다. 시크릿을 다시 넣어 주세요."
+            exit 1
+          fi
+
+          # --wait 를 기본으로 켜지 않는 이유: 빌드는 EAS 서버에서 돌고
+          # 러너는 그동안 아무것도 안 하면서 GitHub Actions 시간만 쓴다.
+          # 끝나면 Expo 가 메일로 알려 주므로 보통은 기다릴 필요가 없다.
+          WAIT="--no-wait"
+          if [ "${{ inputs.wait }}" = "true" ]; then WAIT=""; fi
+
+          npx --yes eas-cli@$EAS_CLI build \
+            --platform "${{ inputs.platform }}" \
+            --profile "${{ inputs.profile }}" \
+            --non-interactive \
+            $WAIT
+
+      # 막혔을 때 무엇을 해야 하는지 한자리에 모아 준다.
+      # ⚠️ 오류가 날 때마다 한 줄씩 찾아 헤매지 않도록, 흔한 원인을 처음부터
+      #    다 적는다. 배포 쪽에서 권한 오류를 하나씩 풀다가 크게 헤맨 적이 있다.
+      - name: 빌드가 막혔을 때 안내
+        if: steps.build.outcome == 'failure'
+        run: |
+          {
+            echo "### 빌드가 막혔습니다"
+            echo ""
+            echo "위 로그의 마지막 줄을 보고 아래에서 찾으세요."
+            echo ""
+            echo "**1. 키스토어가 없다 (첫 안드로이드 빌드에서 가장 흔함)**"
+            echo ""
+            echo "\`Generating a new Keystore is not supported in --non-interactive mode\` 같은 말이 보이면,"
+            echo "비대화형이라 \"새 키스토어를 만들까요?\"에 답할 수가 없어서 멈춘 것입니다."
+            echo "웹에서 먼저 하나 만들어 두면 됩니다 (태블릿에서 됩니다):"
+            echo ""
+            echo "1. https://expo.dev/accounts/denis-hwang/projects/tennis-match/credentials"
+            echo "2. **Android** → **Build Credentials** → **Add new** → Expo 가 만들어 주는 쪽 선택"
+            echo "3. 이 workflow 를 다시 실행"
+            echo ""
+            echo "⭐ 그 화면의 **SHA-1 Fingerprint** 가 구글 로그인에 필요한 값입니다."
+            echo ""
+            echo "**2. iOS 인데 Apple Developer 계정이 없다**"
+            echo ""
+            echo "iOS 빌드는 Apple Developer Program(연 \$99) 없이는 안 됩니다."
+            echo "지금은 \`platform: android\` 로만 돌리세요."
+            echo ""
+            echo "**3. EAS 무료 한도를 다 썼다**"
+            echo ""
+            echo "\`Your account has no remaining builds\` 같은 말이 보이면 다음 달을 기다리거나"
+            echo "유료 요금제가 필요합니다. https://expo.dev/accounts/denis-hwang/settings/billing"
+            echo ""
+            echo "**4. 네이티브 설정이 틀렸다**"
+            echo ""
+            echo "\`app.json\` 의 plugins·권한·패키지명을 최근에 고쳤다면 그쪽을 먼저 보세요."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 결과 요약
+        if: always()
+        run: |
+          {
+            echo "### 빌드 요청"
+            echo ""
+            echo "| 항목 | 값 |"
+            echo "|---|---|"
+            echo "| 결과 | ${{ steps.build.outcome == 'success' && '✅ 요청됨' || '❌ 막힘' }} |"
+            echo "| 대상 | ${{ inputs.platform }} |"
+            echo "| 종류 | ${{ inputs.profile }} |"
+            echo "| 브랜치 | \`${{ inputs.ref }}\` |"
+            echo "| 커밋 | \`$(git log -1 --pretty='%h %s')\` |"
+            echo ""
+            if [ "${{ inputs.wait }}" != "true" ]; then
+              echo "⏳ **기다리지 않고 끝냈습니다.** 빌드는 EAS 서버에서 계속 돌고 있습니다."
+              echo "진행 상황과 완성된 APK 는 여기서 봅니다:"
+            else
+              echo "완성된 APK 는 여기서 받습니다:"
+            fi
+            echo ""
+            echo "https://expo.dev/accounts/denis-hwang/projects/tennis-match/builds"
+            echo ""
+            echo "---"
+            echo ""
+            echo "#### 빌드가 끝나면"
+            echo ""
+            echo "1. 위 주소에서 **Install** 을 눌러 휴대폰에 새 앱을 설치합니다."
+            echo "2. ⚠️ **새 앱을 설치한 뒤에** 다음 OTA 배포를 하세요."
+            echo "   순서가 바뀌면 기존 앱이 없는 네이티브 모듈을 찾다가 죽습니다."
+            echo ""
+            echo "#### 구글 로그인용 SHA-1 이 필요하다면"
+            echo ""
+            echo "https://expo.dev/accounts/denis-hwang/projects/tennis-match/credentials"
+            echo ""
+            echo "**Android → Build Credentials** 안의 **SHA-1 Fingerprint** 입니다."
+            echo "이 값을 Google Cloud 의 Android OAuth 클라이언트에 넣습니다."
+            echo "⚠️ 로컬 디버그 키의 SHA-1 이 아니라 **이 값**이어야 합니다."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 빌드 결과 판정
+        if: always()
+        run: |
+          # ⚠️ `[ 조건 ] && 명령` 꼴을 쓰지 않는다. bash -e 에서 마지막 줄의
+          #    조건이 거짓이면 그 줄이 실패로 끝나 단계 전체가 죽는다.
+          if [ "${{ steps.build.outcome }}" = "failure" ]; then
+            echo "::error::빌드 요청이 막혔습니다 — 위 Summary 의 안내를 보세요."
+            exit 1
+          fi
+          echo "빌드를 요청했습니다."
