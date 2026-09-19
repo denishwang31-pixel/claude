@@ -263,6 +263,48 @@ export function socialReadiness(config = SOCIAL_CONFIG) {
 export const needsNativeRebuild = (config = SOCIAL_CONFIG) =>
   PROVIDER_ORDER.some((p) => providerReady(p, config));
 
+/* ---------------- 로그인 결과 읽기 ---------------- */
+/* 창을 띄우는 것은 socialSignIn.js 가 하지만, "받은 것을 어떻게 읽나"는
+   판단이라 여기 둔다. 저쪽은 네이티브 모듈을 불러오므로 node 로 도는
+   검사가 못 들어간다 — 판단이 그 안에 갇히면 영영 검사를 못 한다. */
+
+/**
+ * 응답에서 id_token 을 꺼낸다.
+ *
+ * ⚠️ 두 군데를 다 본다. 웹에서는 id_token 을 바로 받지만(params),
+ *    기기에서는 코드를 먼저 받아 토큰으로 바꾸므로 authentication 에
+ *    담겨 온다. 한 곳만 보면 한쪽 플랫폼에서만 되는 코드가 된다.
+ */
+export function idTokenOf(response) {
+  return response?.params?.id_token
+    || response?.authentication?.idToken
+    || '';
+}
+
+/**
+ * 실패 이유를 사람 말로. 코드가 그대로 보이면 아무도 못 고친다.
+ * 빈 문자열은 "오류로 볼 것 없음"(사용자가 창을 닫은 경우)이다.
+ */
+export function googleErrorText(e) {
+  const code = String(e?.code || '');
+  const msg = String(e?.message || e || '');
+  if (code.includes('account-exists-with-different-credential')) {
+    return '같은 이메일로 이미 가입되어 있습니다. 그 방법으로 로그인한 뒤 계정을 연결해 주세요.';
+  }
+  if (code.includes('invalid-credential')) {
+    /* 이 문구가 중요하다. 구글 로그인이 실패하는 가장 흔한 원인이
+       SHA-1 불일치인데, Firebase 는 그냥 "자격 증명이 잘못됐다"고만
+       한다. 어디를 봐야 하는지 짚어 주지 않으면 한참 헤맨다. */
+    return '구글 인증이 거부되었습니다. 앱 서명 키(SHA-1)가 구글 클라우드에 등록된 값과 같은지 확인해 주세요.';
+  }
+  if (code.includes('operation-not-allowed')) {
+    return 'Firebase 콘솔에서 구글 로그인이 꺼져 있습니다.';
+  }
+  if (code.includes('network')) return '네트워크 연결을 확인해 주세요.';
+  if (/popup|cancel/i.test(msg)) return '';          // 사용자가 닫은 것 — 오류가 아니다
+  return '구글 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+}
+
 /* ---------------- 키 받는 절차 ---------------- */
 
 /**

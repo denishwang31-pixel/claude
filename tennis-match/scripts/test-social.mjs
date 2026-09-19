@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import {
   PROVIDERS, PROVIDER_ORDER, PROVIDER_LABEL, PROVIDER_SHORT, PROVIDER_STYLE,
   REQUIREMENTS, SOCIAL_CONFIG,
-  configFromExtra, unknownKeys,
+  configFromExtra, unknownKeys, idTokenOf, googleErrorText,
   providerReady, enabledProviders, missingFor,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 } from '../src/lib/social.js';
@@ -207,6 +207,36 @@ inCfg.forEach((k) => {
   ok(k in SOCIAL_CONFIG,
     `app.config.js 의 ${k} 는 SOCIAL_CONFIG 에도 있어야 한다`);
 });
+
+console.log('[구글이 돌려준 것을 읽는다]');
+/* ⚠️ 플랫폼마다 토큰이 다른 자리에 온다. 웹은 params.id_token,
+   기기는 코드를 먼저 받아 바꾸므로 authentication.idToken 이다.
+   한 곳만 보면 한쪽에서만 되는 코드가 되는데, 개발자는 보통 한쪽에서만
+   시험해 보므로 나머지 한쪽이 안 되는 것을 한참 모른다. */
+eq(idTokenOf({ params: { id_token: 'A' } }), 'A', '웹: params 에서 읽는다');
+eq(idTokenOf({ authentication: { idToken: 'B' } }), 'B', '기기: authentication 에서 읽는다');
+eq(idTokenOf({ params: { id_token: 'A' }, authentication: { idToken: 'B' } }), 'A',
+  '둘 다 있으면 params 가 먼저');
+eq(idTokenOf({}), '', '없으면 빈 문자열');
+eq(idTokenOf(null), '', 'null 이어도 터지지 않는다');
+eq(idTokenOf(undefined), '', 'undefined 여도 터지지 않는다');
+eq(idTokenOf({ params: {} }), '', '빈 params 도 빈 문자열');
+
+console.log('[실패 이유를 사람 말로 바꾼다]');
+ok(/SHA-1/.test(googleErrorText({ code: 'auth/invalid-credential' })),
+  '⭐ invalid-credential 이면 SHA-1 을 짚어 준다 — 제일 흔한 원인인데 Firebase 는 안 알려 준다');
+ok(/Firebase/.test(googleErrorText({ code: 'auth/operation-not-allowed' })),
+  '제공자가 꺼져 있으면 어디를 켜야 하는지 말한다');
+ok(/이미 가입/.test(googleErrorText({ code: 'auth/account-exists-with-different-credential' })),
+  '같은 이메일이 이미 있으면 그렇게 말한다');
+ok(/네트워크/.test(googleErrorText({ code: 'auth/network-request-failed' })),
+  '네트워크 문제를 구분한다');
+eq(googleErrorText({ message: 'User canceled the popup' }), '',
+  '사용자가 창을 닫은 것은 오류가 아니다 — 빈 문자열');
+ok(!!googleErrorText({}), '모르는 오류도 빈손으로 두지 않는다');
+ok(!!googleErrorText(null), 'null 이어도 문구가 나온다');
+ok(!/auth\//.test(googleErrorText({ code: 'auth/internal-error' })),
+  '오류 코드를 그대로 보여 주지 않는다 — 코드가 보이면 아무도 못 고친다');
 
 console.log('[app.json 을 지우지 않았다]');
 /* app.config.js 가 app.json 을 대체한 것이 아니라 얹은 것이다.

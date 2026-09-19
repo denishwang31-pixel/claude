@@ -17,8 +17,13 @@
        안 받는 것이라, 법에도 스토어 심사에도 걸린다
 
    소셜 로그인
-     준비된 것만 나온다. 지금은 키가 없어 하나도 안 나온다 —
-     자세한 것은 src/lib/social.js 머리말.
+     준비된 것만 나온다(키가 없는 제공자는 버튼 자체가 안 그려진다).
+     지금 실제로 도는 것은 **구글뿐**이다 — 카카오·네이버는 토큰을
+     Firebase 계정으로 바꿔 줄 서버 함수가 더 있어야 하고, 애플은
+     Apple Developer 계정이 있어야 한다.
+
+     어느 버튼을 그릴지는 src/lib/social.js,
+     실제로 창을 띄우는 것은 src/lib/socialSignIn.js.
    ============================================================ */
 import React, { useMemo, useState } from 'react';
 import {
@@ -33,7 +38,8 @@ import {
 } from '../src/lib/auth';
 import { Btn, Field, CheckRow } from '../src/components/ui';
 import { SocialButtons } from '../src/components/SocialButtons';
-import { PROVIDER_SHORT } from '../src/lib/social';
+import { PROVIDER_SHORT, PROVIDERS } from '../src/lib/social';
+import { useGoogleSignIn } from '../src/lib/socialSignIn';
 import { TERMS, PRIVACY } from '../src/lib/legalText';
 import { C, S, R, F, SHADOW } from '../src/lib/theme';
 
@@ -63,6 +69,10 @@ export default function Login() {
   const [touched, setTouched] = useState(false); // 한 번이라도 제출을 눌렀나
 
   const signup = mode === 'signup';
+
+  /* 구글 로그인. 훅이라 조건 없이 부른다 — 키가 없으면 ready 가 false 가
+     되고, 버튼 자체도 안 그려진다. 성공하면 이메일 로그인과 똑같이 go(). */
+  const google = useGoogleSignIn({ onDone: (uid) => { go(uid); } });
 
   /* 입력이 성립하는가. 제출을 누르기 전에는 빨간 글씨를 띄우지 않는다 —
      아직 다 치지도 않았는데 "틀렸다"고 하면 성가시기만 하다. */
@@ -131,10 +141,12 @@ export default function Login() {
   };
 
   const onSocial = (p) => {
-    /* 여기까지 올 일은 없다 — 준비 안 된 버튼은 그려지지 않으므로.
-       그래도 키만 넣고 흐름 코드를 아직 안 붙인 상태에서 눌렸을 때
-       아무 일도 안 일어나는 것만은 막는다. */
-    setErr(`${PROVIDER_SHORT[p]} 로그인은 다음 앱 업데이트에서 열립니다.`);
+    setErr(''); setNote('');
+    if (p === PROVIDERS.GOOGLE) { google.signIn(); return; }
+    /* 카카오·네이버·애플은 아직 흐름이 없다. 키를 넣으면 버튼은
+       나오지만 눌러도 안 되는 상태가 되므로, 그 사실을 말해 준다 —
+       아무 일도 안 일어나는 것이 제일 나쁘다. */
+    setErr(`${PROVIDER_SHORT[p]} 로그인은 아직 준비 중입니다.`);
   };
 
   const legalBody = legal === 'terms' ? TERMS : PRIVACY;
@@ -221,8 +233,10 @@ export default function Login() {
             </View>
 
             {/* 알림칸 — 오류와 안내를 같은 자리에서, 다른 색으로 */}
-            {!!err && <Banner tone="danger" text={err} />}
-            {!!note && !err && <Banner tone="info" text={note} />}
+            {/* 구글 쪽 실패도 같은 자리에 같은 모양으로 보여 준다.
+                오류가 화면마다 다른 자리에 뜨면 못 보고 지나친다. */}
+            {!!(err || google.error) && <Banner tone="danger" text={err || google.error} />}
+            {!!note && !err && !google.error && <Banner tone="info" text={note} />}
 
             <Text style={[F.label, { marginBottom: 6 }]}>이메일</Text>
             <Field
@@ -291,7 +305,7 @@ export default function Login() {
             {/* 소셜 — 준비된 것이 없으면 구분선까지 통째로 안 나온다 */}
             <SocialButtons
               onPress={onSocial}
-              disabled={busy}
+              disabled={busy || google.busy}
               style={{ marginTop: S.xl }}
             />
           </View>
@@ -336,7 +350,7 @@ export default function Login() {
       </KeyboardAvoidingView>
 
       {/* 처리 중 — 화면 전체를 덮어 두 번 눌리는 것을 막는다 */}
-      {busy && (
+      {(busy || google.busy) && (
         <View style={{
           ...FILL,
           backgroundColor: 'rgba(255,255,255,0.55)',
