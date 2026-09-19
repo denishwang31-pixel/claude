@@ -369,6 +369,17 @@ export default function More() {
             </Text>
           </Card>
 
+          {/* ⚠️ 앱 정보는 클럽이 없을 때도 보여야 한다.
+              여기 있는 것들(업데이트 상태, 소셜 로그인 상태)은 로그인이나
+              설치가 잘못됐을 때 원인을 찾는 자리다. 그런데 클럽에 들어간
+              뒤에만 보이게 두면, 정작 필요한 상황에서 볼 수가 없다.
+              실제로 "소셜 로그인 상태를 어디서 보냐"고 막혔다. */}
+          <SectionTitle>앱 정보</SectionTitle>
+          <UpdateStatus flash={flash} />
+          <View style={{ marginTop: 8 }}>
+            <SocialStatus />
+          </View>
+
           <View style={{ marginTop: 28, alignItems: 'center' }}>
             <Pressable onPress={logout}>
               <Text style={{ color: C.danger, fontSize: 13, fontWeight: '700' }}>로그아웃</Text>
