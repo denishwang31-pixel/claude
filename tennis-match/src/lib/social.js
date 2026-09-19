@@ -19,17 +19,23 @@
      그린다 — 안드로이드에서 애플 로그인은 웹 흐름이라 어색하기만 하고
      쓰는 사람도 없다.
 
-   왜 아직 로그인 창을 띄우지 않나
-     1) 키가 없다. 카카오·네이버·구글·애플 각 개발자센터에 앱을 등록해야
-        나오는 값이라, 코드로 만들어 낼 수 있는 것이 아니다.
-     2) 네이티브 모듈이 필요하다. 로그인 창은 브라우저를 띄우므로
-        expo-auth-session / expo-apple-authentication 이 들어간다.
-        JS 만 바뀌는 것이 아니라서 OTA(eas update)로는 안 나가고
-        APK·IPA 를 새로 구워야 한다.
+   ⚠️ 이 파일은 네이티브 모듈을 절대 불러오지 않는다
+     두 가지 이유다.
+       1) node 로 도는 검사(scripts/test-social.mjs)가 이 판단을 전부
+          돌려 볼 수 있어야 한다. 네이티브를 한 줄이라도 끌어들이면
+          그 검사가 통째로 못 돈다.
+       2) 더 중요한 것 — expo-router 는 앱이 뜰 때 화면 모듈을 평가한다.
+          로그인 화면이 타고 들어오는 파일 중 하나라도 맨 위에서
+          네이티브를 부르다 실패하면 **앱이 시작도 못 하고 닫힌다**.
+          오류 화면조차 못 띄운다. 실제로 한 번 그렇게 됐다.
 
-     키가 없는 채로 흐름 코드를 먼저 넣지 않는 이유는, 돌려 볼 수 없는
-     코드가 "된다"는 얼굴로 저장소에 남기 때문이다. 키가 오면 그때
-     src/lib/socialSignIn.js 를 만들고 이 파일의 결정만 가져다 쓴다.
+     그래서 창을 띄우는 일은 src/lib/socialSignIn.js 가 맡고, 그쪽도
+     맨 위가 아니라 버튼을 눌렀을 때 await import() 로 불러온다.
+
+   ⚠️ 네이티브가 들어가는 변경은 OTA 로 못 나간다
+     APK·IPA 를 새로 구워야 하고, 그때 app.json 의 version 을 반드시
+     올린다. runtimeVersion 정책이 appVersion 이라, 버전을 올려야
+     옛 앱이 새 JS 를 받아 죽는 일을 막을 수 있다.
 
    그래서 화면은 어떻게 하나
      준비된 제공자의 버튼만 그린다. 키가 없으면 그 버튼은 아예 안 그린다.
@@ -263,23 +269,39 @@ export function socialReadiness(config = SOCIAL_CONFIG) {
 export const needsNativeRebuild = (config = SOCIAL_CONFIG) =>
   PROVIDER_ORDER.some((p) => providerReady(p, config));
 
+/* ---------------- 구글 주소 만들기 ---------------- */
+
+/**
+ * 안드로이드 OAuth 클라이언트가 요구하는 되돌아올 주소(redirect URI).
+ *
+ * 구글은 안드로이드 클라이언트에 대해 "클라이언트 ID 를 거꾸로 뒤집은"
+ * 주소만 받아 준다.
+ *   123-abc.apps.googleusercontent.com
+ *   → com.googleusercontent.apps.123-abc:/oauthredirect
+ *
+ * ⚠️ 이 변환이 틀리면 로그인 창은 뜨는데 돌아오지 못한다. 구글 쪽
+ *    오류 화면에 redirect_uri_mismatch 라고만 나와서, 무엇이 틀렸는지
+ *    알기 어렵다. 그래서 규칙을 여기 두고 검사한다.
+ */
+export function reversedClientId(androidClientId) {
+  const id = String(androidClientId || '').trim();
+  const suffix = '.apps.googleusercontent.com';
+  if (!id.endsWith(suffix)) return '';
+  const head = id.slice(0, -suffix.length);
+  if (!head) return '';
+  return `com.googleusercontent.apps.${head}`;
+}
+
+/** 로그인 창이 끝나고 앱으로 돌아올 주소 */
+export function googleRedirectUri(config = SOCIAL_CONFIG) {
+  const scheme = reversedClientId(config?.googleAndroidClientId);
+  return scheme ? `${scheme}:/oauthredirect` : '';
+}
+
 /* ---------------- 로그인 결과 읽기 ---------------- */
 /* 창을 띄우는 것은 socialSignIn.js 가 하지만, "받은 것을 어떻게 읽나"는
    판단이라 여기 둔다. 저쪽은 네이티브 모듈을 불러오므로 node 로 도는
    검사가 못 들어간다 — 판단이 그 안에 갇히면 영영 검사를 못 한다. */
-
-/**
- * 응답에서 id_token 을 꺼낸다.
- *
- * ⚠️ 두 군데를 다 본다. 웹에서는 id_token 을 바로 받지만(params),
- *    기기에서는 코드를 먼저 받아 토큰으로 바꾸므로 authentication 에
- *    담겨 온다. 한 곳만 보면 한쪽 플랫폼에서만 되는 코드가 된다.
- */
-export function idTokenOf(response) {
-  return response?.params?.id_token
-    || response?.authentication?.idToken
-    || '';
-}
 
 /**
  * 실패 이유를 사람 말로. 코드가 그대로 보이면 아무도 못 고친다.
@@ -349,6 +371,7 @@ export default {
   PROVIDERS, PROVIDER_ORDER, PROVIDER_LABEL, PROVIDER_SHORT, PROVIDER_STYLE,
   REQUIREMENTS, SOCIAL_CONFIG,
   configFromExtra, unknownKeys,
+  reversedClientId, googleRedirectUri, googleErrorText,
   providerReady, enabledProviders, missingFor,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 };

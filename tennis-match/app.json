@@ -3,7 +3,7 @@
     "name": "테니스매치",
     "slug": "tennis-match",
     "scheme": "tennismatch",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -11,7 +11,7 @@
     "primaryColor": "#064e3b",
     "android": {
       "package": "com.donghyun.tennismatch",
-      "versionCode": 2,
+      "versionCode": 3,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "INTERNET",

@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 import {
   PROVIDERS, PROVIDER_ORDER, PROVIDER_LABEL, PROVIDER_SHORT, PROVIDER_STYLE,
   REQUIREMENTS, SOCIAL_CONFIG,
-  configFromExtra, unknownKeys, idTokenOf, googleErrorText,
+  configFromExtra, unknownKeys, googleErrorText,
+  reversedClientId, googleRedirectUri,
   providerReady, enabledProviders, missingFor,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 } from '../src/lib/social.js';
@@ -208,35 +209,69 @@ inCfg.forEach((k) => {
     `app.config.js 의 ${k} 는 SOCIAL_CONFIG 에도 있어야 한다`);
 });
 
-console.log('[구글이 돌려준 것을 읽는다]');
-/* ⚠️ 플랫폼마다 토큰이 다른 자리에 온다. 웹은 params.id_token,
-   기기는 코드를 먼저 받아 바꾸므로 authentication.idToken 이다.
-   한 곳만 보면 한쪽에서만 되는 코드가 되는데, 개발자는 보통 한쪽에서만
-   시험해 보므로 나머지 한쪽이 안 되는 것을 한참 모른다. */
-eq(idTokenOf({ params: { id_token: 'A' } }), 'A', '웹: params 에서 읽는다');
-eq(idTokenOf({ authentication: { idToken: 'B' } }), 'B', '기기: authentication 에서 읽는다');
-eq(idTokenOf({ params: { id_token: 'A' }, authentication: { idToken: 'B' } }), 'A',
-  '둘 다 있으면 params 가 먼저');
-eq(idTokenOf({}), '', '없으면 빈 문자열');
-eq(idTokenOf(null), '', 'null 이어도 터지지 않는다');
-eq(idTokenOf(undefined), '', 'undefined 여도 터지지 않는다');
-eq(idTokenOf({ params: {} }), '', '빈 params 도 빈 문자열');
+console.log('[구글에게 돌려줄 주소를 만든다]');
+/* ⚠️ 구글은 안드로이드 클라이언트에 대해 "클라이언트 ID 를 거꾸로 뒤집은"
+   주소만 받아 준다. 이 변환이 틀리면 로그인 창은 뜨는데 앱으로 돌아오지
+   못하고, 구글은 redirect_uri_mismatch 라고만 말한다 — 무엇이 틀렸는지
+   알려 주지 않아서 찾기가 아주 어렵다. */
+eq(reversedClientId('123-abc.apps.googleusercontent.com'),
+  'com.googleusercontent.apps.123-abc', '뒤집어서 만든다');
+eq(googleRedirectUri({ googleAndroidClientId: '123-abc.apps.googleusercontent.com' }),
+  'com.googleusercontent.apps.123-abc:/oauthredirect', '되돌아올 주소 전체');
+eq(reversedClientId('  123-abc.apps.googleusercontent.com  '),
+  'com.googleusercontent.apps.123-abc', '앞뒤 공백은 걷어낸다');
 
-console.log('[실패 이유를 사람 말로 바꾼다]');
-ok(/SHA-1/.test(googleErrorText({ code: 'auth/invalid-credential' })),
-  '⭐ invalid-credential 이면 SHA-1 을 짚어 준다 — 제일 흔한 원인인데 Firebase 는 안 알려 준다');
-ok(/Firebase/.test(googleErrorText({ code: 'auth/operation-not-allowed' })),
-  '제공자가 꺼져 있으면 어디를 켜야 하는지 말한다');
-ok(/이미 가입/.test(googleErrorText({ code: 'auth/account-exists-with-different-credential' })),
-  '같은 이메일이 이미 있으면 그렇게 말한다');
-ok(/네트워크/.test(googleErrorText({ code: 'auth/network-request-failed' })),
-  '네트워크 문제를 구분한다');
-eq(googleErrorText({ message: 'User canceled the popup' }), '',
-  '사용자가 창을 닫은 것은 오류가 아니다 — 빈 문자열');
-ok(!!googleErrorText({}), '모르는 오류도 빈손으로 두지 않는다');
-ok(!!googleErrorText(null), 'null 이어도 문구가 나온다');
-ok(!/auth\//.test(googleErrorText({ code: 'auth/internal-error' })),
-  '오류 코드를 그대로 보여 주지 않는다 — 코드가 보이면 아무도 못 고친다');
+/* 모양이 아니면 빈 문자열을 돌려준다. 억지로 만들면 창은 뜨는데
+   돌아오지 못하는, 제일 찾기 힘든 실패가 된다. */
+eq(reversedClientId('그냥문자열'), '', '구글 ID 모양이 아니면 빈 문자열');
+eq(reversedClientId('.apps.googleusercontent.com'), '', '앞이 비었으면 빈 문자열');
+eq(reversedClientId(''), '', '빈 값');
+eq(reversedClientId(null), '', 'null 이어도 터지지 않는다');
+eq(reversedClientId(undefined), '', 'undefined 여도 터지지 않는다');
+eq(googleRedirectUri({}), '', '키가 없으면 주소도 없다');
+eq(googleRedirectUri(), '', '설정을 안 줘도 터지지 않는다');
+/* ⚠️ 웹 클라이언트 ID 를 안드로이드 자리에 잘못 넣는 실수가 흔하다.
+   둘 다 같은 꼬리표라 모양만으로는 못 거른다 — 그래서 거르지 않고
+   그대로 만든다. 대신 실패했을 때 문구가 어디를 보라고 말한다. */
+ok(!!reversedClientId('999-web.apps.googleusercontent.com'),
+  '웹 ID 를 넣어도 모양은 같아서 통과한다 (문구로 안내할 수밖에 없다)');
+
+console.log('[앱이 뜨는 길에 네이티브를 맨 위에서 부르지 않는다]');
+/* ⚠️⚠️ 이 검사가 이 파일에서 제일 중요하다.
+   expo-router 는 앱이 뜰 때 화면 모듈을 평가한다. 로그인 화면이 타고
+   들어오는 파일 중 하나라도 맨 위에서 네이티브 모듈을 부르다 실패하면
+   앱이 시작도 못 하고 닫힌다 — 오류 화면조차 못 띄운다.
+
+   실제로 한 번 그렇게 됐다. socialSignIn.js 가 expo-auth-session 을
+   맨 위에서 불러서, 앱을 켜면 바로 꺼졌다. 기기에 로그를 볼 방법이
+   없으면 원인을 찾을 길이 없는 종류의 실패다.
+
+   그래서 네이티브는 버튼을 눌렀을 때 await import() 로 부른다.
+   누군가 편하다고 맨 위로 옮기면 여기서 막힌다. */
+const NATIVE_ONLY = [
+  'expo-auth-session', 'expo-web-browser', 'expo-crypto',
+  'expo-apple-authentication',
+];
+const START_PATH = [
+  'app/login.jsx',
+  'src/lib/social.js',
+  'src/lib/socialConfig.js',
+  'src/lib/socialSignIn.js',
+  'src/components/SocialButtons.jsx',
+];
+START_PATH.forEach((rel) => {
+  const src = readFileSync(resolve(ROOT, rel), 'utf8');
+  NATIVE_ONLY.forEach((mod) => {
+    const topLevel = new RegExp(`^\\s*import[^\\n]*['"]${mod}`, 'm');
+    ok(!topLevel.test(src),
+      `${rel} 가 ${mod} 를 맨 위에서 부르지 않는다`);
+  });
+});
+/* 반대로, 실제로 미뤄서 부르고 있는지도 본다. 아무도 안 부르면
+   위 검사는 통과하지만 기능이 없는 것이다. */
+ok(readFileSync(resolve(ROOT, 'src/lib/socialSignIn.js'), 'utf8')
+  .includes("import('expo-auth-session')"),
+  'socialSignIn.js 는 누를 때 expo-auth-session 을 불러온다');
 
 console.log('[app.json 을 지우지 않았다]');
 /* app.config.js 가 app.json 을 대체한 것이 아니라 얹은 것이다.

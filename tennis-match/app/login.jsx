@@ -39,7 +39,11 @@ import {
 import { Btn, Field, CheckRow } from '../src/components/ui';
 import { SocialButtons } from '../src/components/SocialButtons';
 import { PROVIDER_SHORT, PROVIDERS } from '../src/lib/social';
-import { useGoogleSignIn } from '../src/lib/socialSignIn';
+/* ⚠️ 이 파일은 네이티브 모듈을 직접 불러오지 않는다. socialSignIn 은
+   버튼을 눌렀을 때에만 안에서 await import() 한다 — 그 파일 머리말 참고.
+   여기서 무심코 expo-auth-session 을 import 하면 앱이 시작도 못 하고
+   닫힌다. 실제로 한 번 그렇게 됐다. */
+import { signInWithGoogle } from '../src/lib/socialSignIn';
 import { TERMS, PRIVACY } from '../src/lib/legalText';
 import { C, S, R, F, SHADOW } from '../src/lib/theme';
 
@@ -70,9 +74,6 @@ export default function Login() {
 
   const signup = mode === 'signup';
 
-  /* 구글 로그인. 훅이라 조건 없이 부른다 — 키가 없으면 ready 가 false 가
-     되고, 버튼 자체도 안 그려진다. 성공하면 이메일 로그인과 똑같이 go(). */
-  const google = useGoogleSignIn({ onDone: (uid) => { go(uid); } });
 
   /* 입력이 성립하는가. 제출을 누르기 전에는 빨간 글씨를 띄우지 않는다 —
      아직 다 치지도 않았는데 "틀렸다"고 하면 성가시기만 하다. */
@@ -140,13 +141,21 @@ export default function Login() {
     else setErr(r.reason);
   };
 
-  const onSocial = (p) => {
+  const onSocial = async (p) => {
     setErr(''); setNote('');
-    if (p === PROVIDERS.GOOGLE) { google.signIn(); return; }
-    /* 카카오·네이버·애플은 아직 흐름이 없다. 키를 넣으면 버튼은
-       나오지만 눌러도 안 되는 상태가 되므로, 그 사실을 말해 준다 —
-       아무 일도 안 일어나는 것이 제일 나쁘다. */
-    setErr(`${PROVIDER_SHORT[p]} 로그인은 아직 준비 중입니다.`);
+    if (p !== PROVIDERS.GOOGLE) {
+      /* 카카오·네이버·애플은 아직 흐름이 없다. 키를 넣으면 버튼은
+         나오지만 눌러도 안 되는 상태가 되므로, 그 사실을 말해 준다 —
+         아무 일도 안 일어나는 것이 제일 나쁘다. */
+      setErr(`${PROVIDER_SHORT[p]} 로그인은 아직 준비 중입니다.`);
+      return;
+    }
+    setBusy(true);
+    const r = await signInWithGoogle();
+    if (r.ok) { await go(r.uid); setBusy(false); return; }
+    setBusy(false);
+    /* error 가 빈 문자열이면 사용자가 창을 닫은 것이다 — 오류가 아니다 */
+    if (r.error) setErr(r.error);
   };
 
   const legalBody = legal === 'terms' ? TERMS : PRIVACY;
@@ -235,8 +244,8 @@ export default function Login() {
             {/* 알림칸 — 오류와 안내를 같은 자리에서, 다른 색으로 */}
             {/* 구글 쪽 실패도 같은 자리에 같은 모양으로 보여 준다.
                 오류가 화면마다 다른 자리에 뜨면 못 보고 지나친다. */}
-            {!!(err || google.error) && <Banner tone="danger" text={err || google.error} />}
-            {!!note && !err && !google.error && <Banner tone="info" text={note} />}
+            {!!err && <Banner tone="danger" text={err} />}
+            {!!note && !err && <Banner tone="info" text={note} />}
 
             <Text style={[F.label, { marginBottom: 6 }]}>이메일</Text>
             <Field
@@ -305,7 +314,7 @@ export default function Login() {
             {/* 소셜 — 준비된 것이 없으면 구분선까지 통째로 안 나온다 */}
             <SocialButtons
               onPress={onSocial}
-              disabled={busy || google.busy}
+              disabled={busy}
               style={{ marginTop: S.xl }}
             />
           </View>
@@ -350,7 +359,7 @@ export default function Login() {
       </KeyboardAvoidingView>
 
       {/* 처리 중 — 화면 전체를 덮어 두 번 눌리는 것을 막는다 */}
-      {(busy || google.busy) && (
+      {busy && (
         <View style={{
           ...FILL,
           backgroundColor: 'rgba(255,255,255,0.55)',

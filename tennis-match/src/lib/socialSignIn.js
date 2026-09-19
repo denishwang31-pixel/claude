@@ -1,134 +1,137 @@
 /* ============================================================
    소셜 로그인 — 실제로 창을 띄우고 Firebase 계정으로 바꾸는 곳
 
-   ⚠️ 이 파일은 네이티브 모듈(expo-auth-session, expo-web-browser)을
-      맨 위에서 불러온다. 그래서 이 모듈이 실리지 않은 앱에 이 코드가
-      OTA 로 내려가면 **로그인 화면에서 앱이 죽는다**.
+   ⚠️⚠️ 네이티브 모듈은 **버튼을 누를 때** 불러온다. 파일 맨 위에서
+        부르지 않는다. 이건 취향이 아니라 한 번 당하고 고친 것이다.
 
-      막는 장치는 app.json 의 runtimeVersion: appVersion 이다.
-      version 을 0.2.0 으로 올렸으므로, 이 업데이트는 0.2.0 으로 구운
-      앱에만 간다. 0.1.0 이 깔린 기기는 이 코드를 받지 못한다.
-      → 앞으로도 네이티브 모듈을 더할 때는 반드시 version 을 올릴 것.
+        expo-router 는 앱이 뜰 때 화면 모듈을 평가한다. 로그인 화면이
+        이 파일을 맨 위에서 import 하고, 이 파일이 expo-auth-session 을
+        맨 위에서 import 하면, 그 모듈을 불러오다 실패하는 순간
+        **앱이 시작도 못 하고 닫힌다**. 오류 화면조차 못 띄운다.
+        사용자는 "앱을 켜면 바로 꺼진다" 말고는 아무것도 볼 수 없고,
+        기기에 로그를 볼 방법이 없으면 원인을 찾을 길이 없다.
 
-   왜 expo-auth-session 인가 (그리고 그 한계)
-     expo-auth-session 의 Google 제공자는 SDK 51 기준 deprecated 표시가
-     붙어 있고, Expo 는 @react-native-google-signin/google-signin 을
-     권한다. 그런데도 이쪽을 고른 이유는
-       · SDK 가 버전을 지정해 주는 패키지라 버전을 맞출 수 있다
-       · config plugin 이 필요 없어 네이티브 빌드가 깨질 여지가 적다
-       · 안드로이드·iOS 가 같은 코드로 돈다
-     대신 계정 선택 화면이 브라우저로 열린다. 네이티브 선택창보다
-     투박하다. 실기기에서 써 보고 불편하면 그때 옮긴다 — 바꿀 곳은
-     이 파일 하나다.
+        그래서 await import() 로 미룬다. 이러면
+          · 앱은 무슨 일이 있어도 뜬다
+          · 실패는 버튼을 눌렀을 때 일어나고, 그때는 try/catch 로
+            잡아서 화면에 이유를 적어 줄 수 있다
+        앞으로 네이티브를 더 붙일 때도 같은 모양을 지킬 것.
 
-   ⚠️ 여기 있는 코드는 이 개발 환경에서 돌려 볼 수 없다.
-      키가 있어야 하고, 네이티브 빌드가 있어야 하고, 이 컨테이너는
-      expo.dev 로 나가지 못한다. 그래서 "된다"고 장담하지 않는다.
-      대신 실패했을 때 무엇이 잘못됐는지 화면에 말하게 해 두었다 —
-      조용히 아무 일도 안 일어나는 것이 제일 나쁘다.
+   왜 훅을 안 쓰나
+     expo-auth-session 의 Google 제공자는 훅(useIdTokenAuthRequest)으로만
+     쓸 수 있는데, 훅은 조건부로 부를 수 없어서 결국 맨 위 import 가
+     된다. 위의 이유로 그 길을 버리고, 일반 AuthRequest 를 직접 쓴다.
+     대신 되돌아올 주소를 우리가 만들어야 한다 — social.js 의
+     googleRedirectUri() 가 그 규칙을 갖고 있고 검사도 붙어 있다.
+
+   ⚠️ 이 코드는 이 개발 환경에서 돌려 볼 수 없다. 키·실기기·expo.dev
+      접속이 모두 필요하다. 그래서 "된다"고 장담하지 않는다. 대신
+      어디서 멈췄는지 단계마다 다른 문구가 나오게 해 두었다.
    ============================================================ */
-import { useEffect, useState } from 'react';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
-import { auth } from '../../firebaseConfig';
-import { PROVIDERS, idTokenOf, googleErrorText } from './social';
+import { googleErrorText, googleRedirectUri } from './social';
 import { LIVE_SOCIAL_CONFIG } from './socialConfig';
 
-/* 로그인 창이 닫힌 뒤 앱으로 제대로 돌아오게 한다.
-   이걸 빼면 안드로이드에서 브라우저가 남아 "로그인했는데 앱이 그대로"가
-   된다. 앱이 뜰 때 한 번만 부르면 되는 것이라 모듈 맨 위에서 부른다. */
-WebBrowser.maybeCompleteAuthSession();
+/* 구글 OAuth 주소. 고정값이라 네트워크로 가져올 필요가 없다. */
+const GOOGLE_DISCOVERY = {
+  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenEndpoint: 'https://oauth2.googleapis.com/token',
+  revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
+};
 
 /**
- * 구글 로그인.
+ * 구글로 로그인한다.
  *
- * ⚠️ 훅이라 조건부로 부를 수 없다(리액트 규칙). 키가 없을 때도 그냥
- *    부르고, 그때는 request 가 null 이라 ready 가 false 가 된다.
- *    버튼 자체는 social.js 의 판단으로 안 그려지므로 눌릴 일도 없다.
- *
- * @returns {{ready, busy, error, signIn, clearError}}
+ * @returns {Promise<{ok: boolean, uid?: string, error?: string, cancelled?: boolean}>}
+ *          error 가 빈 문자열이면 "사용자가 닫았다"는 뜻이라 화면에
+ *          아무것도 띄우지 않는다.
  */
-export function useGoogleSignIn({ config = LIVE_SOCIAL_CONFIG, onDone } = {}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
+  const clientId = String(config?.googleAndroidClientId || '').trim();
+  const redirectUri = googleRedirectUri(config);
 
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    /* 둘 다 넘긴다. 기기에서는 안드로이드 클라이언트로 창을 띄우고,
-       Firebase 가 그 토큰을 받아 줄 때는 웹 클라이언트를 본다.
-       둘 중 하나만 넣으면 창은 떠도 Firebase 가 거부한다.
+  if (!clientId) {
+    return { ok: false, error: '구글 로그인 설정이 빠져 있습니다(안드로이드 클라이언트 ID).' };
+  }
+  if (!redirectUri) {
+    /* 클라이언트 ID 모양이 예상과 다르면 여기서 걸린다. 그냥 넘기면
+       로그인 창은 떠도 앱으로 못 돌아온다. */
+    return { ok: false, error: '구글 클라이언트 ID 모양이 올바르지 않습니다. 콘솔에서 복사한 값을 다시 확인해 주세요.' };
+  }
 
-       ⚠️ iOS 는 아직 없다. iosClientId 가 따로 필요한데, 그건 Apple
-          Developer 계정을 만든 뒤에 나온다. 그때 SOCIAL_CONFIG 에
-          googleIosClientId 를 더하고 app.config.js 에도 같은 이름을
-          넣으면 된다(검사가 그 짝을 본다). 지금 미리 적어 두면
-          항상 undefined 인 줄이 남아 있어 헷갈리기만 한다. */
-    androidClientId: config.googleAndroidClientId || undefined,
-    webClientId: config.googleWebClientId || undefined,
-  });
+  /* ---- 1. 네이티브 모듈 불러오기 (여기서만) ---- */
+  let AuthSession;
+  try {
+    AuthSession = await import('expo-auth-session');
+  } catch (e) {
+    return {
+      ok: false,
+      error: '이 앱에는 구글 로그인 기능이 들어 있지 않습니다. 최신 버전을 새로 설치해 주세요.',
+    };
+  }
 
-  useEffect(() => {
-    if (!response) return;
-    let cancelled = false;
+  /* ---- 2. 로그인 창 ---- */
+  let result;
+  let request;
+  try {
+    request = new AuthSession.AuthRequest({
+      clientId,
+      redirectUri,
+      scopes: ['openid', 'profile', 'email'],
+      responseType: AuthSession.ResponseType.Code,
+      usePKCE: true,
+    });
+    result = await request.promptAsync(GOOGLE_DISCOVERY);
+  } catch (e) {
+    return { ok: false, error: googleErrorText(e) || '구글 로그인 창을 열지 못했습니다.' };
+  }
 
-    (async () => {
-      if (response.type === 'dismiss' || response.type === 'cancel') {
-        setBusy(false);
-        return;                                   // 사용자가 닫았다. 조용히 끝낸다
-      }
-      if (response.type === 'error') {
-        setBusy(false);
-        setError(googleErrorText(response.error) || '구글 로그인이 취소되었습니다.');
-        return;
-      }
-      if (response.type !== 'success') { setBusy(false); return; }
-
-      const idToken = idTokenOf(response);
-      if (!idToken) {
-        /* ⚠️ 여기까지 왔는데 토큰이 없으면 대개 클라이언트 ID 설정 문제다.
-           조용히 넘기면 "눌렀는데 아무 일이 없다"가 되어 원인을 못 찾는다. */
-        setBusy(false);
-        setError('구글에서 인증 정보를 받지 못했습니다. 클라이언트 ID 설정을 확인해 주세요.');
-        return;
-      }
-
-      try {
-        const cred = GoogleAuthProvider.credential(idToken);
-        const res = await signInWithCredential(auth, cred);
-        if (!cancelled) { setBusy(false); onDone?.(res.user.uid); }
-      } catch (e) {
-        if (!cancelled) { setBusy(false); setError(googleErrorText(e)); }
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [response]);
-
-  const signIn = async () => {
-    setError('');
-    if (!request) {
-      setError('구글 로그인 준비가 끝나지 않았습니다. 잠시 후 다시 눌러 주세요.');
-      return;
+  if (!result || result.type === 'dismiss' || result.type === 'cancel') {
+    return { ok: false, cancelled: true, error: '' };
+  }
+  if (result.type === 'error') {
+    const desc = String(result.error?.description || result.error?.message || '');
+    if (/redirect_uri_mismatch/i.test(desc)) {
+      return {
+        ok: false,
+        error: '구글에 등록된 주소와 맞지 않습니다. 구글 클라우드의 안드로이드 클라이언트에 패키지명과 SHA-1 이 제대로 들어갔는지 확인해 주세요.',
+      };
     }
-    setBusy(true);
-    try {
-      await promptAsync();
-    } catch (e) {
-      setBusy(false);
-      setError(googleErrorText(e));
-    }
-  };
+    return { ok: false, error: googleErrorText(result.error) || '구글이 로그인을 거부했습니다.' };
+  }
+  if (result.type !== 'success' || !result.params?.code) {
+    return { ok: false, error: '구글에서 인증 코드를 받지 못했습니다.' };
+  }
 
-  return {
-    ready: !!request,
-    busy,
-    error,
-    signIn,
-    clearError: () => setError(''),
-  };
+  /* ---- 3. 코드를 토큰으로 ---- */
+  let idToken = '';
+  try {
+    const token = await AuthSession.exchangeCodeAsync({
+      clientId,
+      code: result.params.code,
+      redirectUri,
+      extraParams: request.codeVerifier
+        ? { code_verifier: request.codeVerifier }
+        : undefined,
+    }, GOOGLE_DISCOVERY);
+    idToken = token?.idToken || '';
+  } catch (e) {
+    return { ok: false, error: googleErrorText(e) || '구글 토큰을 받지 못했습니다.' };
+  }
+  if (!idToken) {
+    return { ok: false, error: '구글이 로그인 정보를 주지 않았습니다. 클라이언트 ID 설정을 확인해 주세요.' };
+  }
+
+  /* ---- 4. Firebase 계정으로 ---- */
+  try {
+    const [{ GoogleAuthProvider, signInWithCredential }, { auth }] = await Promise.all([
+      import('firebase/auth'),
+      import('../../firebaseConfig'),
+    ]);
+    const res = await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+    return { ok: true, uid: res.user.uid };
+  } catch (e) {
+    return { ok: false, error: googleErrorText(e) };
+  }
 }
 
-/** 이 제공자를 이 파일이 실제로 처리할 수 있는가 */
-export const canHandle = (provider) => provider === PROVIDERS.GOOGLE;
-
-export default { useGoogleSignIn, canHandle };
+export default { signInWithGoogle };
