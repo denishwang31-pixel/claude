@@ -27,3 +27,8 @@ ios/
 # 검토용 코드 묶음 — 생성물이다. scripts/bundle-ui.mjs 로 다시 만든다.
 # 커밋해 두면 원본이 바뀌었을 때 둘이 조용히 갈라진다.
 design-review/
+
+# 약관 웹 페이지 — 생성물이다. scripts/build-legal.mjs 가 legalText.js 에서
+# 만든다. 커밋해 두면 앱 안의 글을 고쳤을 때 웹 페이지만 예전 글로 남고,
+# 그 상태는 아무도 눈치채지 못한다. 배포할 때마다 새로 만든다.
+public/

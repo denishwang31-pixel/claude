@@ -60,6 +60,10 @@ on:
         description: 'OTA 업데이트 (eas update — 앱 화면 반영)'
         type: boolean
         default: true
+      hosting:
+        description: '약관·개인정보처리방침 웹 페이지 (구글 동의 화면에 필요)'
+        type: boolean
+        default: true
       channel:
         description: 'OTA 채널'
         type: choice
@@ -85,6 +89,7 @@ env:
   DO_RULES:     ${{ github.event_name != 'workflow_dispatch' || inputs.rules }}
   DO_INDEXES:   ${{ github.event_name != 'workflow_dispatch' || inputs.indexes }}
   DO_OTA:       ${{ github.event_name != 'workflow_dispatch' || inputs.ota }}
+  DO_HOSTING:   ${{ github.event_name != 'workflow_dispatch' || inputs.hosting }}
   DO_FUNCTIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.functions || false }}
   # 자동일 때 production 으로 나가는 길은 없다. 스토어 앱을 사람 없이
   # 바꾸는 일은 없어야 한다.
@@ -250,6 +255,29 @@ jobs:
           npx --yes firebase-tools@$FIREBASE_TOOLS deploy \
             --only firestore:indexes --project tennis-match-52b31 --non-interactive
 
+      # ---------- 약관 웹 페이지 ----------
+      # 구글 OAuth 동의 화면이 홈페이지 주소와 개인정보처리방침 주소를
+      # 요구한다. 없으면 동의 화면을 저장할 수 없고, 저장이 안 되면
+      # 로그인 화면에 앱 이름 대신 "project-숫자로 이동"이 뜬다.
+      #
+      # ⚠️ 본문은 앱 안의 src/lib/legalText.js 에서 그대로 가져온다.
+      #    웹에 따로 써 두면 두 글이 갈라지는데, 그건 시간 문제가 아니라
+      #    확실히 일어난다 — 기능을 고칠 때 한쪽만 고치기 때문이다.
+      #    그래서 매번 새로 만들어 올린다(public/ 은 저장소에 없다).
+      - name: 약관 페이지 만들기
+        if: env.DO_HOSTING == 'true'
+        run: npm run build:legal
+
+      - name: 약관 웹 페이지
+        id: dep_hosting
+        if: env.DO_HOSTING == 'true'
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          npx --yes firebase-tools@$FIREBASE_TOOLS deploy \
+            --only hosting --project tennis-match-52b31 --non-interactive
+
       - name: Cloud Functions
         id: dep_functions
         if: env.DO_FUNCTIONS == 'true'
@@ -285,6 +313,7 @@ jobs:
           steps.dep_rules.outcome == 'failure'
           || steps.dep_indexes.outcome == 'failure'
           || steps.dep_functions.outcome == 'failure'
+          || steps.dep_hosting.outcome == 'failure'
         run: |
           {
             echo "### 배포가 막혔습니다"
@@ -309,6 +338,12 @@ jobs:
             echo "| \`iam.serviceAccounts.ActAs\` | **서비스 계정 사용자** |"
             echo "| \`serviceusage.services.*\` · \`Permission denied to get service\` | **Firebase 관리자** |"
             echo "| \`artifactregistry.*\` | **Artifact Registry 관리자** |"
+            echo "| \`firebasehosting.*\` · \`Site ... not found\` | **Firebase Hosting 관리자** |"
+            echo ""
+            echo "> ⚠️ **약관 웹 페이지**가 처음이라면 Firebase 콘솔에서"
+            echo "> **Hosting 을 한 번 시작**해 둬야 합니다(사이트가 없으면"
+            echo "> \`Site tennis-match-52b31 not found\` 로 막힙니다)."
+            echo "> 콘솔 → 빌드 → Hosting → 시작하기 를 누르기만 하면 됩니다."
             echo ""
             echo "> ⚠️ **예약 함수**(매일 정해진 시각에 도는 것 — 회비 독촉,"
             echo "> 참석 투표 요청, 날씨 갱신)는 Cloud Scheduler 작업을 함께"
@@ -483,6 +518,7 @@ jobs:
             echo "| 보안 규칙 | $(st '${{ steps.dep_rules.outcome }}') |"
             echo "| 색인 | $(st '${{ steps.dep_indexes.outcome }}') |"
             echo "| 서버 함수 | $(st '${{ steps.dep_functions.outcome }}') |"
+            echo "| 약관 웹 페이지 | $(st '${{ steps.dep_hosting.outcome }}') |"
             echo "| OTA ($CHANNEL) | $(st '${{ steps.dep_ota.outcome }}') |"
             echo ""
             # OTA 는 설정(extra)도 갈아친다. 이번 업데이트에 소셜 키가
@@ -519,6 +555,7 @@ jobs:
           if [ "${{ steps.dep_rules.outcome }}" = "failure" ]; then BAD="$BAD 보안규칙"; fi
           if [ "${{ steps.dep_indexes.outcome }}" = "failure" ]; then BAD="$BAD 색인"; fi
           if [ "${{ steps.dep_functions.outcome }}" = "failure" ]; then BAD="$BAD 서버함수"; fi
+          if [ "${{ steps.dep_hosting.outcome }}" = "failure" ]; then BAD="$BAD 약관웹페이지"; fi
           if [ "${{ steps.dep_ota.outcome }}" = "failure" ]; then BAD="$BAD OTA"; fi
           if [ -n "$BAD" ]; then
             echo "::error::실패한 항목:$BAD — 위 Summary 를 확인하세요."

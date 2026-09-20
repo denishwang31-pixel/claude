@@ -34,7 +34,8 @@
     "test:scale": "node scripts/test-scale.mjs",
     "test:opens": "node scripts/test-opens.mjs",
     "test:social": "node scripts/test-social.mjs",
-    "test:board": "node scripts/test-board.mjs"
+    "test:board": "node scripts/test-board.mjs",
+    "build:legal": "node scripts/build-legal.mjs"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "^8.0.1",
