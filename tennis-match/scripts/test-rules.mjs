@@ -406,30 +406,17 @@ await T('운영진의 투표 삭제 허용',
 await T('비멤버의 투표 조회 거부',
   assertFails(getDoc(doc(outsider, 'clubs', CLUB, 'polls', 'pl1'))));
 
-console.log('\n[클럽 채팅]');
-await T('회원의 메시지 작성 허용',
-  assertSucceeds(setDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg1'),
-    { body: '안녕하세요', authorId: 'mem1', author: '회원1' })));
-await T('남의 이름으로 메시지 작성 거부',
-  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg2'),
-    { body: '사칭', authorId: 'owner1' })));
-await T('회원의 메시지 조회 허용',
-  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg1'))));
-await T('비멤버의 메시지 조회 거부',
-  assertFails(getDoc(doc(outsider, 'clubs', CLUB, 'messages', 'msg1'))));
-await T('메시지 내용 수정 거부(본인이어도)',
-  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg1'), { body: '바꿔치기' })));
-await T('남의 메시지 삭제 거부',
-  assertFails(deleteDoc(doc(joiner, 'clubs', CLUB, 'messages', 'msg1'))));
-await T('본인 메시지 삭제 허용',
-  assertSucceeds(deleteDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg1'))));
-await T('운영진의 메시지 삭제 허용', (async () => {
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'clubs', CLUB, 'messages', 'msg3'),
-      { body: '신고된 글', authorId: 'mem2' });
-  });
-  return assertSucceeds(deleteDoc(doc(owner, 'clubs', CLUB, 'messages', 'msg3')));
-})());
+console.log('\n[없앤 기능은 막혀 있다 — 클럽 채팅]');
+/* 채팅 기능을 걷어냈다. 화면과 코드를 지우는 것으로는 부족하다 —
+   규칙이 남아 있으면 그 경로는 여전히 열려 있고, 앱이 아닌 다른
+   방법으로 읽고 쓸 수 있다. 기본값이 "모두 거부"인지 확인한다. */
+await T('없앤 채팅에 회원도 쓸 수 없다',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg1'),
+    { body: '안녕하세요', authorId: 'mem1' })));
+await T('없앤 채팅은 회원도 읽을 수 없다',
+  assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'messages', 'msg1'))));
+await T('없앤 채팅은 운영진도 읽을 수 없다',
+  assertFails(getDoc(doc(owner, 'clubs', CLUB, 'messages', 'msg1'))));
 
 console.log('\n[서비스 현황 카운터]');
 await T('로그인 사용자의 카운터 증가 허용',

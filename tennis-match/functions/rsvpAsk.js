@@ -51,7 +51,10 @@ function pendingVoters(members, meeting) {
   return (members || []).filter((m) => {
     if (!m || !m.id) return false;
     if (m.status && m.status !== '활동') return false;
-    return rsvp[m.id] === undefined || rsvp[m.id] === null || rsvp[m.id] === '';
+    /* ⚠️ 예전 '미정'도 아직 답하지 않은 것으로 본다 — src/lib/rsvpAsk.js 와
+       같은 판단이어야 한다. 검사가 두 파일을 대조한다. */
+    const v = rsvp[m.id];
+    return v === undefined || v === null || v === '' || v === 'maybe';
   });
 }
 
@@ -76,7 +79,7 @@ function askMessage(clubName, meeting) {
   const place = meeting && meeting.place ? ` ${meeting.place}` : '';
   return {
     title: `${clubName || '클럽'} 참석 여부를 알려주세요`,
-    body: `${when}${meeting && meeting.time ? ` ${meeting.time}` : ''}${place} — 참석 / 미정 / 불참을 눌러 주세요.`,
+    body: `${when}${meeting && meeting.time ? ` ${meeting.time}` : ''}${place} — 참석 / 불참을 눌러 주세요.`,
   };
 }
 

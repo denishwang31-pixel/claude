@@ -2,7 +2,7 @@
 
    구성 원칙 (v3)
      · 홈의 주인공은 "다음 모임" 하나. 그 아래로 매일 쓰는 4개(일정·대진표·
-       채팅·게스트)만 바로가기로 둔다.
+       게시판·게스트)만 바로가기로 둔다.
      · 대회·랭킹·NTRP 같은 나머지는 [더보기]에 묶고, 운영진 기능은
        "클럽 운영" 입구 하나로 모은다. 홈에 기능 18개를 늘어놓지 않는다.
      · 아이콘은 전부 벡터(Ionicons), 이모지 없음. */
@@ -25,7 +25,7 @@ import { ddayOf } from '../../src/lib/agenda';
 import { membersInScope } from '../../src/lib/scope';
 import { canRsvpSelf, rsvpBlockReason } from '../../src/lib/scheduleView';
 import {
-  RSVP, viewModesFor, roleTone, JOIN_STATUS, screenRef,
+  RSVP, isAnswered, viewModesFor, roleTone, JOIN_STATUS, screenRef,
 } from '../../src/lib/constants';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
@@ -65,7 +65,7 @@ const MANAGE = [
 const QUICK = [
   ['schedule', '일정 · 투표', '/(tabs)/schedule'],
   ['match', '대진 · 점수', '/(tabs)/match'],
-  ['chat', '클럽 채팅', { more: 'chat' }],
+  ['board', '게시판', { more: 'board' }],
   ['guest', '게스트 모집', { more: 'guest' }],
 ];
 
@@ -135,12 +135,17 @@ export default function Home() {
   const rsvpVals = Object.values(meeting?.rsvp || {});
   const yes = meeting
     ? rsvpVals.filter((v) => v === RSVP.YES).length + (meeting.guests?.length || 0) : 0;
-  const maybeCount = rsvpVals.filter((v) => v === RSVP.MAYBE).length;
   const noCount = rsvpVals.filter((v) => v === RSVP.NO).length;
-  /* 미응답 = 이 코트장 소속 회원 중 아직 안 누른 사람.
+  /* 미응답 = 이 코트장 소속 회원 중 아직 답을 안 준 사람.
+
+     ⚠️ 답으로 세는 것은 참석·불참뿐이다. 예전에 저장된 '미정'은 답이
+        아니라 미응답으로 센다 — 미정은 이제 고를 수 없고, 애초에
+        오겠다는 말도 안 오겠다는 말도 아니다. 그냥 빼 버리면 그 사람은
+        참석·불참·미응답 어디에도 안 들어가 화면에서 사라진다.
      0 보다 작아지지 않게 막는다 — 명단이 바뀌는 중에 음수가 스칠 수 있다. */
+  const answeredCount = rsvpVals.filter((v) => isAnswered(v)).length;
   const unanswered = meeting
-    ? Math.max(0, membersInScope(members, meeting.venueId || null).length - rsvpVals.length) : 0;
+    ? Math.max(0, membersInScope(members, meeting.venueId || null).length - answeredCount) : 0;
   const myRsvp = meeting?.rsvp?.[me];
 
   /* D-day 문구. 계산을 새로 만들지 않고 일정 화면이 쓰는 것을 그대로
@@ -169,6 +174,9 @@ export default function Home() {
     if (key === 'match') {
       return meeting?.matches?.length ? `${meeting.matches.length}경기 편성됨` : '아직 편성 전';
     }
+    if (key === 'board') {
+      return posts?.length ? `글 ${posts.length}개` : '아직 글이 없음';
+    }
     if (key === 'guest') {
       const open = (guestPosts || []).filter((g) => !g.closed).length;
       return open ? `모집 중 ${open}건` : '모집 중 없음';
@@ -193,15 +201,30 @@ export default function Home() {
     });
   };
 
-  /* 코트를 고르지 않았고 코트장이 여러 곳이면, 어느 코트를 볼지 먼저 묻는다.
-     고른 값은 앱 상태에 저장되므로 홈의 드롭다운도 같이 바뀐다. */
+  /* 코트장이 여러 곳이면 어느 코트를 볼지 먼저 묻는다.
+     고른 값은 앱 상태에 저장되므로 홈의 드롭다운도 같이 바뀐다.
+
+     ⚠️ 예전에는 "이미 고른 코트가 있으면 묻지 않고 바로 간다"였다.
+        그러면 한 번 코트를 고른 뒤로는 홈에서 [일정]을 눌러도 영영
+        그 코트 일정만 열린다. 다른 코트를 보려면 일정 화면에 들어가
+        드롭다운을 다시 건드려야 하는데, 홈에서 누른 사람은 자기가
+        무엇으로 걸러져 있는지조차 모른다. 아무것도 안 나오면
+        "일정이 없네"로 읽는다 — 틀린 읽기인데 화면이 그렇게 보인다.
+
+        묻는 비용은 한 번 더 누르는 것뿐이고, 그때마다 지금 무엇을
+        보는지가 분명해진다. 그래서 항상 묻는다. 지금 고른 것은
+        ✓ 로 표시해 두 번 고르는 수고를 줄인다. */
   const goScoped = (path) => {
-    if (venueId || scopeVenues.length < 2) return go(path);
+    if (scopeVenues.length < 2) return go(path);
+    const mark = (on, label) => (on ? `✓ ${label}` : label);
     return sheet.open({
       title: path.includes('schedule') ? '어느 코트 일정을 볼까요?' : '어느 코트 대진표를 볼까요?',
       options: [
-        { key: 'all', label: '전체 코트' },
-        ...scopeVenues.map((v) => ({ key: v.id, label: `${v.name} · ${v.startTime || ''}` })),
+        { key: 'all', label: mark(!venueId, '전체 코트') },
+        ...scopeVenues.map((v) => ({
+          key: v.id,
+          label: mark(venueId === v.id, `${v.name} · ${v.startTime || ''}`),
+        })),
       ],
       onSelect: (o) => {
         setVenueId(o.key === 'all' ? null : o.key);
@@ -375,7 +398,6 @@ export default function Home() {
                 borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)',
               }}>
                 <RsvpCount label="참석" value={yes} tone="lime" />
-                <RsvpCount label="미정" value={maybeCount} />
                 <RsvpCount label="불참" value={noCount} />
                 {unanswered > 0 && <RsvpCount label="미응답" value={unanswered} />}
               </View>
@@ -392,7 +414,6 @@ export default function Home() {
                     onPick={(v) => setRsvp(clubId, meeting.id, me, v, me)}
                     options={[
                       { key: RSVP.YES, label: '참석', icon: 'check' },
-                      { key: RSVP.MAYBE, label: '미정', icon: 'info' },
                       { key: RSVP.NO, label: '불참', icon: 'close' },
                     ]}
                   />
@@ -521,7 +542,7 @@ export default function Home() {
            홈에서 다 끝나야 한다:
              참석 확정 → 초록 강조
              불참     → 흐리게
-             미정     → 그 자리에서 [참석] / [불참] 버튼 */}
+             아직 응답 없음 → 그 자리에서 [참석] / [불참] 버튼 */}
         {visible.length > 0 && (
           <>
             <SectionTitle right={<Chip tone="outline">{visible.length}건</Chip>}>
@@ -533,7 +554,11 @@ export default function Home() {
                 // 단식 모임은 코트당 2명이 정원이다
                 const per = m.playMode === 'singles' ? 2 : 4;
                 const enough = cnt >= (m.courts || 1) * per;
-                const mine = m.rsvp?.[me];              // 내 참석 상태
+                /* ⚠️ 예전에 저장된 '미정'은 "아직 안 정한 것"으로 본다.
+                   그래야 [참석]/[불참] 버튼이 다시 나와서 고칠 수 있다.
+                   답한 것으로 두면 미정인 채로 영영 갇힌다. */
+                const saved = m.rsvp?.[me];
+                const mine = isAnswered(saved) ? saved : undefined;
                 const going = mine === RSVP.YES;
                 const notGoing = mine === RSVP.NO;
                 return (
@@ -576,7 +601,6 @@ export default function Home() {
                     {mine === undefined && canRsvpSelf(meVal, m) && (
                       <View style={{ flexDirection: 'row', gap: 6, paddingBottom: 11 }}>
                         <Btn small onPress={() => setRsvp(clubId, m.id, me, RSVP.YES, me)}>참석</Btn>
-                        <Btn small tone="ghost" onPress={() => setRsvp(clubId, m.id, me, RSVP.MAYBE, me)}>미정</Btn>
                         <Btn small tone="ghost" onPress={() => setRsvp(clubId, m.id, me, RSVP.NO, me)}>불참</Btn>
                       </View>
                     )}
@@ -591,7 +615,7 @@ export default function Home() {
                         onPress={() => setRsvp(clubId, m.id, me, going ? RSVP.NO : RSVP.YES, me)}
                         style={{ paddingBottom: 10, paddingHorizontal: going ? 10 : 0 }}>
                         <Text style={{ fontSize: 11.5, color: C.faint }}>
-                          {going ? '참석 취소' : notGoing ? '참석으로 바꾸기' : '미정 — 참석으로 바꾸기'}
+                          {going ? '참석 취소' : '참석으로 바꾸기'}
                         </Text>
                       </Pressable>
                     )}

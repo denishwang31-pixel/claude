@@ -328,60 +328,6 @@ export const closePoll = (clubId, pollId, closed = true) =>
 
 export const deletePoll = (clubId, pollId) => deleteDoc(D(clubId, 'polls', pollId));
 
-/* ============================================================
-   클럽 채팅 — 채널(코트장)별로 서버에서 걸러 받는다.
-
-   예전에는 전체에서 최근 300개를 받아 화면에서 채널로 나눴다. 채널
-   조건을 붙이면 복합 색인이 필요해서 미뤄 둔 것이었다. 그런데 코트장이
-   세 곳이고 한 채널에서 대화가 몰리면, 300개가 그 채널로 다 차서
-   다른 채널은 최근 글까지 사라진다 — 조용히, 오류 없이.
-
-   이제 채널 조건 + 시간 정렬로 서버에서 받는다. 색인은
-   firestore.indexes.json 에 있다(channel ASC, createdAt DESC).
-   ⚠️ 색인을 배포하지 않으면 이 구독은 실패한다. onSnapshot 의 오류
-      콜백이 빈 목록을 주므로 화면이 죽지는 않지만 대화가 안 보인다.
-   ============================================================ */
-export const subMessages = (clubId, cb, { channel = '', max = 100 } = {}) =>
-  onSnapshot(
-    query(
-      C(clubId, 'messages'),
-      where('channel', '==', channel || ''),
-      orderBy('createdAt', 'desc'),
-      limit(max),
-    ),
-    (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() })).reverse()),
-    () => cb([]),
-  );
-
-/**
- * 채널마다 마지막 글이 언제인지 — 채널 칩의 점 표시용.
- *
- * 채널당 1건씩만 읽는다. 코트장이 셋이면 4번(전체 포함) × 1건이라
- * 300개를 받아 훑던 것보다 싸다. 화면을 열 때 한 번만 부른다.
- */
-export const latestMessageAt = async (clubId, channels = ['']) => {
-  const out = {};
-  await Promise.all(channels.map(async (ch) => {
-    try {
-      const snap = await getDocs(query(
-        C(clubId, 'messages'),
-        where('channel', '==', ch || ''),
-        orderBy('createdAt', 'desc'),
-        limit(1),
-      ));
-      out[ch || ''] = snap.empty ? null : (snap.docs[0].data().createdAt || null);
-    } catch (e) {
-      out[ch || ''] = null;      // 색인이 아직 없으면 점만 안 뜬다
-    }
-  }));
-  return out;
-};
-
-export const sendMessage = (clubId, data) =>
-  addDoc(C(clubId, 'messages'), { ...data, createdAt: serverTimestamp() });
-
-export const deleteMessage = (clubId, id) => deleteDoc(D(clubId, 'messages', id));
-
 /* ---- 여러 모임 한번에 생성(정기 모임 반복 등록) ---- */
 export const addMeetingsBatch = async (clubId, list) => {
   const batch = writeBatch(db);

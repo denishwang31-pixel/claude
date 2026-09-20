@@ -155,11 +155,20 @@ export function rsvpSummary(members, meeting) {
     const v = rsvp[m.id];
     if (v === 'yes') yes += 1;
     else if (v === 'no') no += 1;
-    else if (v === 'maybe') maybe += 1;
-    else none += 1;
+    else {
+      /* ⚠️ '미정'은 이제 고를 수 없다. 예전에 저장된 값은 **미응답으로
+         센다** — 미정은 오겠다는 말도 안 오겠다는 말도 아니라서,
+         총무 입장에서는 아직 답을 못 받은 것과 같다.
+         maybe 는 따로도 세어 둔다. none 안에 포함된 부분집합이고,
+         "예전 미정이 몇 명 남았나"를 알아야 다시 물어볼 수 있다. */
+      if (v === 'maybe') maybe += 1;
+      none += 1;
+    }
   });
   const guests = (meeting?.guests || []).length;
   return {
+    /* none 은 미응답 전체(예전 '미정' 포함), maybe 는 그중 '미정'만.
+       answered 는 참석·불참만 — 미정은 답으로 세지 않는다. */
     target: target.length, yes, no, maybe, none, guests,
     going: yes + guests,
     answered: target.length - none,

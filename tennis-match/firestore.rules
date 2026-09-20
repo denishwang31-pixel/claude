@@ -148,15 +148,10 @@ service cloud.firestore {
         );
       }
 
-      /* 채팅: 회원이면 읽기·쓰기. 수정은 막고(내용 바꿔치기 방지),
-         삭제는 본인 글 또는 운영진. */
-      match /messages/{messageId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubMember(clubId)
-          && request.resource.data.authorId == request.auth.uid;
-        allow update: if false;
-        allow delete: if isClubAdmin(clubId) || resource.data.authorId == request.auth.uid;
-      }
+      /* 클럽 채팅은 없앴다. 규칙을 지우면 기본값이 "모두 거부"라
+         예전에 쌓인 대화는 더 이상 읽히지 않는다. 데이터를 지우지는
+         않았다 — 되돌릴 일이 생겼을 때 남아 있어야 하고, 남의 글을
+         말없이 없애는 것은 되돌릴 수 없는 일이기 때문이다. */
 
       /* 모임: 생성/삭제 총무. 회원은 자기 RSVP 키만 변경 가능(FIX-03 S-2) */
       /* 모임.

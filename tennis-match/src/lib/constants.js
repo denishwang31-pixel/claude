@@ -188,8 +188,29 @@ export const isGuestId = (id) => typeof id === 'string' && id.startsWith(GUEST_P
 export const guestId = (uid) => GUEST_PREFIX + uid;
 export const guestUid = (id) => (isGuestId(id) ? id.slice(GUEST_PREFIX.length) : id);
 
-/** RSVP 값 */
+/**
+ * RSVP 값.
+ *
+ * ⚠️ MAYBE('미정')는 **더 이상 고를 수 없다**. 지우지 않고 남겨 둔 이유는
+ *    이미 저장된 응답이 있기 때문이다. 상수를 없애면 그 값을 읽는 자리가
+ *    전부 "모르는 값"이 되고, 그 사람은 참석에도 불참에도 미응답에도
+ *    안 들어가 **명단에서 조용히 사라진다**. 총무가 인원을 세는 화면에서
+ *    사람이 사라지는 것은 그냥 버그가 아니라 대진이 어긋나는 일이다.
+ *
+ *    그래서 읽기로만 남긴다: 예전 '미정'은 **아직 답하지 않은 것**으로
+ *    센다. 실제로도 그게 맞다 — 미정은 오겠다는 말도 안 오겠다는 말도
+ *    아니다. 그 사람은 다시 물어봐야 한다.
+ */
 export const RSVP = { YES: 'yes', MAYBE: 'maybe', NO: 'no' };
+
+/** 지금 화면에서 고를 수 있는 것. 새 UI 는 이것만 보고 그린다. */
+export const RSVP_CHOICES = [RSVP.YES, RSVP.NO];
+
+/** 예전에 저장된 '미정'인가 — 답하지 않은 것으로 다룬다 */
+export const isLegacyMaybe = (v) => v === RSVP.MAYBE;
+
+/** 답을 한 것으로 볼 값인가 ('미정'은 아니다) */
+export const isAnswered = (v) => v === RSVP.YES || v === RSVP.NO;
 
 /** 게스트 신청 상태 */
 export const GUEST_STATUS = { APPLIED: 'applied', CONFIRMED: 'confirmed' };
@@ -282,7 +303,6 @@ export const SCREEN = {
   clubmatch: '클럽 교류전',
   polls: '참가투표',
   board: '공지·자유글',
-  chat: '클럽 채팅',
   members: '회원 목록',
   guest: '게스트 모집',
   courts: '코트 검색',

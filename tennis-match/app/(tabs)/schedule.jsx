@@ -115,7 +115,10 @@ export default function Schedule() {
      펼쳐진 채로 있으면 그것대로 무겁다 */
   useEffect(() => { setMonths(1); }, [venueId]);
 
-  const RSVP_OPTS = [[RSVP.YES, '참석'], [RSVP.MAYBE, '미정'], [RSVP.NO, '불참']];
+  /* ⚠️ '미정'은 뺐다. 오겠다는 말도 안 오겠다는 말도 아니라서 대진을
+     짤 수가 없고, 총무는 결국 단톡방에서 다시 물어야 했다. 예전에
+     저장된 미정 값은 지우지 않았고 미응답으로 센다(constants.js 참고). */
+  const RSVP_OPTS = [[RSVP.YES, '참석'], [RSVP.NO, '불참']];
 
   const venueNameOf = (mt) => venues.find((v) => v.id === mt?.venueId)?.name || '';
 

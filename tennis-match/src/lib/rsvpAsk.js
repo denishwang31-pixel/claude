@@ -78,7 +78,11 @@ export function pendingVoters(members, meeting) {
   return (members || []).filter((m) => {
     if (!m || !m.id) return false;
     if (m.status && m.status !== '활동') return false;    // 휴면·탈퇴는 제외
-    return rsvp[m.id] === undefined || rsvp[m.id] === null || rsvp[m.id] === '';
+    /* ⚠️ 예전 '미정'도 아직 답하지 않은 것으로 본다. 미정은 고를 수
+       없게 됐고, 애초에 오겠다는 말도 안 오겠다는 말도 아니다.
+       다시 물어봐야 대진을 짤 수 있다. */
+    const v = rsvp[m.id];
+    return v === undefined || v === null || v === '' || v === 'maybe';
   });
 }
 
@@ -105,7 +109,7 @@ export function askMessage(clubName, meeting) {
   const place = meeting?.place ? ` ${meeting.place}` : '';
   return {
     title: `${clubName || '클럽'} 참석 여부를 알려주세요`,
-    body: `${when}${meeting?.time ? ` ${meeting.time}` : ''}${place} — 참석 / 미정 / 불참을 눌러 주세요.`,
+    body: `${when}${meeting?.time ? ` ${meeting.time}` : ''}${place} — 참석 / 불참을 눌러 주세요.`,
   };
 }
 

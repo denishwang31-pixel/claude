@@ -89,8 +89,13 @@ eq('참석·불참 답한 사람은 빠진다',
   app.pendingVoters(members, meeting).map((m) => m.id), ['c', 'e']);
 eq('휴면 회원에게는 보내지 않는다',
   app.pendingVoters(members, meeting).some((m) => m.id === 'd'), false);
-eq('미정도 답한 것으로 본다',
-  app.pendingVoters(members, { rsvp: { a: 'maybe' } }).map((m) => m.id), ['b', 'c', 'e']);
+/* ⚠️ 예전에는 '미정'을 답한 것으로 봤다. 미정 선택지를 없애면서 뒤집었다.
+   미정은 오겠다는 말도 안 오겠다는 말도 아니라 대진을 짤 수가 없고,
+   총무는 결국 단톡방에서 다시 물어야 했다. 이제는 다시 물어본다.
+   ⚠️ 이 판단은 앱과 서버가 같아야 한다 — 앱이 "3명에게 보냅니다"라고
+      했는데 서버가 4명에게 보내면 안 된다. 아래 사본 대조가 본다. */
+eq('예전에 저장된 미정은 아직 답하지 않은 것으로 본다',
+  app.pendingVoters(members, { rsvp: { a: 'maybe' } }).map((m) => m.id), ['a', 'b', 'c', 'e']);
 eq('빈 문자열은 답하지 않은 것',
   app.pendingVoters(members, { rsvp: { a: '' } }).map((m) => m.id), ['a', 'b', 'c', 'e']);
 eq('null 도 답하지 않은 것',
@@ -111,7 +116,7 @@ section('문구');
 const askMsg = app.askMessage('염곡클럽', mt);
 eq('제목에 클럽 이름', askMsg.title, '염곡클럽 참석 여부를 알려주세요');
 eq('본문에 날짜·요일·시간·장소',
-  askMsg.body, '3월 10일(화) 10:00 염곡코트 — 참석 / 미정 / 불참을 눌러 주세요.');
+  askMsg.body, '3월 10일(화) 10:00 염곡코트 — 참석 / 불참을 눌러 주세요.');
 eq('클럽 이름이 없어도 문장이 된다',
   app.askMessage('', mt).title, '클럽 참석 여부를 알려주세요');
 

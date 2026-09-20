@@ -34,7 +34,6 @@ import { MatchConfig } from '../../src/components/MatchConfigScreen';
 import { JoinRequests } from '../../src/components/JoinRequestsScreen';
 import { Invite } from '../../src/components/InviteScreen';
 import { Polls } from '../../src/components/PollScreen';
-import { Chat } from '../../src/components/ChatScreen';
 import { ClubMatchScreen } from '../../src/components/ClubMatchScreen';
 import { CoachScreen } from '../../src/components/CoachScreen';
 import { OpenTournaments } from '../../src/components/OpenTournamentsScreen';
@@ -65,7 +64,7 @@ const FROM_LABELS = {
 
    분류 기준은 "누구의 것인가"다.
      내 활동   나 개인의 기록·회비. 남과 공유되지 않는다.
-     클럽 활동 회원이 함께 보는 것 — 대회·공지·채팅·회원 명단
+     클럽 활동 회원이 함께 보는 것 — 대회·공지·게시판·회원 명단
      찾아보기  클럽 밖을 보는 것 — 게스트 모집(공개 게시판)·코트 검색
      클럽 운영 운영진만. 회비·지출은 여기 하나로 모았다(일회성 정산 포함).
 
@@ -90,7 +89,6 @@ const MENU_GROUPS = [
       ['clubmatch', 'tournament', SCREEN.clubmatch, '상대 클럽을 검색해 초대하고 함께 진행'],
       ['polls', 'polls', SCREEN.polls, '회식·대회 참가 의사를 물어보세요'],
       ['board', 'board', SCREEN.board, null],
-      ['chat', 'chat', SCREEN.chat, null],
       ['members', 'members', SCREEN.members, null],
     ],
   },
@@ -145,7 +143,7 @@ export default function More() {
   const navigation = useNavigation();
   const [sub, setSub] = useState(null);
 
-  /* 홈에서 바로 들어온 경우(예: 홈 → 채팅) 해당 화면을 연다. 'manage' 는 루트 목록.
+  /* 홈에서 바로 들어온 경우(예: 홈 → 게시판) 해당 화면을 연다. 'manage' 는 루트 목록.
 
      open 값은 한 번 쓰고 즉시 비운다. 남겨 두면
        (1) 탭을 떠났다 돌아와도 그 화면이 계속 열려 있고,
@@ -164,7 +162,7 @@ export default function More() {
   }, [params?.open]);
 
   /* 하단 [더보기] 탭을 누르면 언제나 메뉴 목록으로 — 마지막으로 봤던
-     서브화면(채팅 등)이 열리면 "더보기를 눌렀는데 채팅이 뜬다"가 된다. */
+     서브화면(게시판 등)이 열리면 "더보기를 눌렀는데 게시판이 뜬다"가 된다. */
   useEffect(() => navigation.addListener?.('tabPress', () => {
     setSub(null);
     setCameFrom(null);
@@ -386,31 +384,6 @@ export default function More() {
             </Pressable>
           </View>
         </ScrollView>
-      </View>
-    );
-  }
-
-  /* 채팅은 입력창이 화면 하단에 붙어야 해서 스크롤뷰 밖에서 전체 높이로 그린다 */
-  if (sub === 'chat') {
-    return (
-      <View style={{ flex: 1, backgroundColor: C.bg }}>
-        <ScreenHeader
-          title="클럽 채팅"
-          subtitle={venues.length > 1
-            ? `${club?.name || ''} · 전체 / 코트장별 채널`
-            : `${club?.name || ''} · 회원 ${members.length}명`}
-          onBack={goBack}
-          backLabel={FROM_LABELS[cameFrom] || '더보기'}
-        />
-        <Chat {...{ clubId, me, meVal, members, venues, isAdmin, flash }} />
-        {toast && (
-          <View style={{
-            position: 'absolute', bottom: 84, alignSelf: 'center', backgroundColor: C.ink,
-            paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12,
-          }}>
-            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>{toast}</Text>
-          </View>
-        )}
       </View>
     );
   }
