@@ -42,6 +42,26 @@ export function SocialStatus() {
   }));
   const onCount = rows.filter((r) => r.on).length;
 
+  /* ⚠️ 여기만 값의 일부를 보여 준다. 이유가 있다.
+
+       구글 클라이언트 ID 는 비밀이 아니다 — APK 안에 박혀 있고,
+       로그인할 때 브라우저 주소창에 그대로 뜬다. 구글 문서도 공개
+       정보라고 말한다.
+
+       그런데 **웹 클라이언트 ID 와 안드로이드 클라이언트 ID 가 생긴
+       모양이 똑같다**(숫자-문자.apps.googleusercontent.com). 눈으로는
+       구별이 안 된다. 웹 것을 잘못 넣으면 구글이 "액세스 차단 — 요청이
+       잘못되었습니다"로 막는데, 화면에는 어느 쪽을 넣었는지 확인할
+       방법이 전혀 없다. 콘솔에서 보이는 앞자리와 대 볼 수 있어야 한다.
+
+       앞 몇 자만 보여 준다. 그리고 이건 구글에만 한다 —
+       카카오 REST 키나 네이버 시크릿은 진짜 비밀이라 절대 안 된다. */
+  const googleHead = (() => {
+    const id = String(cfg?.googleAndroidClientId || '');
+    const tail = id.split('-')[1] || '';
+    return tail ? tail.slice(0, 4) : '';
+  })();
+
   return (
     <Card>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -63,6 +83,15 @@ export function SocialStatus() {
           </View>
         ))}
       </View>
+
+      {!!googleHead && (
+        <Text style={{ fontSize: 11.5, color: C.sub, marginTop: S.md, lineHeight: 17 }}>
+          앱에 실린 구글 클라이언트: <Text style={{ fontWeight: '700' }}>…-{googleHead}…</Text>
+          {'\n'}구글 클라우드의 [사용자 인증 정보] 목록에서 유형이
+          <Text style={{ fontWeight: '700' }}> Android</Text> 인 줄의 앞자리와 같아야 합니다.
+          웹 클라이언트를 넣으면 로그인이 "액세스 차단"으로 막힙니다.
+        </Text>
+      )}
 
       {LIVE_UNKNOWN_KEYS.length > 0 && (
         <Text style={{ fontSize: 11.5, color: C.warn, marginTop: S.md, lineHeight: 17 }}>
