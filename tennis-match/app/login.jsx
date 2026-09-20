@@ -277,12 +277,36 @@ export default function Login() {
             {/* 소셜 — 준비된 것만. 없으면 통째로 안 그려진다 */}
             <SocialButtons onPress={onSocial} disabled={busy} divider={false} />
 
+            {/* 소셜 ↔ 이메일 전환.
+
+                ⚠️ 예전에는 이 자리가 구분선에 글씨만 얹은 모양이었다.
+                   눌리는 것인 줄 아무도 몰랐다 — 실제로 "이메일로 넘어간
+                   다음 소셜로 돌아올 방법이 없다"는 말을 들었다. 선은
+                   나누는 것이지 누르는 것이 아니므로 그렇게 보이는 게
+                   당연하다. 테두리·화살표를 넣어 버튼처럼 보이게 한다. */}
             {socials.length > 0 && (
-              <Pressable
-                onPress={() => { animate(); setOpenEmail((v) => !v); setErr(''); }}
-                style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, marginTop: S.lg })}>
-                <OrDivider label={openEmail ? '소셜 로그인만 보기' : '이메일로 계속하기'} />
-              </Pressable>
+              <View style={{ marginTop: S.lg, alignItems: 'center' }}>
+                <OrDivider label="또는" style={{ alignSelf: 'stretch' }} />
+                <Pressable
+                  onPress={() => { animate(); setOpenEmail((v) => !v); setErr(''); }}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: openEmail }}
+                  accessibilityLabel={openEmail ? '소셜 로그인으로 돌아가기' : '이메일로 계속하기'}
+                  style={({ pressed }) => ({
+                    flexDirection: 'row', alignItems: 'center', gap: 7,
+                    minHeight: TAP.small, paddingHorizontal: 16,
+                    marginTop: S.md,
+                    borderRadius: R.pill, borderWidth: 1, borderColor: C.border,
+                    backgroundColor: pressed ? C.fill : C.surface,
+                  })}>
+                  <Ionicons
+                    name={openEmail ? 'arrow-back' : 'mail-outline'}
+                    size={15} color={C.sub} />
+                  <Text style={{ fontSize: 13.5, fontWeight: '700', color: C.text }}>
+                    {openEmail ? '소셜 로그인으로 돌아가기' : '이메일로 계속하기'}
+                  </Text>
+                </Pressable>
+              </View>
             )}
 
             {openEmail && (
