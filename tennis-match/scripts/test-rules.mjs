@@ -37,6 +37,17 @@ async function T(name, promise) {
   }
 }
 
+/**
+ * 규칙을 끄고 자료를 심는다.
+ *
+ * ⚠️ ctx.firestore() 를 한 번만 부른다. 한 콜백 안에서 두 번 부르면
+ *    "Firestore has already been started and its settings can no longer
+ *    be changed" 로 죽는다. 실제로 그렇게 막혔다 — 규칙이 틀린 줄 알고
+ *    규칙을 고치고 있었는데, 정작 깨진 것은 검사 코드였다.
+ *    이 헬퍼를 쓰면 부를 일 자체가 없다.
+ */
+const seed = (fn) => env.withSecurityRulesDisabled((ctx) => fn(ctx.firestore()));
+
 /* ---- 픽스처: 클럽/총무/회원/초대코드/모임/게시글/게스트모집 ---- */
 const CLUB = 'club1';
 await env.withSecurityRulesDisabled(async (ctx) => {
@@ -191,14 +202,14 @@ console.log('\n[게시판 공개 범위]');
 /* ⚠️ 방향을 한 번 틀리면 클럽 안에서만 하던 이야기가 전국에 열린다.
    되돌릴 수 없는 방향이라 규칙으로 확실히 못 박는다. */
 await T('공개 글은 다른 클럽 사람도 읽는다', (async () => {
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'clubs', CLUB, 'posts', 'pubPost'),
+  await seed(async (db) => {
+    await setDoc(doc(db, 'clubs', CLUB, 'posts', 'pubPost'),
       { kind: 'recruit', title: '회원 모집', authorId: 'owner1',
         clubId: CLUB, audience: 'public' });
-    await setDoc(doc(ctx.firestore(), 'clubs', CLUB, 'posts', 'clubPost'),
+    await setDoc(doc(db, 'clubs', CLUB, 'posts', 'clubPost'),
       { kind: 'free', title: '우리끼리', authorId: 'owner1',
         clubId: CLUB, audience: 'club' });
-    await setDoc(doc(ctx.firestore(), 'clubs', CLUB, 'posts', 'oldPost'),
+    await setDoc(doc(db, 'clubs', CLUB, 'posts', 'oldPost'),
       { type: 'free', title: '예전 글', authorId: 'owner1' });
   });
   return assertSucceeds(getDoc(doc(outsider, 'clubs', CLUB, 'posts', 'pubPost')));
@@ -248,10 +259,8 @@ await T('총무의 모집글 생성 허용',
    실제로는 전부 읽히는 것이 제일 나쁘다. 글쓴이는 안 보인다고 믿고
    연락처나 사정을 적는다. */
 await T('우리 클럽만 글을 총무가 올릴 수 있다', (async () => {
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'guestPosts', 'gpClub'),
-      { clubId: CLUB, clubName: '테스트클럽', date: '2099-03-01', slots: 2, audience: 'club' });
-  });
+  await seed((db) => setDoc(doc(db, 'guestPosts', 'gpClub'),
+    { clubId: CLUB, clubName: '테스트클럽', date: '2099-03-01', slots: 2, audience: 'club' }));
   return assertSucceeds(getDoc(doc(mem1, 'guestPosts', 'gpClub')));
 })());
 await T('우리 클럽만 글은 타 클럽 사용자가 못 읽는다',
