@@ -393,6 +393,7 @@ export const SETUP = {
     'Firebase 콘솔 → Authentication → 로그인 방법 → Google 사용 설정',
     'Google Cloud 콘솔 → 사용자 인증 정보 → Android OAuth 클라이언트 (SHA-1 지문 필요)',
     'SHA-1 은 EAS 빌드가 쓰는 키의 것이어야 한다 — 로컬 디버그 키가 아니다',
+    '⚠️ 그 클라이언트를 열어 [고급 설정] → 커스텀 URI 스킴 사용 설정을 켤 것. 새로 만든 클라이언트는 꺼져 있고, 꺼진 채로는 구글이 400 invalid_request 로 막는다 ("Custom URI scheme is not enabled for your Android client")',
     '웹 클라이언트 ID · 안드로이드 클라이언트 ID 를 SOCIAL_CONFIG 에 넣기',
     '⚠️ 두 값은 생긴 모양이 같다. 안드로이드 자리에 웹 것을 넣으면 구글이 400 invalid_request 로 막는다 — 유형 열이 Android 인 줄을 쓸 것',
   ],

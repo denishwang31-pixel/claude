@@ -49,6 +49,14 @@ all.forEach((p) => {
   ok(REQUIREMENTS[p]?.platforms?.length > 0, `${p}: 그릴 OS 가 적혀 있다`);
   ok(SETUP[p]?.length > 0, `${p}: 받는 절차가 적혀 있다`);
 });
+/* ⚠️ 이 한 줄 때문에 며칠을 썼다. 안드로이드 OAuth 클라이언트는
+   커스텀 URI 스킴이 기본으로 꺼져 있고, 꺼진 채로는 구글이
+   `400 invalid_request — Custom URI scheme is not enabled for your
+   Android client` 로 막는다. 그 실패는 구글 화면에서 끝나 앱으로
+   돌아오지 않으므로 앱은 아무 말도 못 한다. 절차에서 빠지면 다음
+   사람이 똑같이 막힌다. */
+ok(SETUP[PROVIDERS.GOOGLE].some((s) => /커스텀 URI 스킴/.test(s)),
+  '구글 절차에 커스텀 URI 스킴 켜는 단계가 남아 있다');
 
 console.log('[기본 설정에서는 아무 버튼도 안 그린다]');
 /* 눌러도 안 되는 버튼을 두는 것이 제일 나쁘다. 지금은 키가 없으므로
