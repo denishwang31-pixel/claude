@@ -572,7 +572,14 @@ service cloud.firestore {
           걸린다 — 밖으로 새지 않는다.
        ============================================================ */
     match /{path=**}/posts/{postId} {
-      allow read: if signedIn() && resource.data.get('audience', 'club') == 'public';
+      /* ⚠️ 여기서는 get(..., 기본값) 을 쓰지 않는다. 규칙 엔진은 컬렉션
+         그룹 질의를 허가할 때 "질의 조건이 이 규칙을 보장하는가"를
+         **정적으로** 따진다. where('audience','==','public') 과
+         resource.data.audience == 'public' 은 짝이 맞지만, get() 으로
+         감싸면 같은 것임을 증명하지 못해 질의가 통째로 거부된다.
+         값이 없는 예전 글은 이 접근이 오류가 되어 거부된다 — 우리가
+         원하는 방향(밖으로 안 나간다)과 같다. */
+      allow read: if signedIn() && resource.data.audience == 'public';
     }
 
     match /guestPosts/{postId} {

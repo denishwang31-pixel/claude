@@ -20,9 +20,21 @@ const env = await initializeTestEnvironment({
 });
 
 let pass = 0, fail = 0;
+/* ⚠️ 실패한 것은 따로 모아 **맨 끝에 다시 찍는다**.
+
+   이 검사는 에뮬레이터 로그를 수백 줄 쏟아내고, CI 로그 창은 끝부분만
+   보여 준다. 실제로 한 번 그랬다 — "295 통과 / 1 실패"만 보이고 어느
+   검사가 깨졌는지는 로그 위쪽에 묻혀서, 고칠 곳을 알 수가 없었다.
+   실패를 못 찾는 검사는 없는 것보다 조금 나은 정도다. */
+const failures = [];
 async function T(name, promise) {
   try { await promise; pass++; console.log('  ✓', name); }
-  catch (e) { fail++; console.error('  ✗', name, '\n    ', e.message?.split('\n')[0]); }
+  catch (e) {
+    fail++;
+    const why = e.message?.split('\n')[0] || '';
+    failures.push(`${name} — ${why}`);
+    console.error('  ✗', name, '\n    ', why);
+  }
 }
 
 /* ---- 픽스처: 클럽/총무/회원/초대코드/모임/게시글/게스트모집 ---- */
@@ -1007,5 +1019,9 @@ await T('앱 운영자도 신고 삭제 거부(기록은 남는다)',
   assertFails(deleteDoc(doc(appAdmin, 'courtReports', 'r1'))));
 
 await env.cleanup();
+if (failures.length) {
+  console.log('\n실패한 검사 —');
+  failures.forEach((f) => console.log('  ✗', f));
+}
 console.log(`\n규칙 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);
