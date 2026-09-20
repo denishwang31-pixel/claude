@@ -28,7 +28,9 @@
       접속이 모두 필요하다. 그래서 "된다"고 장담하지 않는다. 대신
       어디서 멈췄는지 단계마다 다른 문구가 나오게 해 두었다.
    ============================================================ */
-import { googleErrorText, googleRedirectUri, GOOGLE_SCOPES } from './social';
+import {
+  googleErrorText, googleRedirectUri, googleClientMixup, GOOGLE_SCOPES,
+} from './social';
 import { LIVE_SOCIAL_CONFIG } from './socialConfig';
 
 /* 구글 OAuth 주소. 고정값이라 네트워크로 가져올 필요가 없다. */
@@ -49,6 +51,17 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
   const clientId = String(config?.googleAndroidClientId || '').trim();
   if (!clientId) {
     return { ok: false, error: '[G1] 구글 로그인 설정이 빠져 있습니다(안드로이드 클라이언트 ID).' };
+  }
+
+  /* ⚠️ 창을 띄우기 전에 잡는다. 이 실수로 그냥 진행하면 구글 서버에서
+        `400 오류: invalid_request` 로 막히는데, 그 실패는 구글 화면에서
+        끝나고 앱으로 돌아오지 않는다 — 앱이 이유를 말할 기회조차 없다.
+        여기서 멈춰야 화면에 이유가 남는다. social.js 머리말 참고. */
+  if (googleClientMixup(config)) {
+    return {
+      ok: false,
+      error: '[G0] 구글 웹 클라이언트 ID 와 안드로이드 클라이언트 ID 가 같은 값입니다. 둘 중 하나가 잘못 들어갔습니다. 구글 클라우드의 [사용자 인증 정보]에서 유형이 Android 인 줄의 클라이언트 ID 를 GOOGLE_ANDROID_CLIENT_ID 에 넣어 주세요.',
+    };
   }
 
   /* ---- 1. 네이티브 모듈 불러오기 (여기서만) ---- */

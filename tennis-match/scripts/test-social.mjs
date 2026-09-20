@@ -14,7 +14,7 @@ import {
   REQUIREMENTS, SOCIAL_CONFIG,
   configFromExtra, unknownKeys, googleErrorText,
   GOOGLE_SCOPES, googleRedirectUri,
-  providerReady, enabledProviders, missingFor,
+  providerReady, enabledProviders, missingFor, googleClientMixup,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 } from '../src/lib/social.js';
 
@@ -301,6 +301,34 @@ const appJson = JSON.parse(readFileSync(resolve(ROOT, 'app.json'), 'utf8'));
 ok(!!appJson?.expo?.slug, 'app.json 이 그대로 있다');
 ok(/\.\.\.config/.test(cfgSrc), 'app.config.js 가 app.json 설정을 그대로 펼친다');
 ok(/\.\.\.config\.extra/.test(cfgSrc), 'extra 도 덮어쓰지 않고 이어 붙인다');
+
+console.log('[웹 클라이언트 ID 를 안드로이드 자리에 넣은 것을 잡는다]');
+/* ⚠️ 실제로 여기서 막혔다. 구글이 `400 오류: invalid_request` 로 거부하는데,
+   그 실패는 구글 서버 화면에서 끝나고 앱으로 돌아오지 않는다. 앱은 아무
+   말도 못 한다. 두 ID 가 생긴 모양이 같아서 콘솔에서도 눈으로 구별이
+   안 되고, 시크릿에 넣고 나면 다시 읽어 볼 수도 없다.
+
+   두 값이 같다면 둘 중 하나는 반드시 틀렸다. 키를 보지 않고도 확실히
+   알 수 있는 유일한 자리라, 창을 띄우기 전에 잡는다. */
+const WEB = '738996873154-rgqd.apps.googleusercontent.com';
+const AND = '738996873154-7e8s.apps.googleusercontent.com';
+ok(googleClientMixup({ googleWebClientId: WEB, googleAndroidClientId: WEB }) === true,
+  '같은 값이면 잡는다');
+ok(googleClientMixup({ googleWebClientId: WEB, googleAndroidClientId: AND }) === false,
+  '제대로 넣었으면 통과시킨다');
+ok(googleClientMixup({ googleWebClientId: ` ${WEB} `, googleAndroidClientId: WEB }) === true,
+  '앞뒤 공백이 붙어 있어도 같은 값으로 본다 — 붙여넣기에서 흔하다');
+/* 아직 아무것도 안 넣은 상태를 "잘못 넣었다"고 하면 안 된다.
+   그러면 구글을 안 쓰는 빌드에서도 경고가 뜬다. */
+ok(googleClientMixup({ googleWebClientId: '', googleAndroidClientId: '' }) === false,
+  '둘 다 비어 있으면 경고하지 않는다');
+ok(googleClientMixup({ googleWebClientId: WEB, googleAndroidClientId: '' }) === false,
+  '한쪽만 있으면 경고하지 않는다');
+ok(googleClientMixup({}) === false, '설정이 없어도 죽지 않는다');
+/* 창을 띄우기 전에 막아야 뜻이 있다. 띄운 뒤에는 구글 화면에서 끝난다. */
+const signInEarly = readFileSync(resolve(ROOT, 'src/lib/socialSignIn.js'), 'utf8');
+ok(signInEarly.indexOf('googleClientMixup') < signInEarly.indexOf('promptAsync'),
+  '로그인 창을 띄우기 전에 검사한다');
 
 console.log('[실패 문구마다 단계 번호가 붙어 있다]');
 /* ⚠️ 구글 로그인은 이 개발 환경에서 돌려 볼 수 없다. 기기에서 실패하면

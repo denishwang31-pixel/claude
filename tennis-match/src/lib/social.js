@@ -207,6 +207,31 @@ export function providerReady(provider, config = SOCIAL_CONFIG, platform = null)
   return true;
 }
 
+/**
+ * 안드로이드 자리에 웹 클라이언트 ID 를 넣었는가.
+ *
+ * ⚠️ 왜 이 검사가 따로 필요한가
+ *    구글의 웹 클라이언트 ID 와 안드로이드 클라이언트 ID 는 생긴 모양이
+ *    완전히 같다 — `숫자-문자.apps.googleusercontent.com`. 눈으로는
+ *    구별할 수 없고, 시크릿에 한 번 넣으면 다시 읽어 볼 수도 없다.
+ *
+ *    그런데 안드로이드 자리에 웹 것을 넣으면 구글이 로그인 자체를
+ *    막는다 — `400 오류: invalid_request`. 이 실패는 구글 서버에서
+ *    일어나므로 앱으로 돌아오지 않고, 따라서 앱이 이유를 말해 줄
+ *    기회조차 없다. 사용자는 구글 화면에서 막힌 채 끝난다.
+ *
+ *    Firebase 콘솔이 "웹 클라이언트 ID" 를 눈에 잘 띄게 보여 주기
+ *    때문에 이 실수는 아주 흔하다.
+ *
+ *    두 값이 같으면 둘 중 하나는 반드시 틀린 것이다. 그건 키를 보지
+ *    않고도 확실히 알 수 있다. 미리 잡아서 어디를 고칠지 말해 준다.
+ */
+export function googleClientMixup(config = SOCIAL_CONFIG) {
+  const web = String(config?.googleWebClientId || '').trim();
+  const android = String(config?.googleAndroidClientId || '').trim();
+  return !!web && !!android && web === android;
+}
+
 /** 화면이 그릴 버튼 목록. 준비 안 된 것은 빠진다. 순서는 PROVIDER_ORDER. */
 export const enabledProviders = (config = SOCIAL_CONFIG, platform = null) =>
   PROVIDER_ORDER.filter((p) => providerReady(p, config, platform));
@@ -369,6 +394,7 @@ export const SETUP = {
     'Google Cloud 콘솔 → 사용자 인증 정보 → Android OAuth 클라이언트 (SHA-1 지문 필요)',
     'SHA-1 은 EAS 빌드가 쓰는 키의 것이어야 한다 — 로컬 디버그 키가 아니다',
     '웹 클라이언트 ID · 안드로이드 클라이언트 ID 를 SOCIAL_CONFIG 에 넣기',
+    '⚠️ 두 값은 생긴 모양이 같다. 안드로이드 자리에 웹 것을 넣으면 구글이 400 invalid_request 로 막는다 — 유형 열이 Android 인 줄을 쓸 것',
   ],
   [PROVIDERS.APPLE]: [
     'Apple Developer Program 가입 (연 $99) — 이것이 없으면 시작할 수 없다',
@@ -386,6 +412,6 @@ export default {
   REQUIREMENTS, SOCIAL_CONFIG,
   configFromExtra, unknownKeys,
   GOOGLE_SCOPES, googleRedirectUri, googleErrorText,
-  providerReady, enabledProviders, missingFor,
+  providerReady, enabledProviders, missingFor, googleClientMixup,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 };

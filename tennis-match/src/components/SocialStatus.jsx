@@ -25,7 +25,7 @@ import React from 'react';
 import { View, Text } from 'react-native';
 import {
   PROVIDER_ORDER, PROVIDER_SHORT, REQUIREMENTS,
-  providerReady, missingFor,
+  providerReady, missingFor, googleClientMixup,
 } from '../lib/social';
 import { LIVE_SOCIAL_CONFIG, LIVE_UNKNOWN_KEYS } from '../lib/socialConfig';
 import { Card, Chip } from './ui';
@@ -83,6 +83,14 @@ export function SocialStatus() {
           </View>
         ))}
       </View>
+
+      {googleClientMixup(cfg) && (
+        <Text style={{ fontSize: 11.5, color: C.warn, marginTop: S.md, lineHeight: 17 }}>
+          ⚠️ 구글 웹 / 안드로이드 클라이언트 ID 가 같은 값입니다. 둘 중 하나가
+          잘못 들어갔고, 이대로면 구글이 로그인을 막습니다
+          (400 invalid_request).
+        </Text>
+      )}
 
       {!!googleHead && (
         <Text style={{ fontSize: 11.5, color: C.sub, marginTop: S.md, lineHeight: 17 }}>
