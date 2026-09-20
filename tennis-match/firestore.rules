@@ -541,7 +541,16 @@ service cloud.firestore {
       }
       function isPostAdmin() { return isClubAdmin(postClubId()); }
 
-      allow read: if signedIn();
+      /* ⚠️ "우리 클럽만" 으로 올린 글은 그 클럽 회원에게만 보인다.
+         화면에서 거르는 것만으로는 안 된다 — 규칙이 열려 있으면 앱이
+         아닌 방법으로 그대로 읽힌다. 비공개라고 적어 놓고 실제로는
+         전부 읽히는 것이 제일 나쁘다.
+         audience 가 없는 예전 글은 전부 공개로 올라간 글이므로
+         공개로 본다. */
+      allow read: if signedIn() && (
+        resource.data.get('audience', 'public') != 'club'
+        || isClubMember(resource.data.clubId)
+      );
       allow create: if signedIn() && isClubAdmin(request.resource.data.clubId);
       allow update, delete: if signedIn() && isClubAdmin(resource.data.clubId);
 

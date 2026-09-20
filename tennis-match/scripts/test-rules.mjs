@@ -173,6 +173,22 @@ await T('일반 회원의 모집글 생성 거부',
 await T('총무의 모집글 생성 허용',
   assertSucceeds(setDoc(doc(owner, 'guestPosts', 'gp2'), { clubId: CLUB, clubName: '테스트클럽', date: '2099-02-01', slots: 2 })));
 
+/* ⚠️ "우리 클럽만" 으로 올린 글은 규칙에서 막혀야 한다. 화면에서만
+   거르면 앱이 아닌 방법으로 그대로 읽힌다 — 비공개라고 적어 놓고
+   실제로는 전부 읽히는 것이 제일 나쁘다. 글쓴이는 안 보인다고 믿고
+   연락처나 사정을 적는다. */
+await T('우리 클럽만 글을 총무가 올릴 수 있다', (async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'guestPosts', 'gpClub'),
+      { clubId: CLUB, clubName: '테스트클럽', date: '2099-03-01', slots: 2, audience: 'club' });
+  });
+  return assertSucceeds(getDoc(doc(mem1, 'guestPosts', 'gpClub')));
+})());
+await T('우리 클럽만 글은 타 클럽 사용자가 못 읽는다',
+  assertFails(getDoc(doc(outsider, 'guestPosts', 'gpClub'))));
+await T('audience 가 없는 예전 글은 공개로 본다',
+  assertSucceeds(getDoc(doc(outsider, 'guestPosts', 'gp1'))));
+
 console.log('\n[클럽 생성(온보딩)]');
 await T('오너 클럽 생성 + 본인 멤버 문서 허용', (async () => {
   const nb = env.authenticatedContext('founder').firestore();

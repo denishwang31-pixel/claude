@@ -7,6 +7,7 @@ import {
   subClubDirectory, subCoaches, reportCourt, REPORT_KINDS,
 } from '../lib/firestore';
 import { GUEST_STATUS } from '../lib/constants';
+import { RegionPicker } from './RegionPicker';
 import { DateField, TimeField, Label } from './pickers';
 import { KAKAO_JS_KEY } from '../lib/keys';
 import { geocodeAddress } from '../lib/kakao';
@@ -167,8 +168,17 @@ function GuestPostCard({ post, clubId, meetings, me, meVal, isAdmin, flash }) {
           📍 {post.place}{post.region ? ` · ${post.region}` : ''}
         </Text>
         <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
-          모집 {needSummary(post)} · 게스트비 {(post.fee || 0).toLocaleString()}원
+          모집 {needSummary(post)}
+          {/* ⚠️ 금액이 없으면 "0원"이라고 적지 않는다. 0원은 공짜라는
+              뜻인데, 실제로는 그냥 안 적은 것이다. 공짜인 줄 알고 온
+              사람에게 코트비를 받으면 그 자리에서 다툼이 된다. */}
+          {post.fee > 0 ? ` · 코트비 ${post.fee.toLocaleString()}원` : ' · 코트비 문의'}
         </Text>
+        {post.audience === GUEST_AUDIENCE.CLUB && (
+          <Text style={{ fontSize: 11, color: C.green, marginTop: 2, fontWeight: '700' }}>
+            우리 클럽 회원만 보이는 글
+          </Text>
+        )}
         {!!post.note && <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>💬 {post.note}</Text>}
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 10 }}>
@@ -206,7 +216,20 @@ function GuestPostCard({ post, clubId, meetings, me, meVal, isAdmin, flash }) {
   );
 }
 
-const EMPTY_NG = { meetingId: '', date: '', time: '', place: '', region: '', needMale: '1', needFemale: '1', note: '' };
+const EMPTY_NG = {
+  meetingId: '', date: '', time: '', place: '', venueId: '', region: '',
+  needMale: '1', needFemale: '1', note: '', fee: '', audience: 'public',
+};
+
+/* 모집글을 누구에게 보일 것인가.
+   ⚠️ 위쪽 필터(전체/우리 클럽/다른 클럽)와 다른 것이다. 저건 "내가
+      무엇을 볼까"이고 이건 "내 글을 누가 볼까"다. 예전에는 후자가
+      아예 없어서, 클럽 안에서만 구하고 싶어도 전국에 공개됐다. */
+export const GUEST_AUDIENCE = { PUBLIC: 'public', CLUB: 'club' };
+const AUDIENCE_OPTS = [
+  [GUEST_AUDIENCE.PUBLIC, '모든 클럽', '앱을 쓰는 다른 클럽 회원도 신청할 수 있습니다'],
+  [GUEST_AUDIENCE.CLUB, '우리 클럽만', '우리 클럽 회원에게만 보입니다'],
+];
 
 export function Guest({
   clubId, club, guestPosts, meetings, venues, me, meVal, isAdmin, flash, draft = null,
@@ -219,31 +242,42 @@ export function Guest({
   useEffect(() => {
     if (!draft?.meetingId) return;
     const m = meetings.find((x) => x.id === draft.meetingId);
+    const v = (venues || []).find((x) => x.id === m?.venueId);
     setNg({
       ...EMPTY_NG,
       meetingId: draft.meetingId,
       date: m?.date || '',
       time: m?.time || '',
-      place: m?.place || '',
-      region: club?.settings?.region || '',
+      /* 장소는 그 모임이 쓰는 코트장 이름으로 채운다 — 손으로 다시
+         적게 하면 같은 코트가 여러 이름으로 올라간다. */
+      venueId: m?.venueId || '',
+      place: m?.place || v?.name || '',
+      region: v?.region || club?.settings?.region || '',
+      fee: String(club?.settings?.guestFee ?? ''),
       needMale: String(draft.needM || 0),
       needFemale: String(draft.needF || 0),
       note: draft.text || '',
     });
     setAdding(true);
   }, [draft?.meetingId, draft?.needM, draft?.needF]);
-  const [scope, setScope] = useState('all');   // all | mine | others
   const [region, setRegion] = useState(null);
 
   const regions = useMemo(
     () => [...new Set(guestPosts.map((p) => p.region).filter(Boolean))].sort(),
     [guestPosts],
   );
+  /* ⚠️ 위쪽의 전체/우리 클럽/다른 클럽 칩을 없앴다. 그건 "내가 무엇을
+     볼까"였는데, 정작 필요한 것은 글쓴이가 정하는 "내 글을 누가 볼까"
+     였다. 이제 그 선택은 모집글을 쓸 때 고른다(audience).
+
+     목록은 그 선택을 존중해서 그린다 — 우리 클럽만으로 올린 글은
+     우리 클럽 사람에게만 보인다. 예전 글에는 audience 가 없는데,
+     그건 전부 공개로 올라간 글이므로 공개로 본다. */
   const list = useMemo(() => guestPosts
-    .filter((p) => (scope === 'mine' ? p.clubId === clubId : scope === 'others' ? p.clubId !== clubId : true))
+    .filter((p) => p.audience !== GUEST_AUDIENCE.CLUB || p.clubId === clubId)
     .filter((p) => !region || p.region === region)
     .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || ''))),
-  [guestPosts, scope, region, clubId]);
+  [guestPosts, region, clubId]);
 
   /* 모집글 올릴 때 우리 클럽 예정 모임을 고르면 날짜·시간·장소가 자동으로 채워진다 */
   const upcoming = useMemo(
@@ -254,18 +288,40 @@ export function Guest({
     const v = (venues || []).find((x) => x.id === m.venueId);
     setNg({
       ...ng, meetingId: m.id, date: m.date, time: m.time || v?.startTime || '',
-      place: m.place || v?.name || '', region: ng.region || v?.region || '',
+      /* ⚠️ 장소는 그 모임의 코트장 이름을 그대로 쓴다. 손으로 적게 하면
+         "과천시민회관", "과천 시민회관", "시민회관"이 따로 올라오고,
+         신청자는 같은 코트인지 알 수가 없다. */
+      venueId: m.venueId || '', place: m.place || v?.name || '',
+      region: ng.region || v?.region || club?.settings?.region || '',
+    });
+  };
+
+  /* 코트장을 직접 고르는 길 — 모임을 안 고르고 올릴 때 쓴다 */
+  const pickVenue = (v) => {
+    setNg({
+      ...ng, venueId: v.id, place: v.name,
+      time: ng.time || v.startTime || '',
+      region: ng.region || v.region || club?.settings?.region || '',
     });
   };
 
   const submit = () => {
     const needMale = Number(ng.needMale) || 0;
     const needFemale = Number(ng.needFemale) || 0;
+    /* ⚠️ 코트비는 **적은 대로** 올린다. 예전에는 클럽 설정값(기본 1만원)을
+       자동으로 붙였는데, 코트비는 코트·시간대·인원에 따라 매번 다르다.
+       글에 적힌 금액과 실제로 받는 금액이 다르면 그 자리에서 다툼이 된다.
+       빈칸이면 클럽 설정값을 쓰되, 그것도 없으면 0(= 표시 안 함)이다.
+       지어낸 숫자를 적어 두는 것보다 안 적는 편이 낫다. */
+    const typed = String(ng.fee).replace(/[^0-9]/g, '');
+    const fee = typed !== '' ? Number(typed) : Number(club?.settings?.guestFee || 0);
     addGuestPost({
       clubId, clubName: club?.name || '', meetingId: ng.meetingId || null,
-      date: ng.date, time: ng.time || '', place: ng.place, region: ng.region,
+      date: ng.date, time: ng.time || '', place: ng.place,
+      venueId: ng.venueId || null,
+      region: ng.region,
       needMale, needFemale, slots: needMale + needFemale, note: ng.note,
-      fee: club?.settings?.guestFee || 10000, authorId: me,
+      fee, audience: ng.audience, authorId: me,
     });
     setNg(EMPTY_NG);
     setAdding(false);
@@ -283,12 +339,7 @@ export function Guest({
         </Text>
       </Card>
 
-      {/* 필터 */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-        {[['all', '전체'], ['mine', '우리 클럽'], ['others', '다른 클럽']].map(([k, label]) => (
-          <Chip key={k} tone={scope === k ? 'green' : 'outline'} onPress={() => setScope(k)}>{label}</Chip>
-        ))}
-      </View>
+      {/* 지역 필터 — 클럽 안/밖 칩은 없앴다(글쓴이가 정한다) */}
       {regions.length > 0 && (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
           <Chip tone={!region ? 'lime' : 'outline'} onPress={() => setRegion(null)}>전 지역</Chip>
@@ -338,12 +389,25 @@ export function Guest({
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <Label>장소</Label>
-                <Field placeholder="예: 과천시민회관 테니스장" value={ng.place} onChangeText={(t) => setNg({ ...ng, place: t })} />
+                <Label hint="우리 클럽 코트장에서 고릅니다">장소</Label>
+                {(venues || []).length > 0 ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {venues.map((v) => (
+                      <Chip key={v.id} tone={ng.venueId === v.id ? 'green' : 'outline'} onPress={() => pickVenue(v)}>
+                        {v.name}
+                      </Chip>
+                    ))}
+                  </View>
+                ) : (
+                  /* 코트장을 아직 등록 안 한 클럽도 있다. 그때까지는
+                     손으로 적을 수 있어야 글을 올릴 수 있다. */
+                  <Field placeholder="예: 과천시민회관 테니스장" value={ng.place}
+                    onChangeText={(t) => setNg({ ...ng, place: t, venueId: '' })} />
+                )}
               </View>
               <View style={{ marginTop: 8 }}>
                 <Label hint="다른 클럽이 지역으로 검색합니다">지역</Label>
-                <Field placeholder="예: 경기 과천시" value={ng.region} onChangeText={(t) => setNg({ ...ng, region: t })} />
+                <RegionPicker value={ng.region} onChange={(v) => setNg({ ...ng, region: v })} labels={false} />
               </View>
 
               <View style={{ marginTop: 8 }}>
@@ -361,17 +425,39 @@ export function Guest({
               </View>
 
               <View style={{ marginTop: 8 }}>
+                <Label hint="1인당 · 비워 두면 안 적힙니다">코트비</Label>
+                <Field keyboardType="number-pad" placeholder="예: 10000"
+                  value={ng.fee}
+                  onChangeText={(t) => setNg({ ...ng, fee: t.replace(/[^0-9]/g, '') })}
+                  suffix="원" />
+              </View>
+
+              <View style={{ marginTop: 8 }}>
+                <Label hint="올린 뒤에는 바꿀 수 없습니다">누가 볼 수 있나</Label>
+                <View style={{ gap: 6 }}>
+                  {AUDIENCE_OPTS.map(([k, label, hint]) => (
+                    <Chip key={k} tone={ng.audience === k ? 'green' : 'outline'}
+                      onPress={() => setNg({ ...ng, audience: k })}>
+                      {label} · {hint}
+                    </Chip>
+                  ))}
+                </View>
+              </View>
+
+              <View style={{ marginTop: 8 }}>
                 <Label hint="선택">추가 조건·안내</Label>
                 <Field placeholder="예: C조 이상 · 볼값 별도" value={ng.note} onChangeText={(t) => setNg({ ...ng, note: t })} />
               </View>
 
               <View style={{ marginTop: 12 }}>
-                <Btn full disabled={!ng.date || !ng.place || (!Number(ng.needMale) && !Number(ng.needFemale))} onPress={submit}>
+                <Btn full disabled={!ng.date || !ng.place || !ng.region || (!Number(ng.needMale) && !Number(ng.needFemale))} onPress={submit}>
                   공개 게시판에 등록
                 </Btn>
               </View>
               <Text style={{ fontSize: 10, color: C.faint, marginTop: 6 }}>
-                게스트비는 클럽 설정의 게스트비({(club?.settings?.guestFee || 10000).toLocaleString()}원)가 자동으로 붙습니다.
+                코트비를 비워 두면 클럽 설정값
+                ({Number(club?.settings?.guestFee || 0).toLocaleString()}원)을 씁니다.
+                그것도 0이면 글에 금액이 안 적힙니다.
               </Text>
             </Card>
           )}
