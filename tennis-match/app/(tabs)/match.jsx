@@ -27,6 +27,7 @@ import { setRules, setRestScore, saveMatches, updateMeeting, subGear } from '../
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
 import { Icon } from '../../src/components/Icon';
+import { courtLabel } from '../../src/lib/courtNames';
 import { VenuePicker } from '../../src/components/VenuePicker';
 import { MatchGrid, AttendanceGrid } from '../../src/components/MatchGrid';
 import { Segmented, useOptionSheet } from '../../src/components/native';
@@ -269,7 +270,7 @@ export default function Match() {
     const counts = playCounts(attendees, matches);
     const cur = (side === 'B' ? m.teamB : m.teamA) || [];
     sheet.open({
-      title: `${m.round}타임 코트${m.court} · ${side === 'B' ? '뒷팀' : '앞팀'}`,
+      title: `${m.round}타임 ${courtLabel(venueOf(meeting), m.court)}코트 · ${side === 'B' ? '뒷팀' : '앞팀'}`,
       options: [
         ...attendees
           .filter((p) => !busy.has(p.id) || cur.includes(p.id))
@@ -417,7 +418,7 @@ export default function Match() {
     runGenerate(!!(cfg.allowMixed || club?.settings?.allowMixedDefault));
   };
 
-  /* 뒤로가기 우선순위: 스코어 입력 → 편성 설정 → 홈으로.
+  /* 뒤로가기 우선순위: 스코어 입력 → 경기 방식 설정 → 홈으로.
 
      예전에는 홈에서 코트를 파라미터로 넘겼더니, 뒤로가기가 홈이 아니라
      "파라미터 없는 같은 화면"(=전체 코트 대진)으로 돌아갔다.
@@ -493,7 +494,7 @@ export default function Match() {
             color: '#fff', fontSize: 21, fontWeight: '800',
             marginTop: S.md, letterSpacing: -0.5,
           }}>
-            {myNext.round}타임 · {myNext.court}번 코트
+            {myNext.round}타임 · {courtLabel(venueOf(meeting), myNext.court)} 코트
           </Text>
           {!!myNextTime && (
             <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 3 }}>
@@ -716,7 +717,7 @@ export default function Match() {
               <>
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                   <Btn onPress={gen}>{matches.length ? '대진 재생성' : '자동 대진 생성'}</Btn>
-                  <Btn tone="ghost" onPress={() => setShowTools(!showTools)}>{showTools ? '설정 닫기' : '편성 설정'}</Btn>
+                  <Btn tone="ghost" onPress={() => setShowTools(!showTools)}>{showTools ? '설정 닫기' : '경기 방식 설정'}</Btn>
                   <Btn tone="ghost" onPress={makeBlank}>수기 작성</Btn>
                 </View>
                 <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 8, lineHeight: 15 }}>
@@ -727,7 +728,7 @@ export default function Match() {
             )}
           </Card>
 
-          {/* 편성 설정(타임 유형·실력매칭·휴식점수·우선순위) — KDK 는 자체 규칙이라 감춘다 */}
+          {/* 경기 방식 설정(타임 유형·실력매칭·휴식점수·우선순위) — KDK 는 자체 규칙이라 감춘다 */}
           {isAdmin && showTools && isKdk && (
             <Card style={{ marginTop: S.sm }}>
               <Text style={{ fontSize: 12.5, color: C.sub, lineHeight: 19 }}>
@@ -922,6 +923,7 @@ export default function Match() {
             <Card style={{ padding: 10 }}>
               <MatchGrid
                 matches={matches} nameOf={nameOf} genderOf={genderOf} me={me} roundTimes={times}
+                venue={venueOf(meeting)}
                 onPressMatch={(m) => {
                   if (!isAdmin) return;
                   setEditing(m.id); setSc({ a: '', b: '' });
@@ -948,7 +950,7 @@ export default function Match() {
                     }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                         <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
-                          <Chip tone="lime">코트 {m.court}</Chip>
+                          <Chip tone="lime">코트 {courtLabel(venueOf(meeting), m.court)}</Chip>
                           <Chip tone={m.type === '혼복' ? 'green' : 'default'}>{m.type}</Chip>
                           {isMine && <Chip tone="green">내 경기</Chip>}
                         </View>
@@ -984,7 +986,7 @@ export default function Match() {
                 return (
                   <>
                     <Text style={{ fontSize: 12, fontWeight: '800', marginBottom: 8 }}>
-                      {m.round}타임 코트{m.court} · {m.teamA.map(nameOf).join('·')} vs {m.teamB.map(nameOf).join('·')}
+                      {m.round}타임 {courtLabel(venueOf(meeting), m.court)}코트 · {m.teamA.map(nameOf).join('·')} vs {m.teamB.map(nameOf).join('·')}
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Field placeholder="앞팀" keyboardType="number-pad" value={sc.a} onChangeText={(t) => setSc({ ...sc, a: t })} style={{ flex: 1 }} />
@@ -1056,7 +1058,7 @@ export default function Match() {
                             borderTopWidth: 1, borderTopColor: '#f5f5f4',
                           }}>
                             <Text style={{ width: 68, fontSize: 10.5, color: C.sub }}>
-                              {m.round}타임 {m.court}코트
+                              {m.round}타임 {courtLabel(venueOf(meeting), m.court)}코트
                             </Text>
                             <Text style={{ width: 40, fontSize: 9.5, color: C.faint }}>
                               {m.type || '—'}
@@ -1084,7 +1086,8 @@ export default function Match() {
 
           <SectionTitle>참석자 경기 현황</SectionTitle>
           <Card style={{ padding: 10 }}>
-            <AttendanceGrid attendees={attendees} matches={matches} roundTimes={times} me={me} />
+            <AttendanceGrid attendees={attendees} matches={matches} roundTimes={times} me={me}
+              venue={venueOf(meeting)} />
           </Card>
 
           {/* KDK 개인 순위 — 조별 */}

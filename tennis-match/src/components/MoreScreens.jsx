@@ -39,7 +39,13 @@ const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
    판단(누가 무엇을 쓸 수 있나, 지난 글인가, 어떤 순서인가)은 전부
    board.js 에 있다. 화면은 그 결과를 그리기만 한다 — 화면에 규칙을
    적으면 검사로 확인할 수가 없다.                                  */
-export function Board({ clubId, club, posts, publicPosts = [], meVal, me, isAdmin, flash }) {
+export function Board({
+  clubId, club, posts = [], publicPosts = [], meVal, me, isAdmin, flash,
+  /* 클럽이 없는 사람에게는 목록만 보여 준다. 글쓰기와 댓글은 클럽
+     문서 아래에 쓰는 것이라 규칙이 막는다 — 칸을 그려 두면 눌러도
+     안 되는 버튼이 되고, 그게 제일 나쁘다. */
+  readOnly = false,
+}) {
   const myKinds = kindsFor(isAdmin);
   const [np, setNp] = useState({
     kind: POST_KIND.FREE, title: '', body: '', eventDate: '',
@@ -110,13 +116,15 @@ export function Board({ clubId, club, posts, publicPosts = [], meVal, me, isAdmi
         ))}
       </View>
 
+      {!readOnly && (
       <SectionTitle right={
         <Chip tone={writing ? 'green' : 'outline'} onPress={() => setWriting(!writing)}>
           {writing ? '닫기' : '+ 글쓰기'}
         </Chip>
       }>글 올리기</SectionTitle>
+      )}
 
-      {writing && (
+      {!readOnly && writing && (
         <Card>
           <Label>말머리</Label>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -214,7 +222,7 @@ export function Board({ clubId, club, posts, publicPosts = [], meVal, me, isAdmi
             {/* ⚠️ 댓글은 우리 클럽 글에만 달 수 있다. 남의 클럽 글은
                 보안 규칙이 쓰기를 막는다 — 칸을 그려 두면 눌러도 안 되는
                 버튼이 되고, 그게 제일 나쁘다. */}
-            {p.clubId === clubId && (
+            {!readOnly && p.clubId === clubId && (
             <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: C.fill, paddingTop: 8 }}>
               {(p.comments || []).map((c) => (
                 <Text key={c.id || c.body} style={{ fontSize: 12, paddingVertical: 2 }}>
@@ -241,8 +249,10 @@ export function Board({ clubId, club, posts, publicPosts = [], meVal, me, isAdmi
       {list.length === 0 && (
         <Card style={{ marginTop: 12 }}>
           <Text style={{ fontSize: 12, color: C.sub }}>
-            {posts.length === 0
-              ? '아직 올라온 글이 없습니다. 첫 글을 올려 보세요.'
+            {all.length === 0
+              ? (readOnly
+                ? '아직 올라온 공개 글이 없습니다.'
+                : '아직 올라온 글이 없습니다. 첫 글을 올려 보세요.')
               : '이 말머리에는 아직 글이 없습니다.'}
           </Text>
         </Card>

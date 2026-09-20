@@ -89,7 +89,6 @@ export function useClub(clubId, me, opts = {}) {
       subMembers(clubId, (v) => { setMembers(v); setLoading(false); }),
       subMeetings(clubId, setMeetings, meetingsFrom),
       subPosts(clubId, setPosts),
-      subPublicPosts(clubId, setPublicPosts),
       subCourts(clubId, setCourts),
       subRules(clubId, setRuleKeys),
       subFee(clubId, feeDocKey(feeMonth, feeScopeId), setFee),
@@ -107,6 +106,18 @@ export function useClub(clubId, me, opts = {}) {
     const unsub = subGuestPosts(setGuestPosts);
     return () => unsub && unsub();
   }, []);
+
+  /* 다른 클럽이 공개로 올린 게시글.
+
+     ⚠️ 클럽에 들어가지 않은 사람도 봐야 한다. 그게 이 글들의 존재
+        이유다 — **클럽 회원 모집 글을 봐야 할 사람은 정작 클럽이
+        없는 사람**이다. 위 구독은 clubId 가 없으면 통째로 건너뛰므로
+        여기 따로 둔다. clubId 는 "우리 글을 두 번 그리지 않기 위해"
+        빼는 용도로만 쓴다(없으면 아무것도 안 뺀다). */
+  useEffect(() => {
+    const unsub = subPublicPosts(clubId || null, setPublicPosts);
+    return () => unsub && unsub();
+  }, [clubId]);
 
   const rules = useMemo(() => hydrateRules(ruleKeys), [ruleKeys]);
 

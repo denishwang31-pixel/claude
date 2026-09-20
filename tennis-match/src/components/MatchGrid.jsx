@@ -5,6 +5,7 @@
 import React from 'react';
 import { View, Text, ScrollView, Pressable } from 'react-native';
 import { C } from '../lib/theme';
+import { courtLabel } from '../lib/courtNames';
 
 const TYPE_TONE = {
   혼복: { bg: '#ecfccb', fg: '#3f6212' },
@@ -63,7 +64,11 @@ function TeamText({ ids, nameOf, genderOf, me, win, dim }) {
   );
 }
 
-export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPressMatch }) {
+/* venue 를 받는 이유는 코트 이름 때문이다. 경기 문서의 court 는 계속
+   1·2·3 숫자이고, 그 코트장이 실제로 부르는 이름(A·B·C, 9·10·11)으로
+   **보여 줄 때만** 바꾼다. 저장된 값을 바꾸면 쌓인 대진과 전적이
+   어긋난다 — src/lib/courtNames.js 머리말 참고. */
+export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPressMatch, venue = null }) {
   if (!matches?.length) return null;
 
   const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
@@ -84,7 +89,7 @@ export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPr
               borderTopRightRadius: c === courts[courts.length - 1] ? 10 : 0,
               borderLeftWidth: c === courts[0] ? 0 : 1, borderLeftColor: 'rgba(255,255,255,0.15)',
             }}>
-              <Text style={{ color: C.lime, fontSize: 12, fontWeight: '700' }}>코트 {c}</Text>
+              <Text style={{ color: C.lime, fontSize: 12, fontWeight: '700' }}>코트 {courtLabel(venue, c)}</Text>
             </View>
           ))}
         </View>
@@ -157,7 +162,7 @@ export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPr
 }
 
 /** 참석자별 출전 현황 — 언제 뛰고 언제 쉬는지 한눈에 */
-export function AttendanceGrid({ attendees, matches, roundTimes = [], me }) {
+export function AttendanceGrid({ attendees, matches, roundTimes = [], me, venue = null }) {
   if (!attendees?.length) return null;
   const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
   if (!rounds.length) return null;
@@ -226,7 +231,7 @@ export function AttendanceGrid({ attendees, matches, roundTimes = [], me }) {
                           width: 22, height: 22, borderRadius: 11, backgroundColor: C.green,
                           alignItems: 'center', justifyContent: 'center',
                         }}>
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: C.lime }}>{court}</Text>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: C.lime }}>{courtLabel(venue, court)}</Text>
                         </View>
                       ) : (
                         <View style={{

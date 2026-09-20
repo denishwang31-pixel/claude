@@ -351,7 +351,7 @@ export default function More() {
             <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>아직 클럽에 속해 있지 않습니다</Text>
             <Text style={{ color: C.lime2, fontSize: 12, marginTop: 6, lineHeight: 18 }}>
               클럽에 들어가면 일정·대진표·회비·랭킹을 함께 쓸 수 있습니다.
-              지금은 게스트 모집 게시판과 용품만 볼 수 있어요.
+              지금은 게시판·게스트 모집·용품을 볼 수 있어요.
             </Text>
           </Card>
 
@@ -359,6 +359,28 @@ export default function More() {
             <Btn full onPress={findClub}>클럽 찾아 가입 신청</Btn>
             <Btn full tone="ghost" onPress={() => { openOnboarding?.(); router.push('/onboarding?mode=create'); }}>새 클럽 만들기</Btn>
           </View>
+
+          {/* ⚠️ 공개 게시글은 클럽이 없을 때야말로 보여야 한다.
+              **클럽 회원 모집 글을 봐야 할 사람이 바로 여기 있는 사람**
+              이다. 클럽에 들어간 뒤에만 보이게 두면 그 글은 정작 대상에게
+              닿지 않는다. 글쓰기는 클럽이 있어야 하므로 목록만 보여 준다. */}
+          {publicPosts.length > 0 && (
+            <>
+              <SectionTitle right={<Chip tone="outline">{publicPosts.length}건</Chip>}>
+                클럽들이 올린 공개 글
+              </SectionTitle>
+              <Board
+                clubId={null}
+                posts={[]}
+                publicPosts={publicPosts}
+                meVal={null}
+                me={me}
+                isAdmin={false}
+                readOnly
+                flash={flash}
+              />
+            </>
+          )}
 
           <Card style={{ marginTop: 16 }}>
             <Text style={{ fontSize: 12, color: C.sub, lineHeight: 18 }}>

@@ -11,12 +11,16 @@ import { NotifyPrefs, VenueFeeOverride, VenueOverrideBadges } from './ScopeContr
 import { roundsFromSettings, toMinutes, DEFAULT_SETTINGS } from '../lib/schedule';
 import { normalizeRoundMinutes, roundMinutesLabel } from '../lib/constants';
 import { RoundMinutesPicker } from './RoundMinutesPicker';
+import {
+  normalizeCourtNames, courtNameProblems, defaultCourtName,
+} from '../lib/courtNames';
 import { Card, SectionTitle, Chip, Btn, Field } from './ui';
 import { C } from '../lib/theme';
 
 const blankVenue = (settings) => ({
   name: '',
   courts: String(settings?.courts ?? 2),
+  courtNames: [],
   startTime: settings?.startTime ?? '10:00',
   endTime: settings?.endTime ?? '13:00',
   roundMinutes: settings?.roundMinutes ?? 40,
@@ -46,6 +50,35 @@ function VenueForm({ draft, setDraft, members, onSubmit, submitLabel, onCancel }
           <Field placeholder="13:00" value={draft.endTime} onChangeText={(v) => setDraft({ ...draft, endTime: v })} />
         </View>
       </View>
+
+      {/* 코트 이름.
+
+          ⚠️ 코트를 1·2·3 으로만 부르면 현장과 표가 다른 말을 한다.
+             실제 코트장은 A·B·C 이거나, 9·10·11 처럼 그 코트장 전체
+             번호 중 우리가 빌린 것만 떼어 쓴다. 코트에 서 있는 사람이
+             표에 적힌 "2번 코트"를 찾아 헤매면 표를 안 보게 된다.
+             비워 두면 예전처럼 1·2·3 이다. */}
+      <Text style={{ fontSize: 11, color: C.sub, marginTop: 10, marginBottom: 4 }}>
+        코트 이름 <Text style={{ color: C.faint }}>(비우면 1·2·3 — 예: A·B·C 또는 9·10·11)</Text>
+      </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {normalizeCourtNames(draft.courtNames, draft.courts).map((nm, i) => (
+          <View key={`court-${i}`} style={{ width: 72 }}>
+            <Field
+              placeholder={defaultCourtName(i + 1)}
+              value={nm}
+              maxLength={8}
+              onChangeText={(v) => {
+                const next = normalizeCourtNames(draft.courtNames, draft.courts);
+                next[i] = v;
+                setDraft({ ...draft, courtNames: next });
+              }} />
+          </View>
+        ))}
+      </View>
+      {courtNameProblems(draft.courtNames, draft.courts).map((msg) => (
+        <Text key={msg} style={{ fontSize: 11.5, color: C.danger, marginTop: 5 }}>{msg}</Text>
+      ))}
 
       <Text style={{ fontSize: 11, color: C.sub, marginTop: 8, marginBottom: 4 }}>한 타임 길이</Text>
       <RoundMinutesPicker
@@ -135,15 +168,21 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
     }).catch(() => {});
   };
 
-  const normalize = (d) => ({
+  const normalize = (d) => {
+    const courts = Math.max(1, Math.min(20, Number(d.courts) || 1));
+    return {
     name: d.name.trim(),
-    courts: Math.max(1, Math.min(20, Number(d.courts) || 1)),
+    courts,
+    /* ⚠️ 면수에 맞춰 잘라서 저장한다. 면수를 줄였는데 이름이 남아
+       있으면, 나중에 다시 늘릴 때 고친 적 없는 이름이 되살아난다. */
+    courtNames: normalizeCourtNames(d.courtNames, courts),
     startTime: d.startTime,
     endTime: d.endTime,
     roundMinutes: normalizeRoundMinutes(d.roundMinutes),
     leadId: d.leadId || null,
     addr: (d.addr || '').trim(),
-  });
+    };
+  };
 
   return (
     <View>
@@ -194,7 +233,7 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
               </View>
               {isAdmin && (
                 <View style={{ gap: 6 }}>
-                  <Btn small tone="ghost" onPress={() => { setEditId(v.id); setEditDraft({ ...v, courts: String(v.courts) }); }}>수정</Btn>
+                  <Btn small tone="ghost" onPress={() => { setEditId(v.id); setEditDraft({ ...v, courts: String(v.courts), courtNames: normalizeCourtNames(v.courtNames, v.courts) }); }}>수정</Btn>
                   <Pressable onPress={() => {
                     deleteVenue(clubId, v.id);
                     syncDirectory(venues.filter((x) => x.id !== v.id));
