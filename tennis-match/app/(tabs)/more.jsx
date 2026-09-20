@@ -88,7 +88,7 @@ const MENU_GROUPS = [
       ['tournament', 'tournament', SCREEN.tournament, 'KDK · 청백전 · 클럽 내 대회'],
       ['clubmatch', 'tournament', SCREEN.clubmatch, '상대 클럽을 검색해 초대하고 함께 진행'],
       ['polls', 'polls', SCREEN.polls, '회식·대회 참가 의사를 물어보세요'],
-      ['board', 'board', SCREEN.board, null],
+      ['board', 'board', SCREEN.board, '공지·자유 + 코트 양도·멤버 모집(다른 클럽도 봅니다)'],
       ['members', 'members', SCREEN.members, null],
     ],
   },
@@ -186,7 +186,7 @@ export default function More() {
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
 
   const {
-    club, members, meetings, posts, guestPosts, courts, fee, pairs, tournaments,
+    club, members, meetings, posts, publicPosts, guestPosts, courts, fee, pairs, tournaments,
     venues, matchConfig, rules, polls, meVal, isAdmin, canAppoint, nameOf, realRole,
     seeFees, seeAllVenues, myLeadVenues,
   } = useClub(clubId, me, { feeMonth, feeScopeId, viewMode });
@@ -302,7 +302,7 @@ export default function More() {
           scopeId: feeScopeId, setScopeId: setFeeScopeId,
         }} />
       );
-      case 'board': return <Board {...{ clubId, posts, meVal, me, isAdmin, flash }} />;
+      case 'board': return <Board {...{ clubId, club, posts, publicPosts, meVal, me, isAdmin, flash }} />;
       case 'guest': return (
         <Guest {...{
           clubId, club, guestPosts, meetings, venues, me, meVal, isAdmin, flash,

@@ -15,7 +15,7 @@
        └ applicants/{uid}                   신청자(본인만 작성)
    ============================================================ */
 import {
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
+  collection, collectionGroup, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
   onSnapshot, query, where, orderBy, limit, serverTimestamp, arrayUnion,
   runTransaction, deleteField, writeBatch, increment, getCountFromServer,
 } from 'firebase/firestore';
@@ -78,6 +78,31 @@ export const loadMeetingsRange = async (clubId, from, to) => {
 
 export const subPosts = (clubId, cb) =>
   onSnapshot(C(clubId, 'posts'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+
+/**
+ * 다른 클럽이 공개로 올린 글.
+ *
+ * 코트 양도·대회 멤버 모집·클럽 회원 모집은 밖에서 봐야 뜻이 있다.
+ * 우리 클럽 글은 subPosts 가 이미 가져오므로 여기서는 **남의 클럽 것만**
+ * 걸러서 넘긴다(그러지 않으면 우리 글이 두 번 그려진다).
+ *
+ * ⚠️ collectionGroup 질의라 색인이 따로 필요하다. firestore.indexes.json
+ *    의 fieldOverrides 에 posts.audience 를 COLLECTION_GROUP 범위로
+ *    넣어 두었다. 색인이 없으면 이 구독은 실패한다 — 오류 콜백이 빈
+ *    목록을 주므로 화면이 죽지는 않지만 공개 글이 안 보인다.
+ *
+ * ⚠️ 보안 규칙이 공개 글만 읽히게 막고 있다. 화면에서 거르는 것과
+ *    규칙은 별개다 — 규칙이 열려 있으면 앱이 아닌 방법으로 클럽 전용
+ *    글까지 읽힌다.
+ */
+export const subPublicPosts = (myClubId, cb, { max = 100 } = {}) =>
+  onSnapshot(
+    query(collectionGroup(db, 'posts'), where('audience', '==', 'public'), limit(max)),
+    (s) => cb(s.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((p) => p.clubId && p.clubId !== myClubId)),
+    () => cb([]),
+  );
 
 export const subCourts = (clubId, cb) =>
   onSnapshot(C(clubId, 'courts'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
@@ -461,8 +486,16 @@ export const cancelTournamentApply = (clubId, id, uid) =>
 export const savePushToken = (clubId, memberId, token) =>
   updateDoc(D(clubId, 'members', memberId), { pushToken: token });
 
+/**
+ * 게시글을 올린다.
+ *
+ * ⚠️ clubId 를 문서 안에도 넣는다. 경로에 이미 들어 있지만, 공개 글은
+ *    collectionGroup 으로 여러 클럽에서 한꺼번에 읽어 오기 때문에
+ *    "이 글이 어느 클럽 것인가"를 문서만 보고 알 수 있어야 한다.
+ *    보안 규칙도 이 값으로 클럽 회원인지 확인한다.
+ */
 export const addPost = (clubId, data) =>
-  addDoc(C(clubId, 'posts'), { ...data, comments: [], date: today() });
+  addDoc(C(clubId, 'posts'), { ...data, clubId, comments: [], date: today() });
 
 /* FIX-06 — 동시성 안전 댓글 추가(arrayUnion). comment 에 고유 id 포함할 것 */
 export const addComment = (clubId, postId, comment) =>

@@ -5,7 +5,10 @@ import { readFileSync } from 'node:fs';
 import {
   initializeTestEnvironment, assertSucceeds, assertFails,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, deleteField } from 'firebase/firestore';
+import {
+  doc, getDoc, setDoc, updateDoc, deleteDoc, collection, collectionGroup,
+  getDocs, query, where, deleteField,
+} from 'firebase/firestore';
 
 const env = await initializeTestEnvironment({
   projectId: 'demo-tennis-rules',
@@ -171,6 +174,42 @@ await T('예전 형식(type)으로도 회원의 공지 거부',
 await T('운영진의 공지 작성 허용',
   assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'posts', 'pb5'),
     { kind: 'notice', title: '진짜 공지', authorId: 'owner1', pinned: true })));
+
+console.log('\n[게시판 공개 범위]');
+/* ⚠️ 방향을 한 번 틀리면 클럽 안에서만 하던 이야기가 전국에 열린다.
+   되돌릴 수 없는 방향이라 규칙으로 확실히 못 박는다. */
+await T('공개 글은 다른 클럽 사람도 읽는다', (async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'clubs', CLUB, 'posts', 'pubPost'),
+      { kind: 'recruit', title: '회원 모집', authorId: 'owner1',
+        clubId: CLUB, audience: 'public' });
+    await setDoc(doc(ctx.firestore(), 'clubs', CLUB, 'posts', 'clubPost'),
+      { kind: 'free', title: '우리끼리', authorId: 'owner1',
+        clubId: CLUB, audience: 'club' });
+    await setDoc(doc(ctx.firestore(), 'clubs', CLUB, 'posts', 'oldPost'),
+      { type: 'free', title: '예전 글', authorId: 'owner1' });
+  });
+  return assertSucceeds(getDoc(doc(outsider, 'clubs', CLUB, 'posts', 'pubPost')));
+})());
+await T('클럽 전용 글은 다른 클럽 사람이 못 읽는다',
+  assertFails(getDoc(doc(outsider, 'clubs', CLUB, 'posts', 'clubPost'))));
+/* ⚠️ 이게 제일 중요하다. 지금까지 쌓인 글에는 audience 가 아예 없다.
+   기본값을 잘못 잡으면 그 글이 전부 한순간에 밖으로 나간다. */
+await T('audience 가 없는 예전 글은 밖으로 안 나간다',
+  assertFails(getDoc(doc(outsider, 'clubs', CLUB, 'posts', 'oldPost'))));
+await T('우리 클럽 회원은 클럽 전용 글을 읽는다',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'posts', 'clubPost'))));
+await T('우리 클럽 회원은 예전 글도 읽는다',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'posts', 'oldPost'))));
+/* 컬렉션 그룹 질의 — 공개 조건이 붙어 있으면 통과, 없으면 거부.
+   ⚠️ 이 질의는 중첩 경로 규칙이 아니라 {path=**} 규칙을 본다.
+      그걸 모르면 "규칙은 맞는데 목록이 계속 빈다"로 한참 헤맨다. */
+await T('공개 글만 걸러 읽는 컬렉션 그룹 질의 허용',
+  assertSucceeds(getDocs(query(collectionGroup(outsider, 'posts'), where('audience', '==', 'public')))));
+await T('조건 없는 컬렉션 그룹 질의 거부',
+  assertFails(getDocs(collectionGroup(outsider, 'posts'))));
+await T('클럽 전용을 노린 컬렉션 그룹 질의 거부',
+  assertFails(getDocs(query(collectionGroup(outsider, 'posts'), where('audience', '==', 'club')))));
 
 console.log('\n[게스트 모집 (FIX-05)]');
 await T('타 클럽 사용자도 모집글 읽기 허용(공개)',

@@ -3,7 +3,7 @@
    모든 탭 화면이 이 훅 하나로 데이터 + 파생값을 받는다.
 
    반환:
-     { club, members, meetings, posts, guestPosts, courts, rules, fee,
+     { club, members, meetings, posts, publicPosts, guestPosts, courts, rules, fee,
        meVal, isAdmin, nameOf, genderOf, loading }
 
    핵심: rules 는 Firestore 에 "키 문자열 배열"로 저장되지만(setRules),
@@ -11,7 +11,7 @@
    ============================================================ */
 import { useEffect, useMemo, useState } from 'react';
 import {
-  subClub, subMembers, subMeetings, subPosts, subGuestPosts,
+  subClub, subMembers, subMeetings, subPosts, subPublicPosts, subGuestPosts,
   subCourts, subRules, subFee, subPairs, subTournaments, subVenues, subMatchConfig,
   subPolls, setMemberRole,
 } from '../lib/firestore';
@@ -66,6 +66,10 @@ export function useClub(clubId, me, opts = {}) {
   const [members, setMembers] = useState([]);
   const [meetings, setMeetings] = useState([]);
   const [posts, setPosts] = useState([]);
+  /* 다른 클럽이 공개로 올린 글. 우리 글(posts)과 따로 받아서 화면에서
+     합친다 — 한 질의로 못 가져온다(우리 클럽 것은 경로로, 남의 것은
+     컬렉션 그룹으로 읽는다). */
+  const [publicPosts, setPublicPosts] = useState([]);
   const [guestPosts, setGuestPosts] = useState([]);
   const [courts, setCourts] = useState([]);
   const [ruleKeys, setRuleKeys] = useState(null);
@@ -85,6 +89,7 @@ export function useClub(clubId, me, opts = {}) {
       subMembers(clubId, (v) => { setMembers(v); setLoading(false); }),
       subMeetings(clubId, setMeetings, meetingsFrom),
       subPosts(clubId, setPosts),
+      subPublicPosts(clubId, setPublicPosts),
       subCourts(clubId, setCourts),
       subRules(clubId, setRuleKeys),
       subFee(clubId, feeDocKey(feeMonth, feeScopeId), setFee),
@@ -213,7 +218,7 @@ export function useClub(clubId, me, opts = {}) {
   }, [members, meetings]);
 
   return {
-    club, members, meetings, meetingsFrom, posts, guestPosts, courts, rules, fee,
+    club, members, meetings, meetingsFrom, posts, publicPosts, guestPosts, courts, rules, fee,
     pairs, tournaments, venues, matchConfig, polls, meVal,
     isAdmin, realStaff, canAppoint, isPresident, viewMode, nameOf, genderOf, loading,
     myLeadVenues, myVenues, scopeVenues,

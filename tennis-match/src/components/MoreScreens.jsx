@@ -10,7 +10,8 @@ import { GUEST_STATUS } from '../lib/constants';
 import { RegionPicker } from './RegionPicker';
 import {
   POST_KIND, POST_KINDS, kindOf, kindLabel, kindsFor, canPost,
-  isExpired, sortPosts, filterPosts, countByKind,
+  AUDIENCE, AUDIENCE_LABEL, audienceOf, canBePublic, defaultAudience,
+  safeAudience, isExpired, sortPosts, filterPosts, countByKind,
 } from '../lib/board';
 import { DateField, TimeField, Label } from './pickers';
 import { KAKAO_JS_KEY } from '../lib/keys';
@@ -38,20 +39,26 @@ const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
    판단(누가 무엇을 쓸 수 있나, 지난 글인가, 어떤 순서인가)은 전부
    board.js 에 있다. 화면은 그 결과를 그리기만 한다 — 화면에 규칙을
    적으면 검사로 확인할 수가 없다.                                  */
-export function Board({ clubId, posts, meVal, me, isAdmin, flash }) {
+export function Board({ clubId, club, posts, publicPosts = [], meVal, me, isAdmin, flash }) {
   const myKinds = kindsFor(isAdmin);
   const [np, setNp] = useState({
     kind: POST_KIND.FREE, title: '', body: '', eventDate: '',
+    audience: defaultAudience(POST_KIND.FREE),
   });
   const [cmt, setCmt] = useState({});
   const [filter, setFilter] = useState('');
   const [writing, setWriting] = useState(false);
 
   const t = today();
-  const counts = useMemo(() => countByKind(posts), [posts]);
+  /* 우리 클럽 글 + 다른 클럽이 공개로 올린 글.
+     ⚠️ 우리 글은 경로로, 남의 글은 컬렉션 그룹으로 읽어 와서 두 갈래다.
+        subPublicPosts 가 우리 clubId 것을 이미 빼고 주므로 여기서
+        겹치지 않는다. */
+  const all = useMemo(() => [...posts, ...publicPosts], [posts, publicPosts]);
+  const counts = useMemo(() => countByKind(all), [all]);
   const list = useMemo(
-    () => sortPosts(filterPosts(posts, filter), t),
-    [posts, filter, t],
+    () => sortPosts(filterPosts(all, filter), t),
+    [all, filter, t],
   );
 
   const kindSpec = kindOf(np.kind);
@@ -64,6 +71,11 @@ export function Board({ clubId, posts, meVal, me, isAdmin, flash }) {
   const submit = () => {
     addPost(clubId, {
       kind: np.kind,
+      /* ⚠️ 화면이 고른 값을 그대로 믿지 않는다. 말머리를 '코트 양도 +
+         공개'로 골라 두고 '공지'로 바꾸면 공개인 채로 남는데, 그대로
+         저장하면 클럽 공지가 전국에 뜬다. 저장 직전에 한 번 더 본다. */
+      audience: safeAudience(np.kind, np.audience),
+      clubName: club?.name || '',
       /* ⚠️ type 도 같이 남긴다. 예전 글과 예전 코드가 type 을 보고
          공지 여부를 가린다. 한쪽만 쓰면 예전 화면에서 공지가 평범한
          글로 보인다. 나중에 정리할 때 한 번에 걷어낼 것. */
@@ -75,7 +87,10 @@ export function Board({ clubId, posts, meVal, me, isAdmin, flash }) {
       authorId: me,
       pinned: np.kind === POST_KIND.NOTICE,
     });
-    setNp({ kind: POST_KIND.FREE, title: '', body: '', eventDate: '' });
+    setNp({
+      kind: POST_KIND.FREE, title: '', body: '', eventDate: '',
+      audience: defaultAudience(POST_KIND.FREE),
+    });
     setWriting(false);
     flash(`${kindLabel(np.kind)} 글을 올렸습니다`);
   };
@@ -107,7 +122,12 @@ export function Board({ clubId, posts, meVal, me, isAdmin, flash }) {
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             {myKinds.map((k) => (
               <Chip key={k.key} tone={np.kind === k.key ? 'green' : 'outline'}
-                onPress={() => setNp({ ...np, kind: k.key })}>
+                onPress={() => setNp({
+                  ...np, kind: k.key,
+                  /* 말머리를 바꾸면 공개 범위도 그 말머리의 기본값으로
+                     되돌린다. 안 그러면 공지를 공개로 올리게 된다. */
+                  audience: defaultAudience(k.key),
+                })}>
                 {k.label}
               </Chip>
             ))}
@@ -122,6 +142,28 @@ export function Board({ clubId, posts, meVal, me, isAdmin, flash }) {
                 onChange={(v) => setNp({ ...np, eventDate: v })} />
             </View>
           )}
+
+          {/* 공개 범위. 밖에 낼 수 있는 말머리일 때만 고를 수 있다 —
+              공지·자유글은 클럽 안의 이야기라 선택지를 주지 않는다.
+              고를 수 없을 때도 지금 어디까지 보이는지는 적어 준다. */}
+          <View style={{ marginTop: 10 }}>
+            <Label hint="올린 뒤에는 바꿀 수 없습니다">누가 볼 수 있나</Label>
+            {canBePublic(np.kind) ? (
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {[AUDIENCE.PUBLIC, AUDIENCE.CLUB].map((a2) => (
+                  <Chip key={a2} tone={np.audience === a2 ? 'green' : 'outline'}
+                    onPress={() => setNp({ ...np, audience: a2 })}>
+                    {AUDIENCE_LABEL[a2]}
+                  </Chip>
+                ))}
+              </View>
+            ) : (
+              <Text style={{ fontSize: 12, color: C.sub, lineHeight: 18 }}>
+                우리 클럽 회원만 — {kindLabel(np.kind)}은(는) 클럽 안의
+                이야기라 밖으로 나가지 않습니다.
+              </Text>
+            )}
+          </View>
 
           <View style={{ marginTop: 10 }}>
             <Field placeholder="제목" value={np.title}
@@ -151,6 +193,14 @@ export function Board({ clubId, posts, meVal, me, isAdmin, flash }) {
           <Card key={p.id} style={{ marginTop: 12, opacity: gone ? 0.5 : 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <Chip tone={p.pinned ? 'lime' : 'default'}>{kindLabel(p.kind ?? p.type)}</Chip>
+              {/* 다른 클럽 글이면 어느 클럽인지 밝힌다 — 안 적으면 우리
+                  클럽 회원 모집으로 오해한다 */}
+              {p.clubId && p.clubId !== clubId && (
+                <Chip tone="outline">{p.clubName || '다른 클럽'}</Chip>
+              )}
+              {p.clubId === clubId && audienceOf(p) === AUDIENCE.PUBLIC && (
+                <Chip tone="outline">전체 공개</Chip>
+              )}
               {gone && <Chip tone="default">지난 글</Chip>}
               <Text style={{ fontWeight: '700', fontSize: 14, flexShrink: 1 }}>{p.title}</Text>
             </View>
@@ -161,6 +211,10 @@ export function Board({ clubId, posts, meVal, me, isAdmin, flash }) {
             )}
             <Text style={{ fontSize: 14, color: C.text, marginTop: 6 }}>{p.body}</Text>
             <Text style={{ fontSize: 10, color: C.faint, marginTop: 4 }}>{p.author} · {p.date}</Text>
+            {/* ⚠️ 댓글은 우리 클럽 글에만 달 수 있다. 남의 클럽 글은
+                보안 규칙이 쓰기를 막는다 — 칸을 그려 두면 눌러도 안 되는
+                버튼이 되고, 그게 제일 나쁘다. */}
+            {p.clubId === clubId && (
             <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: C.fill, paddingTop: 8 }}>
               {(p.comments || []).map((c) => (
                 <Text key={c.id || c.body} style={{ fontSize: 12, paddingVertical: 2 }}>
@@ -179,6 +233,7 @@ export function Board({ clubId, posts, meVal, me, isAdmin, flash }) {
                 }}>등록</Btn>
               </View>
             </View>
+            )}
           </Card>
         );
       })}

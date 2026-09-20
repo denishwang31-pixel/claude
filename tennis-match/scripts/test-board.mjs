@@ -4,6 +4,7 @@
    간다. 그래서 "모르는 값이 와도 무너지지 않는가"를 특히 본다. */
 import {
   POST_KIND, POST_KINDS, kindOf, kindLabel, kindsFor, canPost,
+  AUDIENCE, audienceOf, canBePublic, defaultAudience, safeAudience, canSee,
   isExpired, sortPosts, filterPosts, countByKind,
 } from '../src/lib/board.js';
 
@@ -41,6 +42,44 @@ ok(canPost(POST_KIND.COURT, false), '회원의 코트 양도 허용');
    목록에서 자유글로 보이는데, 정작 쓴 사람은 그걸 모른다. */
 ok(!canPost('노래자랑', true), '모르는 말머리는 운영진도 못 쓴다');
 ok(!canPost('', true), '빈 말머리도 못 쓴다');
+
+console.log('[공개 범위]');
+/* ⚠️ 이 검사가 이 파일에서 제일 중요하다. 방향을 한 번 틀리면 클럽 안에서만
+   하던 이야기가 전국에 열리고, 그건 되돌릴 수 없다. */
+eq('값이 없으면 우리 클럽만', audienceOf({}), AUDIENCE.CLUB);
+eq('예전 글(필드 자체가 없음)도 우리 클럽만', audienceOf({ kind: 'free' }), AUDIENCE.CLUB);
+eq('null 이어도 우리 클럽만', audienceOf(null), AUDIENCE.CLUB);
+eq('모르는 값이면 우리 클럽만', audienceOf({ audience: '전체' }), AUDIENCE.CLUB);
+eq('public 일 때만 공개', audienceOf({ audience: 'public' }), AUDIENCE.PUBLIC);
+
+ok(canBePublic(POST_KIND.COURT), '코트 양도는 밖에 낼 수 있다');
+ok(canBePublic(POST_KIND.SQUAD), '대회 멤버 모집은 밖에 낼 수 있다');
+ok(canBePublic(POST_KIND.RECRUIT), '회원 모집은 밖에 낼 수 있다 — 안 그러면 뜻이 없다');
+ok(!canBePublic(POST_KIND.NOTICE), '공지는 클럽 안의 이야기다');
+ok(!canBePublic(POST_KIND.FREE), '자유글도 클럽 안의 이야기다');
+ok(!canBePublic('노래자랑'), '모르는 말머리는 밖에 못 낸다');
+
+eq('회원 모집의 기본은 공개', defaultAudience(POST_KIND.RECRUIT), AUDIENCE.PUBLIC);
+eq('공지의 기본은 클럽만', defaultAudience(POST_KIND.NOTICE), AUDIENCE.CLUB);
+
+/* ⚠️ 화면이 실수해도 저장 직전에 막는다. 말머리를 '코트 양도 + 공개'로
+   골라 두고 '공지'로 바꾸면 공개인 채로 남는데, 그대로 저장하면
+   클럽 공지가 전국에 뜬다. */
+eq('공지를 공개로 저장하려 하면 클럽만으로 내린다',
+  safeAudience(POST_KIND.NOTICE, AUDIENCE.PUBLIC), AUDIENCE.CLUB);
+eq('자유글도 마찬가지', safeAudience(POST_KIND.FREE, AUDIENCE.PUBLIC), AUDIENCE.CLUB);
+eq('코트 양도는 공개가 그대로 간다',
+  safeAudience(POST_KIND.COURT, AUDIENCE.PUBLIC), AUDIENCE.PUBLIC);
+eq('코트 양도도 클럽만을 고르면 그대로',
+  safeAudience(POST_KIND.COURT, AUDIENCE.CLUB), AUDIENCE.CLUB);
+eq('모르는 값이 오면 클럽만', safeAudience(POST_KIND.COURT, '전체'), AUDIENCE.CLUB);
+
+console.log('[내가 볼 수 있는 글인가]');
+ok(canSee({ audience: 'public', clubId: 'other' }, 'mine'), '남의 공개 글은 보인다');
+ok(canSee({ clubId: 'mine' }, 'mine'), '우리 클럽 글은 보인다');
+ok(!canSee({ clubId: 'other' }, 'mine'), '남의 클럽 전용 글은 안 보인다');
+ok(!canSee({ clubId: 'other' }, ''), '클럽이 없으면 남의 전용 글은 안 보인다');
+ok(canSee({ audience: 'public', clubId: 'other' }, ''), '클럽이 없어도 공개 글은 보인다');
 
 console.log('[지난 글]');
 const T = '2026-09-20';

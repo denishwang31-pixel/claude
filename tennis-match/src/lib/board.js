@@ -42,12 +42,65 @@ export const POST_KINDS = [
   { key: POST_KIND.FREE, label: '자유', adminOnly: false, expires: false, needsDate: false },
 ];
 
+/* ============================================================
+   공개 범위
+
+   ⚠️ 왜 필요한가
+     게시판은 원래 클럽 안에서만 보였다(clubs/{clubId}/posts). 그런데
+     여기 담기는 말머리 중 셋은 **밖에서 봐야 뜻이 있다**.
+       · 클럽 회원 모집 — 우리 회원에게만 보이면 아무 의미가 없다
+       · 코트 양도      — 우리 클럽이 안 쓰는 코트라서 넘기는 것이다
+       · 대회 멤버 모집 — 한 팀이 모자라 밖에서 구하는 경우가 많다
+     반대로 공지와 자유글은 클럽 안의 이야기라 밖에 나가면 안 된다.
+
+   ⚠️ 예전 글은 전부 '우리 클럽만' 이다
+     지금까지 올라온 글은 전부 "클럽 안에서만 보인다"는 전제로 쓰였다.
+     공개를 기본값으로 잡으면 그 글들이 한순간에 전국에 열린다.
+     그래서 audience 가 없는 글은 반드시 CLUB 으로 읽는다.
+   ============================================================ */
+export const AUDIENCE = { PUBLIC: 'public', CLUB: 'club' };
+
+export const AUDIENCE_LABEL = {
+  [AUDIENCE.PUBLIC]: '모든 클럽',
+  [AUDIENCE.CLUB]: '우리 클럽만',
+};
+
 const BY_KEY = new Map(POST_KINDS.map((k) => [k.key, k]));
 
 /** 모르는 값은 '자유'로 본다 — 예전 글과 잘못 저장된 값을 위해서다 */
 export const kindOf = (key) => BY_KEY.get(String(key || '')) || BY_KEY.get(POST_KIND.FREE);
 
 export const kindLabel = (key) => kindOf(key).label;
+
+/**
+ * 그 글의 공개 범위. 값이 없으면 '우리 클럽만'.
+ *
+ * ⚠️ 없을 때 공개로 읽으면 예전 글이 전부 밖으로 새어 나간다.
+ *    모르면 **좁은 쪽**으로 읽는다 — 이 방향은 틀려도 되돌릴 수 있지만,
+ *    반대 방향은 한 번 새면 되돌릴 수 없다.
+ */
+export const audienceOf = (post) =>
+  (post?.audience === AUDIENCE.PUBLIC ? AUDIENCE.PUBLIC : AUDIENCE.CLUB);
+
+/** 밖에 낼 수 있는 말머리인가 — 공지·자유는 클럽 안의 이야기다 */
+export const canBePublic = (key) => {
+  const k = kindOf(key).key;
+  return k === POST_KIND.COURT || k === POST_KIND.SQUAD || k === POST_KIND.RECRUIT;
+};
+
+/** 그 말머리를 고르면 기본으로 어디까지 보일 것인가 */
+export const defaultAudience = (key) =>
+  (canBePublic(key) ? AUDIENCE.PUBLIC : AUDIENCE.CLUB);
+
+/**
+ * 저장하기 전에 공개 범위를 바로잡는다.
+ *
+ * ⚠️ 화면에서 말머리를 '코트 양도 + 공개'로 골라 두고 '공지'로 바꾸면
+ *    공개인 채로 남는다. 그 상태로 저장하면 클럽 공지가 전국에 뜬다.
+ *    화면이 실수해도 여기서 막는다 — 저장 직전에 한 번 더 본다.
+ */
+export const safeAudience = (key, audience) =>
+  (canBePublic(key) && audience === AUDIENCE.PUBLIC ? AUDIENCE.PUBLIC : AUDIENCE.CLUB);
 
 /** 이 사람이 쓸 수 있는 말머리 */
 export const kindsFor = (isAdmin) => POST_KINDS.filter((k) => isAdmin || !k.adminOnly);
@@ -90,6 +143,17 @@ export function sortPosts(posts = [], today = '') {
   });
 }
 
+/**
+ * 내가 볼 수 있는 글인가.
+ *
+ * 공개 글은 누구나, 클럽 전용 글은 그 클럽 사람만. 목록을 만들 때
+ * 반드시 이걸 거쳐야 한다 — 다만 **화면에서 거르는 것만으로는
+ * 부족하다**. 보안 규칙이 같은 판단을 해야 앱이 아닌 방법으로도
+ * 막힌다(firestore.rules 참고).
+ */
+export const canSee = (post, myClubId) =>
+  audienceOf(post) === AUDIENCE.PUBLIC || (!!myClubId && post?.clubId === myClubId);
+
 /** 말머리로 거른다. 빈 값이면 전부. */
 export const filterPosts = (posts = [], kind = '') =>
   (kind ? posts.filter((p) => kindOf(p.kind).key === kind) : [...posts]);
@@ -104,5 +168,7 @@ export function countByKind(posts = []) {
 
 export default {
   POST_KIND, POST_KINDS, kindOf, kindLabel, kindsFor, canPost,
+  AUDIENCE, AUDIENCE_LABEL, audienceOf, canBePublic, defaultAudience,
+  safeAudience, canSee,
   isExpired, sortPosts, filterPosts, countByKind,
 };

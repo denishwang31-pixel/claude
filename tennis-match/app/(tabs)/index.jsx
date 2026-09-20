@@ -74,7 +74,7 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const {
-    club, members, meetings, posts, guestPosts, venues, meVal,
+    club, members, meetings, posts, publicPosts, guestPosts, venues, meVal,
     isAdmin, realStaff, scopeVenues, seeAllVenues, realRole, seeFees, tournaments,
   } = useClub(clubId, me, { viewMode });
   const { venueId, setVenueId } = useVenueScope(scopeVenues);
@@ -173,7 +173,10 @@ export default function Home() {
       return meeting?.matches?.length ? `${meeting.matches.length}경기 편성됨` : '아직 편성 전';
     }
     if (key === 'board') {
-      return posts?.length ? `글 ${posts.length}개` : '아직 글이 없음';
+      /* 다른 클럽 공개 글도 게시판에 같이 보인다. 우리 글만 세면
+         "글 0개"인데 들어가면 글이 있는 상태가 된다. */
+      const n = (posts?.length || 0) + (publicPosts?.length || 0);
+      return n ? `글 ${n}개` : '아직 글이 없음';
     }
     if (key === 'guest') {
       const open = (guestPosts || []).filter((g) => !g.closed).length;

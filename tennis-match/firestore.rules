@@ -198,7 +198,14 @@ service cloud.firestore {
            아닌 방법으로 공지를 올릴 수 있다. 공지는 "운영진이 한 말"
            이라는 신뢰 표시라서, 아무나 달 수 있으면 표시 자체가
            의미를 잃는다. pinned(맨 위 고정)도 같은 이유로 막는다. */
-        allow read: if isClubMember(clubId);
+        /* 공개 글은 다른 클럽 사람도 읽는다 — 코트 양도·대회 멤버
+           모집·회원 모집은 밖에서 봐야 뜻이 있다. 공지·자유글은
+           클럽 안의 이야기라 그대로 막힌다.
+           ⚠️ audience 가 없는 예전 글은 전부 클럽 전용으로 읽는다.
+              반대로 잡으면 지금까지 쌓인 클럽 안의 글이 한순간에
+              전국에 열린다 — 되돌릴 수 없는 방향이다. */
+        allow read: if isClubMember(clubId)
+          || (signedIn() && resource.data.get('audience', 'club') == 'public');
         allow create: if isClubMember(clubId)
           && request.resource.data.authorId == request.auth.uid
           && (
@@ -548,6 +555,26 @@ service cloud.firestore {
        - 읽기: 로그인 사용자 전체(공개 게시판)
        - 모집글 생성/수정/삭제: 해당 클럽 총무
        - 신청(applicants/{uid}): 본인만 생성/취소, 확정(status 변경)은 모집 클럽 총무 */
+    /* ============================================================
+       공개 게시글을 클럽 밖에서 읽는 길
+
+       ⚠️ 이 규칙이 따로 필요한 이유
+          collectionGroup('posts') 질의는 **중첩 경로 규칙을 보지 않는다**.
+          위의 /clubs/{clubId}/posts/{postId} 를 아무리 열어 둬도
+          컬렉션 그룹 질의는 거부된다. 재귀 와일드카드({path=**})로
+          적힌 규칙만 그 질의를 허가한다. 이걸 모르면 "규칙은 맞는데
+          목록이 계속 빈다"로 한참 헤맨다.
+
+       ⚠️ 조건이 audience == 'public' 하나뿐인 것은 일부러다. 이 길로는
+          공개 글 말고는 아무것도 안 나간다. 클럽 전용 글은 위 규칙
+          (그 클럽 회원)으로만 읽힌다.
+          값이 없는 예전 글은 get(...,'club') 기본값 때문에 여기 안
+          걸린다 — 밖으로 새지 않는다.
+       ============================================================ */
+    match /{path=**}/posts/{postId} {
+      allow read: if signedIn() && resource.data.get('audience', 'club') == 'public';
+    }
+
     match /guestPosts/{postId} {
       function postClubId() {
         return get(/databases/$(database)/documents/guestPosts/$(postId)).data.clubId;
