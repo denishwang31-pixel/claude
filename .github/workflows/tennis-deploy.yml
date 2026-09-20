@@ -361,10 +361,49 @@ jobs:
           && steps.dep_indexes.outcome != 'failure'
         env:
           EXPO_TOKEN_RAW: ${{ secrets.EXPO_TOKEN }}
+          # ⚠️⚠️ 이 줄들이 없으면 OTA 가 소셜 로그인 버튼을 지워 버린다.
+          #
+          #    app.config.js 는 `eas update` 를 돌리는 **이 러너에서**
+          #    평가된다. 그 결과가 extra 로 굳어 업데이트에 실려 나가고,
+          #    앱은 Constants.expoConfig 로 그 값을 읽는다. 즉 OTA 는
+          #    화면 코드만 바꾸는 게 아니라 **설정도 통째로 갈아친다**.
+          #
+          #    여기에 키를 안 넘기면 extra.social 이 전부 빈 문자열이 되고,
+          #    src/lib/social.js 규칙("준비 안 된 제공자는 안 그린다")에
+          #    따라 [구글로 시작하기] 버튼이 조용히 사라진다. 오류도 안
+          #    뜬다 — 그냥 없던 일이 된다.
+          #
+          #    실제로 그렇게 됐다. 디자인만 고쳐 푸시했는데 자동 배포가
+          #    OTA 를 내보냈고, 기기에서 구글 버튼이 없어졌다. 빌드
+          #    워크플로에는 이 줄들이 있었는데 배포 워크플로에는 없었다.
+          #
+          #    ⚠️ 여기 값은 빌드에 넣은 값과 **같아야 한다**. GitHub 시크릿과
+          #    expo.dev 환경변수가 서로 다르면, 빌드한 앱과 OTA 로 덮인 앱이
+          #    서로 다른 클라이언트 ID 를 쓰게 된다.
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          KAKAO_NATIVE_KEY: ${{ secrets.KAKAO_NATIVE_KEY }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          APPLE_SERVICE_ID: ${{ secrets.APPLE_SERVICE_ID }}
+          SOCIAL_TOKEN_ENDPOINT: ${{ secrets.SOCIAL_TOKEN_ENDPOINT }}
         run: |
           if [ -z "$EXPO_TOKEN_RAW" ]; then
             echo "::error::EXPO_TOKEN 시크릿이 비어 있습니다."
             exit 1
+          fi
+
+          # 키가 비어 있으면 이번 OTA 가 소셜 버튼을 지운다. 값은 절대
+          # 찍지 않고 "있다/없다"만 말한다. 아직 구글을 안 붙인 저장소도
+          # 배포는 돼야 하므로 막지는 않고, 대신 크게 경고한다 —
+          # 조용히 로그인이 사라지는 것이 제일 나쁘다.
+          if [ -z "$GOOGLE_ANDROID_CLIENT_ID" ]; then
+            echo "::warning::GOOGLE_ANDROID_CLIENT_ID 시크릿이 비어 있습니다. 이번 OTA 가 설치된 앱에서 [구글로 시작하기] 버튼을 없앱니다. 저장소 Settings → Secrets → Actions 에 넣어 주세요."
+            echo "OTA_SOCIAL=없음" >> "$GITHUB_ENV"
+          else
+            echo "구글 키: 있음 (${#GOOGLE_ANDROID_CLIENT_ID}자) — 소셜 버튼이 유지됩니다."
+            echo "OTA_SOCIAL=구글" >> "$GITHUB_ENV"
           fi
 
           # ⚠️ 붙여넣을 때 줄바꿈이나 공백이 딸려 들어오는 일이 흔하다.
@@ -437,6 +476,17 @@ jobs:
             echo "| 서버 함수 | $(st '${{ steps.dep_functions.outcome }}') |"
             echo "| OTA ($CHANNEL) | $(st '${{ steps.dep_ota.outcome }}') |"
             echo ""
+            # OTA 는 설정(extra)도 갈아친다. 이번 업데이트에 소셜 키가
+            # 실렸는지 남겨 둔다 — 버튼이 사라진 뒤에 되짚을 곳이 필요하다.
+            if [ -n "$OTA_SOCIAL" ]; then
+              echo "OTA 에 실린 소셜 로그인: **$OTA_SOCIAL**"
+              if [ "$OTA_SOCIAL" = "없음" ]; then
+                echo ""
+                echo "> ⚠️ 키가 없어서 이번 업데이트는 설치된 앱의 소셜 로그인 버튼을 없앱니다."
+                echo "> 저장소 Settings → Secrets and variables → Actions 에 \`GOOGLE_ANDROID_CLIENT_ID\` 를 넣고 다시 배포하세요."
+              fi
+              echo ""
+            fi
             echo "방식: ${{ github.event_name == 'push' && '푸시 자동 배포' || '버튼(수동)' }}"
             echo ""
             echo "브랜치: \`$DEPLOY_REF\`"
