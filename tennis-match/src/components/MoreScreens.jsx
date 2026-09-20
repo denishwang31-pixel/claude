@@ -8,6 +8,10 @@ import {
 } from '../lib/firestore';
 import { GUEST_STATUS } from '../lib/constants';
 import { RegionPicker } from './RegionPicker';
+import {
+  POST_KIND, POST_KINDS, kindOf, kindLabel, kindsFor, canPost,
+  isExpired, sortPosts, filterPosts, countByKind,
+} from '../lib/board';
 import { DateField, TimeField, Label } from './pickers';
 import { KAKAO_JS_KEY } from '../lib/keys';
 import { geocodeAddress } from '../lib/kakao';
@@ -25,52 +29,169 @@ import { C, R, F } from '../lib/theme';
 const today = () => new Date().toISOString().slice(0, 10);
 const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-/* ---------------- 게시판 ---------------- */
+/* ---------------- 게시판 ----------------
+
+   말머리(공지·코트 양도·대회 멤버 모집·회원 모집·자유)로 한 게시판을
+   나눠 쓴다. 왜 게시판을 여러 개로 쪼개지 않았는지는 src/lib/board.js
+   머리말에 적어 두었다.
+
+   판단(누가 무엇을 쓸 수 있나, 지난 글인가, 어떤 순서인가)은 전부
+   board.js 에 있다. 화면은 그 결과를 그리기만 한다 — 화면에 규칙을
+   적으면 검사로 확인할 수가 없다.                                  */
 export function Board({ clubId, posts, meVal, me, isAdmin, flash }) {
-  const [np, setNp] = useState({ type: 'free', title: '', body: '' });
+  const myKinds = kindsFor(isAdmin);
+  const [np, setNp] = useState({
+    kind: POST_KIND.FREE, title: '', body: '', eventDate: '',
+  });
   const [cmt, setCmt] = useState({});
-  const sorted = [...posts].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  const [filter, setFilter] = useState('');
+  const [writing, setWriting] = useState(false);
+
+  const t = today();
+  const counts = useMemo(() => countByKind(posts), [posts]);
+  const list = useMemo(
+    () => sortPosts(filterPosts(posts, filter), t),
+    [posts, filter, t],
+  );
+
+  const kindSpec = kindOf(np.kind);
+  /* 날짜가 필요한 말머리(양도·대회 멤버)는 날짜 없이 못 올린다.
+     "언제"가 없으면 그 글은 아무 쓸모가 없다. */
+  const canSubmit = !!np.title.trim()
+    && canPost(np.kind, isAdmin)
+    && (!kindSpec.needsDate || !!np.eventDate);
+
+  const submit = () => {
+    addPost(clubId, {
+      kind: np.kind,
+      /* ⚠️ type 도 같이 남긴다. 예전 글과 예전 코드가 type 을 보고
+         공지 여부를 가린다. 한쪽만 쓰면 예전 화면에서 공지가 평범한
+         글로 보인다. 나중에 정리할 때 한 번에 걷어낼 것. */
+      type: np.kind === POST_KIND.NOTICE ? 'notice' : 'free',
+      title: np.title.trim(),
+      body: np.body,
+      eventDate: np.eventDate || '',
+      author: meVal?.name || '',
+      authorId: me,
+      pinned: np.kind === POST_KIND.NOTICE,
+    });
+    setNp({ kind: POST_KIND.FREE, title: '', body: '', eventDate: '' });
+    setWriting(false);
+    flash(`${kindLabel(np.kind)} 글을 올렸습니다`);
+  };
+
   return (
     <View>
-      <Card>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          {isAdmin && <Chip tone={np.type === 'notice' ? 'green' : 'outline'} onPress={() => setNp({ ...np, type: 'notice' })}>공지</Chip>}
-          <Chip tone={np.type === 'free' ? 'green' : 'outline'} onPress={() => setNp({ ...np, type: 'free' })}>자유</Chip>
-        </View>
-        <View style={{ marginTop: 8 }}><Field placeholder="제목" value={np.title} onChangeText={(t) => setNp({ ...np, title: t })} /></View>
-        <TextInput placeholder="내용" placeholderTextColor={C.faint} multiline value={np.body} onChangeText={(t) => setNp({ ...np, body: t })}
-          style={{ backgroundColor: '#f5f5f4', borderRadius: 12, padding: 12, fontSize: 14, height: 72, marginTop: 8, textAlignVertical: 'top', color: C.text }} />
-        <View style={{ marginTop: 8 }}>
-          <Btn full disabled={!np.title} onPress={() => {
-            addPost(clubId, { type: np.type, title: np.title, body: np.body, author: meVal?.name || '', authorId: me, pinned: np.type === 'notice' });
-            setNp({ type: 'free', title: '', body: '' });
-            flash(np.type === 'notice' ? '공지 등록 (PHASE 3: 전체 푸시)' : '게시글 등록');
-          }}>등록</Btn>
-        </View>
-      </Card>
-      {sorted.map((p) => (
-        <Card key={p.id} style={{ marginTop: 12 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Chip tone={p.type === 'notice' ? 'lime' : 'default'}>{p.type === 'notice' ? '공지' : '자유'}</Chip>
-            <Text style={{ fontWeight: '700', fontSize: 14 }}>{p.title}</Text>
-          </View>
-          <Text style={{ fontSize: 14, color: '#44403c', marginTop: 6 }}>{p.body}</Text>
-          <Text style={{ fontSize: 10, color: C.faint, marginTop: 4 }}>{p.author} · {p.date}</Text>
-          <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingTop: 8 }}>
-            {(p.comments || []).map((c) => (
-              <Text key={c.id || c.body} style={{ fontSize: 12, paddingVertical: 2 }}><Text style={{ fontWeight: '700' }}>{c.author}</Text> {c.body}</Text>
+      {/* 말머리 거르개 — 숫자를 같이 적어 "여기 뭐가 있나"를 알려 준다 */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        <Chip tone={!filter ? 'green' : 'outline'} onPress={() => setFilter('')}>
+          전체 {posts.length}
+        </Chip>
+        {POST_KINDS.map((k) => (
+          <Chip key={k.key} tone={filter === k.key ? 'green' : 'outline'}
+            onPress={() => setFilter(k.key)}>
+            {k.label} {counts[k.key] || 0}
+          </Chip>
+        ))}
+      </View>
+
+      <SectionTitle right={
+        <Chip tone={writing ? 'green' : 'outline'} onPress={() => setWriting(!writing)}>
+          {writing ? '닫기' : '+ 글쓰기'}
+        </Chip>
+      }>글 올리기</SectionTitle>
+
+      {writing && (
+        <Card>
+          <Label>말머리</Label>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {myKinds.map((k) => (
+              <Chip key={k.key} tone={np.kind === k.key ? 'green' : 'outline'}
+                onPress={() => setNp({ ...np, kind: k.key })}>
+                {k.label}
+              </Chip>
             ))}
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-              <Field placeholder="댓글 달기" value={cmt[p.id] || ''} onChangeText={(t) => setCmt({ ...cmt, [p.id]: t })} style={{ flex: 1 }} />
-              <Btn small tone="ghost" onPress={() => {
-                if (!cmt[p.id]) return;
-                addComment(clubId, p.id, { id: rid(), author: meVal?.name || '', body: cmt[p.id], date: today() });
-                setCmt({ ...cmt, [p.id]: '' });
-              }}>등록</Btn>
-            </View>
           </View>
+
+          {kindSpec.needsDate && (
+            <View style={{ marginTop: 10 }}>
+              <Label hint={np.kind === POST_KIND.COURT ? '코트를 쓰는 날' : '대회 날짜'}>
+                날짜
+              </Label>
+              <DateField value={np.eventDate} minDate={t}
+                onChange={(v) => setNp({ ...np, eventDate: v })} />
+            </View>
+          )}
+
+          <View style={{ marginTop: 10 }}>
+            <Field placeholder="제목" value={np.title}
+              onChangeText={(x) => setNp({ ...np, title: x })} />
+          </View>
+          <TextInput placeholder="내용" placeholderTextColor={C.faint} multiline
+            value={np.body} onChangeText={(x) => setNp({ ...np, body: x })}
+            style={{
+              backgroundColor: C.fill, borderRadius: 12, padding: 12, fontSize: 14,
+              height: 84, marginTop: 8, textAlignVertical: 'top', color: C.text,
+            }} />
+          <View style={{ marginTop: 10 }}>
+            <Btn full disabled={!canSubmit} onPress={submit}>등록</Btn>
+          </View>
+          {kindSpec.needsDate && !np.eventDate && (
+            <Text style={{ fontSize: 11, color: C.faint, marginTop: 6 }}>
+              날짜를 넣어야 올릴 수 있습니다. 언제인지 없으면 보는 사람이
+              연락할지 말지를 정할 수 없습니다.
+            </Text>
+          )}
         </Card>
-      ))}
+      )}
+
+      {list.map((p) => {
+        const gone = isExpired(p, t);
+        return (
+          <Card key={p.id} style={{ marginTop: 12, opacity: gone ? 0.5 : 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Chip tone={p.pinned ? 'lime' : 'default'}>{kindLabel(p.kind ?? p.type)}</Chip>
+              {gone && <Chip tone="default">지난 글</Chip>}
+              <Text style={{ fontWeight: '700', fontSize: 14, flexShrink: 1 }}>{p.title}</Text>
+            </View>
+            {!!p.eventDate && (
+              <Text style={{ fontSize: 12, color: gone ? C.faint : C.green, marginTop: 4, fontWeight: '700' }}>
+                {dateLabel(p.eventDate)}
+              </Text>
+            )}
+            <Text style={{ fontSize: 14, color: C.text, marginTop: 6 }}>{p.body}</Text>
+            <Text style={{ fontSize: 10, color: C.faint, marginTop: 4 }}>{p.author} · {p.date}</Text>
+            <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: C.fill, paddingTop: 8 }}>
+              {(p.comments || []).map((c) => (
+                <Text key={c.id || c.body} style={{ fontSize: 12, paddingVertical: 2 }}>
+                  <Text style={{ fontWeight: '700' }}>{c.author}</Text> {c.body}
+                </Text>
+              ))}
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                <Field placeholder="댓글 달기" value={cmt[p.id] || ''}
+                  onChangeText={(x) => setCmt({ ...cmt, [p.id]: x })} style={{ flex: 1 }} />
+                <Btn small tone="ghost" onPress={() => {
+                  if (!cmt[p.id]) return;
+                  addComment(clubId, p.id, {
+                    id: rid(), author: meVal?.name || '', body: cmt[p.id], date: today(),
+                  });
+                  setCmt({ ...cmt, [p.id]: '' });
+                }}>등록</Btn>
+              </View>
+            </View>
+          </Card>
+        );
+      })}
+
+      {list.length === 0 && (
+        <Card style={{ marginTop: 12 }}>
+          <Text style={{ fontSize: 12, color: C.sub }}>
+            {posts.length === 0
+              ? '아직 올라온 글이 없습니다. 첫 글을 올려 보세요.'
+              : '이 말머리에는 아직 글이 없습니다.'}
+          </Text>
+        </Card>
+      )}
     </View>
   );
 }

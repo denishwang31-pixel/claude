@@ -153,6 +153,25 @@ await T('authorId 위조 글 작성 거부',
   assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'posts', 'p3'),
     { type: 'free', title: 'x', body: 'x', author: '총무', authorId: 'owner1', comments: [] })));
 
+console.log('\n[게시판 말머리]');
+/* 공지는 "운영진이 한 말"이라는 신뢰 표시다. 아무나 달 수 있으면
+   그 표시가 의미를 잃는다. 화면에서 가리는 것만으로는 부족하다. */
+await T('회원의 일반 글 작성 허용',
+  assertSucceeds(setDoc(doc(mem1, 'clubs', CLUB, 'posts', 'pb1'),
+    { kind: 'court', title: '오늘 6시 양도', authorId: 'mem1', eventDate: '2099-01-01' })));
+await T('회원의 공지 작성 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'posts', 'pb2'),
+    { kind: 'notice', title: '가짜 공지', authorId: 'mem1' })));
+await T('회원의 글 고정 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'posts', 'pb3'),
+    { kind: 'free', title: '올려치기', authorId: 'mem1', pinned: true })));
+await T('예전 형식(type)으로도 회원의 공지 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'posts', 'pb4'),
+    { type: 'notice', title: '가짜 공지', authorId: 'mem1' })));
+await T('운영진의 공지 작성 허용',
+  assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'posts', 'pb5'),
+    { kind: 'notice', title: '진짜 공지', authorId: 'owner1', pinned: true })));
+
 console.log('\n[게스트 모집 (FIX-05)]');
 await T('타 클럽 사용자도 모집글 읽기 허용(공개)',
   assertSucceeds(getDoc(doc(outsider, 'guestPosts', 'gp1'))));

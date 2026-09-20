@@ -193,8 +193,21 @@ service cloud.firestore {
 
       /* 게시판: 작성 멤버. 회원 수정은 댓글 추가(comments)만. 삭제는 총무 또는 작성자(FIX-03 S-3) */
       match /posts/{postId} {
+        /* ⚠️ 공지는 운영진만. 화면에서 회원에게 '공지' 말머리를 안
+           보여 주는 것만으로는 부족하다 — 규칙이 열려 있으면 앱이
+           아닌 방법으로 공지를 올릴 수 있다. 공지는 "운영진이 한 말"
+           이라는 신뢰 표시라서, 아무나 달 수 있으면 표시 자체가
+           의미를 잃는다. pinned(맨 위 고정)도 같은 이유로 막는다. */
         allow read: if isClubMember(clubId);
-        allow create: if isClubMember(clubId) && request.resource.data.authorId == request.auth.uid;
+        allow create: if isClubMember(clubId)
+          && request.resource.data.authorId == request.auth.uid
+          && (
+            isClubAdmin(clubId) || (
+              request.resource.data.get('kind', '') != 'notice'
+              && request.resource.data.get('type', '') != 'notice'
+              && request.resource.data.get('pinned', false) == false
+            )
+          );
         allow update: if isClubAdmin(clubId) || (
           isClubMember(clubId) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments'])

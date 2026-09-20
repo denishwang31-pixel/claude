@@ -302,7 +302,7 @@ export const SCREEN = {
   tournament: '클럽 대회',
   clubmatch: '클럽 교류전',
   polls: '참가투표',
-  board: '공지·자유글',
+  board: '게시판',
   members: '회원 목록',
   guest: '게스트 모집',
   courts: '코트 검색',
