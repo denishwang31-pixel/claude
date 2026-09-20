@@ -73,9 +73,10 @@ export function SocialStatus() {
 
       {onCount === 0 && (
         <Text style={{ fontSize: 11.5, color: C.faint, marginTop: S.md, lineHeight: 17 }}>
-          키가 앱에 들어오지 않았습니다. 키는 빌드할 때 박히므로,
-          값을 넣은 뒤 반드시 <Text style={{ fontWeight: '700' }}>새로 빌드</Text>해야 합니다.
-          업데이트(OTA)로는 바뀌지 않습니다.
+          키가 앱에 들어오지 않았습니다. 키는 빌드할 때도, 업데이트(OTA)를
+          만들 때도 들어옵니다 — <Text style={{ fontWeight: '700' }}>나중에 한 쪽이 이깁니다</Text>.
+          위 [앱 정보]에서 업데이트를 한 번 받아 보고, 그래도 비어 있으면
+          새로 빌드해 주세요.
         </Text>
       )}
     </Card>

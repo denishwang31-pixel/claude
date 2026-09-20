@@ -265,6 +265,9 @@ console.log('[앱이 뜨는 길에 네이티브를 맨 위에서 부르지 않�
 const NATIVE_ONLY = [
   'expo-auth-session', 'expo-web-browser', 'expo-crypto',
   'expo-apple-authentication', 'expo-application',
+  /* 로그인 화면이 "업데이트 확인"에서 쓴다. 옛 APK 에는 이 모듈이
+     없을 수 있으므로 맨 위에서 부르면 그 기기에서 앱이 안 뜬다. */
+  'expo-updates',
 ];
 const START_PATH = [
   'app/login.jsx',

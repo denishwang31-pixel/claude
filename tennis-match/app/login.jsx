@@ -157,6 +157,40 @@ export default function Login() {
     if (r.error) setErr(r.error);   // 빈 문자열이면 사용자가 창을 닫은 것
   };
 
+  /* 소셜 버튼이 하나도 없을 때 빠져나갈 길.
+
+     ⚠️ 키는 빌드할 때도, OTA 를 만들 때도 앱에 박힌다. 그래서 어느 한
+        쪽에 키가 빠지면 [구글로 시작하기] 가 조용히 사라진다. 실제로
+        그렇게 됐다 — 배포 워크플로가 키 없이 OTA 를 내보냈고, 기기에서
+        버튼이 없어졌다.
+
+        그때 사용자가 할 수 있는 일이 아무것도 없다는 것이 진짜 문제였다.
+        버튼이 없으니 누를 것도 없고, 로그인을 못 하니 [더보기]의 앱 정보
+        화면에도 못 간다. 여기서 바로 업데이트를 받을 수 있어야 한다.
+
+     ⚠️ expo-updates 도 누를 때 부른다. 맨 위에서 부르면 이 모듈이
+        없는 빌드에서 앱이 시작도 못 하고 닫힌다. */
+  const [fixing, setFixing] = useState(false);
+  const onFetchUpdate = async () => {
+    setFixing(true); setErr(''); setNote('업데이트를 확인하는 중…');
+    try {
+      const U = await import('expo-updates');
+      const res = await U.checkForUpdateAsync();
+      if (!res?.isAvailable) {
+        setFixing(false);
+        setNote('');
+        setErr('새 업데이트가 없습니다. 이 버전에는 소셜 로그인이 들어 있지 않으니 이메일로 로그인해 주세요.');
+        return;
+      }
+      await U.fetchUpdateAsync();
+      await U.reloadAsync();          // 여기서 앱이 다시 시작된다
+    } catch (e) {
+      setFixing(false);
+      setNote('');
+      setErr('업데이트를 받지 못했습니다. 인터넷 연결을 확인해 주세요.');
+    }
+  };
+
   const legalBody = legal === 'terms' ? TERMS : PRIVACY;
   const legalTitle = legal === 'terms' ? '이용약관' : '개인정보처리방침';
 
@@ -276,6 +310,28 @@ export default function Login() {
 
             {/* 소셜 — 준비된 것만. 없으면 통째로 안 그려진다 */}
             <SocialButtons onPress={onSocial} disabled={busy} divider={false} />
+
+            {/* 하나도 없으면 막다른 길이 된다. 업데이트를 받을 길을 둔다 */}
+            {socials.length === 0 && (
+              <Pressable
+                onPress={fixing ? undefined : onFetchUpdate}
+                disabled={fixing}
+                accessibilityRole="button"
+                style={({ pressed }) => ({
+                  flexDirection: 'row', alignItems: 'center', gap: 8,
+                  minHeight: TAP.small, paddingHorizontal: 14,
+                  borderRadius: R.md, backgroundColor: pressed ? C.fill : 'transparent',
+                  opacity: fixing ? 0.5 : 1,
+                })}>
+                <Ionicons name="cloud-download-outline" size={15} color={C.sub} />
+                <Text style={{ flex: 1, fontSize: 12, color: C.sub, lineHeight: 17 }}>
+                  간편 로그인이 안 보이나요?{' '}
+                  <Text style={{ fontWeight: '700', color: C.green }}>
+                    {fixing ? '확인하는 중…' : '업데이트 확인'}
+                  </Text>
+                </Text>
+              </Pressable>
+            )}
 
             {/* 소셜 ↔ 이메일 전환.
 
