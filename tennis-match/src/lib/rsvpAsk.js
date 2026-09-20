@@ -157,7 +157,52 @@ export function changedAnswers(before, after) {
   return out;
 }
 
+/**
+ * 운영진에게 **알릴 만한** 변경만 골라낸다.
+ *
+ * ⚠️ 예전에는 changedAnswers() 를 그대로 푸시로 보냈다. 회원이 참석을
+ *    누를 때마다, 불참으로 바꿀 때마다, 다시 참석으로 돌릴 때마다
+ *    회장 폰이 울렸다. 회원이 서른 명이면 모임 하나에 알림이 수십 개다.
+ *    그러면 사람은 알림을 꺼 버리고, 그 순간 **정말 중요한 알림도 같이
+ *    죽는다**. 알림을 줄이는 일은 편의가 아니라 기능을 지키는 일이다.
+ *
+ * 그래서 두 가지가 동시에 맞을 때만 알린다.
+ *   1) 대진이 이미 편성되어 있다 — 아직 안 짰으면 지금 빠져도 문제가
+ *      없다. 짜기 전에 바뀌는 건 정상적인 흐름이다.
+ *   2) 참석에서 빠졌다 — 참석으로 들어오는 것은 자리가 느는 일이라
+ *      급하지 않다. 급한 것은 짜 둔 대진에 구멍이 나는 쪽뿐이다.
+ *
+ * 이 조건이 바로 "대진을 다 짠 뒤 당일 아침에 한 명이 빠지는" 사고다.
+ * 그것만 남기고 나머지는 보내지 않는다.
+ */
+export function pushWorthyChanges(before, after) {
+  const drawn = (after?.matches || []).length > 0;
+  if (!drawn) return [];
+  return changedAnswers(before, after)
+    .filter((c) => c.from === 'yes' && c.to !== 'yes');
+}
+
+/**
+ * 여러 명이 한꺼번에 빠졌을 때 한 통으로 묶는다.
+ *
+ * ⚠️ 한 명당 한 통씩 보내면, 운영진이 명단을 손보는 순간 알림이
+ *    우수수 쏟아진다. 그때 사람은 내용을 읽지 않고 전부 쓸어 버린다.
+ */
+export function changeDigest(clubName, names, meeting) {
+  const list = (names || []).filter(Boolean);
+  const d = meeting?.date || '';
+  const when = d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : '';
+  const who = list.length <= 2
+    ? list.join(', ')
+    : `${list.slice(0, 2).join(', ')} 외 ${list.length - 2}명`;
+  return {
+    title: `${clubName || '클럽'} 대진 확인 필요`,
+    body: `${who} 님이 ${when} 모임 참석을 취소했습니다. 대진이 이미 편성되어 있습니다.`,
+  };
+}
+
 export default {
   DEFAULT_RSVP_ASK, RSVP_DAYS_BEFORE, normalizeAsk, shiftYmd, askDateFor,
   isAskDue, pendingVoters, askProgress, askMessage, changeMessage, changedAnswers,
+  pushWorthyChanges, changeDigest,
 };

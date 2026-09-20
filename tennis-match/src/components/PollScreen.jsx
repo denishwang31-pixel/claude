@@ -15,7 +15,7 @@ import { View, Text } from 'react-native';
 import {
   addPoll, votePoll, unvotePoll, closePoll, deletePoll,
 } from '../lib/firestore';
-import { POLL_TYPE, POLL_ATTEND_OPTIONS } from '../lib/constants';
+import { POLL_TYPE, POLL_ATTEND_OPTIONS, POLL_ATTEND_LEGACY } from '../lib/constants';
 import { DateField, Label } from './pickers';
 import { AppButton, Segmented, Touchable, ListSection, ListItem, useOptionSheet } from './native';
 import { Card, SectionTitle, Chip, Field, EmptyState, Divider } from './ui';
@@ -25,11 +25,18 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 function PollCard({ poll, clubId, me, members, isAdmin, flash }) {
   const sheet = useOptionSheet();
-  const options = poll.type === POLL_TYPE.ATTEND
-    ? POLL_ATTEND_OPTIONS
-    : (poll.options || []).map((o, i) => ({ key: String(i), label: o }));
-
   const votes = poll.votes || {};
+
+  /* ⚠️ '미정'은 이제 고를 수 없다. 다만 예전에 찍힌 표가 있으면 그 칸을
+     같이 그린다 — 안 그리면 "12명 참여"인데 칸 합이 9명이 되어 숫자가
+     안 맞는다. 숫자가 안 맞는 화면은 아무도 못 믿는다.
+     읽기 전용이라 새로 찍을 수는 없고, 그 사람은 참가/불참으로 다시
+     고르면 된다. 예전 표가 하나도 없으면 칸 자체가 안 나온다. */
+  const hasLegacy = poll.type === POLL_TYPE.ATTEND
+    && Object.values(votes).some((v) => v === POLL_ATTEND_LEGACY.key);
+  const options = poll.type === POLL_TYPE.ATTEND
+    ? (hasLegacy ? [...POLL_ATTEND_OPTIONS, { ...POLL_ATTEND_LEGACY, legacy: true }] : POLL_ATTEND_OPTIONS)
+    : (poll.options || []).map((o, i) => ({ key: String(i), label: o }));
   const myVote = votes[me];
   const total = Object.keys(votes).length;
   const expired = poll.deadline && poll.deadline < today();
@@ -89,7 +96,7 @@ function PollCard({ poll, clubId, me, members, isAdmin, flash }) {
           const pct = total ? Math.round((n / total) * 100) : 0;
           const mine = myVote === o.key;
           return (
-            <Touchable key={o.key} onPress={() => pick(o.key)} disabled={locked}
+            <Touchable key={o.key} onPress={() => pick(o.key)} disabled={locked || o.legacy}
               style={{
                 borderRadius: R.md, overflow: 'hidden',
                 borderWidth: 1.5, borderColor: mine ? C.green : C.border,

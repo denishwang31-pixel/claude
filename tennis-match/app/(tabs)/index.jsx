@@ -32,7 +32,6 @@ import { AdBanner } from '../../src/components/AdBanner';
 import { VenuePicker } from '../../src/components/VenuePicker';
 import { UpdateBanner } from '../../src/components/UpdateBanner';
 import { Icon } from '../../src/components/Icon';
-import { useOptionSheet } from '../../src/components/native';
 import {
   Card, SectionTitle, Chip, Btn, IconTile, StatCard, EmptyState, Badge,
   HeroCard, HeroPill, RsvpRow, QuickTile, StatTile,
@@ -83,7 +82,6 @@ export default function Home() {
   const [ads, setAds] = useState([]);
   const [pendingJoins, setPendingJoins] = useState(0);
   const [svc, setSvc] = useState(null);
-  const sheet = useOptionSheet();
 
   useEffect(() => subServiceStats(setSvc), []);
   useEffect(() => subGear(setAds), []);
@@ -201,37 +199,18 @@ export default function Home() {
     });
   };
 
-  /* 코트장이 여러 곳이면 어느 코트를 볼지 먼저 묻는다.
-     고른 값은 앱 상태에 저장되므로 홈의 드롭다운도 같이 바뀐다.
+  /* 바로가기는 홈 맨 위에서 고른 코트장을 그대로 따라간다.
 
-     ⚠️ 예전에는 "이미 고른 코트가 있으면 묻지 않고 바로 간다"였다.
-        그러면 한 번 코트를 고른 뒤로는 홈에서 [일정]을 눌러도 영영
-        그 코트 일정만 열린다. 다른 코트를 보려면 일정 화면에 들어가
-        드롭다운을 다시 건드려야 하는데, 홈에서 누른 사람은 자기가
-        무엇으로 걸러져 있는지조차 모른다. 아무것도 안 나오면
-        "일정이 없네"로 읽는다 — 틀린 읽기인데 화면이 그렇게 보인다.
+     ⚠️ 한때 여기서 "어느 코트를 볼까요?"를 매번 물었다. 코트를 한 번
+        고르면 그 뒤로 영영 그 코트만 열리는 것이 문제라고 봤기
+        때문인데, 잘못 짚었다. 홈 맨 위에 이미 코트장 드롭다운이 있고
+        거기 고른 값이 곧 "지금 보고 있는 코트"다. 화면에 답이 떠
+        있는데 또 묻는 셈이라, 누를 때마다 한 단계가 늘기만 했다.
 
-        묻는 비용은 한 번 더 누르는 것뿐이고, 그때마다 지금 무엇을
-        보는지가 분명해진다. 그래서 항상 묻는다. 지금 고른 것은
-        ✓ 로 표시해 두 번 고르는 수고를 줄인다. */
-  const goScoped = (path) => {
-    if (scopeVenues.length < 2) return go(path);
-    const mark = (on, label) => (on ? `✓ ${label}` : label);
-    return sheet.open({
-      title: path.includes('schedule') ? '어느 코트 일정을 볼까요?' : '어느 코트 대진표를 볼까요?',
-      options: [
-        { key: 'all', label: mark(!venueId, '전체 코트') },
-        ...scopeVenues.map((v) => ({
-          key: v.id,
-          label: mark(venueId === v.id, `${v.name} · ${v.startTime || ''}`),
-        })),
-      ],
-      onSelect: (o) => {
-        setVenueId(o.key === 'all' ? null : o.key);
-        router.push(path);
-      },
-    });
-  };
+        진짜 문제는 "지금 무엇으로 걸러져 있는지 모른다"였고, 그건
+        위쪽 드롭다운이 이미 답하고 있다. 일정·대진 화면에도 같은
+        드롭다운이 있어서 거기서 바꿀 수 있다. */
+  const goScoped = (path) => go(path);
 
   /* 모임 하나를 콕 집어 대진으로.
 
@@ -609,15 +588,27 @@ export default function Home() {
                         {rsvpBlockReason(meVal, m, venueName(m.venueId))}
                       </Text>
                     )}
-                    {/* 이미 정했으면 조용히 바꿀 수 있게만 */}
+                    {/* 이미 정했어도 바꿀 수 있다.
+
+                       ⚠️ 예전에는 흐린 글씨 한 줄이었다. 눌리는 것인 줄
+                          아무도 몰랐다 — 회색 작은 글씨는 안내문처럼
+                          보인다. 참석을 바꾸는 일은 자주 있고, 못 바꾸면
+                          당일에 인원이 어긋난다. 버튼으로 만든다.
+                          두 선택지를 다 보여 줘서 지금 무엇으로 되어
+                          있는지도 같이 알 수 있게 한다. */}
                     {mine !== undefined && canRsvpSelf(meVal, m) && (
-                      <Pressable
-                        onPress={() => setRsvp(clubId, m.id, me, going ? RSVP.NO : RSVP.YES, me)}
-                        style={{ paddingBottom: 10, paddingHorizontal: going ? 10 : 0 }}>
-                        <Text style={{ fontSize: 11.5, color: C.faint }}>
-                          {going ? '참석 취소' : '참석으로 바꾸기'}
-                        </Text>
-                      </Pressable>
+                      <View style={{ flexDirection: 'row', gap: 6, paddingBottom: 11 }}>
+                        <Btn small
+                          tone={going ? 'primary' : 'ghost'}
+                          onPress={() => setRsvp(clubId, m.id, me, RSVP.YES, me)}>
+                          {going ? '참석 중' : '참석으로'}
+                        </Btn>
+                        <Btn small
+                          tone={notGoing ? 'danger' : 'ghost'}
+                          onPress={() => setRsvp(clubId, m.id, me, RSVP.NO, me)}>
+                          {notGoing ? '불참 중' : '불참으로'}
+                        </Btn>
+                      </View>
                     )}
                   </View>
                 );
@@ -701,7 +692,6 @@ export default function Home() {
         {/* 광고 */}
         <AdBanner ads={ads} slot={AD_SLOTS.HOME} />
       </ScrollView>
-      {sheet.node}
     </View>
   );
 }

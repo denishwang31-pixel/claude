@@ -154,6 +154,43 @@ eq('빈 문서끼리는 아무것도 아니다', app.changedAnswers({}, {}), [])
 eq('null 이 들어와도 죽지 않는다', app.changedAnswers(null, null), []);
 
 /* ---------- 앱과 서버가 같은 답을 내는가 ---------- */
+section('푸시로 보낼 만한 변경만 고른다');
+/* ⚠️ 알림이 많으면 사람은 알림을 꺼 버린다. 그러면 정말 중요한 알림도
+   같이 죽는다. 그래서 "대진이 이미 짜였고 참석에서 빠진 경우"만 남긴다 —
+   그게 이 알림을 만든 원래 이유(짜 둔 대진에 구멍이 나는 사고)다. */
+const DRAWN = { matches: [{ id: 1 }] };
+eq('대진 후 참석 취소는 알린다',
+  app.pushWorthyChanges({ rsvp: { a: 'yes' } },
+    { ...DRAWN, rsvp: { a: 'no' }, rsvpBy: { a: 'a' } }).map((c) => c.id), ['a']);
+eq('대진 전에는 안 알린다',
+  app.pushWorthyChanges({ rsvp: { a: 'yes' } },
+    { rsvp: { a: 'no' }, rsvpBy: { a: 'a' } }), []);
+eq('불참 → 참석은 안 알린다',
+  app.pushWorthyChanges({ rsvp: { a: 'no' } },
+    { ...DRAWN, rsvp: { a: 'yes' }, rsvpBy: { a: 'a' } }), []);
+eq('첫 응답은 안 알린다',
+  app.pushWorthyChanges({ rsvp: {} },
+    { ...DRAWN, rsvp: { a: 'yes' }, rsvpBy: { a: 'a' } }), []);
+eq('운영진 대행은 안 알린다',
+  app.pushWorthyChanges({ rsvp: { a: 'yes' } },
+    { ...DRAWN, rsvp: { a: 'no' }, rsvpBy: { a: 'staff' } }), []);
+/* 예전 '미정'에서 빠지는 것도 알릴 일이 아니다 — 애초에 참석이 아니었다 */
+eq('미정 → 불참은 안 알린다',
+  app.pushWorthyChanges({ rsvp: { a: 'maybe' } },
+    { ...DRAWN, rsvp: { a: 'no' }, rsvpBy: { a: 'a' } }), []);
+
+section('여러 명이 빠져도 한 통으로 묶는다');
+/* 한 명당 한 통이면 명단을 손보는 순간 알림이 우수수 쏟아지고,
+   그때 사람은 내용을 안 읽고 전부 쓸어 버린다. */
+eq('한 명', app.changeDigest('염곡클럽', ['김철수'], mt).body,
+  '김철수 님이 3/10 모임 참석을 취소했습니다. 대진이 이미 편성되어 있습니다.');
+eq('두 명은 다 적는다', app.changeDigest('염곡클럽', ['김철수', '이영희'], mt).body,
+  '김철수, 이영희 님이 3/10 모임 참석을 취소했습니다. 대진이 이미 편성되어 있습니다.');
+eq('셋 이상은 줄인다', app.changeDigest('염곡클럽', ['김철수', '이영희', '박민수'], mt).body,
+  '김철수, 이영희 외 1명 님이 3/10 모임 참석을 취소했습니다. 대진이 이미 편성되어 있습니다.');
+eq('제목만 보고도 할 일을 안다',
+  app.changeDigest('염곡클럽', ['김철수'], mt).title, '염곡클럽 대진 확인 필요');
+
 section('앱 ↔ 서버 사본 대조');
 
 const CASES = {
@@ -193,6 +230,26 @@ const CASES = {
     ['염곡클럽', '김철수', 'yes', 'no', mt],
     ['염곡클럽', '김철수', 'no', 'maybe', { ...mt, matches: [{ id: 1 }] }],
     ['', '', undefined, 'yes', {}],
+  ],
+  pushWorthyChanges: [
+    /* 대진이 짜인 뒤 참석 → 불참: 이것만 알린다 */
+    [{ rsvp: { a: 'yes' } }, { rsvp: { a: 'no' }, rsvpBy: { a: 'a' }, matches: [{ id: 1 }] }],
+    /* 대진 전이면 안 알린다 */
+    [{ rsvp: { a: 'yes' } }, { rsvp: { a: 'no' }, rsvpBy: { a: 'a' }, matches: [] }],
+    [{ rsvp: { a: 'yes' } }, { rsvp: { a: 'no' }, rsvpBy: { a: 'a' } }],
+    /* 불참 → 참석은 자리가 느는 일이라 급하지 않다 */
+    [{ rsvp: { a: 'no' } }, { rsvp: { a: 'yes' }, rsvpBy: { a: 'a' }, matches: [{ id: 1 }] }],
+    /* 첫 응답은 변경이 아니다 */
+    [{ rsvp: {} }, { rsvp: { a: 'yes' }, rsvpBy: { a: 'a' }, matches: [{ id: 1 }] }],
+    /* 운영진이 대신 눌러 준 것은 자기가 한 일이다 */
+    [{ rsvp: { a: 'yes' } }, { rsvp: { a: 'no' }, rsvpBy: { a: 'staff' }, matches: [{ id: 1 }] }],
+    [{}, {}], [null, null],
+  ],
+  changeDigest: [
+    ['염곡클럽', ['김철수'], mt],
+    ['염곡클럽', ['김철수', '이영희'], mt],
+    ['염곡클럽', ['김철수', '이영희', '박민수', '최지훈'], mt],
+    ['', [], {}], ['클럽', null, null],
   ],
   changedAnswers: [
     [{ rsvp: { a: 'yes' } }, { rsvp: { a: 'no' }, rsvpBy: { a: 'a' } }],

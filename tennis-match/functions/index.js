@@ -31,7 +31,7 @@ const kmaKey = () => process.env.KMA_SERVICE_KEY || '';
 const REGION = { region: 'asia-northeast3' }; // 서울
 
 const {
-  normalizeAsk, isAskDue, pendingVoters, askMessage, changeMessage, changedAnswers,
+  normalizeAsk, isAskDue, pendingVoters, askMessage, pushWorthyChanges, changeDigest,
 } = require('./rsvpAsk');
 const { inviteMessage, responseMessage } = require('./clubMatch');
 const { planAutoSend, unpaidMembers, summaryForManager } = require('./dunning');
@@ -125,11 +125,23 @@ exports.onMeetingUpdated = onDocumentUpdated({ ...REGION, document: 'clubs/{club
     return;
   }
 
-  /* 참석 여부를 나중에 바꾼 사람 → 운영진에게.
-     대진을 다 짠 뒤 당일 아침에 한 명이 빠지는 것이 가장 큰 사고였다.
-     첫 응답은 알리지 않는다(정상적인 흐름이고, 회원 수만큼 알림이
-     쏟아지면 운영진이 알림을 꺼 버린다). */
-  const changes = changedAnswers(before, after);
+  /* 참석을 바꾼 사람 → 운영진에게. 단, **정말 급한 것만**.
+
+     ⚠️ 예전에는 바뀔 때마다 한 통씩 보냈다. 회원이 참석을 누를 때마다,
+        불참으로 바꿀 때마다, 다시 참석으로 돌릴 때마다 회장 폰이
+        울렸다. 회원이 서른 명이면 모임 하나에 알림이 수십 개다.
+        그러면 사람은 알림을 꺼 버리고, 그 순간 **정말 중요한 알림도
+        같이 죽는다**. 알림을 줄이는 일은 편의가 아니라 기능을 지키는
+        일이다.
+
+        이제 대진이 이미 편성된 뒤에 참석에서 빠진 경우만 보낸다 —
+        그게 원래 이 알림을 만든 이유(짜 둔 대진에 구멍이 나는 사고)다.
+        조건은 rsvpAsk.js 의 pushWorthyChanges 에 있고 검사가 본다.
+
+     ⚠️ 여러 명이 한꺼번에 빠져도 **한 통**으로 묶는다. 한 명당 한 통씩
+        보내면 명단을 손보는 순간 알림이 우수수 쏟아지고, 그때 사람은
+        내용을 읽지 않고 전부 쓸어 버린다. */
+  const changes = pushWorthyChanges(before, after);
   if (changes.length) {
     const club = (await db.collection('clubs').doc(clubId).get()).data() || {};
     const memberSnap = await db.collection('clubs').doc(clubId).collection('members').get();
@@ -141,11 +153,9 @@ exports.onMeetingUpdated = onDocumentUpdated({ ...REGION, document: 'clubs/{club
       if (isStaff(m.role) && m.pushToken) staffTokens.push(m.pushToken);
     });
     if (staffTokens.length) {
-      for (const ch of changes) {
-        const msg = changeMessage(club.name, nameById[ch.id], ch.from, ch.to, after);
-        await sendPush(staffTokens, msg.title, msg.body,
-          { type: 'rsvpChanged', meetingId, memberId: ch.id });
-      }
+      const msg = changeDigest(club.name, changes.map((ch) => nameById[ch.id]), after);
+      await sendPush(staffTokens, msg.title, msg.body,
+        { type: 'rsvpChanged', meetingId });
     }
   }
 

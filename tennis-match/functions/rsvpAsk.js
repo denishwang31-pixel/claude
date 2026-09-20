@@ -113,7 +113,32 @@ function changedAnswers(before, after) {
   return out;
 }
 
+/* ⚠️ 운영진에게 알릴 만한 변경만. 앱(src/lib/rsvpAsk.js)과 같은 판단이어야
+   한다 — 검사가 두 파일을 대조한다. 왜 이 조건인지는 그쪽 머리말 참고
+   (요지: 알림이 많으면 사람이 알림을 꺼 버리고, 그러면 정말 중요한
+   알림도 같이 죽는다). */
+function pushWorthyChanges(before, after) {
+  const drawn = ((after && after.matches) || []).length > 0;
+  if (!drawn) return [];
+  return changedAnswers(before, after)
+    .filter((c) => c.from === 'yes' && c.to !== 'yes');
+}
+
+function changeDigest(clubName, names, meeting) {
+  const list = (names || []).filter(Boolean);
+  const d = (meeting && meeting.date) || '';
+  const when = d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : '';
+  const who = list.length <= 2
+    ? list.join(', ')
+    : `${list.slice(0, 2).join(', ')} 외 ${list.length - 2}명`;
+  return {
+    title: `${clubName || '클럽'} 대진 확인 필요`,
+    body: `${who} 님이 ${when} 모임 참석을 취소했습니다. 대진이 이미 편성되어 있습니다.`,
+  };
+}
+
 module.exports = {
   DEFAULT_RSVP_ASK, RSVP_DAYS_BEFORE, normalizeAsk, shiftYmd, askDateFor,
   isAskDue, pendingVoters, askProgress, askMessage, changeMessage, changedAnswers,
+  pushWorthyChanges, changeDigest,
 };
