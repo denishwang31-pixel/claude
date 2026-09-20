@@ -391,6 +391,7 @@ export const SETUP = {
   ],
   [PROVIDERS.GOOGLE]: [
     'Firebase 콘솔 → Authentication → 로그인 방법 → Google 사용 설정',
+    'OAuth 동의 화면(브랜딩)에 앱 이름·로고를 넣을 것. 안 넣으면 로그인 화면에 앱 이름 대신 "project-숫자로 이동"이라고 뜬다 — 처음 보는 사람은 이걸 피싱으로 읽고 그 자리에서 그만둔다',
     'Google Cloud 콘솔 → 사용자 인증 정보 → Android OAuth 클라이언트 (SHA-1 지문 필요)',
     'SHA-1 은 EAS 빌드가 쓰는 키의 것이어야 한다 — 로컬 디버그 키가 아니다',
     '⚠️ 그 클라이언트를 열어 「고급 설정」 → 커스텀 URI 스킴 사용 설정을 켤 것. 새로 만든 클라이언트는 꺼져 있고, 꺼진 채로는 구글이 400 invalid_request 로 막는다 ("Custom URI scheme is not enabled for your Android client")',

@@ -29,13 +29,12 @@ const MAP = {
 
   // 기능
   guest: 'person-add-outline',
-  chat: 'chatbubble-ellipses-outline',
   polls: 'stats-chart-outline',
   rank: 'podium-outline',
   tournament: 'trophy-outline',
   ntrp: 'speedometer-outline',
   members: 'people-outline',
-  board: 'megaphone-outline',
+  board: 'clipboard-outline',      // 공지 전용이 아니라 게시판 전체다 — 확성기는 공지처럼 보인다
   courts: 'location-outline',
   joinreq: 'person-circle-outline',
   fees: 'card-outline',
