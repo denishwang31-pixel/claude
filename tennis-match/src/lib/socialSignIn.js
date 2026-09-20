@@ -60,7 +60,7 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
   if (googleClientMixup(config)) {
     return {
       ok: false,
-      error: '[G0] 구글 웹 클라이언트 ID 와 안드로이드 클라이언트 ID 가 같은 값입니다. 둘 중 하나가 잘못 들어갔습니다. 구글 클라우드의 [사용자 인증 정보]에서 유형이 Android 인 줄의 클라이언트 ID 를 GOOGLE_ANDROID_CLIENT_ID 에 넣어 주세요.',
+      error: '[G0] 구글 웹 클라이언트 ID 와 안드로이드 클라이언트 ID 가 같은 값입니다. 둘 중 하나가 잘못 들어갔습니다. 구글 클라우드의 「사용자 인증 정보」에서 유형이 Android 인 줄의 클라이언트 ID 를 GOOGLE_ANDROID_CLIENT_ID 에 넣어 주세요.',
     };
   }
 

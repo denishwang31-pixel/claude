@@ -26,6 +26,7 @@ import {
 import { setRules, setRestScore, saveMatches, updateMeeting, subGear } from '../../src/lib/firestore';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
+import { Icon } from '../../src/components/Icon';
 import { VenuePicker } from '../../src/components/VenuePicker';
 import { MatchGrid, AttendanceGrid } from '../../src/components/MatchGrid';
 import { Segmented, useOptionSheet } from '../../src/components/native';

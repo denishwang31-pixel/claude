@@ -20,6 +20,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Alert, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { Card, Btn, Chip } from './ui';
+import { authPersistence } from '../../firebaseConfig';
 import { C, S, F } from '../lib/theme';
 
 /* 옛 빌드에는 이 모듈이 아예 없다. 그때 화면이 죽으면 안 된다. */
@@ -113,6 +114,11 @@ export function UpdateStatus({ flash }) {
         {'\n'}
         번들 {shortId(info?.updateId)}
         {info?.createdAt ? ` · ${new Date(info.createdAt).toLocaleString('ko-KR')}` : ''}
+        {'\n'}
+        {/* ⚠️ 로그인 유지가 켜졌는지. 조용히 실패하면 증상이 예전과
+            똑같아서(앱을 끄면 로그아웃) 고쳐졌는지 알 길이 없다.
+            firebaseConfig.js 머리말 참고. */}
+        로그인 유지 {authPersistence === '파일' ? '켜짐' : '꺼짐 — 앱을 끄면 로그아웃됩니다'}
       </Text>
 
       <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 16 }}>

@@ -162,6 +162,23 @@ for (const file of files) {
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
 
   /* 이 파일이 이미 알고 있는 이름들 — 가져왔거나, 여기서 선언했거나 */
+  const known = knownNamesOf(raw, src);
+
+  for (const [name, from] of libNames) {
+    if (known.has(name)) continue;
+    // 식별자 단독으로 쓰였는지 (점 뒤에 붙은 속성명은 제외)
+    const used = new RegExp(`(^|[^.\\w$])${name}\\s*[(<,);.\\]}]`).test(src);
+    if (!used) continue;
+    scanned += 1;
+    ok(false, `${rel}: '${name}' 를 쓰는데 import 가 없습니다 (${from}) — 화면을 열면 앱이 죽습니다`);
+  }
+}
+console.log('[가져오지 않고 쓰는 이름 검사]');
+
+/* 파일이 이미 아는 이름들을 모은다 — 가져왔거나, 여기서 선언했거나.
+   두 검사가 같은 판단을 써야 한다. 따로 두면 한쪽만 고쳐져서
+   어긋난다. */
+function knownNamesOf(raw, src) {
   const known = new Set();
   for (const m of raw.matchAll(/import\s+([^;]*?)\s+from\s+['"][^'"]+['"]/g)) {
     const braces = m[1].match(/\{([^}]*)\}/);
@@ -191,17 +208,47 @@ for (const file of files) {
       if (/^[A-Za-z_$][\w$]*$/.test(t)) known.add(t);
     });
   }
+  return known;
+}
 
-  for (const [name, from] of libNames) {
+/* ============================================================
+   JSX 로 쓰는데 어디서도 안 가져온 컴포넌트
+
+   ⚠️ 이것 때문에 대진 탭이 열리자마자 앱이 꺼졌다. match.jsx 가
+      <Icon ... /> 을 쓰는데 Icon 을 import 하지 않았다. 문법은 멀쩡해서
+      번들도 되고, 위의 검사도 못 잡았다 — 위 검사는 src/lib 이 내보내는
+      이름만 보는데 Icon 은 src/components 에 있기 때문이다.
+
+      게다가 그 줄은 관리자에게만, 그것도 아직 결과가 없는 내 경기가
+      있을 때만 그려진다. 조건이 맞는 사람만 앱이 꺼진다.
+
+   그래서 조건을 뒤집는다. "무엇을 가져왔나"가 아니라 **"쓰는 것을
+   전부 아는가"** 를 본다. 대문자로 시작하는 JSX 태그는 반드시
+   컴포넌트이고, 컴포넌트는 반드시 가져오거나 이 파일에서 선언해야 한다.
+   예외가 없는 규칙이라 헛경보가 안 난다.
+   ============================================================ */
+let jsxChecked = 0;
+for (const file of files) {
+  const rel = slash(file.slice(ROOT.length + 1));
+  const raw = readFileSync(file, 'utf8');
+  const src = raw
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ')
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
+  const known = knownNamesOf(raw, src);
+
+  /* 대문자로 시작하는 여는 태그만. <View>, </View>, <> 는 해당 없다.
+     <Foo.Bar> 는 Foo 만 있으면 된다 — 뒤는 속성이다. */
+  const seen = new Set();
+  for (const m of src.matchAll(/<([A-Z][\w$]*)(?:\.[\w$]+)*[\s/>]/g)) seen.add(m[1]);
+  for (const name of seen) {
     if (known.has(name)) continue;
-    // 식별자 단독으로 쓰였는지 (점 뒤에 붙은 속성명은 제외)
-    const used = new RegExp(`(^|[^.\\w$])${name}\\s*[(<,);.\\]}]`).test(src);
-    if (!used) continue;
-    scanned += 1;
-    ok(false, `${rel}: '${name}' 를 쓰는데 import 가 없습니다 (${from}) — 화면을 열면 앱이 죽습니다`);
+    jsxChecked += 1;
+    ok(false, `${rel}: <${name}> 을 쓰는데 어디서도 가져오지 않았습니다 — 그 화면을 열면 앱이 꺼집니다`);
   }
 }
-console.log('[가져오지 않고 쓰는 이름 검사]');
+console.log('[JSX 로 쓰는 컴포넌트를 다 가져왔는지 검사]');
 
 /* ============================================================
    선언 전에 쓰는 값 — 화면이 열리자마자 죽는다

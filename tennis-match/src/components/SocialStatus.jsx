@@ -95,7 +95,7 @@ export function SocialStatus() {
       {!!googleHead && (
         <Text style={{ fontSize: 11.5, color: C.sub, marginTop: S.md, lineHeight: 17 }}>
           앱에 실린 구글 클라이언트: <Text style={{ fontWeight: '700' }}>…-{googleHead}…</Text>
-          {'\n'}구글 클라우드의 [사용자 인증 정보] 목록에서 유형이
+          {'\n'}구글 클라우드의 「사용자 인증 정보」 목록에서 유형이
           <Text style={{ fontWeight: '700' }}> Android</Text> 인 줄의 앞자리와 같아야 합니다.
           웹 클라이언트를 넣으면 로그인이 "액세스 차단"으로 막힙니다.
         </Text>
@@ -112,7 +112,7 @@ export function SocialStatus() {
         <Text style={{ fontSize: 11.5, color: C.faint, marginTop: S.md, lineHeight: 17 }}>
           키가 앱에 들어오지 않았습니다. 키는 빌드할 때도, 업데이트(OTA)를
           만들 때도 들어옵니다 — <Text style={{ fontWeight: '700' }}>나중에 한 쪽이 이깁니다</Text>.
-          위 [앱 정보]에서 업데이트를 한 번 받아 보고, 그래도 비어 있으면
+          바로 위 업데이트 카드에서 한 번 받아 보고, 그래도 비어 있으면
           새로 빌드해 주세요.
         </Text>
       )}
