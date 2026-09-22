@@ -77,7 +77,7 @@ export default function Schedule() {
      라우터 파라미터로 넘기던 것을 옮긴 이유는 app/_layout.jsx 주석 참고. */
 
   const blank = () => ({
-    date: '', time: settings.startTime, place: '',
+    date: '', time: settings.startTime, endTime: settings.endTime, place: '',
     courts: String(settings.courts),
     rounds: String(roundsFromSettings(settings)),
     venueId: null,
@@ -89,10 +89,17 @@ export default function Schedule() {
   });
   useEffect(() => { if (club && !nd) setNd(blank()); }, [club]);
 
+  /* 이 모임의 한 타임 길이. 코트장을 골랐으면 그 코트장 값을 쓴다 —
+     코트장마다 타임 길이가 다를 수 있고, 타임 수 계산이 그 값에 달려 있다. */
+  const roundMin = Number(
+    venues.find((v) => v.id === nd?.venueId)?.roundMinutes ?? settings.roundMinutes,
+  ) || 40;
+
   const pickVenue = (v) => {
     if (!v) return setNd({ ...nd, venueId: null });
     setNd({
-      ...nd, venueId: v.id, place: v.name, time: v.startTime,
+      ...nd, venueId: v.id, place: v.name,
+      time: v.startTime, endTime: v.endTime,
       courts: String(v.courts), rounds: String(roundsFromSettings(v)),
     });
   };
@@ -297,6 +304,9 @@ export default function Schedule() {
     setNd({
       date: mt.date,
       time: mt.time || settings.startTime,
+      /* 예전에 만든 모임에는 endTime 이 없다. 그때는 코트장/클럽 설정의
+         종료 시각으로 채운다 — 빈칸으로 두면 타임 수 계산이 헛돈다. */
+      endTime: mt.endTime || settings.endTime,
       place: mt.place || '',
       courts: String(mt.courts ?? settings.courts),
       rounds: String(mt.rounds ?? roundsFromSettings(settings)),
@@ -312,6 +322,7 @@ export default function Schedule() {
 
   const editPatch = () => ({
     time: nd.time,
+    endTime: nd.endTime || '',
     place: nd.place,
     courts: Math.max(1, +nd.courts || 1),
     rounds: Math.max(1, +nd.rounds || 1),
@@ -382,7 +393,7 @@ export default function Schedule() {
   const submit = () => {
     if (!nd.date) return flash('날짜를 선택하세요');
     const base = {
-      time: nd.time, place: nd.place,
+      time: nd.time, endTime: nd.endTime || '', place: nd.place,
       courts: Math.max(1, +nd.courts || 1),
       rounds: Math.max(1, +nd.rounds || 1),
       venueId: nd.venueId || null,
@@ -434,7 +445,7 @@ export default function Schedule() {
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontWeight: '700', fontSize: 15 }}>
-                      {Number(mt.date.slice(5, 7))}/{Number(mt.date.slice(8, 10))}({dowName(mt.date)}) {mt.time}
+                      {Number(mt.date.slice(5, 7))}/{Number(mt.date.slice(8, 10))}({dowName(mt.date)}) {mt.time}{mt.endTime ? `~${mt.endTime}` : ''}
                       {mt.canceled ? ' · 우천취소' : ''}
                     </Text>
                     <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
@@ -812,10 +823,39 @@ export default function Schedule() {
                 <Label>날짜</Label>
                 <DateField value={nd.date} onChange={(v) => setNd({ ...nd, date: v })} minDate={today()} />
 
-                <View style={{ marginTop: 12 }}>
-                  <Label>시작 시간</Label>
-                  <TimeField value={nd.time} onChange={(v) => setNd({ ...nd, time: v })} />
+                {/* 시작·종료 시간.
+
+                    ⚠️ 종료 시간을 바꾸면 타임 수를 다시 계산한다. 둘을
+                       따로 두면 "10시~13시인데 5타임(3시간 20분)" 같은
+                       값이 만들어지고, 그 상태로 대진을 짜면 마지막
+                       타임이 코트를 비워 줘야 할 시간 뒤에 잡힌다.
+                       계산은 코트장 설정이 쓰는 것과 같은 함수다. */}
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Label>시작 시간</Label>
+                    <TimeField value={nd.time} onChange={(v) => setNd({
+                      ...nd,
+                      time: v,
+                      rounds: String(roundsFromSettings({
+                        startTime: v, endTime: nd.endTime, roundMinutes: roundMin,
+                      })),
+                    })} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Label>종료 시간</Label>
+                    <TimeField value={nd.endTime} onChange={(v) => setNd({
+                      ...nd,
+                      endTime: v,
+                      rounds: String(roundsFromSettings({
+                        startTime: nd.time, endTime: v, roundMinutes: roundMin,
+                      })),
+                    })} />
+                  </View>
                 </View>
+                <Text style={{ fontSize: 11.5, color: C.faint, marginTop: 5, lineHeight: 17 }}>
+                  한 타임 {roundMin}분 기준으로 타임 수가 자동 계산됩니다.
+                  아래에서 직접 고칠 수도 있습니다.
+                </Text>
 
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
                   <View style={{ flex: 1 }}>

@@ -12,6 +12,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useApp } from './_layout';
 import { auth } from '../firebaseConfig';
 import {
   createClub, findClubByInviteCode, searchClubs, getClubDirectory,
@@ -35,6 +36,17 @@ const TABS = [
 ];
 
 export default function Onboarding() {
+  /* ⚠️ 클럽에 들어간 뒤에는 **반드시** switchClub 을 불러야 한다.
+
+     라우팅 가드(_layout.jsx)는 session.clubId 를 보고 "클럽이 없으면
+     온보딩으로" 되돌린다. 그런데 session 은 로그인 상태가 바뀔 때만
+     새로 읽는다. 클럽을 만들고 router.replace('/(tabs)') 만 하면
+     가드가 여전히 clubId=null 을 보고 **온보딩으로 도로 보낸다**.
+
+     화면은 그대로인 것처럼 보이고, 온보딩이 스택의 유일한 화면이라
+     뒤로가기를 누르면 앱이 꺼진다. 나갈 길이 아예 없다.
+     실제로 그렇게 막혔다 — 클럽을 만들었는데 아무 데도 못 갔다. */
+  const { switchClub } = useApp();
   const router = useRouter();
   const params = useLocalSearchParams();
   const uid = auth.currentUser?.uid;
@@ -134,6 +146,7 @@ export default function Onboarding() {
       if (!req) return;
       if (req.status === JOIN_STATUS.APPROVED) {
         await linkUserToClub(uid, pending.clubId, buildProfile());
+        switchClub(pending.clubId);
         router.replace('/(tabs)');
       } else if (req.status === JOIN_STATUS.REJECTED) {
         setPending((p) => (p ? { ...p, status: JOIN_STATUS.REJECTED } : p));
@@ -195,6 +208,7 @@ export default function Onboarding() {
       const profile = buildProfile();
       await joinClubWithCode(club.id, uid, profile, club.code);
       await linkUserToClub(uid, club.id, profile);
+      switchClub(club.id);
       router.replace('/(tabs)');
     } catch (e) { setErr('가입에 실패했습니다. 코드를 확인하세요.'); }
     setBusy(false);
@@ -215,6 +229,7 @@ export default function Onboarding() {
       const profile = buildProfile();
       await joinClubWithCode(pwClub.id, uid, profile, '');
       await linkUserToClub(uid, pwClub.id, profile);
+      switchClub(pwClub.id);
       router.replace('/(tabs)');
     } catch (e) {
       setErr('가입에 실패했습니다. [가입 신청]을 이용해 주세요.');
@@ -263,6 +278,7 @@ export default function Onboarding() {
       );
       await seedClub(clubId, withDemo);
       await linkUserToClub(uid, clubId, profile);
+      switchClub(clubId);
       router.replace('/(tabs)');
     } catch (e) { setErr('클럽 생성에 실패했습니다. 다시 시도하세요.'); }
     setBusy(false);

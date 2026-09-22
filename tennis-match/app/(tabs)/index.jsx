@@ -365,7 +365,7 @@ export default function Home() {
                 marginTop: S.md, letterSpacing: -0.6, lineHeight: 30,
               }}>
                 {`${Number(meeting.date.slice(5, 7))}월 ${Number(meeting.date.slice(8, 10))}일`}
-                {`(${dowName(meeting.date)}) ${meeting.time || ''}`}
+                {`(${dowName(meeting.date)}) ${meeting.time || ''}${meeting.endTime ? `~${meeting.endTime}` : ''}`}
               </Text>
               <Text style={{ color: 'rgba(255,255,255,0.68)', fontSize: 13, marginTop: 5, lineHeight: 19 }}>
                 {meeting.place || venueName(meeting.venueId) || '장소 미정'}
@@ -561,7 +561,7 @@ export default function Home() {
                       <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <Text style={[F.bodyBold, going && { color: C.green }]}>
-                            {m.date.slice(5).replace('-', '.')} ({dowName(m.date)}) {m.time}
+                            {m.date.slice(5).replace('-', '.')} ({dowName(m.date)}) {m.time}{m.endTime ? `~${m.endTime}` : ''}
                           </Text>
                           {going && <Chip tone="green">참석</Chip>}
                           {notGoing && <Chip tone="outline">불참</Chip>}

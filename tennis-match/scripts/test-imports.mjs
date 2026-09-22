@@ -302,6 +302,33 @@ function blankNonCode(raw) {
   return out.join('');
 }
 
+console.log('[클럽에 들어간 뒤 세션을 갱신하는지 검사]');
+/* ============================================================
+   ⚠️ 이것 때문에 클럽을 만든 사람이 갇혔다.
+
+   라우팅 가드(_layout.jsx)는 session.clubId 를 보고 "클럽이 없으면
+   온보딩으로" 되돌린다. session 은 로그인 상태가 바뀔 때만 새로 읽는다.
+   그래서 클럽에 들어간 뒤 router.replace('/(tabs)') 만 하면, 가드가
+   여전히 clubId=null 을 보고 **온보딩으로 도로 보낸다**.
+
+   화면은 그대로인 것처럼 보이고, 온보딩이 스택의 유일한 화면이라
+   뒤로가기를 누르면 앱이 꺼진다. 나갈 길이 아예 없다.
+
+   linkUserToClub 을 부른 곳은 반드시 switchClub 도 불러야 한다.
+   ============================================================ */
+{
+  const rel = 'app/onboarding.jsx';
+  const src = readFileSync(resolve(ROOT, rel), 'utf8');
+  const links = (src.match(/linkUserToClub\(/g) || []).length;
+  const switches = (src.match(/switchClub\(/g) || []).length;
+  ok(links > 0, `${rel}: 클럽에 넣는 곳이 있다 (${links}곳)`);
+  ok(switches >= links,
+    `${rel}: 클럽에 넣은 뒤 switchClub 을 부른다 (넣기 ${links}곳 / 갱신 ${switches}곳)`
+    + ' — 빠지면 온보딩에 갇혀 뒤로가기로 앱이 꺼집니다');
+  ok(/const \{ switchClub \} = useApp\(\)/.test(src),
+    `${rel}: switchClub 을 앱 상태에서 가져온다`);
+}
+
 console.log('[선언 전에 쓰는 값 검사]');
 for (const file of files) {
   const rel = slash(file.slice(ROOT.length + 1));

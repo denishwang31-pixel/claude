@@ -86,7 +86,31 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
     return { ok: false, error: '[G3] 앱 패키지명을 읽지 못했습니다. 앱을 다시 설치해 주세요.' };
   }
 
-  /* ---- 2. 로그인 창 ---- */
+  /* ---- 2. 로그인 창 ----
+
+     ⚠️ 어느 브라우저로 열지 **우리가 정한다**. 안 정하면 안드로이드가
+        "연결 프로그램" 선택창을 띄우고, 거기서 지메일을 고르면 메일
+        쓰기 화면으로 넘어가 로그인이 통째로 날아간다. 실제로 그랬다.
+
+        로그인 주소는 브라우저로 열려야 한다 — 커스텀 탭을 지원하는
+        브라우저만 고른다(그래야 로그인 후 앱으로 되돌아온다).
+        사용자가 정한 기본 브라우저를 먼저 쓰고, 없으면 시스템 기본,
+        그것도 없으면 지원하는 것 아무거나.
+
+     ⚠️ 못 고르면 지정 없이 연다 — 예전과 같은 동작이다. 브라우저를
+        못 찾았다고 로그인 자체를 막으면 안 된다. */
+  let browserPackage;
+  try {
+    const wb = await import('expo-web-browser');
+    const found = await wb.getCustomTabsSupportingBrowsersAsync();
+    browserPackage = found?.preferredBrowserPackage
+      || found?.defaultBrowserPackage
+      || (found?.browserPackages || [])[0]
+      || undefined;
+  } catch (e) {
+    browserPackage = undefined;
+  }
+
   let result;
   let request;
   try {
@@ -97,7 +121,8 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
       responseType: AuthSession.ResponseType.Code,
       usePKCE: true,
     });
-    result = await request.promptAsync(GOOGLE_DISCOVERY);
+    result = await request.promptAsync(GOOGLE_DISCOVERY,
+      browserPackage ? { browserPackage } : undefined);
   } catch (e) {
     return { ok: false, error: `[G4] 구글 로그인 창을 열지 못했습니다. ${googleErrorText(e)}`.trim() };
   }
