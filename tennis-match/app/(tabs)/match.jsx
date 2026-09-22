@@ -33,6 +33,7 @@ import { MatchGrid, AttendanceGrid } from '../../src/components/MatchGrid';
 import { Segmented, useOptionSheet } from '../../src/components/native';
 import {
   blankDraw, labelOf, toggleInSlot, busyInRound, playCounts, reviewDraw, slotSize,
+  sameDraw, draftChanges,
 } from '../../src/lib/manualDraw';
 import {
   attendingIds, diffDraw, removeGhosts, dropAffected, describeDiff, optionsFor,
@@ -88,6 +89,9 @@ export default function Match() {
   const [view, setView] = useState('grid');       // grid | list
   const [showTools, setShowTools] = useState(false);
   const [manualOn, setManualOn] = useState(false);   // 수기 편집 패널
+  /* 수기 편집 중인 표. null 이면 편집 중이 아니다.
+     ⚠️ 편집은 여기서만 일어난다. 저장하기를 눌러야 saveMatches 로 간다. */
+  const [draft, setDraft] = useState(null);
   const sheet = useOptionSheet();
   const [editing, setEditing] = useState(null);
   const [sc, setSc] = useState({ a: '', b: '' });
@@ -252,22 +256,28 @@ export default function Match() {
         rounds: meeting.rounds || 4,
         singles: isSingles,
       });
-      saveMatches(clubId, meeting.id, blank);
+      /* ⚠️ 저장하지 않는다. 빈 표도 편집의 시작일 뿐이라 초안에만 넣는다.
+            바로 저장해 버리면 "빈 표를 눌러 봤다가 그만두면 기존 대진이
+            날아가 있는" 일이 생긴다. 저장하기를 눌러야 반영된다. */
+      setDraft(blank);
       setManualOn(true);
-      flash(`빈 표 ${blank.length}칸을 만들었습니다. 칸을 눌러 채우세요`);
+      flash(`빈 표 ${blank.length}칸을 만들었습니다. 칸을 눌러 채운 뒤 저장하세요`);
     };
     if (matches.length) {
       return Alert.alert('빈 대진표 만들기',
-        '지금 대진과 기록된 스코어가 모두 지워집니다.\n계속할까요?',
+        '지금 대진과 기록된 스코어가 모두 지워집니다.\n'
+        + '(저장하기를 눌러야 실제로 반영됩니다)\n\n계속할까요?',
         [{ text: '취소', style: 'cancel' }, { text: '만들기', style: 'destructive', onPress: make }]);
     }
     return make();
   };
 
-  /** 칸을 눌러 그 자리에 설 사람을 고른다 */
+  /** 칸을 눌러 그 자리에 설 사람을 고른다.
+      ⚠️ 고른 결과는 초안(draft)에만 들어간다. 저장하기를 눌러야 반영된다. */
   const fillSlot = (m, side) => {
-    const busy = busyInRound(matches, m.round, m.id);
-    const counts = playCounts(attendees, matches);
+    const rows = draft || [];
+    const busy = busyInRound(rows, m.round, m.id);
+    const counts = playCounts(attendees, rows);
     const cur = (side === 'B' ? m.teamB : m.teamA) || [];
     sheet.open({
       title: `${m.round}타임 ${courtLabel(venueOf(meeting), m.court)}코트 · ${side === 'B' ? '뒷팀' : '앞팀'}`,
@@ -282,14 +292,13 @@ export default function Match() {
         { key: '__clear', label: '이 칸 비우기', destructive: true },
       ],
       onSelect: (o) => {
-        const next = matches.map((x) => {
+        setDraft((prev) => (prev || []).map((x) => {
           if (x.id !== m.id) return x;
           const patched = o.key === '__clear'
             ? { ...x, [side === 'B' ? 'teamB' : 'teamA']: [] }
             : toggleInSlot(x, side, o.key);
           return { ...patched, type: labelOf(patched, genderOf) || patched.type || '' };
-        });
-        saveMatches(clubId, meeting.id, next);
+        }));
       },
     });
   };
@@ -341,6 +350,72 @@ export default function Match() {
      예외를 던지므로 대진 탭이 열리자마자 앱이 죽었다. */
   const matches = meeting?.matches || [];
 
+  /* ---------- 수기 편집: 저장해야 반영된다 ----------
+
+     예전에는 칸을 고치는 즉시 저장됐다. 잘못 누르면 그대로 반영되고,
+     되돌리려면 원래 누구였는지 기억해 내서 다시 넣는 수밖에 없었다.
+     현장에서 대진을 짤 때는 여러 칸을 이리저리 옮겨 보다가 마음에 드는
+     모양이 나오는데, 그 중간 과정이 전부 회원들 화면에 생중계됐다.
+
+     이제 편집은 초안에서 하고 [저장하기]를 눌러야 반영된다.
+
+     ⚠️ "저장 안 한 게 있다"를 플래그로 들고 다니지 않는다. 초안과 저장된
+        표를 그때그때 비교한다 — 고쳤다가 도로 되돌린 경우까지 맞는다. */
+  const dirty = !!draft && !sameDraw(draft, matches);
+  const changedCount = draft ? draftChanges(draft, matches) : 0;
+
+  const openManual = () => {
+    setDraft(matches.map((m) => ({ ...m })));
+    setManualOn(true);
+  };
+
+  const saveDraft = () => {
+    if (!meeting || !draft) return;
+    saveMatches(clubId, meeting.id, draft);
+    /* 초안을 그대로 둔다 — 비우면 패널이 잠깐 빈 표로 깜빡인다.
+       저장 직후에는 draft === matches 라 dirty 가 스스로 꺼진다. */
+    flash(changedCount ? `${changedCount}칸을 저장했습니다` : '저장했습니다');
+  };
+
+  /** 초안을 버리고 저장된 대진으로 되돌린다 */
+  const revertDraft = () => setDraft(matches.map((m) => ({ ...m })));
+
+  /**
+   * 저장 안 한 편집이 있으면 먼저 물어본다.
+   * 나가기·모임 바꾸기·코트장 바꾸기처럼 초안이 사라지는 길목마다 두른다.
+   *
+   * ⚠️ 경고 없이 보내면 사용자는 자기가 고친 것이 저장된 줄 안다.
+   *    대진은 코트에서 그대로 쓰이므로, 그 착각은 현장에서 드러난다.
+   */
+  const guardDraft = (go) => {
+    if (!dirty) return go();
+    return Alert.alert(
+      '저장하지 않은 대진이 있습니다',
+      `${changedCount}칸을 고쳤습니다.\n`
+      + '지금 나가면 고친 내용은 사라지고 기존 대진이 그대로 유지됩니다.',
+      [
+        { text: '계속 편집', style: 'cancel' },
+        {
+          text: '저장하고 나가기',
+          onPress: () => { saveMatches(clubId, meeting.id, draft); setDraft(null); setManualOn(false); go(); },
+        },
+        {
+          text: '저장 안 함',
+          style: 'destructive',
+          onPress: () => { setDraft(null); setManualOn(false); go(); },
+        },
+      ],
+    );
+  };
+
+  /* 모임이나 코트장이 바뀌면 초안은 의미가 없다(다른 모임의 표가 된다).
+     바뀐 뒤에 지우는 게 아니라, 바뀌기 전에 guardDraft 로 물어본다.
+     여기 있는 것은 그래도 새어 나간 경우를 위한 마지막 빗장이다. */
+  useEffect(() => {
+    setDraft(null);
+    setManualOn(false);
+  }, [meeting?.id]);
+
   /* ---------- 대진 ↔ 참석 어긋남 ----------
      대진을 짜고 나서 사람이 빠지는 일은 늘 있다. 그런데 대진표는 짤 때의
      명단 그대로라, 코트에 가서야 한 자리가 빈 것을 안다. 반대로 나중에
@@ -376,7 +451,7 @@ export default function Match() {
     });
   };
 
-  const gen = () => {
+  const genNow = () => {
     if (isKdk && playMode !== PLAY_MODE.DOUBLES) {
       return Alert.alert('KDK 는 복식 개인전입니다',
         '지금 경기 방식이 복식이 아닙니다.\n'
@@ -418,6 +493,33 @@ export default function Match() {
     runGenerate(!!(cfg.allowMixed || club?.settings?.allowMixedDefault));
   };
 
+  /* 자동으로 다시 짜면 손으로 고치던 초안은 통째로 버려진다.
+     묻지 않고 덮으면 "방금 20분 걸려 고친 게 사라졌다"가 된다.
+
+     ⚠️ gen 안에서 gen 을 다시 부르지 않는다. 물어본 뒤 setDraft(null) 을
+        해도 이 렌더의 dirty 는 여전히 true 라, 스스로를 다시 부르면
+        같은 경고가 끝없이 뜬다. 그래서 실제 편성은 genNow 로 떼어 두고
+        빗장만 여기에 둔다. */
+  const gen = () => {
+    if (!dirty) return genNow();
+    /* 여기서는 guardDraft 의 「저장하고 나가기」를 쓰지 않는다 — 저장하자마자
+       자동 편성이 그 위에 덮어쓰므로 저장한 보람이 없고, 사용자는 저장된
+       줄 안다. 고를 수 있는 것은 사실상 둘뿐이라 그 둘만 보여 준다. */
+    return Alert.alert(
+      '저장하지 않은 대진이 있습니다',
+      `손으로 고친 ${changedCount}칸이 아직 저장되지 않았습니다.\n`
+      + '자동으로 다시 짜면 고친 내용은 모두 사라집니다.',
+      [
+        { text: '계속 편집', style: 'cancel' },
+        {
+          text: '버리고 새로 짜기',
+          style: 'destructive',
+          onPress: () => { setDraft(null); setManualOn(false); genNow(); },
+        },
+      ],
+    );
+  };
+
   /* 뒤로가기 우선순위: 스코어 입력 → 경기 방식 설정 → 홈으로.
 
      예전에는 홈에서 코트를 파라미터로 넘겼더니, 뒤로가기가 홈이 아니라
@@ -426,11 +528,16 @@ export default function Match() {
   const goBack = () => {
     if (editing) { setEditing(null); return; }
     if (showTools) { setShowTools(false); return; }
-    router.replace('/(tabs)');
+    guardDraft(() => router.replace('/(tabs)'));
   };
   useBackHandler(() => {
     if (editing) { setEditing(null); return true; }
     if (showTools) { setShowTools(false); return true; }
+    /* ⚠️ 저장 안 한 편집이 있으면 여기서 붙잡는다. true 를 돌려주어
+          기본 뒤로가기를 막고, 물어본 뒤에 우리가 내보낸다. 이걸 빼면
+          안드로이드 물리 버튼으로는 경고 없이 빠져나간다 — 화면 안
+          뒤로가기만 막아 두면 반쪽짜리 빗장이다. */
+    if (dirty) { guardDraft(() => router.replace('/(tabs)')); return true; }
     return false;   // 최상위에서는 탭 기본 동작
   });
 
@@ -540,7 +647,9 @@ export default function Match() {
       {/* 코트장 드롭다운 */}
       {venues.length > 0 && (
         <View style={{ marginBottom: 10 }}>
-          <VenuePicker venues={scopeVenues} value={venueId} onChange={setVenueId} />
+          {/* 코트장을 바꾸면 고르던 모임이 바뀌므로 초안이 사라진다 — 먼저 물어본다 */}
+          <VenuePicker venues={scopeVenues} value={venueId}
+            onChange={(v) => guardDraft(() => setVenueId(v))} />
         </View>
       )}
 
@@ -552,7 +661,7 @@ export default function Match() {
               const on = meeting?.id === m.id;
               const cnt = Object.values(m.rsvp || {}).filter((v) => v === RSVP.YES).length + (m.guests?.length || 0);
               return (
-                <Pressable key={m.id} onPress={() => setMeetingId(m.id)}
+                <Pressable key={m.id} onPress={() => guardDraft(() => setMeetingId(m.id))}
                   style={{
                     paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10,
                     backgroundColor: on ? C.green : '#fff',
@@ -1005,18 +1114,33 @@ export default function Match() {
           {isAdmin && (
             <>
               <SectionTitle right={
-                <Chip tone={manualOn ? 'green' : 'outline'} onPress={() => setManualOn(!manualOn)}>
+                <Chip tone={manualOn ? 'green' : 'outline'}
+                  onPress={() => (manualOn
+                    ? guardDraft(() => { setDraft(null); setManualOn(false); })
+                    : openManual())}>
                   {manualOn ? '닫기' : '열기'}
                 </Chip>
               }>수기 편집</SectionTitle>
 
               {manualOn && (() => {
-                const rv = reviewDraw(attendees, matches);
+                const rows = draft || [];
+                const rv = reviewDraw(attendees, rows);
                 return (
-                  <Card>
+                  <Card style={dirty ? { borderColor: C.warn, borderWidth: 2 } : undefined}>
                     <Text style={{ fontSize: 11, color: C.sub, lineHeight: 16 }}>
                       칸을 눌러 그 자리에 설 사람을 고릅니다.
                       같은 타임에 이미 뛰는 사람은 목록에서 빠집니다.
+                    </Text>
+                    {/* ⚠️ 고치는 동안 이 줄이 늘 보여야 한다. 저장 버튼만
+                        아래에 두면, 스크롤이 긴 표에서는 자기가 저장을
+                        안 했다는 사실 자체가 화면 밖으로 밀려난다. */}
+                    <Text style={{
+                      fontSize: 11, lineHeight: 16, marginTop: 6, fontWeight: '800',
+                      color: dirty ? C.warn : C.faint,
+                    }}>
+                      {dirty
+                        ? `고친 ${changedCount}칸은 아직 저장되지 않았습니다. 아래 [저장하기]를 눌러야 반영됩니다.`
+                        : '저장된 대진과 같습니다.'}
                     </Text>
 
                     {/* 짜는 중에 균형이 보여야 한다 — 다 짜고 나서 세면 늦다 */}
@@ -1047,7 +1171,7 @@ export default function Match() {
                     )}
 
                     <View style={{ gap: 6, marginTop: 12 }}>
-                      {[...matches].sort((a, b) => a.round - b.round || a.court - b.court).map((m) => {
+                      {[...rows].sort((a, b) => a.round - b.round || a.court - b.court).map((m) => {
                         const cap = slotSize(m);
                         const aFull = (m.teamA || []).length === cap;
                         const bFull = (m.teamB || []).length === cap;
@@ -1077,6 +1201,28 @@ export default function Match() {
                           </View>
                         );
                       })}
+                    </View>
+
+                    {/* 저장 줄 — 표 바로 아래. 다 고친 뒤 손이 닿는 자리다. */}
+                    <View style={{
+                      flexDirection: 'row', gap: 6, marginTop: 14,
+                      paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border,
+                    }}>
+                      <Btn tone="ghost" style={{ flex: 1 }}
+                        disabled={!dirty}
+                        onPress={() => Alert.alert('고친 내용 되돌리기',
+                          `${changedCount}칸을 고치기 전으로 되돌립니다.`,
+                          [{ text: '취소', style: 'cancel' },
+                            { text: '되돌리기', style: 'destructive', onPress: revertDraft }])}>
+                        되돌리기
+                      </Btn>
+                      {/* ⚠️ 바뀐 게 없으면 누르지 못하게 한다. 눌러도 아무 일도
+                          없는 버튼은 "저장이 안 되는 건가" 하는 의심을 만든다. */}
+                      <Btn tone="primary" style={{ flex: 2 }}
+                        disabled={!dirty}
+                        onPress={saveDraft}>
+                        {dirty ? `저장하기 (${changedCount}칸)` : '저장됨'}
+                      </Btn>
                     </View>
                   </Card>
                 );

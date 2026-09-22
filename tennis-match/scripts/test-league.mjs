@@ -14,6 +14,7 @@ import {
 } from '../src/lib/teamLeague.js';
 import {
   slotSize, blankDraw, labelOf, toggleInSlot, busyInRound, playCounts, reviewDraw,
+  sameDraw, draftChanges,
 } from '../src/lib/manualDraw.js';
 
 let pass = 0, fail = 0;
@@ -306,6 +307,57 @@ section('수기 — 검토');
   eq('아무도 안 뛴다', r.unused.length, 2);
 }
 eq('빈 입력에도 죽지 않는다', reviewDraw(null, null).dupes.length, 0);
+
+/* ---------- 저장 전 표 비교 ----------
+   수기 편집은 [저장하기]를 눌러야 반영된다. 그러려면 "저장 안 한 것이
+   있는가"를 알아야 하는데, 이걸 틀리면 두 방향 모두 나쁘다.
+     · 바뀐 걸 안 바뀌었다고 보면 → 경고 없이 나가서 고친 게 날아간다
+     · 안 바뀐 걸 바뀌었다고 보면 → 아무것도 안 했는데 자꾸 경고가 뜬다
+   두 번째가 더 흔하고, 그게 쌓이면 사람들이 경고를 안 읽게 된다.       */
+section('저장 전 표 비교');
+{
+  const base = () => [
+    { id: 'r1c1', round: 1, court: 1, teamA: ['a', 'b'], teamB: ['c', 'd'], type: '남복' },
+    { id: 'r1c2', round: 1, court: 2, teamA: [], teamB: [], type: '' },
+  ];
+  ok(sameDraw(base(), base()), '내용이 같으면 같다 (다른 객체여도)');
+  eq('같으면 고친 칸이 0', draftChanges(base(), base()), 0);
+
+  const one = base(); one[0].teamA = ['a', 'z'];
+  ok(!sameDraw(one, base()), '사람이 바뀌면 다르다');
+  eq('한 칸만 고치면 1', draftChanges(one, base()), 1);
+
+  /* ⚠️ 앞/뒤 팀이 바뀌면 코트에 서는 자리가 달라진다. 같은 사람들이라고
+        같은 대진으로 보면, 팀을 맞바꾼 편집이 저장 없이 사라진다. */
+  const swapped = base();
+  swapped[0] = { ...swapped[0], teamA: ['c', 'd'], teamB: ['a', 'b'] };
+  ok(!sameDraw(swapped, base()), '앞팀·뒷팀을 맞바꾸면 다르다');
+
+  /* 팀 안에서의 순서도 자리다 — 파트너 순서가 바뀌면 다른 표로 본다 */
+  const reordered = base();
+  reordered[0] = { ...reordered[0], teamA: ['b', 'a'] };
+  ok(!sameDraw(reordered, base()), '팀 안의 순서가 바뀌어도 다르다');
+
+  /* 고쳤다가 도로 되돌린 경우. 플래그를 들고 다니면 여기서 틀린다 */
+  const undone = base();
+  undone[0] = { ...undone[0], teamA: ['a', 'z'] };
+  undone[0] = { ...undone[0], teamA: ['a', 'b'] };
+  ok(sameDraw(undone, base()), '고쳤다 되돌리면 다시 같다');
+  eq('되돌리면 고친 칸도 0', draftChanges(undone, base()), 0);
+
+  /* 스코어가 들어간 칸 */
+  const scored = base();
+  scored[0] = { ...scored[0], score: { a: 6, b: 3 } };
+  ok(!sameDraw(scored, base()), '스코어가 붙으면 다르다');
+
+  /* 칸 수가 달라지는 경우 — 빈 표를 새로 만들면 id 가 통째로 갈린다 */
+  ok(!sameDraw(base().slice(0, 1), base()), '칸 수가 다르면 다르다');
+  eq('없어진 칸도 고친 것으로 센다', draftChanges(base().slice(0, 1), base()), 1);
+
+  ok(sameDraw([], []), '둘 다 비면 같다');
+  ok(sameDraw(null, []), '빈 값과 빈 배열은 같다');
+  eq('빈 입력에도 죽지 않는다 (비교)', draftChanges(null, null), 0);
+}
 
 console.log(`\n다팀 리그·수기 대진 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

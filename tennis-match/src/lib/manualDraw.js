@@ -155,6 +155,58 @@ export function reviewDraw(players, matches) {
   };
 }
 
+/* ---------------- 저장 전 표와 저장된 표 비교 ----------------
+
+   수기 편집은 고치는 족족 저장되고 있었다. 한 칸을 잘못 누르면 그대로
+   반영되고, 되돌리려면 원래 누구였는지 기억해 내서 다시 넣어야 했다.
+   이제 편집은 손안의 사본(초안)에서 하고, [저장하기]를 눌러야 반영된다.
+
+   그러면 "저장 안 한 것이 있는가"를 알아야 한다. 이걸 플래그로 들고
+   다니면(setDirty(true)) 반드시 어긋난다 — 되돌리기를 만들거나, 고쳤다
+   되돌려 원래대로 만든 경우를 놓친다. 그래서 플래그를 두지 않고
+   **두 표를 직접 비교**한다. 답이 항상 지금 화면과 일치한다.
+
+   id 는 빈 표를 만들 때 정해져 바뀌지 않으므로 id 로 짝을 짓는다.
+   (칸의 순서는 화면에서 정렬해 쓰므로 비교에 넣지 않는다) */
+
+/** 한 칸이 같은가. 사람은 순서까지 같아야 같은 것으로 본다
+    — 앞/뒤가 바뀌면 코트에 서는 자리가 달라진다. */
+function sameSlot(a, b) {
+  if (!a || !b) return false;
+  const team = (x) => (x || []).join('>');
+  const score = (m) => (m?.score ? `${m.score.a}:${m.score.b}` : '');
+  return a.round === b.round
+    && a.court === b.court
+    && team(a.teamA) === team(b.teamA)
+    && team(a.teamB) === team(b.teamB)
+    && (a.type || '') === (b.type || '')
+    && score(a) === score(b);
+}
+
+/** 두 대진표가 같은가 — 같으면 저장할 것이 없다는 뜻 */
+export function sameDraw(a, b) {
+  const A = a || [];
+  const B = b || [];
+  if (A.length !== B.length) return false;
+  const byId = new Map(B.map((m) => [m.id, m]));
+  return A.every((m) => sameSlot(m, byId.get(m.id)));
+}
+
+/**
+ * 저장 전 표가 저장된 표와 몇 칸이나 다른지.
+ * 경고창에 "3칸을 고쳤습니다" 라고 적어 주려는 것 — 숫자가 없으면
+ * 사용자는 자기가 뭘 했는지 모른 채 [나가기]와 [저장] 중에 골라야 한다.
+ */
+export function draftChanges(draft, saved) {
+  const S = new Map((saved || []).map((m) => [m.id, m]));
+  const D = new Map((draft || []).map((m) => [m.id, m]));
+  let changed = 0;
+  D.forEach((m, id) => { if (!sameSlot(m, S.get(id))) changed += 1; });
+  S.forEach((m, id) => { if (!D.has(id)) changed += 1; });
+  return changed;
+}
+
 export default {
   slotSize, blankDraw, labelOf, toggleInSlot, busyInRound, playCounts, reviewDraw,
+  sameDraw, draftChanges,
 };
