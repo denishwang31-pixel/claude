@@ -12,6 +12,54 @@ const {
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error('  ✗', msg); } };
 
+/* ---------------- 무작위를 다루는 법 ----------------
+
+   대진 엔진은 일부러 Math.random() 을 쓴다. 같은 명단이면 매주 똑같은
+   짝이 나오는 걸 막으려는 것이라, 이건 버그가 아니라 기능이다.
+   그래서 이 파일의 테스트는 **매번 다른 대진**을 보게 된다.
+
+   그게 좋은 자리와 나쁜 자리가 갈린다.
+     · 좋은 자리 — "한 사람이 한 타임에 두 번 들어가면 안 된다" 같은
+       무조건 참이어야 하는 규칙. 돌릴 때마다 새 대진을 보니 검사가
+       오히려 넓어진다.
+     · 나쁜 자리 — "평균 실력차가 1.0 밑" 처럼 **숫자를 재는** 검사.
+       한 번 뽑아 보고 기준과 대는 건 검사가 아니라 제비뽑기다.
+
+   ⚠️ 실제로 당했다. 케이스 21 이 평균 실력차를 딱 한 번 재고 1.0 과
+      비교했는데, 내 컴퓨터에서는 통과하고 CI 에서만 1.00 이 나와서
+      배포가 막혔다. 같은 커밋인데 결과가 갈리니 원인을 애먼 곳
+      (그 커밋에 같이 들어간 문서 파일) 에서 찾느라 한참 헤맸다.
+      숫자를 재는 검사는 아래 withSeed 로 씨앗을 고정하고, 씨앗 하나가
+      아니라 **여러 개를 전부** 봐야 한다.
+
+   그리고 무작위로 두는 자리에도 되짚을 방법은 있어야 한다. 파일 첫머리에
+   씨앗을 찍어 두니, CI 에서만 깨지면 로그의 씨앗을 그대로 넣어
+   `ENGINE_SEED=12345 npm run test:engine` 으로 그 대진을 재현할 수 있다. */
+
+/** mulberry32 — 짧고 품질이 충분한 난수. 씨앗이 같으면 어느 기계에서도 같다. */
+const seedRandom = (seed) => {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+/** fn 을 도는 동안만 Math.random 을 씨앗 난수로 바꾼다. 끝나면 되돌린다. */
+const withSeed = (seed, fn) => {
+  const real = Math.random;
+  Math.random = seedRandom(seed);
+  try { return fn(); } finally { Math.random = real; }
+};
+
+/* 무작위로 두는 자리의 씨앗. 지정하지 않으면 매 실행 달라져서 새 대진을
+   훑고, 깨지면 이 숫자로 그대로 재현한다. */
+const RUN_SEED = Number(process.env.ENGINE_SEED) || Math.floor(Math.random() * 1e9);
+Math.random = seedRandom(RUN_SEED);
+console.log(`[씨앗 ${RUN_SEED} — 재현: ENGINE_SEED=${RUN_SEED} npm run test:engine]`);
+
 const mk = (n, g, grade = 'B') => ({ id: `${g}${n}`, name: `${g}${n}`, gender: g, grade });
 const roster = (nm, nf) => [
   ...Array.from({ length: nm }, (_, i) => mk(i + 1, 'M')),
@@ -334,19 +382,63 @@ const withNtrp = (nm, nf) => [
   });
 }
 
-// 케이스 21: 실력 매칭이 양 팀 실력 합을 균등하게 만든다
+/* ---------------- 케이스 21: 실력 매칭이 양 팀 실력 합을 균등하게 만든다 ----------------
+
+   ⚠️ 이 검사는 **숫자를 재는** 자리다. 한 번 뽑아서 기준과 대면 안 된다.
+      예전 코드가 딱 그랬고, 3000 번 돌려 보니 이랬다.
+        · `평균 실력차 < 1.0`  → 1.77% 확률로 깨진다
+        · `ON 이 OFF 보다 낫다` → 0.10% 확률로 깨진다
+      즉 둘 다 제비뽑기였다. 앞의 것이 CI 에서 터져 배포를 막았고,
+      뒤의 것은 더 드물어서 아직 안 터졌을 뿐이다.
+
+      한 판만 보면 실력매칭이 "대체로" 좋은지 "항상" 좋은지 구별이 안 된다.
+      애초에 무작위가 섞인 기능에 "항상"은 요구할 수 없다 — 사람 수가 안
+      맞으면 어떤 조합도 실력차를 못 줄이는 타임이 나온다. 그러니 재야 할
+      것은 한 판의 숫자가 아니라 **여러 판의 경향**이다.
+
+      씨앗을 고정해 두었으니 내 컴퓨터든 CI 든 같은 숫자가 나온다.
+      여기가 깨지면 그건 흔들린 게 아니라 엔진이 나빠진 것이다.        */
 {
   const players = withNtrp(8, 8);
   const skill = (id) => players.find((p) => p.id === id).ntrp;
   const teamGap = (ms) => ms.filter((m) => m.teamA.length === 2).map((m) =>
     Math.abs(m.teamA.map(skill).reduce((a, b) => a + b, 0) - m.teamB.map(skill).reduce((a, b) => a + b, 0)));
   const avg = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
-  const off = generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, {});
-  const on = generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, { skillBalance: true });
-  ok(avg(teamGap(on)) <= avg(teamGap(off)) + 0.01,
-    `실력매칭 ON 이 팀 균형 우수 (ON ${avg(teamGap(on)).toFixed(2)} vs OFF ${avg(teamGap(off)).toFixed(2)})`);
-  ok(avg(teamGap(on)) < 1.0, `실력매칭 시 팀 실력차 1.0 미만 (${avg(teamGap(on)).toFixed(2)})`);
-  checkMatches(on, players);
+
+  const SEEDS = Array.from({ length: 40 }, (_, i) => 7717 + i * 131);
+  const ons = [];
+  const offs = [];
+  let onWins = 0;
+  SEEDS.forEach((seed) => {
+    withSeed(seed, () => {
+      const off = avg(teamGap(generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, {})));
+      const on = avg(teamGap(generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, { skillBalance: true })));
+      ons.push(on);
+      offs.push(off);
+      if (on <= off + 0.01) onWins += 1;
+    });
+  });
+  const meanOn = avg(ons);
+  const meanOff = avg(offs);
+  const worstOn = Math.max(...ons);
+
+  // 1) 켜면 평균적으로 확실히 낫다 — 이게 이 기능의 존재 이유다.
+  ok(meanOn <= meanOff - 0.3,
+    `실력매칭 ON 이 팀 균형 우수 (판 ${SEEDS.length}개 평균: ON ${meanOn.toFixed(2)} vs OFF ${meanOff.toFixed(2)})`);
+  // 2) "대체로" 가 아니라 거의 매 판 나아야 한다. 한 판씩 보면 드물게
+  //    비기거나 지는 판이 있으니 비율로 본다.
+  ok(onWins >= SEEDS.length - 2,
+    `실력매칭 ON 이 거의 매 판 우수 (${onWins}/${SEEDS.length} 판)`);
+  // 3) 평균 실력차가 작다. 한 판의 숫자가 아니라 여러 판의 평균으로 본다.
+  ok(meanOn < 0.8,
+    `실력매칭 시 팀 실력차 평균 0.8 미만 (${meanOn.toFixed(2)})`);
+  // 4) 어쩌다 한 판이 크게 망가지지는 않는다.
+  ok(worstOn <= 1.0,
+    `실력매칭 최악의 판도 1.0 이하 (${worstOn.toFixed(2)})`);
+
+  withSeed(SEEDS[0], () => {
+    checkMatches(generateMatchesV5(players, 2, 4, DEFAULT_RULES, {}, {}, { skillBalance: true }), players);
+  });
 }
 
 // 케이스 22: 단식 진단
