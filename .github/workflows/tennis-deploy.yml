@@ -60,6 +60,10 @@ on:
         description: 'OTA 업데이트 (eas update — 앱 화면 반영)'
         type: boolean
         default: true
+      hosting:
+        description: '약관·개인정보처리방침 웹 페이지 (구글 동의 화면에 필요)'
+        type: boolean
+        default: true
       channel:
         description: 'OTA 채널'
         type: choice
@@ -85,6 +89,7 @@ env:
   DO_RULES:     ${{ github.event_name != 'workflow_dispatch' || inputs.rules }}
   DO_INDEXES:   ${{ github.event_name != 'workflow_dispatch' || inputs.indexes }}
   DO_OTA:       ${{ github.event_name != 'workflow_dispatch' || inputs.ota }}
+  DO_HOSTING:   ${{ github.event_name != 'workflow_dispatch' || inputs.hosting }}
   DO_FUNCTIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.functions || false }}
   # 자동일 때 production 으로 나가는 길은 없다. 스토어 앱을 사람 없이
   # 바꾸는 일은 없어야 한다.
@@ -185,9 +190,11 @@ jobs:
 
       # ---------- 배포 전 검증 ----------
       - name: 로직 검증
+        id: check_logic
         run: npm run test:all
 
       - name: 보안 규칙 검증
+        id: check_rules
         run: npx --yes firebase-tools@$FIREBASE_TOOLS emulators:exec --only firestore "node scripts/test-rules.mjs"
 
       # ---------- Firebase ----------
@@ -248,6 +255,29 @@ jobs:
           npx --yes firebase-tools@$FIREBASE_TOOLS deploy \
             --only firestore:indexes --project tennis-match-52b31 --non-interactive
 
+      # ---------- 약관 웹 페이지 ----------
+      # 구글 OAuth 동의 화면이 홈페이지 주소와 개인정보처리방침 주소를
+      # 요구한다. 없으면 동의 화면을 저장할 수 없고, 저장이 안 되면
+      # 로그인 화면에 앱 이름 대신 "project-숫자로 이동"이 뜬다.
+      #
+      # ⚠️ 본문은 앱 안의 src/lib/legalText.js 에서 그대로 가져온다.
+      #    웹에 따로 써 두면 두 글이 갈라지는데, 그건 시간 문제가 아니라
+      #    확실히 일어난다 — 기능을 고칠 때 한쪽만 고치기 때문이다.
+      #    그래서 매번 새로 만들어 올린다(public/ 은 저장소에 없다).
+      - name: 약관 페이지 만들기
+        if: env.DO_HOSTING == 'true'
+        run: npm run build:legal
+
+      - name: 약관 웹 페이지
+        id: dep_hosting
+        if: env.DO_HOSTING == 'true'
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          npx --yes firebase-tools@$FIREBASE_TOOLS deploy \
+            --only hosting --project tennis-match-52b31 --non-interactive
+
       - name: Cloud Functions
         id: dep_functions
         if: env.DO_FUNCTIONS == 'true'
@@ -283,6 +313,7 @@ jobs:
           steps.dep_rules.outcome == 'failure'
           || steps.dep_indexes.outcome == 'failure'
           || steps.dep_functions.outcome == 'failure'
+          || steps.dep_hosting.outcome == 'failure'
         run: |
           {
             echo "### 배포가 막혔습니다"
@@ -307,6 +338,12 @@ jobs:
             echo "| \`iam.serviceAccounts.ActAs\` | **서비스 계정 사용자** |"
             echo "| \`serviceusage.services.*\` · \`Permission denied to get service\` | **Firebase 관리자** |"
             echo "| \`artifactregistry.*\` | **Artifact Registry 관리자** |"
+            echo "| \`firebasehosting.*\` · \`Site ... not found\` | **Firebase Hosting 관리자** |"
+            echo ""
+            echo "> ⚠️ **약관 웹 페이지**가 처음이라면 Firebase 콘솔에서"
+            echo "> **Hosting 을 한 번 시작**해 둬야 합니다(사이트가 없으면"
+            echo "> \`Site tennis-match-52b31 not found\` 로 막힙니다)."
+            echo "> 콘솔 → 빌드 → Hosting → 시작하기 를 누르기만 하면 됩니다."
             echo ""
             echo "> ⚠️ **예약 함수**(매일 정해진 시각에 도는 것 — 회비 독촉,"
             echo "> 참석 투표 요청, 날씨 갱신)는 Cloud Scheduler 작업을 함께"
@@ -471,9 +508,17 @@ jobs:
             echo ""
             echo "| 항목 | 결과 |"
             echo "|---|---|"
+            # ⚠️ 검증 단계도 표에 넣는다. 예전에는 배포 단계만 봤다.
+            #    검증에서 막히면 배포 단계는 전부 "건너뜀"이 되는데,
+            #    판정은 "실패한 배포 항목이 없다"고 읽어서 **빨간 실행에
+            #    "모두 성공했습니다"** 를 찍었다. 실제로 그랬다.
+            #    요약이 실행 결과와 반대로 말하면 아무도 안 믿게 된다.
+            echo "| 로직 검증 | $(st '${{ steps.check_logic.outcome }}') |"
+            echo "| 보안 규칙 검증 | $(st '${{ steps.check_rules.outcome }}') |"
             echo "| 보안 규칙 | $(st '${{ steps.dep_rules.outcome }}') |"
             echo "| 색인 | $(st '${{ steps.dep_indexes.outcome }}') |"
             echo "| 서버 함수 | $(st '${{ steps.dep_functions.outcome }}') |"
+            echo "| 약관 웹 페이지 | $(st '${{ steps.dep_hosting.outcome }}') |"
             echo "| OTA ($CHANNEL) | $(st '${{ steps.dep_ota.outcome }}') |"
             echo ""
             # OTA 는 설정(extra)도 갈아친다. 이번 업데이트에 소셜 키가
@@ -503,9 +548,14 @@ jobs:
           #    마지막 줄이 거짓이면 그 자체로 실패가 되어, "다 성공했는데
           #    판정 단계가 죽는" 일이 생긴다. 앞서 같은 함정을 한 번 밟았다.
           BAD=""
+          # 검증이 막히면 그 아래는 전부 건너뛴다. 그걸 "실패한 항목이
+          # 없다"로 읽으면 빨간 실행에 초록 문구가 찍힌다.
+          if [ "${{ steps.check_logic.outcome }}" = "failure" ]; then BAD="$BAD 로직검증"; fi
+          if [ "${{ steps.check_rules.outcome }}" = "failure" ]; then BAD="$BAD 보안규칙검증"; fi
           if [ "${{ steps.dep_rules.outcome }}" = "failure" ]; then BAD="$BAD 보안규칙"; fi
           if [ "${{ steps.dep_indexes.outcome }}" = "failure" ]; then BAD="$BAD 색인"; fi
           if [ "${{ steps.dep_functions.outcome }}" = "failure" ]; then BAD="$BAD 서버함수"; fi
+          if [ "${{ steps.dep_hosting.outcome }}" = "failure" ]; then BAD="$BAD 약관웹페이지"; fi
           if [ "${{ steps.dep_ota.outcome }}" = "failure" ]; then BAD="$BAD OTA"; fi
           if [ -n "$BAD" ]; then
             echo "::error::실패한 항목:$BAD — 위 Summary 를 확인하세요."
