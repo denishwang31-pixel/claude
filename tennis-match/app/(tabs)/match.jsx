@@ -2,7 +2,7 @@
    ⚠️ 이전 버전은 "가장 가까운 모임 1건"만 다뤄서 여러 일정 중 첫 경기만 보였음.
       이제 코트장(드롭다운) + 날짜(가로 스크롤)로 원하는 모임을 골라 편성/조회한다. */
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, Alert, Modal } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import DraggableFlatList from 'react-native-draggable-flatlist';
 import { useApp } from '../_layout';
@@ -541,6 +541,18 @@ export default function Match() {
     return false;   // 최상위에서는 탭 기본 동작
   });
 
+  /** 스코어 입력창을 연다.
+      ⚠️ 이미 들어간 점수가 있으면 그 값을 채워 준다. 빈 칸으로 열면
+         "고치기"가 아니라 "처음부터 다시 넣기"가 되고, 한 쪽만 고치려다
+         빈 칸을 남기면 저장이 막힌다. */
+  const openScore = (m) => {
+    if (!isAdmin || !m) return;
+    setEditing(m.id);
+    setSc(m.score
+      ? { a: String(m.score.a ?? ''), b: String(m.score.b ?? '') }
+      : { a: '', b: '' });
+  };
+
   const saveSc = (mid) => {
     if (sc.a === '' || sc.b === '' || sc.a === sc.b) return flash('스코어 확인 (동점 불가)');
     const next = meeting.matches.map((x) => (x.id === mid ? { ...x, score: { a: +sc.a, b: +sc.b } } : x));
@@ -637,7 +649,7 @@ export default function Match() {
             <View style={{ marginTop: S.md }}>
               <Btn full tone="lime"
                 icon={<Icon name="edit" size={17} color={C.green} />}
-                onPress={() => { setEditing(myNext.id); setSc({ a: '', b: '' }); }}>
+                onPress={() => openScore(myNext)}>
                 결과 입력
               </Btn>
             </View>
@@ -1033,10 +1045,7 @@ export default function Match() {
               <MatchGrid
                 matches={matches} nameOf={nameOf} genderOf={genderOf} me={me} roundTimes={times}
                 venue={venueOf(meeting)}
-                onPressMatch={(m) => {
-                  if (!isAdmin) return;
-                  setEditing(m.id); setSc({ a: '', b: '' });
-                }}
+                onPressMatch={openScore}
               />
               <MatchLegend />
               {isAdmin && <Text style={{ fontSize: 9, color: C.faint, marginTop: 4 }}>경기를 누르면 스코어를 입력할 수 있습니다.</Text>}
@@ -1063,10 +1072,16 @@ export default function Match() {
                           <Chip tone={m.type === '혼복' ? 'green' : 'default'}>{m.type}</Chip>
                           {isMine && <Chip tone="green">내 경기</Chip>}
                         </View>
-                        {m.score ? (
+                        {m.score && !isAdmin ? (
                           <Text style={{ fontWeight: '700', color: C.green }}>{m.score.a} : {m.score.b}</Text>
                         ) : isAdmin ? (
-                          <Btn small tone="ghost" onPress={() => { setEditing(m.id); setSc({ a: '', b: '' }); }}>스코어</Btn>
+                          /* ⚠️ 점수가 들어간 뒤에도 누를 수 있어야 한다. 예전에는
+                             점수가 생기는 순간 버튼이 사라져서, 잘못 넣으면 표
+                             보기로 바꿔 경기를 다시 누르는 길밖에 없었다 —
+                             그 길이 있다는 걸 아무도 모른다. */
+                          <Btn small tone={m.score ? 'ghost' : 'primary'} onPress={() => openScore(m)}>
+                            {m.score ? `${m.score.a} : ${m.score.b}` : '스코어'}
+                          </Btn>
                         ) : null}
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
@@ -1084,30 +1099,6 @@ export default function Match() {
                 </View>
               ))}
             </View>
-          )}
-
-          {/* 스코어 입력 */}
-          {editing && (
-            <Card style={{ marginTop: 8, borderColor: C.lime2, borderWidth: 2 }}>
-              {(() => {
-                const m = matches.find((x) => x.id === editing);
-                if (!m) return null;
-                return (
-                  <>
-                    <Text style={{ fontSize: 12, fontWeight: '800', marginBottom: 8 }}>
-                      {m.round}타임 {courtLabel(venueOf(meeting), m.court)}코트 · {m.teamA.map(nameOf).join('·')} vs {m.teamB.map(nameOf).join('·')}
-                    </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Field placeholder="앞팀" keyboardType="number-pad" value={sc.a} onChangeText={(t) => setSc({ ...sc, a: t })} style={{ flex: 1 }} />
-                      <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
-                      <Field placeholder="뒷팀" keyboardType="number-pad" value={sc.b} onChangeText={(t) => setSc({ ...sc, b: t })} style={{ flex: 1 }} />
-                      <Btn small onPress={() => saveSc(m.id)}>저장</Btn>
-                      <Btn small tone="ghost" onPress={() => setEditing(null)}>닫기</Btn>
-                    </View>
-                  </>
-                );
-              })()}
-            </Card>
           )}
 
           {/* 수기 편집 — 자동으로 짠 표도 여기서 몇 칸만 고칠 수 있다 */}
@@ -1327,6 +1318,85 @@ export default function Match() {
         activationDistance={12}
       />
       {sheet.node}
+
+      {/* 스코어 입력 — 팝업.
+
+         ⚠️ 예전에는 이 입력칸을 대진표 **아래**에 펼쳤다. 그런데 [결과 입력]
+            버튼은 화면 맨 위 카드에 있다. 누르면 입력칸은 코트장 선택·날짜·
+            경기 방식·대진표 전체를 지나 한참 아래에 열려서, 스크롤하지 않으면
+            아무 일도 안 일어난 것처럼 보인다. 실제로 "버튼이 안 눌린다"는
+            말을 들었다 — 눌리고 있었는데 결과가 화면 밖이었다.
+
+            일정 화면이 [＋ 새 모임]에서 똑같은 함정을 밟고 팝업으로 고쳤다.
+            같은 방법을 쓴다. 누른 자리가 어디든 입력칸이 눈앞에 뜬다. */}
+      <Modal
+        visible={!!editing}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setEditing(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' }}>
+          {(() => {
+            const m = matches.find((x) => x.id === editing);
+            if (!m) return null;
+            const t = times.find((x) => x.round === m.round);
+            return (
+              <View style={{
+                backgroundColor: C.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+                paddingTop: 6, paddingBottom: Math.max(bottomPad, 20),
+              }}>
+                <View style={{
+                  width: 38, height: 4, borderRadius: 2, backgroundColor: C.border,
+                  alignSelf: 'center', marginBottom: 10,
+                }} />
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', paddingHorizontal: S.lg,
+                  paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.border,
+                }}>
+                  <Text style={[F.h3, { flex: 1 }]}>
+                    {m.score ? '스코어 고치기' : '스코어 입력'}
+                  </Text>
+                  <Pressable onPress={() => setEditing(null)} hitSlop={10}>
+                    <Text style={{ fontSize: 13, color: C.sub, fontWeight: '700' }}>닫기</Text>
+                  </Pressable>
+                </View>
+
+                <View style={{ padding: S.lg, gap: S.md }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.sub }}>
+                    {m.round}타임 {courtLabel(venueOf(meeting), m.court)}코트
+                    {t ? ` · ${t.start}~${t.end}` : ''}
+                  </Text>
+
+                  {/* 어느 칸이 어느 팀인지 이름으로 보여 준다.
+                      "앞팀/뒷팀"만 적으면 코트에서 헷갈려 거꾸로 넣는다. */}
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10 }}>
+                    <View style={{ flex: 1, gap: 5 }}>
+                      <Text numberOfLines={2} style={{ fontSize: 12, fontWeight: '800', color: C.text }}>
+                        {m.teamA.map(nameOf).join(' · ')}
+                      </Text>
+                      <Field placeholder="0" keyboardType="number-pad" value={sc.a}
+                        onChangeText={(t2) => setSc({ ...sc, a: t2 })} />
+                    </View>
+                    <Text style={{ fontWeight: '800', color: C.faint, paddingBottom: 12 }}>:</Text>
+                    <View style={{ flex: 1, gap: 5 }}>
+                      <Text numberOfLines={2} style={{ fontSize: 12, fontWeight: '800', color: C.text, textAlign: 'right' }}>
+                        {m.teamB.map(nameOf).join(' · ')}
+                      </Text>
+                      <Field placeholder="0" keyboardType="number-pad" value={sc.b}
+                        onChangeText={(t2) => setSc({ ...sc, b: t2 })} />
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Btn tone="ghost" style={{ flex: 1 }} onPress={() => setEditing(null)}>취소</Btn>
+                    <Btn tone="primary" style={{ flex: 2 }} onPress={() => saveSc(m.id)}>저장</Btn>
+                  </View>
+                </View>
+              </View>
+            );
+          })()}
+        </View>
+      </Modal>
 
       {toast && (
         <View style={{ position: 'absolute', bottom: 20, alignSelf: 'center', backgroundColor: C.ink, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, maxWidth: 340 }}>
