@@ -498,6 +498,61 @@ console.log('[app.json 이 가리키는 파일 검사]');
      이 키 하나로 Firestore 전체를 읽고 쓸 수 있다. 보안 규칙도 우회한다.
      그래서 이름이 아니라 파일 안의 표식으로 찾는다.
    ============================================================ */
+/* ---------------- 아이콘 이름이 실제로 있는가 ----------------
+   Icon 은 표(MAP)에 없는 이름을 Ionicons 에 그대로 넘긴다. 그 이름이
+   Ionicons 에도 없으면 **에러 없이 「?」 상자**가 그려진다. 실제로 홈의
+   「입금 대사」가 그렇게 「?」로 나오고 있었는데, 아무 검사에도 안
+   걸렸다 — 앱은 멀쩡히 돌고 화면만 이상하다.
+
+   그래서 앱이 아이콘 이름으로 쓰는 값을 모아 전부 대조한다.
+     · <Icon name="..."> 로 적힌 이름
+     · 하단 탭의 icon('x') — x 와 xActive 둘 다
+     · 홈 타일(MANAGE·QUICK)의 첫 칸, 더보기 메뉴 줄의 둘째 칸
+   (값이 계산되는 자리는 이렇게 자리를 알고 있는 것만 본다.) */
+console.log('[아이콘 이름이 실제로 있는지 검사]');
+{
+  const glyphPath = join(ROOT, 'node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/Ionicons.json');
+  let glyphs = null;
+  try { glyphs = JSON.parse(readFileSync(glyphPath, 'utf8')); } catch (e) { glyphs = null; }
+  if (!glyphs) {
+    /* ⚠️ 목록을 못 읽었다고 조용히 통과시키지 않는다. 검사가 안 돈 것을
+          통과로 보이게 하면, 그게 이 검사를 만든 이유와 똑같은 사고다. */
+    ok(false, `아이콘 목록을 읽지 못했습니다(${glyphPath}) — npm ci 를 먼저 하세요`);
+  } else {
+    const iconSrc = readFileSync(join(ROOT, 'src/components/Icon.jsx'), 'utf8');
+    const mapBody = iconSrc.slice(iconSrc.indexOf('const MAP = {'), iconSrc.indexOf('};', iconSrc.indexOf('const MAP = {')));
+    const MAPKEYS = new Map([...mapBody.matchAll(/^\s*([A-Za-z]+):\s*'([^']+)'/gm)].map((m) => [m[1], m[2]]));
+    const resolves = (n) => (MAPKEYS.has(n) ? MAPKEYS.get(n) in glyphs : n in glyphs);
+
+    MAPKEYS.forEach((g, k) => ok(g in glyphs, `아이콘 표 ${k} → '${g}' 은(는) Ionicons 에 없습니다 — 「?」로 나옵니다`));
+
+    const used = [];                       // [이름, 어디서]
+    const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
+    for (const file of [...walk(join(ROOT, 'app')), ...walk(join(ROOT, 'src'))]) {
+      const rel = file.slice(ROOT.length + 1);
+      const src = readFileSync(file, 'utf8');
+      for (const m of src.matchAll(/<Icon\s+name=(?:"([^"]+)"|\{'([^']+)'\})/g)) used.push([m[1] || m[2], rel]);
+    }
+    const tabs = read('app/(tabs)/_layout.jsx');
+    for (const m of tabs.matchAll(/icon\('([a-zA-Z]+)'\)/g)) {
+      used.push([m[1], '하단 탭'], [`${m[1]}Active`, '하단 탭(선택됨)']);
+    }
+    const home = read('app/(tabs)/index.jsx');
+    for (const name of ['MANAGE', 'QUICK']) {
+      const at = home.indexOf(`const ${name} = [`);
+      const body = home.slice(at, home.indexOf('];', at));
+      for (const m of body.matchAll(/\[\s*'([a-z]+)'/g)) used.push([m[1], `홈 ${name}`]);
+    }
+    const more = read('app/(tabs)/more.jsx');
+    for (const m of more.matchAll(/\[\s*'[a-z]+',\s*'([a-zA-Z-]+)',\s*SCREEN\./g)) used.push([m[1], '더보기 메뉴']);
+
+    ok(used.length > 20, `모은 아이콘 이름이 너무 적습니다(${used.length}) — 모으는 방식이 깨졌을 수 있습니다`);
+    for (const [n, where] of used) {
+      ok(resolves(n), `${where}: 아이콘 '${n}' 이(가) 없습니다 — 화면에 「?」로 나옵니다`);
+    }
+  }
+}
+
 console.log('[비밀 키가 섞여 들어갔는지 검사]');
 {
   const SKIP = new Set(['node_modules', '.git', '.expo', 'dist', 'android', 'ios']);

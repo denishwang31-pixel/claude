@@ -327,6 +327,7 @@ export const SCREEN = {
   more: '더보기',
   schedule: '일정',
   match: '대진표',
+  levelup: '레벨업',
   home: '홈',
 };
 

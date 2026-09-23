@@ -20,7 +20,7 @@ export const AD_SLOTS = {
   HOME: 'home',       // 홈 상단
   SCHEDULE: 'schedule', // 일정 목록
   MATCH: 'match',     // 대진표 하단
-  GEAR: 'gear',       // 용품 탭
+  GEAR: 'gear',       // 레벨업 › 용품  (값은 그대로 — 쌓인 통계가 이 이름으로 묶여 있다)
 };
 
 /**

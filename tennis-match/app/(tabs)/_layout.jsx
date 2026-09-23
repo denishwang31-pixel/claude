@@ -1,5 +1,10 @@
 /* 하단 탭 네비게이션 + 푸시 토큰 등록(PHASE 3)
-   탭: 홈 · 일정 · 대진 · 용품 · 원포인트 · 더보기 (랭킹은 더보기 안으로)
+   탭: 홈 · 일정 · 대진 · 레벨업 · 더보기 (랭킹은 더보기 안으로)
+
+   ⚠️ 다섯 개가 한계다. 여섯 개(용품·원포인트가 따로)였을 때 휴대폰에서
+      글자가 좁아졌다. 용품·원포인트·코치는 「레벨업」 한 칸 안에서
+      나뉜다(app/(tabs)/levelup.jsx). 탭을 더 늘리고 싶어지면, 늘리기 전에
+      기존 칸 안에 넣을 수 있는지부터 본다.
    탭 아이콘은 이모지가 아니라 Ionicons 벡터 — 선택 시 채워진 형태로 바뀐다. */
 import React, { useEffect } from 'react';
 import { Tabs } from 'expo-router';
@@ -34,8 +39,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: '홈', tabBarIcon: icon('home') }} />
       <Tabs.Screen name="schedule" options={{ title: '일정', tabBarIcon: icon('schedule') }} />
       <Tabs.Screen name="match" options={{ title: '대진', tabBarIcon: icon('match') }} />
-      <Tabs.Screen name="gear" options={{ title: '용품', tabBarIcon: icon('gear') }} />
-      <Tabs.Screen name="tips" options={{ title: '원포인트', tabBarIcon: icon('tips') }} />
+      <Tabs.Screen name="levelup" options={{ title: '레벨업', tabBarIcon: icon('levelup') }} />
       <Tabs.Screen name="more" options={{ title: '더보기', tabBarIcon: icon('more') }} />
       {/* 랭킹은 더보기 메뉴에서 진입 (하단 탭 과밀 방지) */}
       <Tabs.Screen name="rank" options={{ href: null }} />

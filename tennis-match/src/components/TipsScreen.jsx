@@ -2,16 +2,16 @@
    영상은 링크로 등록하고, 누르면 유튜브 앱/브라우저로 열립니다. */
 import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Image, Linking } from 'react-native';
-import { useApp } from '../_layout';
-import { useBottomPad } from '../../src/hooks/useBottomPad';
-import { useClub } from '../../src/hooks/useClub';
-import { useBackHandler } from '../../src/hooks/useBackHandler';
-import { subTips, addTip, deleteTip } from '../../src/lib/firestore';
-import { TIP_CATEGORIES } from '../../src/lib/constants';
-import { ScreenHeader } from '../../src/components/ScreenHeader';
-import { Label } from '../../src/components/pickers';
-import { Card, SectionTitle, Chip, Btn, Field } from '../../src/components/ui';
-import { C } from '../../src/lib/theme';
+import { useApp } from '../../app/_layout';
+import { useBottomPad } from '../hooks/useBottomPad';
+import { useClub } from '../hooks/useClub';
+import { useBackHandler } from '../hooks/useBackHandler';
+import { subTips, addTip, deleteTip } from '../lib/firestore';
+import { TIP_CATEGORIES } from '../lib/constants';
+import { ScreenHeader } from './ScreenHeader';
+import { Label } from './pickers';
+import { Card, SectionTitle, Chip, Btn, Field } from './ui';
+import { C } from '../lib/theme';
 
 /** 유튜브 URL에서 영상 ID 추출 (watch?v=, youtu.be/, shorts/ 지원) */
 export function youtubeId(url = '') {
@@ -24,7 +24,8 @@ const thumbOf = (url) => {
   return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
 };
 
-export default function Tips() {
+/** @param title/top  GearScreen 과 같다 — 레벨업 탭 안에서 쓰인다. */
+export function TipsScreen({ title = '원포인트', top = null } = {}) {
   const { clubId, me, viewMode } = useApp();
   const bottomPad = useBottomPad();
   const { isAdmin } = useClub(clubId, me, { viewMode });
@@ -54,11 +55,13 @@ export default function Tips() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenHeader
-        title="원포인트"
-        subtitle="영역별 레슨 영상 모음"
+        title={title}
+        subtitle="포핸드·백핸드·서브 — 영역별로 한 가지씩 짚어 보기"
         onBack={adding ? () => setAdding(false) : undefined}
-        backLabel="원포인트"
+        backLabel={title}
       />
+
+      {top}
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -161,3 +164,5 @@ export default function Tips() {
     </View>
   );
 }
+
+export default TipsScreen;

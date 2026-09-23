@@ -24,6 +24,15 @@ const MAP = {
   gearActive: 'bag-handle',
   tips: 'play-circle-outline',
   tipsActive: 'play-circle',
+  /* 입금 대사 — 통장 입금과 회비를 맞춰 보는 일. 영수증 모양.
+     ⚠️ 이 줄이 빠져 있어서 홈의 「입금 대사」 아이콘이 **「?」 상자**로
+        나오고 있었다. 에러가 안 나서 아무도 몰랐다. 이제 test-imports 가
+        앱이 쓰는 아이콘 이름을 전부 대조한다. */
+  reconcile: 'receipt-outline',
+  /* 레벨업 탭 — "오른다". ▶ 재생 버튼은 "영상 모음"이라는 뜻이라
+     용품·코치까지 담는 칸에는 맞지 않는다. */
+  levelup: 'arrow-up-circle-outline',
+  levelupActive: 'arrow-up-circle',
   more: 'grid-outline',
   moreActive: 'grid',
 

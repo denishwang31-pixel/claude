@@ -4,22 +4,22 @@
    이동 링크는 src/lib/ads.js 가 만들며, 나중에 제휴 코드를 붙여도 이 화면은 그대로입니다. */
 import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Image } from 'react-native';
-import { useApp } from '../_layout';
-import { useBottomPad } from '../../src/hooks/useBottomPad';
-import { useClub } from '../../src/hooks/useClub';
-import { useBackHandler } from '../../src/hooks/useBackHandler';
-import { subGear, addGear, deleteGear } from '../../src/lib/firestore';
-import { GEAR_CATEGORIES } from '../../src/lib/constants';
-import { openAd, sellerName, AD_SLOTS } from '../../src/lib/ads';
+import { useApp } from '../../app/_layout';
+import { useBottomPad } from '../hooks/useBottomPad';
+import { useClub } from '../hooks/useClub';
+import { useBackHandler } from '../hooks/useBackHandler';
+import { subGear, addGear, deleteGear } from '../lib/firestore';
+import { GEAR_CATEGORIES } from '../lib/constants';
+import { openAd, sellerName, AD_SLOTS } from '../lib/ads';
 import {
   GEAR_MODE, GEAR_MODE_LABEL, gearMode, margin, marginText, gearReady, isSoldOut,
-} from '../../src/lib/dropship';
-import { ScreenHeader } from '../../src/components/ScreenHeader';
-import { Label } from '../../src/components/pickers';
+} from '../lib/dropship';
+import { ScreenHeader } from './ScreenHeader';
+import { Label } from './pickers';
 import {
   Card, SectionTitle, Chip, Btn, Field, FilterRow, EmptyState, CheckRow,
-} from '../../src/components/ui';
-import { C, S, R, F, SHADOW } from '../../src/lib/theme';
+} from './ui';
+import { C, S, R, F, SHADOW } from '../lib/theme';
 
 const BLANK = {
   title: '', category: GEAR_CATEGORIES[0], price: '', image: '', link: '', desc: '',
@@ -31,7 +31,13 @@ const BLANK = {
   supplier: '', cost: '', shipCost: '', shipFee: '', feeRate: '', stock: '', orderUrl: '',
 };
 
-export default function Gear() {
+/**
+ * @param title  머리 제목. 레벨업 탭 안에서는 '레벨업' 이 들어온다.
+ * @param top    머리 바로 아래 고정으로 붙일 것 — 레벨업의 칸 나누기.
+ *               ⚠️ 스크롤 안이 아니라 밖에 둔다. 목록을 내려도 다른 칸으로
+ *                  바로 건너갈 수 있어야 한다.
+ */
+export function GearScreen({ title = '용품', top = null } = {}) {
   const { clubId, me, viewMode, isAppAdmin } = useApp();
   const bottomPad = useBottomPad();
   useClub(clubId, me, { viewMode }); // 클럽 컨텍스트 유지(용품은 앱 공통)
@@ -89,16 +95,18 @@ export default function Gear() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenHeader
-        title="용품"
-        subtitle={isAppAdmin ? '앱 관리자 모드 · 등록/삭제 가능' : '라켓·의류·소모품 추천'}
+        title={title}
+        subtitle={isAppAdmin ? '용품 · 앱 관리자 모드 · 등록/삭제 가능' : '라켓·의류·소모품 추천'}
         onBack={adding ? () => setAdding(false) : undefined}
-        backLabel="용품"
+        backLabel={title}
         right={isAppAdmin ? (
           <Chip tone={adding ? 'green' : 'soft'} onPress={() => setAdding(!adding)}>
             {adding ? '닫기' : '+ 등록'}
           </Chip>
         ) : null}
       />
+
+      {top}
 
       <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: bottomPad }}>
         <FilterRow>
@@ -221,7 +229,7 @@ export default function Gear() {
                 checked={f.onHome}
                 onToggle={() => setF({ ...f, onHome: !f.onHome })}
                 label="홈·일정 화면 배너에도 노출"
-                hint="끄면 이 용품 탭에서만 보입니다."
+                hint="끄면 레벨업 › 용품에서만 보입니다."
               />
             </View>
 
@@ -321,3 +329,5 @@ export default function Gear() {
     </View>
   );
 }
+
+export default GearScreen;

@@ -35,7 +35,6 @@ import { JoinRequests } from '../../src/components/JoinRequestsScreen';
 import { Invite } from '../../src/components/InviteScreen';
 import { Polls } from '../../src/components/PollScreen';
 import { ClubMatchScreen } from '../../src/components/ClubMatchScreen';
-import { CoachScreen } from '../../src/components/CoachScreen';
 import { OpenTournaments } from '../../src/components/OpenTournamentsScreen';
 import { CoachReviewScreen } from '../../src/components/CoachReviewScreen';
 import { UpdateStatus } from '../../src/components/UpdateStatus';
@@ -98,7 +97,9 @@ const MENU_GROUPS = [
     items: [
       ['guest', 'guest', SCREEN.guest, '모든 클럽이 함께 보는 공개 게시판'],
       ['courts', 'courts', SCREEN.courts, '주변 공공·사설 테니스장 찾기'],
-      ['coaches', 'ntrp', SCREEN.coaches, '지역별로 코치를 찾고 레슨 영상 보기'],
+      /* 코치 찾기는 하단 「레벨업」 탭으로 옮겼다(원포인트 · 용품 · 코치).
+         레슨 영상을 보다 "이거 안 되는데" 하는 순간 바로 옆에 있어야
+         이어진다. 더보기 깊숙이 두면 그 순간에 아무도 못 찾는다. */
       ['opens', 'tournament', SCREEN.opens, '협회·지자체·기업이 여는 큰 대회'],
     ],
   },
@@ -315,7 +316,6 @@ export default function More() {
         }} />
       );
       case 'courts': return <Courts {...{ clubId, courts, me, isAdmin, flash }} />;
-      case 'coaches': return <CoachScreen {...{ uid: me, flash }} />;
       case 'coachreview': return <CoachReviewScreen {...{ uid: me, flash }} />;
       case 'appops': return <AppOps {...{ me, flash }} />;
       case 'legal': return <Legal />;
