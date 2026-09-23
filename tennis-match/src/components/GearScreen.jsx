@@ -15,6 +15,7 @@ import {
   GEAR_MODE, GEAR_MODE_LABEL, gearMode, margin, marginText, gearReady, isSoldOut,
 } from '../lib/dropship';
 import { ScreenHeader } from './ScreenHeader';
+import { AddButton } from './LevelupTop';
 import { Label } from './pickers';
 import {
   Card, SectionTitle, Chip, Btn, Field, FilterRow, EmptyState, CheckRow,
@@ -32,12 +33,14 @@ const BLANK = {
 };
 
 /**
- * @param title  머리 제목. 레벨업 탭 안에서는 '레벨업' 이 들어온다.
- * @param top    머리 바로 아래 고정으로 붙일 것 — 레벨업의 칸 나누기.
- *               ⚠️ 스크롤 안이 아니라 밖에 둔다. 목록을 내려도 다른 칸으로
- *                  바로 건너갈 수 있어야 한다.
+ * @param title      머리 제목(등록 폼을 열었을 때, 또는 레벨업 밖에서 쓸 때)
+ * @param renderTop  레벨업의 머리(칸 나누기) — ({ right }) => 요소.
+ *                   있으면 제목 머리 대신 이걸 쓴다. 등록 폼을 열면 뒤로
+ *                   버튼이 있는 제목 머리로 바뀐다.
+ *                   ⚠️ 스크롤 안이 아니라 밖에 둔다. 목록을 내려도 다른 칸으로
+ *                      바로 건너갈 수 있어야 한다.
  */
-export function GearScreen({ title = '용품', top = null } = {}) {
+export function GearScreen({ title = '용품', renderTop = null } = {}) {
   const { clubId, me, viewMode, isAppAdmin } = useApp();
   const bottomPad = useBottomPad();
   useClub(clubId, me, { viewMode }); // 클럽 컨텍스트 유지(용품은 앱 공통)
@@ -94,19 +97,21 @@ export function GearScreen({ title = '용품', top = null } = {}) {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScreenHeader
-        title={title}
-        subtitle={isAppAdmin ? '용품 · 앱 관리자 모드 · 등록/삭제 가능' : '라켓·의류·소모품 추천'}
-        onBack={adding ? () => setAdding(false) : undefined}
-        backLabel={title}
-        right={isAppAdmin ? (
-          <Chip tone={adding ? 'green' : 'soft'} onPress={() => setAdding(!adding)}>
-            {adding ? '닫기' : '+ 등록'}
-          </Chip>
-        ) : null}
-      />
-
-      {top}
+      {renderTop && !adding ? renderTop({
+        right: isAppAdmin ? <AddButton label="용품 등록" onPress={() => setAdding(true)} /> : null,
+      }) : (
+        <ScreenHeader
+          title={adding ? `${title} 등록` : title}
+          subtitle={isAppAdmin ? '용품 · 앱 관리자 모드 · 등록/삭제 가능' : '라켓·의류·소모품 추천'}
+          onBack={adding ? () => setAdding(false) : undefined}
+          backLabel={title}
+          right={isAppAdmin ? (
+            <Chip tone={adding ? 'green' : 'soft'} onPress={() => setAdding(!adding)}>
+              {adding ? '닫기' : '+ 등록'}
+            </Chip>
+          ) : null}
+        />
+      )}
 
       <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: bottomPad }}>
         <FilterRow>

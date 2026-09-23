@@ -20,6 +20,9 @@
       순간이 코치가 가장 반가운 순간이다. 코치를 앞세우면 이 탭 전체가
       레슨 광고로 읽힌다.
 
+   영상을 보다 [코치 보기 ›]를 누르면 이 칸이 「코치」로 바뀐다(새 화면을
+   쌓지 않는다). 영상이 없을 때 [용품 둘러보기 ›]도 같은 식이다.
+
    처음 열면 늘 원포인트 — 사람을 불러들이는 쪽이다. 앱이 켜져 있는
    동안은 탭 화면이 살아 있으므로 보던 칸이 그대로 남는다.
    ============================================================ */
@@ -27,11 +30,10 @@ import React, { useState } from 'react';
 import { View, Text } from 'react-native';
 import { useApp } from '../_layout';
 import { GearScreen } from '../../src/components/GearScreen';
-import { TipsScreen } from '../../src/components/TipsScreen';
+import { OnePointScreen } from '../../src/components/onepoint/OnePointScreen';
 import { CoachScreen } from '../../src/components/CoachScreen';
-import { ScreenHeader } from '../../src/components/ScreenHeader';
-import { Segmented } from '../../src/components/native';
-import { C, S, R } from '../../src/lib/theme';
+import { LevelupTop } from '../../src/components/LevelupTop';
+import { C, R } from '../../src/lib/theme';
 
 export const LEVELUP_TABS = [
   { key: 'tips', label: '원포인트' },
@@ -45,23 +47,27 @@ export default function LevelUp() {
   const [toast, setToast] = useState(null);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
 
-  const pick = (k) => setTab(k);
-
-  /* 칸 나누기 — 머리 바로 아래에 고정. 목록을 내려도 다른 칸으로 바로 간다. */
-  const top = (
-    <View style={{ paddingHorizontal: S.lg, paddingTop: S.sm, paddingBottom: S.sm, backgroundColor: C.bg }}>
-      <Segmented options={LEVELUP_TABS} value={tab} onChange={pick} />
-    </View>
+  /* 칸 나누기가 화면 첫 줄이다(제목·부제 없음 — 탭바에 이미 「레벨업」이
+     보인다). 세 칸이 같은 머리를 쓰고, 각 칸은 오른쪽 버튼만 채운다. */
+  const renderTop = ({ right = null, beside = null } = {}) => (
+    <LevelupTop options={LEVELUP_TABS} value={tab} onChange={setTab} right={right} beside={beside} />
   );
 
-  if (tab === 'gear') return <GearScreen title="레벨업" top={top} />;
-  if (tab === 'tips') return <TipsScreen title="레벨업" top={top} />;
+  if (tab === 'gear') return <GearScreen title="용품" renderTop={renderTop} />;
+  if (tab === 'tips') {
+    return (
+      <OnePointScreen
+        renderTop={renderTop}
+        onGoCoach={() => setTab('coach')}
+        onGoGear={() => setTab('gear')}
+      />
+    );
+  }
 
   /* 코치 화면은 원래 더보기 안에 있어서 자기 머리가 없다. 여기서 씌운다. */
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScreenHeader title="레벨업" subtitle="내 동네에서 봐 줄 코치 찾기" />
-      {top}
+      {renderTop()}
       <View style={{ flex: 1 }}>
         <CoachScreen uid={me} flash={flash} />
       </View>
