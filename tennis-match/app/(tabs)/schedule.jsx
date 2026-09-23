@@ -1,6 +1,6 @@
 /* 일정 / RSVP — 캘린더·시간 선택, 정기 모임 반복 등록, 참석 체크 */
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, ScrollView, Pressable, Alert, Modal } from 'react-native';
+import { View, Text, ScrollView, Pressable, Alert, Modal, Share } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useApp } from '../_layout';
 import { useBottomPad } from '../../src/hooks/useBottomPad';
@@ -12,7 +12,7 @@ import { weatherFor } from '../../src/lib/weather';
 import {
   setRsvp, addMeeting, addMeetingsBatch, updateMeeting, updateMeetingsFrom,
   deleteMeeting, deleteMeetingsBulk, subGear, requestRsvp,
-  applyToTournament, cancelTournamentApply,
+  applyToTournament, cancelTournamentApply, setRsvpLink,
 } from '../../src/lib/firestore';
 import {
   KIND, KINDS, buildAgenda, filterAgenda, countByKind, canApply, weekDays,
@@ -35,6 +35,10 @@ import {
   REPEAT_TYPES, expandRecurrence, dowName,
 } from '../../src/lib/schedule';
 import { RSVP, SURFACES, END_SCORES } from '../../src/lib/constants';
+import {
+  makeToken, validToken, linkUrl, shareMessage, offlineTargets, answeredViaLink, offlineUnanswered,
+} from '../../src/lib/rsvpLink';
+import { firebaseConfig } from '../../firebaseConfig';
 import { DateField, TimeField, Label } from '../../src/components/pickers';
 import { VenuePicker } from '../../src/components/VenuePicker';
 import { Icon } from '../../src/components/Icon';
@@ -134,6 +138,56 @@ export default function Schedule() {
      회원이 200명이면 화요일 염곡에 나오는 사람에게 목요일 수도공고
      투표를 보내는 것은 스팸이다. */
   const askCfg = normalizeAsk(club?.settings?.rsvpAsk);
+  /* ---------- 카톡 참석 링크 ----------
+     앱이 없는 오프라인 회원에게 카톡으로 링크를 보낸다. 공유창에서
+     카카오톡을 고르고 받는 사람을 여러 명 체크하면 각자 1:1 로 간다.
+     받은 사람이 링크에서 참석/불참을 누르면 이 명단에 바로 들어온다.
+
+     ⚠️ 열쇠는 처음 보낼 때 한 번 만들고 계속 쓴다. 보낼 때마다 새로
+        만들면 **먼저 보낸 링크가 전부 막힌다** — 어제 받은 사람이 오늘
+        누르면 "링크가 바뀌었다"가 뜬다. 새로 만드는 건 링크가 엉뚱한
+        곳에 퍼졌을 때만(아래 renewRsvpLink). */
+  const ensureRsvpToken = async () => {
+    const saved = club?.rsvpLink?.token;
+    if (validToken(saved)) return saved;
+    let bytes = null;
+    try {
+      const Crypto = await import('expo-crypto');   // 앱에 없으면 아래로
+      bytes = Crypto.getRandomBytes(32);
+    } catch (e) { bytes = null; }
+    const token = makeToken(bytes);
+    await setRsvpLink(clubId, token, me);
+    return token;
+  };
+
+  const shareRsvpLink = async (mt) => {
+    try {
+      const token = await ensureRsvpToken();
+      const url = linkUrl(firebaseConfig.projectId, clubId, token, mt.id);
+      await Share.share({ message: shareMessage({ clubName: club?.name, meeting: mt, url }) });
+    } catch (e) {
+      flash('링크를 만들지 못했습니다. 연결을 확인하고 다시 해 주세요');
+    }
+  };
+
+  const renewRsvpLink = () => {
+    Alert.alert('링크를 새로 만들까요?',
+      '지금까지 보낸 참석 링크는 전부 막힙니다.\n'
+      + '링크가 엉뚱한 곳에 퍼졌을 때만 쓰세요. 새로 만든 뒤 다시 보내야 합니다.',
+      [{ text: '취소', style: 'cancel' },
+        {
+          text: '새로 만들기',
+          style: 'destructive',
+          onPress: async () => {
+            let bytes = null;
+            try { bytes = (await import('expo-crypto')).getRandomBytes(32); } catch (e) { bytes = null; }
+            setRsvpLink(clubId, makeToken(bytes), me)
+              .then(() => flash('새 링크를 만들었습니다. 옛 링크는 막혔습니다'))
+              .catch(() => flash('만들지 못했습니다. 다시 해 주세요'));
+          },
+        }]);
+  };
+
   const askRsvp = (mt) => {
     const target = membersForMeeting(members, mt);
     const pending = pendingVoters(target, mt);
@@ -541,8 +595,29 @@ export default function Schedule() {
                               </Btn>
                             </View>
 
+                            {/* 앱 없는 회원에게 — 투표 요청(푸시)은 앱이 있어야 닿는다 */}
+                            {offlineTargets(members, mt).length > 0 && (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: 10.5, color: C.faint }}>
+                                    앱 없는 회원 {offlineTargets(members, mt).length}명
+                                    {offlineUnanswered(members, mt) ? ` · 미응답 ${offlineUnanswered(members, mt)}명` : ' · 모두 응답'}
+                                  </Text>
+                                  <Pressable onPress={renewRsvpLink} hitSlop={6}>
+                                    <Text style={{ fontSize: 10, color: C.faint, textDecorationLine: 'underline', marginTop: 2 }}>
+                                      링크 새로 만들기
+                                    </Text>
+                                  </Pressable>
+                                </View>
+                                <Btn small tone={offlineUnanswered(members, mt) ? 'primary' : 'ghost'}
+                                  onPress={() => shareRsvpLink(mt)}>
+                                  카톡으로 보내기
+                                </Btn>
+                              </View>
+                            )}
+
                             <Text style={{ fontSize: 10, color: C.faint, marginTop: 10, marginBottom: 6 }}>
-                              이름을 눌러 대신 처리 (참석 ↔ 불참)
+                              이름을 눌러 대신 처리 (참석 ↔ 불참) · 🔗 = 본인이 카톡 링크로 답함
                             </Text>
                             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
                               {membersForMeeting(members, mt).map((m) => {
@@ -560,6 +635,8 @@ export default function Schedule() {
                                       color: on ? '#fff' : v === RSVP.NO ? '#b91c1c' : C.sub,
                                     }}>
                                       {m.name}{on ? ' ✓' : ''}
+                                      {/* 🔗 = 본인이 카톡 링크로 답함. 총무가 대신 누른 것과 구별된다 */}
+                                      {answeredViaLink(mt, m.id) ? ' 🔗' : ''}
                                     </Text>
                                   </Pressable>
                                 );

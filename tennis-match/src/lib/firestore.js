@@ -199,6 +199,14 @@ export const updateMeetingsFrom = async (clubId, fromDate, patch, scope = {}) =>
    운영진이 현장에서 대신 처리했으면 다르다. 서버가 이걸 보고
    "본인이 마음을 바꾼 것"만 운영진에게 알린다 — 운영진이 자기가
    누른 것을 자기에게 다시 알릴 필요는 없다. */
+/**
+ * 카톡 참석 링크의 열쇠를 클럽에 적는다(운영진).
+ * 새로 적으면 **옛 링크는 그 순간 막힌다** — 서버는 클럽에 저장된 열쇠와
+ * 링크의 열쇠가 같을 때만 받는다. 링크가 엉뚱한 곳에 퍼졌을 때 쓴다.
+ */
+export const setRsvpLink = (clubId, token, uid) =>
+  updateDoc(doc(db, 'clubs', clubId), { rsvpLink: { token, by: uid || '', at: Date.now() } });
+
 export const setRsvp = (clubId, meetingId, memberId, value, actorId) =>
   updateDoc(D(clubId, 'meetings', meetingId), {
     [`rsvp.${memberId}`]: value,

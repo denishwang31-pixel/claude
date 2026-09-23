@@ -6,7 +6,16 @@
       "**/.*",
       "**/node_modules/**"
     ],
-    "cleanUrls": true
+    "cleanUrls": true,
+    "rewrites": [
+      {
+        "source": "/api/rsvp",
+        "function": {
+          "functionId": "rsvpLink",
+          "region": "asia-northeast3"
+        }
+      }
+    ]
   },
   "firestore": {
     "rules": "firestore.rules",

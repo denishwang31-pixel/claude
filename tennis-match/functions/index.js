@@ -35,6 +35,8 @@ const {
 } = require('./rsvpAsk');
 const { inviteMessage, responseMessage } = require('./clubMatch');
 const { scorePushPlan, scorePushText } = require('./scoreReport');
+const { onRequest } = require('firebase-functions/v2/https');
+const rsvpLinkLib = require('./rsvpLink');
 const { planAutoSend, unpaidMembers, summaryForManager } = require('./dunning');
 const {
   billingScopes, membersInScope, feeDocKey, notifyRule,
@@ -815,3 +817,69 @@ exports.onMatchesRecorded = onDocumentUpdated(
       .set({ matches: FieldValue.increment(delta) }, { merge: true });
   },
 );
+
+/* ================= 카톡 참석 링크 =================
+   앱이 없는 오프라인 회원이 카톡으로 받은 링크에서 참석/불참을 누른다.
+   판단은 전부 rsvpLink.js 에 있다 — 여기는 읽고 쓰기만 한다.
+
+   GET  /api/rsvp?c=클럽&t=열쇠      → 다가오는 모임과 오프라인 회원 명단
+   POST /api/rsvp {c,t,meetingId,memberId,value}  → 답 하나 적기
+
+   웹 페이지(/rsvp)와 같은 주소(Firebase Hosting)에서 부른다 — firebase.json
+   의 rewrites 가 /api/rsvp 를 이 함수로 넘긴다. 같은 주소라 CORS 가 필요 없다.
+
+   ⚠️ 이 함수는 링크만 있으면 누구나 부를 수 있다. 그래서
+      · 열쇠가 클럽에 저장된 것과 다르면 아무것도 보여 주지 않는다
+      · 내보내는 것은 오프라인 회원의 이름과 참석 여부뿐이다
+      · 쓸 수 있는 것은 오프라인 회원의 참석 여부 한 칸뿐이다 */
+exports.rsvpLink = onRequest({ ...REGION, cors: false, maxInstances: 5 }, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const fail = (status, code, message) => res.status(status).json({ ok: false, code, message });
+  try {
+    const isPost = req.method === 'POST';
+    if (!isPost && req.method !== 'GET') return fail(405, 'method', '지원하지 않는 요청입니다.');
+    const q = isPost ? (req.body || {}) : (req.query || {});
+    const clubId = String(q.c || '');
+    const token = String(q.t || '');
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(clubId) || !rsvpLinkLib.validToken(token)) {
+      return fail(400, 'link', '링크 주소가 잘못되었습니다. 총무에게 새 링크를 받아 주세요.');
+    }
+
+    const clubRef = db.collection('clubs').doc(clubId);
+    const clubSnap = await clubRef.get();
+    const club = clubSnap.exists ? clubSnap.data() : null;
+    if (!rsvpLinkLib.tokenOk(club, token)) {
+      /* ⚠️ 클럽이 없는 것과 열쇠가 틀린 것을 구별해 알려 주지 않는다.
+            구별해 주면 클럽 id 가 있는지 없는지를 캐 볼 수 있다. */
+      return fail(403, 'link', '링크가 바뀌었거나 잘못되었습니다. 총무에게 새 링크를 받아 주세요.');
+    }
+
+    const today = rsvpLinkLib.todayKST();
+    const memberSnap = await clubRef.collection('members').get();
+    const members = memberSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    if (!isPost) {
+      const mtSnap = await clubRef.collection('meetings').where('date', '>=', today).get();
+      const meetings = mtSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      return res.json({ ok: true, ...rsvpLinkLib.boardOf({ club, members, meetings, today }) });
+    }
+
+    const meetingId = String(q.meetingId || '');
+    const memberId = String(q.memberId || '');
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(meetingId)) return fail(400, 'meeting', '모임을 찾지 못했습니다.');
+    const mtRef = clubRef.collection('meetings').doc(meetingId);
+    const mtSnap = await mtRef.get();
+    const meeting = mtSnap.exists ? { id: mtSnap.id, ...mtSnap.data() } : null;
+    const member = members.find((m) => m.id === memberId) || null;
+
+    const r = rsvpLinkLib.checkAnswer({
+      club, token, member, meeting, value: q.value, today, members,
+    });
+    if (!r.ok) return fail(r.code === 'link' ? 403 : 400, r.code, r.message);
+    await mtRef.update(r.patch);
+    return res.json({ ok: true });
+  } catch (e) {
+    logger.error('카톡 참석 링크 실패', { err: String((e && e.message) || e) });
+    return fail(500, 'server', '잠시 후 다시 해 주세요.');
+  }
+});

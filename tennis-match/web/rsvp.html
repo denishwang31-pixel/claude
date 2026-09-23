@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>참석 여부 — 테니스매치</title>
+<!--
+  카톡 참석 링크 페이지.
+
+  앱이 없는 오프라인 회원이 카톡으로 받은 링크를 누르면 이 페이지가
+  카카오톡 안에서 열린다. 자기 이름을 고르고 참석/불참을 누르면 앱의
+  명단에 바로 들어간다(서버 함수 rsvpLink 가 적는다).
+
+  ⚠️ 받는 사람은 테니스 동호회 회원이다 — 나이대가 넓고, 코트 가는 길에
+     한 손으로 누른다. 글자와 버튼을 크게, 할 일은 두 번 누르기로 끝나게.
+  ⚠️ 외부 글꼴·라이브러리를 안 쓴다. 카톡 안 브라우저에서 느린 망으로
+     열려도 바로 떠야 한다.
+  ⚠️ 이름은 이 폰에 기억한다. 두 번째부터는 이름을 안 골라도 된다.
+     저장이 막힌 폰이면 매번 고르면 된다 — 기능이 멈추지는 않는다.
+-->
+<style>
+  :root {
+    --green: #0E6B4F; --green-soft: #E8F8F2; --ink: #0F172A; --sub: #475569;
+    --faint: #94A3B8; --line: #E2E8F0; --bg: #F8FAFC; --card: #FFFFFF;
+    --no: #B91C1C; --no-soft: #FEF2F2; --warn: #B45309;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
+    -webkit-text-size-adjust: 100%; }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 22px 16px 48px; }
+  .club { font-size: 14px; font-weight: 700; color: var(--green); }
+  h1 { font-size: 24px; margin: 4px 0 6px; letter-spacing: -0.02em; }
+  .lead { font-size: 15px; color: var(--sub); margin: 0 0 18px; line-height: 1.55; }
+  .names { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .name {
+    font: inherit; font-size: 18px; font-weight: 700; padding: 16px 10px;
+    background: var(--card); border: 1.5px solid var(--line); border-radius: 14px;
+    color: var(--ink); cursor: pointer;
+  }
+  .name:active { background: var(--green-soft); border-color: var(--green); }
+  .me { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
+  .me b { font-size: 22px; }
+  .swap { font: inherit; font-size: 14px; color: var(--sub); background: none; border: 0;
+    text-decoration: underline; cursor: pointer; padding: 6px 0; }
+  .mt { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 16px; margin-bottom: 12px; }
+  .mt.focus { border: 2px solid var(--green); }
+  .when { font-size: 19px; font-weight: 800; }
+  .where { font-size: 14px; color: var(--sub); margin-top: 3px; }
+  .state { font-size: 14px; font-weight: 700; margin-top: 10px; min-height: 20px; }
+  .state.yes { color: var(--green); } .state.no { color: var(--no); } .state.none { color: var(--warn); }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .b { font: inherit; font-size: 19px; font-weight: 800; padding: 16px 8px; border-radius: 14px;
+    border: 2px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .b.yes.on { background: var(--green); border-color: var(--green); color: #fff; }
+  .b.no.on { background: var(--no-soft); border-color: var(--no); color: var(--no); }
+  .b:disabled { opacity: .55; }
+  .msg { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px; font-size: 16px; line-height: 1.6; }
+  .msg.err { border-color: #FECACA; background: var(--no-soft); color: var(--no); }
+  .foot { font-size: 12.5px; color: var(--faint); margin-top: 22px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<main class="wrap" id="app">
+  <p class="lead">불러오는 중…</p>
+</main>
+<script>
+(function () {
+  var qs = new URLSearchParams(location.search);
+  var C = qs.get('c') || '', T = qs.get('t') || '', FOCUS = qs.get('m') || '';
+  var app = document.getElementById('app');
+  var KEY = 'tm.rsvp.me.' + C;
+  var board = null, me = null;
+
+  /* 이 폰에 기억 — 막힌 폰(사생활 보호 모드 등)이면 조용히 넘어간다 */
+  function load() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function save(v) { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch (e) {} }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+  var DOW = ['일', '월', '화', '수', '목', '금', '토'];
+  function when(mt) {
+    var p = (mt.date || '').split('-');
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    var head = Number(p[1]) + '/' + Number(p[2]) + '(' + DOW[d.getDay()] + ')';
+    var t = mt.time ? (' ' + mt.time + (mt.endTime ? '~' + mt.endTime : '')) : '';
+    return head + t;
+  }
+
+  function show(html) { app.innerHTML = html; }
+  function error(text) {
+    show('<div class="msg err">' + esc(text) + '</div>'
+      + '<p class="foot">테니스매치 · 참석 링크</p>');
+  }
+
+  function names() {
+    var club = board.club.name ? '<div class="club">' + esc(board.club.name) + '</div>' : '';
+    if (!board.people.length) {
+      show(club + '<h1>참석 여부</h1><div class="msg">지금 답할 수 있는 모임이 없습니다.</div>');
+      return;
+    }
+    var list = board.people.map(function (p) {
+      return '<button class="name" data-id="' + esc(p.id) + '">' + esc(p.name) + '</button>';
+    }).join('');
+    show(club + '<h1>이름을 골라 주세요</h1>'
+      + '<p class="lead">한 번 고르면 이 폰이 기억합니다. 다음부터는 바로 참석/불참만 누르면 됩니다.</p>'
+      + '<div class="names">' + list + '</div>'
+      + '<p class="foot">앱을 쓰시는 분은 이 목록에 없습니다 — 앱에서 직접 눌러 주세요.</p>');
+    Array.prototype.forEach.call(app.querySelectorAll('.name'), function (b) {
+      b.onclick = function () { me = b.getAttribute('data-id'); save(me); meetings(); };
+    });
+  }
+
+  function stateText(v) {
+    if (v === 'yes') return ['yes', '참석으로 전달됨 ✓'];
+    if (v === 'no') return ['no', '불참으로 전달됨'];
+    return ['none', '아직 답하지 않았습니다'];
+  }
+
+  function meetings() {
+    var person = board.people.filter(function (p) { return p.id === me; })[0];
+    if (!person) { me = null; save(null); return names(); }
+    var mine = board.meetings.filter(function (mt) { return mt.who.indexOf(me) >= 0; });
+    mine.sort(function (a, b) { return (b.id === FOCUS) - (a.id === FOCUS); });
+
+    var club = board.club.name ? '<div class="club">' + esc(board.club.name) + '</div>' : '';
+    var head = club + '<h1>참석 여부</h1>'
+      + '<div class="me"><span><b>' + esc(person.name) + '</b> 님</span>'
+      + '<button class="swap" id="swap">내가 아니에요</button></div>';
+    if (!mine.length) {
+      show(head + '<div class="msg">지금 답할 모임이 없습니다.</div>');
+    } else {
+      show(head + mine.map(function (mt) {
+        var v = mt.rsvp[me] || '';
+        var st = stateText(v);
+        var where = [mt.place, mt.courts ? ('코트 ' + mt.courts + '면') : ''].filter(Boolean).join(' · ');
+        return '<section class="mt' + (mt.id === FOCUS ? ' focus' : '') + '" data-id="' + esc(mt.id) + '">'
+          + '<div class="when">' + esc(when(mt)) + '</div>'
+          + (where ? '<div class="where">' + esc(where) + '</div>' : '')
+          + '<div class="btns">'
+          + '<button class="b yes' + (v === 'yes' ? ' on' : '') + '" data-v="yes">참석</button>'
+          + '<button class="b no' + (v === 'no' ? ' on' : '') + '" data-v="no">불참</button>'
+          + '</div>'
+          + '<div class="state ' + st[0] + '">' + st[1] + '</div>'
+          + '</section>';
+      }).join('') + '<p class="foot">바꾸고 싶으면 언제든 다시 누르면 됩니다.</p>');
+    }
+    document.getElementById('swap').onclick = function () { me = null; save(null); names(); };
+    Array.prototype.forEach.call(app.querySelectorAll('.mt'), function (sec) {
+      Array.prototype.forEach.call(sec.querySelectorAll('.b'), function (btn) {
+        btn.onclick = function () { answer(sec, btn.getAttribute('data-v')); };
+      });
+    });
+  }
+
+  function answer(sec, v) {
+    var id = sec.getAttribute('data-id');
+    var btns = sec.querySelectorAll('.b');
+    var state = sec.querySelector('.state');
+    Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
+    state.className = 'state none'; state.textContent = '보내는 중…';
+    fetch('/api/rsvp', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ c: C, t: T, meetingId: id, memberId: me, value: v }),
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      Array.prototype.forEach.call(btns, function (b) { b.disabled = false; });
+      if (!res.ok) {
+        state.className = 'state no'; state.textContent = res.message || '전달하지 못했습니다.';
+        if (res.code === 'link') error(res.message);
+        return;
+      }
+      board.meetings.forEach(function (mt) { if (mt.id === id) mt.rsvp[me] = v; });
+      Array.prototype.forEach.call(btns, function (b) {
+        b.classList.toggle('on', b.getAttribute('data-v') === v);
+      });
+      var st = stateText(v); state.className = 'state ' + st[0]; state.textContent = st[1];
+    }).catch(function () {
+      Array.prototype.forEach.call(btns, function (b) { b.disabled = false; });
+      state.className = 'state no'; state.textContent = '연결이 불안정합니다. 다시 눌러 주세요.';
+    });
+  }
+
+  if (!C || !T) { error('링크 주소가 잘못되었습니다. 총무에게 새 링크를 받아 주세요.'); return; }
+  fetch('/api/rsvp?c=' + encodeURIComponent(C) + '&t=' + encodeURIComponent(T))
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (!res.ok) { error(res.message || '불러오지 못했습니다.'); return; }
+      board = res;
+      me = load();
+      if (me) meetings(); else names();
+    })
+    .catch(function () { error('불러오지 못했습니다. 잠시 후 다시 열어 주세요.'); });
+})();
+</script>
+</body>
+</html>

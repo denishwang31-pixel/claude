@@ -18,7 +18,7 @@
      아니다. 그대로 올리면 "대표자 이름"이라고 적힌 약관이 인터넷에
      공개된다. 그런 것은 없느니만 못하다.
    ============================================================ */
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TERMS, PRIVACY, pendingBlanks } from '../src/lib/legalText.js';
@@ -102,5 +102,12 @@ mkdirSync(OUT, { recursive: true });
 writeFileSync(join(OUT, 'index.html'), page('홈', HOME));
 writeFileSync(join(OUT, 'privacy.html'), page('개인정보처리방침', `<pre>${esc(PRIVACY)}</pre>`));
 writeFileSync(join(OUT, 'terms.html'), page('이용약관', `<pre>${esc(TERMS)}</pre>`));
+
+/* 카톡 참석 링크 페이지 — 앱 없는 오프라인 회원이 참석/불참을 누르는 곳.
+   ⚠️ 약관과 같은 사이트에 올린다. Hosting 배포는 사이트 **전체를 갈아
+      끼우므로**, 여기서 빠뜨리면 약관을 올리는 순간 참석 링크가 사라진다.
+      반대로 약관 빈칸 때문에 이 스크립트가 멈추면 이 페이지도 안 올라가는데,
+      그게 맞다 — 약관 없이 사이트 절반만 올리면 약관 페이지가 지워진다. */
+copyFileSync(join(ROOT, 'web', 'rsvp.html'), join(OUT, 'rsvp.html'));
 
 console.log('약관 페이지를 만들었습니다 — public/index.html, privacy.html, terms.html');
