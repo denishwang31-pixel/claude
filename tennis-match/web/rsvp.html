@@ -18,6 +18,16 @@
      열려도 바로 떠야 한다.
   ⚠️ 이름은 이 폰에 기억한다. 두 번째부터는 이름을 안 골라도 된다.
      저장이 막힌 폰이면 매번 고르면 된다 — 기능이 멈추지는 않는다.
+
+  잘못 고른 이름을 막고 치우는 두 겹
+    ① 처음 고를 때 "○○ 님이 맞나요?"를 한 번 묻는다. 폰이 이름을
+       기억하는 구조라, 처음 한 번의 실수가 다음 링크마다 이어진다 —
+       여기서 막는 게 가장 효과가 크다.
+    ② 이 폰이 누구 이름으로 무엇을 눌렀는지 기억해 둔다. [내가 아니에요]를
+       누르면 "○○ 님 이름으로 누른 답을 되돌릴까요?"를 묻고, 누르기
+       **전의 상태**로 돌려놓는다(원래 답이 있었으면 그 답으로, 없었으면
+       미응답으로). 그 사람이 스스로 답해 둔 것을 지우지 않게 하려는 것.
+       한 폰을 부부가 같이 쓰는 경우도 있어서 "그대로 둘게요"도 둔다.
 -->
 <style>
   :root {
@@ -61,6 +71,11 @@
     padding: 18px; font-size: 16px; line-height: 1.6; }
   .msg.err { border-color: #FECACA; background: var(--no-soft); color: var(--no); }
   .foot { font-size: 12.5px; color: var(--faint); margin-top: 22px; line-height: 1.6; }
+  .stack { display: grid; gap: 10px; margin-top: 16px; }
+  .b.main { background: var(--green); border-color: var(--green); color: #fff; }
+  .undo { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 12px 14px; margin: 6px 0; font-size: 16px; }
+  .undo b { font-weight: 800; }
 </style>
 </head>
 <body>
@@ -78,6 +93,26 @@
   /* 이 폰에 기억 — 막힌 폰(사생활 보호 모드 등)이면 조용히 넘어간다 */
   function load() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
   function save(v) { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch (e) {} }
+
+  /* ② 이 폰이 남긴 답 — { m: 회원, mt: 모임, prev: 누르기 전 상태 } */
+  var DONE_KEY = 'tm.rsvp.done.' + C;
+  function loadDone() {
+    try { var v = JSON.parse(localStorage.getItem(DONE_KEY) || '[]'); return Array.isArray(v) ? v : []; }
+    catch (e) { return []; }
+  }
+  function saveDone(list) { try { localStorage.setItem(DONE_KEY, JSON.stringify(list)); } catch (e) {} }
+  /* 처음 누른 것만 적는다 — 여러 번 바꿔도 "누르기 전"은 처음 한 번뿐이다 */
+  function remember(m, mt, prev) {
+    var list = loadDone();
+    for (var i = 0; i < list.length; i++) if (list[i].m === m && list[i].mt === mt) return;
+    list.push({ m: m, mt: mt, prev: prev || '' });
+    saveDone(list);
+  }
+  function forget(m) { saveDone(loadDone().filter(function (x) { return x.m !== m; })); }
+  function person(id) { return board.people.filter(function (p) { return p.id === id; })[0]; }
+  function clubHead() {
+    return board.club.name ? '<div class="club">' + esc(board.club.name) + '</div>' : '';
+  }
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
@@ -113,8 +148,75 @@
       + '<div class="names">' + list + '</div>'
       + '<p class="foot">앱을 쓰시는 분은 이 목록에 없습니다 — 앱에서 직접 눌러 주세요.</p>');
     Array.prototype.forEach.call(app.querySelectorAll('.name'), function (b) {
-      b.onclick = function () { me = b.getAttribute('data-id'); save(me); meetings(); };
+      b.onclick = function () { confirmName(b.getAttribute('data-id')); };
     });
+  }
+
+  /* ① 처음 고를 때 한 번 더 묻는다 */
+  function confirmName(id) {
+    var p = person(id);
+    if (!p) return names();
+    show(clubHead() + '<h1>' + esc(p.name) + ' 님이 맞나요?</h1>'
+      + '<p class="lead">이 폰이 이 이름을 기억합니다. 다른 분 이름으로 누르면 '
+      + '<b>그분의 참석이 바뀝니다.</b></p>'
+      + '<div class="stack">'
+      + '<button class="b main" id="yes">네, ' + esc(p.name) + ' 입니다</button>'
+      + '<button class="b" id="no">아니요, 다시 고를게요</button>'
+      + '</div>');
+    document.getElementById('yes').onclick = function () { me = id; save(me); meetings(); };
+    document.getElementById('no').onclick = function () { names(); };
+  }
+
+  /* ② [내가 아니에요] — 이 이름으로 누른 답이 있으면 되돌릴지 묻는다 */
+  function notMe() {
+    var p = person(me);
+    var mine = loadDone().filter(function (x) {
+      return x.m === me && board.meetings.some(function (mt) { return mt.id === x.mt; });
+    });
+    if (!p || !mine.length) { forget(me); me = null; save(null); return names(); }
+    var rows = mine.map(function (x) {
+      var mt = board.meetings.filter(function (m) { return m.id === x.mt; })[0];
+      var now = stateText(mt.rsvp[me] || '')[1].replace(' ✓', '').replace('으로 전달됨', '');
+      var back = x.prev === 'yes' ? '참석' : x.prev === 'no' ? '불참' : '미응답';
+      return '<div class="undo"><b>' + esc(when(mt)) + '</b><br>'
+        + '지금 ' + esc(now) + ' → 되돌리면 <b>' + esc(back) + '</b></div>';
+    }).join('');
+    show(clubHead() + '<h1>' + esc(p.name) + ' 님 이름으로 누른 답이 있습니다</h1>'
+      + '<p class="lead">이름을 잘못 고르셨다면 누르기 전으로 되돌려 두세요. '
+      + '그대로 두면 ' + esc(p.name) + ' 님이 직접 답한 것으로 남습니다.</p>'
+      + rows
+      + '<div class="stack">'
+      + '<button class="b main" id="undo">네, 되돌려 주세요</button>'
+      + '<button class="b" id="keep">아니요, 그대로 둘게요</button>'
+      + '<button class="swap" id="back">취소</button>'
+      + '</div>');
+    document.getElementById('back').onclick = function () { meetings(); };
+    document.getElementById('keep').onclick = function () { forget(me); me = null; save(null); names(); };
+    document.getElementById('undo').onclick = function () {
+      var btn = this; btn.disabled = true; btn.textContent = '되돌리는 중…';
+      var who = me;
+      /* 하나씩 차례로 — 한꺼번에 쏘면 하나가 실패했을 때 무엇이 남았는지 모른다 */
+      var i = 0;
+      (function next() {
+        if (i >= mine.length) { forget(who); me = null; save(null); return names(); }
+        var x = mine[i++];
+        post(x.mt, who, x.prev || 'clear').then(function (res) {
+          if (!res.ok) { btn.disabled = false; btn.textContent = '다시 시도'; return; }
+          board.meetings.forEach(function (mt) {
+            if (mt.id !== x.mt) return;
+            if (x.prev) mt.rsvp[who] = x.prev; else delete mt.rsvp[who];
+          });
+          next();
+        }).catch(function () { btn.disabled = false; btn.textContent = '연결이 불안정합니다. 다시 시도'; });
+      })();
+    };
+  }
+
+  function post(meetingId, memberId, value) {
+    return fetch('/api/rsvp', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ c: C, t: T, meetingId: meetingId, memberId: memberId, value: value }),
+    }).then(function (r) { return r.json(); });
   }
 
   function stateText(v) {
@@ -151,7 +253,7 @@
           + '</section>';
       }).join('') + '<p class="foot">바꾸고 싶으면 언제든 다시 누르면 됩니다.</p>');
     }
-    document.getElementById('swap').onclick = function () { me = null; save(null); names(); };
+    document.getElementById('swap').onclick = notMe;
     Array.prototype.forEach.call(app.querySelectorAll('.mt'), function (sec) {
       Array.prototype.forEach.call(sec.querySelectorAll('.b'), function (btn) {
         btn.onclick = function () { answer(sec, btn.getAttribute('data-v')); };
@@ -163,18 +265,18 @@
     var id = sec.getAttribute('data-id');
     var btns = sec.querySelectorAll('.b');
     var state = sec.querySelector('.state');
+    var mt0 = board.meetings.filter(function (m) { return m.id === id; })[0];
+    var prev = (mt0 && mt0.rsvp[me]) || '';
     Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
     state.className = 'state none'; state.textContent = '보내는 중…';
-    fetch('/api/rsvp', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ c: C, t: T, meetingId: id, memberId: me, value: v }),
-    }).then(function (r) { return r.json(); }).then(function (res) {
+    post(id, me, v).then(function (res) {
       Array.prototype.forEach.call(btns, function (b) { b.disabled = false; });
       if (!res.ok) {
         state.className = 'state no'; state.textContent = res.message || '전달하지 못했습니다.';
         if (res.code === 'link') error(res.message);
         return;
       }
+      remember(me, id, prev);
       board.meetings.forEach(function (mt) { if (mt.id === id) mt.rsvp[me] = v; });
       Array.prototype.forEach.call(btns, function (b) {
         b.classList.toggle('on', b.getAttribute('data-v') === v);

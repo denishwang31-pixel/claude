@@ -876,7 +876,9 @@ exports.rsvpLink = onRequest({ ...REGION, cors: false, maxInstances: 5 }, async 
       club, token, member, meeting, value: q.value, today, members,
     });
     if (!r.ok) return fail(r.code === 'link' ? 403 : 400, r.code, r.message);
-    await mtRef.update(r.patch);
+    const update = { ...r.patch };
+    (r.remove || []).forEach((path) => { update[path] = FieldValue.delete(); });
+    await mtRef.update(update);
     return res.json({ ok: true });
   } catch (e) {
     logger.error('카톡 참석 링크 실패', { err: String((e && e.message) || e) });

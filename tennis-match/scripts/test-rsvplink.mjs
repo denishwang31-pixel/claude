@@ -102,6 +102,17 @@ section('답 받기');
   eq('취소된 모임', code(srv.checkAnswer({ ...base, member: mem('local:a'), meeting: MEETINGS[3], value: 'yes' })), 'meeting');
   eq('참석·불참 말고는 거절', code(srv.checkAnswer({ ...base, member: mem('local:a'), meeting: m1, value: 'maybe' })), 'value');
   eq('모임이 없으면 거절', code(srv.checkAnswer({ ...base, member: mem('local:a'), meeting: null, value: 'yes' })), 'meeting');
+
+  /* 되돌리기 — 이름을 잘못 골라 남의 이름으로 누른 사람이 치울 때 */
+  const clr = srv.checkAnswer({ ...base, member: mem('local:a'), meeting: m1, value: 'clear' });
+  ok(clr.ok, '미응답으로 되돌리기는 받는다');
+  eq('되돌리기는 두 칸을 지운다 — 아무것도 새로 적지 않는다',
+    [clr.patch, clr.remove], [{}, ['rsvp.local:a', 'rsvpBy.local:a']]);
+  eq('참석으로 적을 땐 지우는 칸이 없다', good.remove, []);
+  eq('되돌리기도 열쇠가 맞아야 한다',
+    code(srv.checkAnswer({ ...base, token: 'X'.repeat(32), member: mem('local:a'), meeting: m1, value: 'clear' })), 'link');
+  eq('앱 회원의 답은 되돌리기로도 못 지운다',
+    code(srv.checkAnswer({ ...base, member: mem('uidApp'), meeting: m1, value: 'clear' })), 'member');
 }
 
 section('한국 날짜 — 서버는 UTC 로 돈다');

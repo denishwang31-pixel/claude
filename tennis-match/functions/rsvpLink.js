@@ -112,7 +112,11 @@ function checkAnswer({ club, token, member, meeting, value, today, members }) {
   if (!tokenOk(club, token)) {
     return { ok: false, code: 'link', message: '링크가 바뀌었거나 잘못되었습니다. 총무에게 새 링크를 받아 주세요.' };
   }
-  if (value !== 'yes' && value !== 'no') {
+  /* 'clear' = 아직 안 답한 상태로 되돌리기. 이름을 잘못 골라 남의 이름으로
+     누른 사람이 자기 실수를 치울 때 쓴다(링크 페이지의 [내가 아니에요]).
+     링크를 가진 사람은 어차피 오프라인 회원의 참석을 바꿀 수 있으므로,
+     "미응답으로 되돌리기"가 새로 여는 위험은 없다. */
+  if (value !== 'yes' && value !== 'no' && value !== 'clear') {
     return { ok: false, code: 'value', message: '참석 또는 불참만 고를 수 있습니다.' };
   }
   if (!meeting || meeting.canceled) {
@@ -128,12 +132,18 @@ function checkAnswer({ club, token, member, meeting, value, today, members }) {
   if (!allowed) {
     return { ok: false, code: 'scope', message: '이 모임의 대상이 아닙니다.' };
   }
+  if (value === 'clear') {
+    /* 지울 칸의 이름만 돌려준다 — 실제 삭제 표시는 index.js 가 붙인다
+       (이 파일은 데이터베이스 모듈을 모른다). */
+    return { ok: true, patch: {}, remove: [`rsvp.${member.id}`, `rsvpBy.${member.id}`] };
+  }
   return {
     ok: true,
     patch: {
       [`rsvp.${member.id}`]: value,
       [`rsvpBy.${member.id}`]: member.id,
     },
+    remove: [],
   };
 }
 
