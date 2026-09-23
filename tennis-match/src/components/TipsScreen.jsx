@@ -31,6 +31,8 @@ export function TipsScreen({ title = '원포인트', top = null } = {}) {
   const { isAdmin } = useClub(clubId, me, { viewMode });
 
   const [items, setItems] = useState([]);
+  /* 고른 영역. null = 아직 안 골랐음 → 영상이 있는 첫 영역을 보여 준다.
+     [전체]는 두지 않는다 — 영역이 섞인 긴 목록은 찾기만 어렵다. */
   const [cat, setCat] = useState(null);
   const [adding, setAdding] = useState(false);
   const [toast, setToast] = useState(null);
@@ -42,13 +44,17 @@ export function TipsScreen({ title = '원포인트', top = null } = {}) {
     return subTips(clubId, setItems);
   }, [clubId]);
 
-  const list = useMemo(() => items.filter((x) => !cat || x.category === cat), [items, cat]);
+  /* 목록에 없는 영역으로 적힌 옛 영상은 [기타]에서 보인다 — 안 그러면 어디서도 안 보인다. */
+  const catOf = (x) => (TIP_CATEGORIES.includes(x.category) ? x.category : '기타');
+  const active = cat
+    || TIP_CATEGORIES.find((c) => items.some((x) => catOf(x) === c))
+    || TIP_CATEGORIES[0];
+  const list = useMemo(() => items.filter((x) => catOf(x) === active), [items, active]);
   const open = (url) => { if (url) Linking.openURL(url).catch(() => flash('링크를 열 수 없습니다')); };
 
-  /* 안드로이드 뒤로 = 등록 폼 → 카테고리 필터 순으로 되돌린다 */
+  /* 안드로이드 뒤로 = 등록 폼을 먼저 닫는다 */
   useBackHandler(() => {
     if (adding) { setAdding(false); return true; }
-    if (cat) { setCat(null); return true; }
     return false;
   });
 
@@ -65,9 +71,8 @@ export function TipsScreen({ title = '원포인트', top = null } = {}) {
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          <Chip tone={!cat ? 'green' : 'outline'} onPress={() => setCat(null)}>전체</Chip>
           {TIP_CATEGORIES.map((c) => (
-            <Chip key={c} tone={cat === c ? 'green' : 'outline'} onPress={() => setCat(c)}>{c}</Chip>
+            <Chip key={c} tone={active === c ? 'green' : 'outline'} onPress={() => setCat(c)}>{c}</Chip>
           ))}
         </View>
 
@@ -111,7 +116,7 @@ export function TipsScreen({ title = '원포인트', top = null } = {}) {
           })}
           {list.length === 0 && (
             <Card><Text style={{ fontSize: 12, color: C.sub }}>
-              {cat ? `${cat} 영상이 없습니다.` : '등록된 영상이 없습니다.'}
+              {items.length ? `${active} 영상이 없습니다.` : '등록된 영상이 없습니다.'}
               {isAdmin ? ' 아래에서 추가하세요.' : ''}
             </Text></Card>
           )}
@@ -120,7 +125,10 @@ export function TipsScreen({ title = '원포인트', top = null } = {}) {
         {isAdmin && (
           <>
             <SectionTitle right={
-              <Chip tone={adding ? 'green' : 'outline'} onPress={() => setAdding(!adding)}>{adding ? '닫기' : '+ 추가'}</Chip>
+              <Chip tone={adding ? 'green' : 'outline'} onPress={() => {
+                if (!adding) setF((p) => ({ ...p, category: active }));
+                setAdding(!adding);
+              }}>{adding ? '닫기' : '+ 추가'}</Chip>
             }>영상 등록</SectionTitle>
             {adding && (
               <Card>
