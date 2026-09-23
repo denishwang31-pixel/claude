@@ -68,7 +68,7 @@ function TeamText({ ids, nameOf, genderOf, me, win, dim }) {
    1·2·3 숫자이고, 그 코트장이 실제로 부르는 이름(A·B·C, 9·10·11)으로
    **보여 줄 때만** 바꾼다. 저장된 값을 바꾸면 쌓인 대진과 전적이
    어긋난다 — src/lib/courtNames.js 머리말 참고. */
-export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPressMatch, venue = null }) {
+export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPressMatch, venue = null, pending}) {
   if (!matches?.length) return null;
 
   const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
@@ -139,9 +139,20 @@ export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPr
                       <View style={{ backgroundColor: tone.bg, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
                         <Text style={{ fontSize: 9, fontWeight: '800', color: tone.fg }}>{m.type}</Text>
                       </View>
+                      {/* ⚠️ 세 가지 상태를 구별해 보여 준다. 확정과 "확인
+                          대기"가 똑같이 '기록전'으로 보이면, 상대가 이미
+                          넣어 둔 점수를 아무도 확인하러 오지 않는다 —
+                          두 팀이 확인하는 방식 자체가 여기서 무너진다.
+                          pending 을 안 넘기면 예전과 똑같이 동작한다. */}
                       {m.score
                         ? <Text style={{ fontSize: 10, fontWeight: '700', color: C.green }}>{m.score.a}:{m.score.b}</Text>
-                        : <Text style={{ fontSize: 9, color: C.faint }}>기록전</Text>}
+                        : pending?.[m.id]
+                          ? (
+                            <Text style={{ fontSize: 9, fontWeight: '800', color: C.warn }}>
+                              {pending[m.id].a}:{pending[m.id].b} 확인
+                            </Text>
+                          )
+                          : <Text style={{ fontSize: 9, color: C.faint }}>기록전</Text>}
                     </View>
                     <View style={{ marginTop: 4 }}>
                       <TeamText ids={m.teamA} nameOf={nameOf} genderOf={genderOf} me={me}

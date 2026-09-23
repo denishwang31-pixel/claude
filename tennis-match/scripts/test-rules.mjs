@@ -115,6 +115,53 @@ await T('타인의 rsvpBy 항목 변경 거부',
   assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt1'),
     { 'rsvpBy.mem2': 'mem1' })));
 
+/* ---------- 점수 보고 ----------
+   회원이 점수를 넣을 수 있게 열었다. 열면서 반드시 지켜야 하는 것은
+   "확정된 점수는 회원이 못 고친다" 하나다. 이게 규칙에서 지켜지지
+   않으면 화면에서 버튼을 감춰 봐야 소용없다. */
+console.log('\n[점수 보고]');
+await seed(async (db) => {
+  await setDoc(doc(db, 'clubs', CLUB, 'meetings', 'mt2'), {
+    date: '2099-02-02', rsvp: {}, guests: [], matches: [], restScores: {}, canceled: false,
+    scores: {}, finals: { done1: { a: 6, b: 3, by: 'mem1', confirmBy: 'mem2' } },
+  });
+});
+
+await T('회원이 점수를 보고할 수 있다',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
+    { 'scores.r1c1': { a: 6, b: 3, by: 'mem1', side: 'A', at: 1 } })));
+
+await T('회원이 확정본을 새로 추가할 수 있다 (상대 확인)',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
+    { 'finals.r1c1': { a: 6, b: 3, by: 'mem1', confirmBy: 'mem2', at: 1 } })));
+
+/* ⚠️ 여기가 이 기능의 전부다 */
+await T('회원이 이미 확정된 점수를 고치는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
+    { 'finals.done1': { a: 1, b: 9, by: 'mem1', confirmBy: 'mem1', at: 2 } })));
+
+await T('회원이 확정된 점수를 지우는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
+    { 'finals.done1': deleteField() })));
+
+await T('운영진은 확정된 점수를 고칠 수 있다',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'meetings', 'mt2'),
+    { 'finals.done1': { a: 1, b: 9, by: 'owner1', confirmBy: 'owner1', at: 3 } })));
+
+/* 점수를 여는 김에 대진표까지 열리면 안 된다 — 회원이 대진을
+   통째로 갈아치우는 통로가 된다. 이것 때문에 배열이 아니라 map 을 썼다. */
+await T('회원이 점수와 함께 대진표를 바꾸는 것 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
+    { 'scores.r9': { a: 6, b: 0, by: 'mem1', side: 'A', at: 1 }, matches: [{ id: 'x' }] })));
+
+await T('회원이 대진표만 바꾸는 것도 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
+    { matches: [{ id: 'x' }] })));
+
+await T('클럽 밖 사람은 점수도 못 넣는다',
+  assertFails(updateDoc(doc(outsider, 'clubs', CLUB, 'meetings', 'mt2'),
+    { 'scores.r1c1': { a: 6, b: 3, by: 'out1', side: 'A', at: 1 } })));
+
 /* 역할 겸임 — roles 배열이 새 권한 통로가 되면 안 된다.
    규칙은 role 문자열 하나로 판단하므로, roles 에 몰래 '회장'을 넣어
    화면상 권한을 얻는 길을 막아야 한다. */

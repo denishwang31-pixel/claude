@@ -18,6 +18,7 @@ import {
 import { DEFAULT_RULES } from '../lib/matchmaking';
 import { feeDocKey } from '../lib/scope';
 import { windowStart, WINDOW_MONTHS } from '../lib/meetingWindow';
+import { mergeScores } from '../lib/scoreReport';
 import {
   isStaffRole, canAppointRole, isGuestId, guestUid, ROLES,
   normalizeRole, canSeeFees, canSeeAllVenues, VIEW_MODE_ROLE,
@@ -64,7 +65,24 @@ export function useClub(clubId, me, opts = {}) {
 
   const [club, setClub] = useState(null);
   const [members, setMembers] = useState([]);
-  const [meetings, setMeetings] = useState([]);
+  const [rawMeetings, setRawMeetings] = useState([]);
+
+  /* ---------- 확정된 점수를 대진표에 얹는다 ----------
+
+     점수는 이제 meeting.finals(map) 에 쌓이는데, 랭킹·통산기록·KDK
+     순위·대진표는 전부 예전처럼 matches[].score 를 읽는다.
+     합치는 자리를 **여기 한 곳**에 두면 읽는 쪽은 아무것도 안 고쳐도
+     된다. 소비자마다 finals 를 따로 뒤지게 하면 한 군데는 반드시
+     빠뜨리고, 그 화면만 점수가 비어 보인다.
+
+     ⚠️ 확인 대기 중인 숫자(scores)는 일부러 안 얹는다. 아직 상대가
+        맞다고 한 적 없는 점수로 순위를 매기면 안 된다. */
+  const meetings = useMemo(
+    () => rawMeetings.map((m) => (
+      m.finals ? { ...m, matches: mergeScores(m.matches, m.finals) } : m
+    )),
+    [rawMeetings],
+  );
   const [posts, setPosts] = useState([]);
   /* 다른 클럽이 공개로 올린 글. 우리 글(posts)과 따로 받아서 화면에서
      합친다 — 한 질의로 못 가져온다(우리 클럽 것은 경로로, 남의 것은
@@ -87,7 +105,7 @@ export function useClub(clubId, me, opts = {}) {
     const unsubs = [
       subClub(clubId, setClub),
       subMembers(clubId, (v) => { setMembers(v); setLoading(false); }),
-      subMeetings(clubId, setMeetings, meetingsFrom),
+      subMeetings(clubId, setRawMeetings, meetingsFrom),
       subPosts(clubId, setPosts),
       subCourts(clubId, setCourts),
       subRules(clubId, setRuleKeys),

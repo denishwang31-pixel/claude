@@ -223,6 +223,48 @@ export const setRestScore = (clubId, meetingId, memberId, value) =>
 export const saveMatches = (clubId, meetingId, matches) =>
   updateDoc(D(clubId, 'meetings', meetingId), { matches });
 
+/* ---------------- 점수 보고 ----------------
+
+   한 팀이 넣고(scores) 상대 팀이 확인하면 확정(finals)된다.
+   판정 로직은 전부 src/lib/scoreReport.js 에 있다 — 여기는 쓰기만 한다.
+
+   ⚠️ 점수를 matches 배열이 아니라 map 두 개에 나눠 담는 이유는
+      보안 규칙 때문이다. scoreReport.js 머리말 참고. */
+
+/** 한 팀이 점수를 넣는다(확인 대기) */
+export const reportScore = (clubId, meetingId, matchId, report) =>
+  updateDoc(D(clubId, 'meetings', meetingId), { [`scores.${matchId}`]: report });
+
+/** 상대 팀이 확인한다 → 확정.
+    ⚠️ 확정과 동시에 대기 기록을 지운다. 남겨 두면 화면이 "확정"과
+       "확인 대기"를 동시에 보여 주게 된다. 한 번의 update 로 해야
+       중간에 끊겨도 어중간한 상태가 안 남는다. */
+export const confirmScore = (clubId, meetingId, matchId, final) =>
+  updateDoc(D(clubId, 'meetings', meetingId), {
+    [`finals.${matchId}`]: final,
+    [`scores.${matchId}`]: deleteField(),
+  });
+
+/** 상대 팀이 "그 점수 아닌데" — 보고를 물린다. 다시 넣을 수 있게 된다. */
+export const rejectScore = (clubId, meetingId, matchId) =>
+  updateDoc(D(clubId, 'meetings', meetingId), {
+    [`scores.${matchId}`]: deleteField(),
+  });
+
+/** 운영진이 직접 확정한다(상대 확인 없이). 이미 확정된 것을 고칠 때도 이 길. */
+export const adminSetScore = (clubId, meetingId, matchId, final) =>
+  updateDoc(D(clubId, 'meetings', meetingId), {
+    [`finals.${matchId}`]: final,
+    [`scores.${matchId}`]: deleteField(),
+  });
+
+/** 운영진이 확정을 취소한다 — 잘못 확정된 경기를 다시 열어 둔다 */
+export const clearScore = (clubId, meetingId, matchId) =>
+  updateDoc(D(clubId, 'meetings', meetingId), {
+    [`finals.${matchId}`]: deleteField(),
+    [`scores.${matchId}`]: deleteField(),
+  });
+
 /* 총무가 회원 추가: 실서비스에선 초대코드 가입이 기본이나, 오프라인 등록용.
    memberId 는 임시 uid(예: 'local:'+random) 를 넘길 수 있음 */
 /* 회원 추가.

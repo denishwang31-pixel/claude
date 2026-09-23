@@ -23,7 +23,15 @@ import { attendanceStats } from '../../src/components/AttendanceScreen';
 import {
   RSVP, DRAW_MODE, DRAW_MODES, PLAY_MODE, PLAY_MODES,
 } from '../../src/lib/constants';
-import { setRules, setRestScore, saveMatches, updateMeeting, subGear } from '../../src/lib/firestore';
+import {
+  setRules, setRestScore, saveMatches, updateMeeting, subGear,
+  reportScore, confirmScore, rejectScore, adminSetScore, clearScore,
+} from '../../src/lib/firestore';
+import {
+  SCORE_STATE, scoreStateOf, reportOf, finalOf, sideOf, otherSide,
+  canReport, canConfirm, hasConfirmer, validScore, makeReport, makeFinal,
+  awaitingMyConfirm, progressOf,
+} from '../../src/lib/scoreReport';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
 import { Icon } from '../../src/components/Icon';
@@ -541,24 +549,147 @@ export default function Match() {
     return false;   // 최상위에서는 탭 기본 동작
   });
 
+  /* ---------------- 점수 ----------------
+
+     예전에는 운영진만 넣을 수 있었다. 3면 6타임이면 18경기라, 총무
+     혼자 코트를 돌며 받아 적는 일은 현실에서 안 된다. 결국 아무도
+     안 넣고 기록이 비었다.
+
+     이제 **뛴 사람이 직접 넣고, 상대 팀이 확인하면 확정**된다.
+     누가 무엇을 할 수 있는지는 전부 scoreReport.js 가 판단한다 —
+     화면이 스스로 권한을 따지기 시작하면 규칙이 두 군데로 갈린다. */
+
   /** 스코어 입력창을 연다.
-      ⚠️ 이미 들어간 점수가 있으면 그 값을 채워 준다. 빈 칸으로 열면
-         "고치기"가 아니라 "처음부터 다시 넣기"가 되고, 한 쪽만 고치려다
-         빈 칸을 남기면 저장이 막힌다. */
+      ⚠️ 이미 들어간 값이 있으면 채워 준다(확정본이든 대기 중이든).
+         빈 칸으로 열면 "고치기"가 아니라 "처음부터 다시 넣기"가 되고,
+         한 쪽만 고치려다 빈 칸을 남기면 저장이 막힌다. */
   const openScore = (m) => {
-    if (!isAdmin || !m) return;
+    if (!m || !canReport(m, meeting, me, isAdmin)) return;
+    const cur = finalOf(meeting, m.id) || reportOf(meeting, m.id);
     setEditing(m.id);
-    setSc(m.score
-      ? { a: String(m.score.a ?? ''), b: String(m.score.b ?? '') }
+    setSc(cur
+      ? { a: String(cur.a ?? ''), b: String(cur.b ?? '') }
       : { a: '', b: '' });
   };
 
+  /** 점수를 넣는다. 운영진이면 바로 확정, 회원이면 상대 확인 대기. */
   const saveSc = (mid) => {
-    if (sc.a === '' || sc.b === '' || sc.a === sc.b) return flash('스코어 확인 (동점 불가)');
-    const next = meeting.matches.map((x) => (x.id === mid ? { ...x, score: { a: +sc.a, b: +sc.b } } : x));
-    saveMatches(clubId, meeting.id, next);
+    if (!validScore(sc.a, sc.b)) return flash('점수를 확인해 주세요 (동점 불가)');
+    const m = matches.find((x) => x.id === mid);
+    if (!m) return flash('경기를 찾지 못했습니다');
+
+    const mySide = sideOf(m, me);
+    const rep = makeReport({ a: sc.a, b: sc.b, uid: me, side: mySide || 'A' });
+
+    /* 운영진은 바로 확정한다 — 운영진의 입력이 곧 최종 판단이다.
+       상대 확인을 기다리게 하면 "운영진이 고쳤는데 왜 안 바뀌지"가 된다. */
+    if (isAdmin) {
+      adminSetScore(clubId, meeting.id, mid, makeFinal(rep, me, { admin: true }));
+      flash('점수를 확정했습니다');
+    } else {
+      reportScore(clubId, meeting.id, mid, rep);
+      /* ⚠️ 상대 팀에 앱 쓰는 사람이 없으면 아무도 확인을 못 누른다.
+            그 사실을 여기서 말해 주지 않으면 영영 대기로 남는다. */
+      const need = otherSide(mySide);
+      flash(hasConfirmer(m, need)
+        ? '상대 팀 확인을 기다립니다'
+        : '상대 팀에 앱 사용자가 없어 운영진이 확정해야 합니다');
+    }
     setEditing(null); setSc({ a: '', b: '' });
   };
+
+  /** 상대 팀이 "맞다" — 확정 */
+  const doConfirm = (m) => {
+    const rep = reportOf(meeting, m.id);
+    if (!rep || !canConfirm(m, meeting, me, isAdmin)) return;
+    confirmScore(clubId, meeting.id, m.id, makeFinal(rep, me));
+    flash(`${m.round}타임 ${courtLabel(venueOf(meeting), m.court)}코트 확정`);
+  };
+
+  /** 상대 팀이 "그 점수 아닌데" — 보고를 물린다 */
+  const doReject = (m) => {
+    Alert.alert('점수가 다른가요?',
+      '넣은 점수를 지웁니다. 두 팀 중 누구든 다시 넣을 수 있습니다.',
+      [{ text: '취소', style: 'cancel' },
+        {
+          text: '다시 넣기',
+          style: 'destructive',
+          onPress: () => { rejectScore(clubId, meeting.id, m.id); flash('점수를 지웠습니다'); },
+        }]);
+  };
+
+  /** 운영진이 확정을 되돌린다 */
+  const doClear = (m) => {
+    Alert.alert('확정을 취소할까요?',
+      '점수를 지우고 다시 넣을 수 있게 됩니다.',
+      [{ text: '취소', style: 'cancel' },
+        {
+          text: '확정 취소',
+          style: 'destructive',
+          onPress: () => {
+            clearScore(clubId, meeting.id, m.id);
+            setEditing(null);
+            flash('확정을 취소했습니다');
+          },
+        }]);
+  };
+
+  /** 확인을 묻는다 — 누가 얼마로 넣었는지 보여 주고 맞는지 고르게 한다.
+      ⚠️ 숫자만 띄우고 "확인"을 누르게 하면 안 된다. 상대가 넣은 값을
+         제대로 읽지도 않고 누르게 되고, 그러면 두 팀이 합의했다는
+         말이 거짓이 된다. 이름과 점수를 같이 보여 준다. */
+  const askConfirm = (m) => {
+    const rep = reportOf(meeting, m.id);
+    if (!rep) return;
+    const teamA = (m.teamA || []).map(nameOf).join('·');
+    const teamB = (m.teamB || []).map(nameOf).join('·');
+    Alert.alert(
+      `${m.round}타임 ${courtLabel(venueOf(meeting), m.court)}코트`,
+      `${teamA}  ${rep.a} : ${rep.b}  ${teamB}\n\n`
+      + `${nameOf(rep.by)}님이 넣은 점수입니다.\n이 점수가 맞습니까?`,
+      [
+        { text: '닫기', style: 'cancel' },
+        { text: '아니요', style: 'destructive', onPress: () => doReject(m) },
+        { text: '맞습니다', onPress: () => doConfirm(m) },
+      ],
+    );
+  };
+
+  /** 목록 보기의 점수 칸 — 상태마다 다르게 보여 준다.
+      ⚠️ 상태가 셋(미입력·확인대기·확정)이라 한 곳에서 그려야 한다.
+         자리마다 따로 쓰면 한 군데는 반드시 옛 상태로 남는다. */
+  const ScoreCell = ({ m }) => {
+    const st = scoreStateOf(meeting, m.id);
+    if (st === SCORE_STATE.FINAL) {
+      const f = finalOf(meeting, m.id);
+      return canReport(m, meeting, me, isAdmin)
+        ? (
+          <Btn small tone="ghost" onPress={() => openScore(m)}>
+            {`${f.a} : ${f.b}`}
+          </Btn>
+        )
+        : <Text style={{ fontWeight: '700', color: C.green }}>{f.a} : {f.b}</Text>;
+    }
+    if (st === SCORE_STATE.PENDING) {
+      const r = reportOf(meeting, m.id);
+      return canConfirm(m, meeting, me, isAdmin)
+        ? <Btn small tone="primary" onPress={() => askConfirm(m)}>{`${r.a}:${r.b} 확인`}</Btn>
+        : (
+          <Chip tone="warn">{`${r.a}:${r.b} 확인 대기`}</Chip>
+        );
+    }
+    return canReport(m, meeting, me, isAdmin)
+      ? <Btn small tone="primary" onPress={() => openScore(m)}>점수 넣기</Btn>
+      : null;
+  };
+
+  /* 내가 지금 확인해 줘야 할 경기 — 화면 맨 위에 띄운다.
+     대진표를 훑어 "확인 대기"를 찾아내라고 하면 아무도 안 한다. */
+  const toConfirm = useMemo(
+    () => awaitingMyConfirm(matches, meeting, me, isAdmin),
+    [matches, meeting, me, isAdmin],
+  );
+  const scoreProgress = useMemo(() => progressOf(matches, meeting), [matches, meeting]);
 
   /* ---------------- 화면 ---------------- */
   const nM = attendees.filter((p) => p.gender === 'M').length;
@@ -645,7 +776,7 @@ export default function Match() {
             </View>
           </View>
 
-          {isAdmin && (
+          {canReport(myNext, meeting, me, isAdmin) && (
             <View style={{ marginTop: S.md }}>
               <Btn full tone="lime"
                 icon={<Icon name="edit" size={17} color={C.green} />}
@@ -656,6 +787,45 @@ export default function Match() {
           )}
         </HeroCard>
       )}
+      {/* ---------- 내가 확인해 줘야 할 점수 ----------
+          ⚠️ 맨 위에 둔다. 대진표를 훑어 "확인 대기"를 직접 찾아내라고
+             하면 아무도 안 한다 — 그러면 점수가 영영 확정되지 않고,
+             두 팀이 확인하는 방식 자체가 무너진다. */}
+      {toConfirm.length > 0 && (
+        <Card style={{
+          marginBottom: S.md, borderColor: C.warn, borderWidth: 2,
+          backgroundColor: C.warnBg,
+        }}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: C.warn }}>
+            확인해 주세요 · {toConfirm.length}건
+          </Text>
+          <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 3, lineHeight: 17 }}>
+            상대 팀이 넣은 점수입니다. 맞는지 확인해야 기록으로 남습니다.
+          </Text>
+          <View style={{ gap: 6, marginTop: 10 }}>
+            {toConfirm.map((m) => {
+              const r = reportOf(meeting, m.id);
+              return (
+                <View key={m.id} style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 8,
+                  backgroundColor: C.surface, borderRadius: R.md, padding: 8,
+                }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 11.5, fontWeight: '700', color: C.text }}>
+                      {m.round}타임 {courtLabel(venueOf(meeting), m.court)}코트
+                    </Text>
+                    <Text numberOfLines={1} style={{ fontSize: 10.5, color: C.faint, marginTop: 1 }}>
+                      {(m.teamA || []).map(nameOf).join('·')} {r.a} : {r.b} {(m.teamB || []).map(nameOf).join('·')}
+                    </Text>
+                  </View>
+                  <Btn small tone="primary" onPress={() => askConfirm(m)}>확인</Btn>
+                </View>
+              );
+            })}
+          </View>
+        </Card>
+      )}
+
       {/* 코트장 드롭다운 */}
       {venues.length > 0 && (
         <View style={{ marginBottom: 10 }}>
@@ -1045,7 +1215,13 @@ export default function Match() {
               <MatchGrid
                 matches={matches} nameOf={nameOf} genderOf={genderOf} me={me} roundTimes={times}
                 venue={venueOf(meeting)}
-                onPressMatch={openScore}
+                pending={meeting?.scores}
+                onPressMatch={(m) => {
+                  /* 확인 대기 중이고 내가 확인할 차례면 확인을 먼저 묻는다.
+                     입력창을 띄우면 "이미 있는 점수를 또 넣으라는 건가"가 된다. */
+                  if (canConfirm(m, meeting, me, isAdmin)) return askConfirm(m);
+                  return openScore(m);
+                }}
               />
               <MatchLegend />
               {isAdmin && <Text style={{ fontSize: 9, color: C.faint, marginTop: 4 }}>경기를 누르면 스코어를 입력할 수 있습니다.</Text>}
@@ -1072,17 +1248,7 @@ export default function Match() {
                           <Chip tone={m.type === '혼복' ? 'green' : 'default'}>{m.type}</Chip>
                           {isMine && <Chip tone="green">내 경기</Chip>}
                         </View>
-                        {m.score && !isAdmin ? (
-                          <Text style={{ fontWeight: '700', color: C.green }}>{m.score.a} : {m.score.b}</Text>
-                        ) : isAdmin ? (
-                          /* ⚠️ 점수가 들어간 뒤에도 누를 수 있어야 한다. 예전에는
-                             점수가 생기는 순간 버튼이 사라져서, 잘못 넣으면 표
-                             보기로 바꿔 경기를 다시 누르는 길밖에 없었다 —
-                             그 길이 있다는 걸 아무도 모른다. */
-                          <Btn small tone={m.score ? 'ghost' : 'primary'} onPress={() => openScore(m)}>
-                            {m.score ? `${m.score.a} : ${m.score.b}` : '스코어'}
-                          </Btn>
-                        ) : null}
+                        <ScoreCell m={m} />
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
                         <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
@@ -1354,7 +1520,7 @@ export default function Match() {
                   paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.border,
                 }}>
                   <Text style={[F.h3, { flex: 1 }]}>
-                    {m.score ? '스코어 고치기' : '스코어 입력'}
+                    {scoreStateOf(meeting, m.id) === SCORE_STATE.NONE ? '점수 넣기' : '점수 고치기'}
                   </Text>
                   <Pressable onPress={() => setEditing(null)} hitSlop={10}>
                     <Text style={{ fontSize: 13, color: C.sub, fontWeight: '700' }}>닫기</Text>
@@ -1387,10 +1553,32 @@ export default function Match() {
                     </View>
                   </View>
 
+                  {/* ⚠️ 누르면 무슨 일이 일어나는지 먼저 적는다. 회원은
+                      "저장"이 곧 확정인 줄 알고 넣는데 실제로는 상대
+                      확인이 남아 있다. 모르면 확정된 줄 알고 코트를 뜬다. */}
+                  <Text style={{ fontSize: 11.5, color: C.sub, lineHeight: 17 }}>
+                    {isAdmin
+                      ? '운영진이 넣은 점수는 바로 확정됩니다.'
+                      : `저장하면 ${(sideOf(m, me) === 'A'
+                        ? (m.teamB || []) : (m.teamA || [])).map(nameOf).join('·')} 님의 확인을 기다립니다.`}
+                  </Text>
+
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <Btn tone="ghost" style={{ flex: 1 }} onPress={() => setEditing(null)}>취소</Btn>
-                    <Btn tone="primary" style={{ flex: 2 }} onPress={() => saveSc(m.id)}>저장</Btn>
+                    <Btn tone="primary" style={{ flex: 2 }} onPress={() => saveSc(m.id)}>
+                      {isAdmin ? '확정' : '저장'}
+                    </Btn>
                   </View>
+
+                  {/* 운영진만 — 잘못 확정된 경기를 다시 열어 둔다 */}
+                  {isAdmin && scoreStateOf(meeting, m.id) === SCORE_STATE.FINAL && (
+                    <Pressable onPress={() => doClear(m)} hitSlop={8}
+                      style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, alignSelf: 'center' })}>
+                      <Text style={{ fontSize: 12, color: C.danger, fontWeight: '700' }}>
+                        확정 취소하고 비우기
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
               </View>
             );
