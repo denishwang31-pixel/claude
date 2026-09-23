@@ -34,6 +34,7 @@ const {
   normalizeAsk, isAskDue, pendingVoters, askMessage, pushWorthyChanges, changeDigest,
 } = require('./rsvpAsk');
 const { inviteMessage, responseMessage } = require('./clubMatch');
+const { scorePushPlan, scorePushText } = require('./scoreReport');
 const { planAutoSend, unpaidMembers, summaryForManager } = require('./dunning');
 const {
   billingScopes, membersInScope, feeDocKey, notifyRule,
@@ -156,6 +157,36 @@ exports.onMeetingUpdated = onDocumentUpdated({ ...REGION, document: 'clubs/{club
       const msg = changeDigest(club.name, changes.map((ch) => nameById[ch.id]), after);
       await sendPush(staffTokens, msg.title, msg.body,
         { type: 'rsvpChanged', meetingId });
+    }
+  }
+
+  /* 점수 확인 요청 — 상대 팀에게 "확인해 주세요", 아니라고 하면 넣은
+     사람에게 "다시 넣어 주세요". 할 일이 생긴 사람에게만 간다.
+
+     ⚠️ 이게 없으면 코트를 떠난 뒤에는 확인할 게 있다는 걸 아무도
+        모른다. 점수는 영영 "확인 대기"에 남고, 두 팀이 확인하는
+        방식 자체가 무너진다.
+     ⚠️ 확정됐을 때는 보내지 않는다. 할 일이 없는 알림이 쌓이면
+        사람은 알림을 끄고, 그러면 정말 필요한 알림도 같이 죽는다. */
+  const plan = scorePushPlan(before, after);
+  if (plan) {
+    try {
+      const memberSnap = await db.collection('clubs').doc(clubId).collection('members').get();
+      const byId = {};
+      memberSnap.docs.forEach((d) => { byId[d.id] = d.data(); });
+      /* 게스트는 id 가 'g:이름' 이다 — 회원 문서가 없으니 이름을 id 에서 읽는다 */
+      const nameOf = (id) => (byId[id] && byId[id].name)
+        || (String(id).startsWith('g:') ? String(id).slice(2) : '');
+      const tokens = plan.to.map((id) => byId[id] && byId[id].pushToken).filter(Boolean);
+      const msg = scorePushText(plan, nameOf);
+      if (tokens.length && msg) {
+        await sendPush(tokens, msg.title, msg.body,
+          { type: plan.kind === 'report' ? 'scoreConfirm' : 'scoreRejected', meetingId });
+      }
+    } catch (e) {
+      /* 알림이 실패해도 점수 기록은 이미 끝났다. 여기서 던지면
+         재시도가 걸려 같은 알림이 여러 번 갈 수 있다 — 남기고 끝낸다. */
+      logger.warn('점수 알림 실패', { clubId, meetingId, err: String(e && e.message || e) });
     }
   }
 
@@ -764,11 +795,20 @@ exports.onMemberCountStat = onDocumentWritten(
   },
 );
 
-/** 대진에 스코어가 기록되면 누적 경기 수를 올린다 */
+/** 대진에 스코어가 기록되면 누적 경기 수를 올린다.
+
+    ⚠️ 점수가 이제 matches[].score 가 아니라 finals(확정본 map)에
+       쌓인다. 예전 방식(matches 안의 score)만 세면 이 숫자가 **조용히
+       멈춘다** — 에러도 안 나고 아무도 모른다. 둘 다 센다(같은 경기는
+       한 번만). */
 exports.onMatchesRecorded = onDocumentUpdated(
   { ...REGION, document: 'clubs/{clubId}/meetings/{meetingId}' },
   async (event) => {
-    const scored = (m) => (m.matches || []).filter((x) => x && x.score).length;
+    const scored = (m) => {
+      const ids = new Set(Object.keys(m.finals || {}));
+      (m.matches || []).forEach((x) => { if (x && x.score && x.id) ids.add(x.id); });
+      return ids.size;
+    };
     const delta = scored(event.data.after.data()) - scored(event.data.before.data());
     if (delta <= 0) return;
     await db.collection('stats').doc('service')

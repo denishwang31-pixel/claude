@@ -9,7 +9,13 @@ import {
   SCORE_STATE, isOfflineId, sideOf, otherSide, scoreStateOf, mergeScores,
   validScore, canReport, canConfirm, canEditFinal, hasConfirmer,
   makeReport, makeFinal, awaitingMyConfirm, myUnreported, progressOf,
+  lineupOf, sameLineup, staleScoreIds, scoreOp, isAdminOverride,
+  scorePushPlan, scorePushText,
 } from '../src/lib/scoreReport.js';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const srv = require('../functions/scoreReport.js');
 
 let pass = 0, fail = 0;
 const ok = (c, m, extra = '') => {
@@ -177,6 +183,133 @@ section('기록 만들기');
 
   const fa = makeFinal(r, 'u9', { admin: true });
   ok(fa.admin === true, '운영진이 직접 확정한 것은 표시가 남는다');
+}
+
+/* ---------- 규칙이 읽는 명단 ---------- */
+section('명단(lineup) — 규칙이 "뛴 사람인가"를 보는 곳');
+{
+  const lu = lineupOf([M, M_OFF]);
+  eq('경기별 두 팀', lu.r1c1, { A: ['u1', 'u2'], B: ['u3', 'u4'] });
+  eq('빈 입력', lineupOf(null), {});
+  ok(sameLineup(lu, lineupOf([M, M_OFF])), '같은 대진이면 같다');
+  ok(sameLineup({ x: { A: ['b', 'a'], B: [] } }, { x: { A: ['a', 'b'], B: [] } }),
+    '팀 안의 순서는 상관없다 — 누가 뛰었는지만 본다');
+  ok(!sameLineup({ x: { A: ['a'], B: ['b'] } }, { x: { A: ['b'], B: ['a'] } }),
+    '앞뒤 팀이 바뀌면 다르다');
+  ok(!sameLineup(undefined, lu), '명단이 없던 예전 대진은 다르다 — 채워야 한다');
+}
+
+section('대진을 다시 저장할 때 지울 점수');
+{
+  const prev = [M, { id: 'mn-1-2', teamA: ['u1', 'u2'], teamB: ['u3', 'u4'] }];
+  const mt = {
+    scores: { r1c1: { a: 6, b: 3 } },
+    finals: { 'mn-1-2': { a: 6, b: 1 }, oldjunk: { a: 6, b: 0 } },
+  };
+  /* ⚠️ 수기 표의 id 는 고정이다. 같은 칸에 다른 사람을 넣었는데 점수를
+        안 지우면, 예전 경기의 확정 점수가 새 사람들의 기록이 된다. */
+  const next = [M, { id: 'mn-1-2', teamA: ['u5', 'u6'], teamB: ['u3', 'u4'] }];
+  eq('사람이 바뀐 칸의 점수 + 예전 찌꺼기를 지운다',
+    staleScoreIds(prev, next, mt).sort(), ['mn-1-2', 'oldjunk']);
+  eq('사람이 그대로면 지우지 않는다', staleScoreIds(prev, prev, { finals: { r1c1: {} } }), []);
+  eq('대진을 비우면 전부 지운다', staleScoreIds(prev, [], mt).sort(), ['mn-1-2', 'oldjunk', 'r1c1']);
+  eq('점수가 없으면 지울 것도 없다', staleScoreIds(prev, [], {}), []);
+}
+
+section('운영진 수정인가 — 입력은 뛴 사람이 한다');
+{
+  /* 운영진이라도 자기가 뛴 경기는 상대 확인을 받는다. 이걸 풀면
+     "운영진은 혼자 정해도 된다"는 구멍이 생긴다. */
+  const MA = { ...M, teamA: ['boss', 'u2'] };
+  ok(!isAdminOverride(MA, empty, 'boss', true), '운영진이 뛴 경기는 일반 입력(상대 확인 필요)');
+  ok(isAdminOverride(M, empty, 'boss', true), '운영진이 안 뛴 경기는 운영진 수정');
+  ok(isAdminOverride(MA, { finals: { r1c1: { a: 6, b: 3 } } }, 'boss', true),
+    '확정된 경기를 고치는 것은 운영진 수정');
+  ok(!isAdminOverride(M, empty, 'u1', false), '회원은 운영진 수정이 아니다');
+}
+
+section('쓰기 표지(scoreOp)');
+{
+  const o = scoreOp('report', 'r1c1', 'u1');
+  eq('종류·경기·사람', [o.kind, o.match, o.by], ['report', 'r1c1', 'u1']);
+}
+
+/* ---------- 알림 ---------- */
+section('알림 — 할 일이 생긴 사람에게만');
+{
+  const base = { matches: [M, M_OFF], scores: {}, finals: {} };
+  const after = {
+    ...base,
+    scores: { r1c1: makeReport({ a: 6, b: 3, uid: 'u1', side: 'A' }) },
+    scoreOp: { kind: 'report', match: 'r1c1', by: 'u1', at: 1 },
+  };
+  const plan = scorePushPlan(base, after);
+  eq('넣으면 상대 팀에게', plan && plan.to, ['u3', 'u4']);
+  ok(plan && plan.kind === 'report', '종류는 확인 요청');
+
+  eq('같은 표지가 또 오면(다른 필드만 바뀜) 안 보낸다',
+    scorePushPlan(after, { ...after, rsvp: { u9: 'yes' } }), null);
+
+  /* 상대가 전부 오프라인이면 받을 사람이 없다 */
+  const offAfter = {
+    ...base,
+    scores: { r1c2: makeReport({ a: 6, b: 2, uid: 'u1', side: 'A' }) },
+    scoreOp: { kind: 'report', match: 'r1c2', by: 'u1', at: 2 },
+  };
+  eq('상대가 전부 오프라인이면 보내지 않는다', scorePushPlan(base, offAfter), null);
+
+  /* 아니라고 하면 넣은 사람에게 */
+  const rejected = {
+    ...base, scores: {},
+    scoreOp: { kind: 'reject', match: 'r1c1', by: 'u3', at: 3 },
+  };
+  const rp = scorePushPlan(after, rejected);
+  eq('아니라고 하면 넣은 사람에게', rp && rp.to, ['u1']);
+  /* 자기 보고를 자기가 물린 경우엔 알릴 사람이 없다 */
+  eq('자기가 물린 것은 안 보낸다',
+    scorePushPlan(after, { ...rejected, scoreOp: { kind: 'reject', match: 'r1c1', by: 'u1', at: 4 } }), null);
+
+  /* 확정은 보내지 않는다 — 할 일이 없는 알림은 알림을 끄게 만든다 */
+  const confirmed = {
+    ...base, scores: {}, finals: { r1c1: makeFinal(after.scores.r1c1, 'u3') },
+    scoreOp: { kind: 'confirm', match: 'r1c1', by: 'u3', at: 5 },
+  };
+  eq('확정은 알리지 않는다', scorePushPlan(after, confirmed), null);
+
+  const names = { u1: '김민수', u2: '이준호', u3: '박지연', u4: '최서윤' };
+  const txt = scorePushText(plan, (id) => names[id]);
+  ok(/김민수님이 1타임/.test(txt.body), '누가 넣었는지 적힌다', txt.body);
+  ok(/김민수·이준호 6 : 3 박지연·최서윤/.test(txt.body), '두 팀 이름과 점수가 적힌다', txt.body);
+  eq('알릴 게 없으면 문구도 없다', scorePushText(null), null);
+}
+
+/* ---------- 앱과 서버가 같은 답을 내는가 ----------
+   서버는 functions/ 의 사본을 쓴다(배포 묶음에 src/lib 가 안 들어간다).
+   말로만 같아야 한다고 적어 두면 반드시 어긋난다. 같은 입력을 양쪽에
+   넣어 대조한다. 한쪽만 고치면 여기서 깨진다. */
+section('앱과 서버가 같은 답을 내는가');
+{
+  const base = { matches: [M, M_OFF], scores: {}, finals: {} };
+  const rep = makeReport({ a: 6, b: 3, uid: 'u1', side: 'A' });
+  const cases = [
+    [base, { ...base, scores: { r1c1: rep }, scoreOp: { kind: 'report', match: 'r1c1', by: 'u1', at: 1 } }],
+    [base, { ...base, scores: { r1c2: rep }, scoreOp: { kind: 'report', match: 'r1c2', by: 'u1', at: 1 } }],
+    [{ ...base, scores: { r1c1: rep } }, { ...base, scoreOp: { kind: 'reject', match: 'r1c1', by: 'u3', at: 2 } }],
+    [{ ...base, scores: { r1c1: rep } }, { ...base, scoreOp: { kind: 'reject', match: 'r1c1', by: 'u1', at: 2 } }],
+    [base, { ...base, scoreOp: { kind: 'confirm', match: 'r1c1', by: 'u3', at: 3 } }],
+    [base, { ...base, scoreOp: { kind: 'report', match: 'nope', by: 'u1', at: 4 } }],
+    [base, base],
+    [null, null],
+  ];
+  const names = { u1: '김민수', u3: '박지연' };
+  cases.forEach(([bf, af], i) => {
+    const a = scorePushPlan(bf, af);
+    const s2 = srv.scorePushPlan(bf, af);
+    eq(`알림 대상 ${i + 1}`, s2, a);
+    eq(`알림 문구 ${i + 1}`, srv.scorePushText(s2, (id) => names[id]), scorePushText(a, (id) => names[id]));
+  });
+  ['local:x', 'g:손님', 'u1', '', null].forEach((id) =>
+    eq(`오프라인 판정 ${String(id)}`, srv.isOfflineId(id), isOfflineId(id)));
 }
 
 console.log(`\n점수 보고 테스트: ${pass} 통과 / ${fail} 실패`);

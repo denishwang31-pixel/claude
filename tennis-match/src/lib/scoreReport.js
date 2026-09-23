@@ -26,12 +26,21 @@
       허용하고 변경·삭제는 막는다**. "둘이 확정하면 변경 불가,
       운영진만 수정"이 규칙 수준에서 지켜지는 이유다.
 
-   ⚠️ 규칙이 못 잡는 것 — "이 사람이 정말 그 경기에 뛰었는가".
-      그걸 보려면 규칙이 meetings 문서를 읽고 matches 배열을 뒤져야
-      하는데 규칙에는 반복문이 없다. 그래서 **그 검사는 앱이 한다**
-      (아래 canReport/canConfirm). 클럽 회원이 앱이 아닌 방법으로
-      남의 경기를 확정하는 것까지는 막지 못한다 — 대신 운영진이
-      언제든 고칠 수 있다. 이 한계를 알고 고른 선택이다.
+   "이 사람이 정말 그 경기에 뛰었는가" — 규칙이 직접 본다.
+      규칙에는 반복문이 없어서 matches 배열을 뒤질 수는 없다. 처음에는
+      그래서 "규칙으로는 못 막는다"고 넘겼는데, 그건 **데이터 모양을
+      안 바꿨을 때**의 이야기였다. 두 가지를 더 적으면 된다.
+
+        lineup   경기별 두 팀 명단 map. { r1c1: { A:[..], B:[..] } }
+                 대진을 저장할 때마다 같이 적는다(saveMatches).
+                 규칙이 lineup[경기].A 안에 내 uid 가 있는지 바로 본다.
+        scoreOp  "지금 어느 경기를 건드리는가"를 쓰기 요청에 같이 적는다.
+                 규칙은 바뀐 칸의 이름을 꺼낼 수 없으므로, 앱이 이름을
+                 대고 규칙은 **정말 그 칸만 바뀌었는지** 대조한다.
+
+      이 둘로 규칙이 확인한다 — 뛴 사람만 넣는다, 넣은 팀의 **반대
+      팀**만 확정한다, 확정할 때 숫자를 못 바꾼다, 확정된 것은 회원이
+      못 건드린다. 앱 밖에서 요청을 꾸며도 통하지 않는다.
 
    ⚠️ 확정된 점수만 matches[].score 로 합쳐 준다(mergeScores).
       랭킹·통산기록·KDK 순위가 전부 m.score 를 읽는데, 확인 안 된
@@ -198,8 +207,141 @@ export function progressOf(matches, meeting) {
   return { total, final, pending, none: total - final - pending };
 }
 
+/* ---------------- 규칙이 읽는 명단 ---------------- */
+
+/**
+ * 경기별 두 팀 명단 — 보안 규칙이 "이 사람이 뛰었나"를 볼 수 있게 적는다.
+ * ⚠️ 대진을 저장할 때마다 **반드시** 같이 적어야 한다. 대진만 바뀌고
+ *    명단이 옛날 것이면, 새로 들어간 사람은 점수를 못 넣고 빠진 사람이
+ *    넣을 수 있게 된다. 그래서 saveMatches 가 직접 계산해 넣는다 —
+ *    부르는 쪽이 챙기게 하면 언젠가 한 군데서 빠진다.
+ */
+export function lineupOf(matches) {
+  const out = {};
+  (matches || []).forEach((m) => {
+    if (!m || !m.id) return;
+    out[m.id] = { A: [...(m.teamA || [])], B: [...(m.teamB || [])] };
+  });
+  return out;
+}
+
+/* 한 팀 안에서 순서는 상관없다 — 누가 뛰었는지만 본다. 팀(A/B)은 다르다. */
+const teamKey = (t) => [...(t || [])].sort().join(',');
+const sameTeams = (x, y) => !!x && !!y
+  && teamKey(x.A) === teamKey(y.A) && teamKey(x.B) === teamKey(y.B);
+
+/** 두 명단이 같은가 — 저장된 명단이 대진과 어긋났는지 볼 때 */
+export function sameLineup(a, b) {
+  const A = a || {};
+  const B = b || {};
+  const ka = Object.keys(A);
+  if (ka.length !== Object.keys(B).length) return false;
+  return ka.every((k) => sameTeams(A[k], B[k]));
+}
+
+/**
+ * 대진을 다시 저장할 때 **무효가 되는 점수**.
+ *
+ * ⚠️ 수기 표의 경기 id 는 `mn-1-1` 처럼 타임·코트로 정해진다. 빈 표를
+ *    다시 만들면 같은 id 가 또 나오고, 지우지 않으면 **예전 경기의 확정
+ *    점수가 새 경기에 그대로 달라붙는다.** 수기 편집으로 사람을 바꾼
+ *    경기도 마찬가지다 — 김·이 조가 넣은 6:3 이 박·최 조의 기록이 된다.
+ *
+ * 사람이 바뀌었거나 없어진 경기의 점수(대기·확정 모두)를 골라낸다.
+ * 예전 대진에 없던 id 의 점수(더 오래전 재생성의 찌꺼기)도 같이 버린다.
+ */
+export function staleScoreIds(prevMatches, nextMatches, meeting) {
+  const prev = lineupOf(prevMatches);
+  const next = lineupOf(nextMatches);
+  const scored = new Set([
+    ...Object.keys(meeting?.scores || {}),
+    ...Object.keys(meeting?.finals || {}),
+  ]);
+  return [...scored].filter((id) => !next[id] || !prev[id] || !sameTeams(prev[id], next[id]));
+}
+
+/** 쓰기 요청에 붙이는 표지 — 규칙이 "어느 경기를 건드리는가"를 안다 */
+export const scoreOp = (kind, matchId, uid) => ({
+  kind, match: matchId, by: uid, at: Date.now(),
+});
+
+/**
+ * 운영진이 직접 정하는 경우인가.
+ *
+ * 입력은 **뛴 사람이** 한다. 운영진이라도 자기가 뛴 경기는 똑같이
+ * 넣고 상대의 확인을 받는다 — 그래야 "운영진은 혼자 정해도 된다"는
+ * 구멍이 안 생긴다. 운영진의 몫은 **수정**이다.
+ *   · 이미 확정된 경기를 고칠 때
+ *   · 자기가 안 뛴 경기(오프라인 회원끼리 친 경기 등)를 정할 때
+ */
+export function isAdminOverride(match, meeting, uid, isAdmin) {
+  if (!isAdmin || !match) return false;
+  if (scoreStateOf(meeting, match.id) === SCORE_STATE.FINAL) return true;
+  return !sideOf(match, uid);
+}
+
+/* ---------------- 알림 ----------------
+   서버(functions/scoreReport.js)에 똑같은 사본이 있다 — 배포 묶음에
+   src/lib 가 안 들어가기 때문이다. 둘이 같은 답을 내는지
+   scripts/test-scorereport.mjs 가 매번 대조한다.
+
+   알림은 **해야 할 일이 생긴 사람에게만** 보낸다.
+     점수를 넣음  → 상대 팀에게 "확인해 주세요"
+     아니라고 함  → 넣은 사람에게 "다시 넣어 주세요"
+     확정         → 보내지 않는다. 할 일이 없는 알림은 알림을 끄게 만든다. */
+
+/** 이번 변경으로 누구에게 무엇을 알릴지. 알릴 게 없으면 null */
+export function scorePushPlan(before, after) {
+  const op = after?.scoreOp;
+  if (!op || !op.match) return null;
+  if (JSON.stringify(before?.scoreOp || null) === JSON.stringify(op)) return null;
+  const m = (after.matches || []).find((x) => x && x.id === op.match);
+  if (!m) return null;
+
+  if (op.kind === 'report') {
+    const rep = (after.scores || {})[op.match];
+    if (!rep) return null;
+    const team = rep.side === 'A' ? m.teamB : m.teamA;
+    const to = (team || []).filter((id) => !isOfflineId(id));
+    if (!to.length) return null;
+    return { kind: 'report', to, match: m, a: rep.a, b: rep.b, by: rep.by };
+  }
+  if (op.kind === 'reject') {
+    const prevRep = (before?.scores || {})[op.match];
+    if (!prevRep || prevRep.by === op.by || isOfflineId(prevRep.by)) return null;
+    return { kind: 'reject', to: [prevRep.by], match: m, by: op.by };
+  }
+  return null;
+}
+
+/**
+ * 알림 문구.
+ * ⚠️ 코트 번호 대신 **두 팀 이름**을 쓴다. 코트 이름은 코트장마다
+ *    다르게 정할 수 있어서(A·B, 9·10) 서버가 모르는 경우가 있고,
+ *    "3코트"보다 "김민수·이준호 6:3 박지연·최서윤"이 한눈에 알아본다.
+ */
+export function scorePushText(plan, nameOf) {
+  if (!plan) return null;
+  const nm = (id) => (nameOf ? nameOf(id) : '') || '';
+  const A = (plan.match.teamA || []).map(nm).join('·');
+  const B = (plan.match.teamB || []).map(nm).join('·');
+  if (plan.kind === 'report') {
+    return {
+      title: '🎾 점수 확인 요청',
+      body: `${nm(plan.by)}님이 ${plan.match.round}타임 점수를 넣었습니다. `
+        + `${A} ${plan.a} : ${plan.b} ${B} — 맞는지 확인해 주세요.`,
+    };
+  }
+  return {
+    title: '점수를 다시 넣어 주세요',
+    body: `${nm(plan.by)}님이 ${plan.match.round}타임 점수가 다르다고 했습니다. (${A} vs ${B})`,
+  };
+}
+
 export default {
   SCORE_STATE, isOfflineId, sideOf, otherSide, reportOf, finalOf, scoreStateOf,
   mergeScores, validScore, canReport, canConfirm, canEditFinal, hasConfirmer,
   makeReport, makeFinal, awaitingMyConfirm, myUnreported, progressOf,
+  lineupOf, sameLineup, staleScoreIds, scoreOp, isAdminOverride,
+  scorePushPlan, scorePushText,
 };

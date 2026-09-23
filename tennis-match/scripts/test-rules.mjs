@@ -116,51 +116,125 @@ await T('타인의 rsvpBy 항목 변경 거부',
     { 'rsvpBy.mem2': 'mem1' })));
 
 /* ---------- 점수 보고 ----------
-   회원이 점수를 넣을 수 있게 열었다. 열면서 반드시 지켜야 하는 것은
-   "확정된 점수는 회원이 못 고친다" 하나다. 이게 규칙에서 지켜지지
-   않으면 화면에서 버튼을 감춰 봐야 소용없다. */
+   회원이 점수를 넣게 열었다. 열면서 규칙이 반드시 지켜야 하는 것:
+     · 그 경기에 **뛴 사람만** 넣는다
+     · 확정은 넣은 팀의 **반대 팀**만, 넣은 본인은 불가
+     · 확정할 때 숫자를 못 바꾼다
+     · 확정된 뒤에는 회원이 못 건드린다(운영진만)
+   화면에서 버튼을 감추는 것으로는 부족하다 — 앱 밖에서 요청을 꾸밀 수
+   있다. 그래서 전부 규칙에서 막히는지 여기서 확인한다.
+
+   이 절 전용 선수를 따로 만든다. 다른 절에서 역할이 바뀌는 회원을
+   쓰면, 그 절 순서가 바뀔 때 여기가 이유 없이 깨진다. */
 console.log('\n[점수 보고]');
 await seed(async (db) => {
+  for (const id of ['p1', 'p2', 'p3', 'p4', 'p5']) {
+    await setDoc(doc(db, 'clubs', CLUB, 'members', id),
+      { name: id, gender: 'M', grade: 'B', role: '회원', status: '활동' });
+  }
   await setDoc(doc(db, 'clubs', CLUB, 'meetings', 'mt2'), {
-    date: '2099-02-02', rsvp: {}, guests: [], matches: [], restScores: {}, canceled: false,
-    scores: {}, finals: { done1: { a: 6, b: 3, by: 'mem1', confirmBy: 'mem2' } },
+    date: '2099-02-02', rsvp: {}, guests: [], restScores: {}, canceled: false,
+    matches: [
+      { id: 'r1c1', round: 1, court: 1, teamA: ['p1', 'p2'], teamB: ['p3', 'p4'] },
+      { id: 'done1', round: 1, court: 2, teamA: ['p1', 'p2'], teamB: ['p3', 'p4'] },
+    ],
+    lineup: {
+      r1c1: { A: ['p1', 'p2'], B: ['p3', 'p4'] },
+      done1: { A: ['p1', 'p2'], B: ['p3', 'p4'] },
+    },
+    scores: {},
+    finals: { done1: { a: 6, b: 3, by: 'p1', confirmBy: 'p3' } },
   });
 });
+const P = (id) => env.authenticatedContext(id).firestore();
+const MT = (who) => doc(P(who), 'clubs', CLUB, 'meetings', 'mt2');
+const op = (kind, by, match = 'r1c1') => ({ kind, match, by, at: Date.now() });
+const rep = (by, side, a = 6, b = 3) => ({ a, b, by, side, at: 1 });
 
-await T('회원이 점수를 보고할 수 있다',
-  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
-    { 'scores.r1c1': { a: 6, b: 3, by: 'mem1', side: 'A', at: 1 } })));
+/* ---- 누가 넣을 수 있나 ---- */
+await T('경기에 안 뛴 회원은 점수를 못 넣는다',
+  assertFails(updateDoc(MT('p5'), { 'scores.r1c1': rep('p5', 'A'), scoreOp: op('report', 'p5') })));
+await T('상대 팀인 척 팀을 속여 넣는 것 거부',
+  assertFails(updateDoc(MT('p1'), { 'scores.r1c1': rep('p1', 'B'), scoreOp: op('report', 'p1') })));
+await T('남의 이름으로 넣는 것 거부',
+  assertFails(updateDoc(MT('p1'), { 'scores.r1c1': rep('p3', 'B'), scoreOp: op('report', 'p1') })));
+await T('scoreOp 를 남의 이름으로 적는 것 거부',
+  assertFails(updateDoc(MT('p1'), { 'scores.r1c1': rep('p1', 'A'), scoreOp: op('report', 'p3') })));
+await T('동점은 거부',
+  assertFails(updateDoc(MT('p1'), { 'scores.r1c1': rep('p1', 'A', 5, 5), scoreOp: op('report', 'p1') })));
+await T('scoreOp 없이 점수만 쓰는 것 거부',
+  assertFails(updateDoc(MT('p1'), { 'scores.r1c1': rep('p1', 'A') })));
+/* ⚠️ scoreOp 에 다른 경기 이름을 대고 이 경기를 고치는 속임수 */
+await T('scoreOp 에 적은 경기와 다른 경기를 고치는 것 거부',
+  assertFails(updateDoc(MT('p1'),
+    { 'scores.r1c1': rep('p1', 'A'), scoreOp: op('report', 'p1', 'done1') })));
+await T('뛴 사람은 자기 팀으로 넣을 수 있다',
+  assertSucceeds(updateDoc(MT('p1'), { 'scores.r1c1': rep('p1', 'A'), scoreOp: op('report', 'p1') })));
 
-await T('회원이 확정본을 새로 추가할 수 있다 (상대 확인)',
-  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
-    { 'finals.r1c1': { a: 6, b: 3, by: 'mem1', confirmBy: 'mem2', at: 1 } })));
+/* ---- 누가 확인할 수 있나 ---- */
+const fin = (confirmBy, a = 6, b = 3) => ({ a, b, by: 'p1', confirmBy, at: 2 });
+await T('넣은 본인은 확정 불가',
+  assertFails(updateDoc(MT('p1'), {
+    'finals.r1c1': fin('p1'), 'scores.r1c1': deleteField(), scoreOp: op('confirm', 'p1'),
+  })));
+await T('같은 팀 동료도 확정 불가',
+  assertFails(updateDoc(MT('p2'), {
+    'finals.r1c1': fin('p2'), 'scores.r1c1': deleteField(), scoreOp: op('confirm', 'p2'),
+  })));
+await T('안 뛴 회원은 확정 불가',
+  assertFails(updateDoc(MT('p5'), {
+    'finals.r1c1': fin('p5'), 'scores.r1c1': deleteField(), scoreOp: op('confirm', 'p5'),
+  })));
+/* ⚠️ 확인하는 척하며 숫자를 바꿔 넣는 속임수 */
+await T('확정하면서 숫자를 바꾸는 것 거부',
+  assertFails(updateDoc(MT('p3'), {
+    'finals.r1c1': fin('p3', 3, 6), 'scores.r1c1': deleteField(), scoreOp: op('confirm', 'p3'),
+  })));
+await T('상대 팀은 받은 숫자 그대로 확정할 수 있다',
+  assertSucceeds(updateDoc(MT('p3'), {
+    'finals.r1c1': fin('p3'), 'scores.r1c1': deleteField(), scoreOp: op('confirm', 'p3'),
+  })));
 
-/* ⚠️ 여기가 이 기능의 전부다 */
-await T('회원이 이미 확정된 점수를 고치는 것 거부',
-  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
-    { 'finals.done1': { a: 1, b: 9, by: 'mem1', confirmBy: 'mem1', at: 2 } })));
-
+/* ---- 확정된 뒤 ---- */
+await T('확정된 경기에 회원이 다시 넣는 것 거부',
+  assertFails(updateDoc(MT('p1'), { 'scores.done1': rep('p1', 'A'), scoreOp: op('report', 'p1', 'done1') })));
+await T('회원이 확정된 점수를 고치는 것 거부',
+  assertFails(updateDoc(MT('p1'), {
+    'finals.done1': { a: 1, b: 9, by: 'p1', confirmBy: 'p3' }, scoreOp: op('confirm', 'p1', 'done1'),
+  })));
 await T('회원이 확정된 점수를 지우는 것 거부',
-  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
-    { 'finals.done1': deleteField() })));
-
+  assertFails(updateDoc(MT('p3'), { 'finals.done1': deleteField(), scoreOp: op('reject', 'p3', 'done1') })));
 await T('운영진은 확정된 점수를 고칠 수 있다',
   assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'meetings', 'mt2'),
-    { 'finals.done1': { a: 1, b: 9, by: 'owner1', confirmBy: 'owner1', at: 3 } })));
+    { 'finals.done1': { a: 1, b: 9, by: 'owner1', confirmBy: 'owner1', admin: true } })));
 
-/* 점수를 여는 김에 대진표까지 열리면 안 된다 — 회원이 대진을
-   통째로 갈아치우는 통로가 된다. 이것 때문에 배열이 아니라 map 을 썼다. */
-await T('회원이 점수와 함께 대진표를 바꾸는 것 거부',
-  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
-    { 'scores.r9': { a: 6, b: 0, by: 'mem1', side: 'A', at: 1 }, matches: [{ id: 'x' }] })));
+/* ---- 아니라고 하기 ---- */
+await seed(async (db) => {
+  await updateDoc(doc(db, 'clubs', CLUB, 'meetings', 'mt2'),
+    { 'scores.r2': rep('p1', 'A'), 'lineup.r2': { A: ['p1', 'p2'], B: ['p3', 'p4'] } });
+});
+await T('안 뛴 회원은 남의 점수를 지우지 못한다',
+  assertFails(updateDoc(MT('p5'), { 'scores.r2': deleteField(), scoreOp: op('reject', 'p5', 'r2') })));
+await T('상대 팀은 "아니다"로 점수를 물릴 수 있다',
+  assertSucceeds(updateDoc(MT('p3'), { 'scores.r2': deleteField(), scoreOp: op('reject', 'p3', 'r2') })));
 
-await T('회원이 대진표만 바꾸는 것도 거부',
-  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'meetings', 'mt2'),
-    { matches: [{ id: 'x' }] })));
-
+/* ---- 점수를 여는 김에 다른 것까지 열리면 안 된다 ---- */
+await T('점수와 함께 대진표를 바꾸는 것 거부',
+  assertFails(updateDoc(MT('p1'), {
+    'scores.r1c1': rep('p1', 'A'), scoreOp: op('report', 'p1'), matches: [{ id: 'x' }],
+  })));
+/* ⚠️ 명단을 고쳐 자기를 선수로 끼워 넣는 속임수 */
+await T('명단(lineup)에 자기를 끼워 넣는 것 거부',
+  assertFails(updateDoc(MT('p5'), {
+    'lineup.r1c1': { A: ['p5', 'p2'], B: ['p3', 'p4'] },
+    'scores.r1c1': rep('p5', 'A'), scoreOp: op('report', 'p5'),
+  })));
 await T('클럽 밖 사람은 점수도 못 넣는다',
   assertFails(updateDoc(doc(outsider, 'clubs', CLUB, 'meetings', 'mt2'),
-    { 'scores.r1c1': { a: 6, b: 3, by: 'out1', side: 'A', at: 1 } })));
+    { 'scores.r1c1': rep('other9', 'A'), scoreOp: op('report', 'other9') })));
+/* 참석 응답은 여전히 된다 — 점수 규칙을 붙이다 기존 길을 막으면 안 된다 */
+await T('참석 응답은 예전처럼 된다',
+  assertSucceeds(updateDoc(MT('p5'), { 'rsvp.p5': 'yes' })));
 
 /* 역할 겸임 — roles 배열이 새 권한 통로가 되면 안 된다.
    규칙은 role 문자열 하나로 판단하므로, roles 에 몰래 '회장'을 넣어

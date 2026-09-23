@@ -21,6 +21,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { ROLES, GUEST_STATUS, JOIN_STATUS } from './constants';
+import { lineupOf, scoreOp } from './scoreReport';
 
 const C = (clubId, sub) => collection(db, 'clubs', clubId, sub);
 const D = (clubId, sub, id) => doc(db, 'clubs', clubId, sub, id);
@@ -220,8 +221,30 @@ export const requestRsvp = (clubId, meetingId, by, targets) =>
 export const setRestScore = (clubId, meetingId, memberId, value) =>
   updateDoc(D(clubId, 'meetings', meetingId), { [`restScores.${memberId}`]: value });
 
-export const saveMatches = (clubId, meetingId, matches) =>
-  updateDoc(D(clubId, 'meetings', meetingId), { matches });
+/**
+ * 대진 저장.
+ *
+ * ⚠️ 명단(lineup)을 **여기서** 같이 적는다. 보안 규칙은 lineup 을 보고
+ *    "이 사람이 그 경기에 뛰었나"를 판단한다. 대진만 바뀌고 명단이
+ *    옛것이면, 새로 들어간 사람은 점수를 못 넣고 빠진 사람이 넣을 수
+ *    있게 된다. 부르는 쪽이 챙기게 하면 언젠가 한 군데서 빠진다.
+ *
+ * ⚠️ staleIds — 사람이 바뀌었거나 없어진 경기의 점수를 지운다.
+ *    수기 표의 id 는 `mn-1-1` 처럼 고정이라, 안 지우면 예전 경기의
+ *    확정 점수가 새 경기에 그대로 달라붙는다(scoreReport.staleScoreIds).
+ */
+export const saveMatches = (clubId, meetingId, matches, { staleIds = [] } = {}) => {
+  const patch = { matches, lineup: lineupOf(matches) };
+  staleIds.forEach((id) => {
+    patch[`scores.${id}`] = deleteField();
+    patch[`finals.${id}`] = deleteField();
+  });
+  return updateDoc(D(clubId, 'meetings', meetingId), patch);
+};
+
+/** 명단만 다시 적는다 — 명단 없이 만들어진 예전 대진을 채울 때 */
+export const saveLineup = (clubId, meetingId, matches) =>
+  updateDoc(D(clubId, 'meetings', meetingId), { lineup: lineupOf(matches) });
 
 /* ---------------- 점수 보고 ----------------
 
@@ -229,11 +252,18 @@ export const saveMatches = (clubId, meetingId, matches) =>
    판정 로직은 전부 src/lib/scoreReport.js 에 있다 — 여기는 쓰기만 한다.
 
    ⚠️ 점수를 matches 배열이 아니라 map 두 개에 나눠 담는 이유는
-      보안 규칙 때문이다. scoreReport.js 머리말 참고. */
+      보안 규칙 때문이다. scoreReport.js 머리말 참고.
+
+   ⚠️ 회원의 쓰기에는 반드시 scoreOp 를 붙인다. 규칙은 바뀐 칸의 이름을
+      스스로 꺼내지 못해서, 앱이 "이 경기를 건드린다"고 대야 검사할 수
+      있다. 빠뜨리면 규칙이 전부 거부한다. */
 
 /** 한 팀이 점수를 넣는다(확인 대기) */
 export const reportScore = (clubId, meetingId, matchId, report) =>
-  updateDoc(D(clubId, 'meetings', meetingId), { [`scores.${matchId}`]: report });
+  updateDoc(D(clubId, 'meetings', meetingId), {
+    [`scores.${matchId}`]: report,
+    scoreOp: scoreOp('report', matchId, report.by),
+  });
 
 /** 상대 팀이 확인한다 → 확정.
     ⚠️ 확정과 동시에 대기 기록을 지운다. 남겨 두면 화면이 "확정"과
@@ -243,12 +273,14 @@ export const confirmScore = (clubId, meetingId, matchId, final) =>
   updateDoc(D(clubId, 'meetings', meetingId), {
     [`finals.${matchId}`]: final,
     [`scores.${matchId}`]: deleteField(),
+    scoreOp: scoreOp('confirm', matchId, final.confirmBy),
   });
 
 /** 상대 팀이 "그 점수 아닌데" — 보고를 물린다. 다시 넣을 수 있게 된다. */
-export const rejectScore = (clubId, meetingId, matchId) =>
+export const rejectScore = (clubId, meetingId, matchId, uid) =>
   updateDoc(D(clubId, 'meetings', meetingId), {
     [`scores.${matchId}`]: deleteField(),
+    scoreOp: scoreOp('reject', matchId, uid),
   });
 
 /** 운영진이 직접 확정한다(상대 확인 없이). 이미 확정된 것을 고칠 때도 이 길. */

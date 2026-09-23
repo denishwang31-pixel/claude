@@ -25,12 +25,12 @@ import {
 } from '../../src/lib/constants';
 import {
   setRules, setRestScore, saveMatches, updateMeeting, subGear,
-  reportScore, confirmScore, rejectScore, adminSetScore, clearScore,
+  reportScore, confirmScore, rejectScore, adminSetScore, clearScore, saveLineup,
 } from '../../src/lib/firestore';
 import {
   SCORE_STATE, scoreStateOf, reportOf, finalOf, sideOf, otherSide,
   canReport, canConfirm, hasConfirmer, validScore, makeReport, makeFinal,
-  awaitingMyConfirm, progressOf,
+  awaitingMyConfirm, progressOf, staleScoreIds, isAdminOverride, lineupOf, sameLineup,
 } from '../../src/lib/scoreReport';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
@@ -155,6 +155,26 @@ export default function Match() {
     ];
   }, [meeting, members]);
 
+  /**
+   * 대진을 저장한다 — 이 화면의 모든 대진 저장은 여기를 거친다.
+   *
+   * ⚠️ 사람이 바뀌었거나 없어진 경기의 점수를 같이 지운다. 수기 표의
+   *    id 는 `mn-1-1` 처럼 고정이라, 빈 표를 다시 만들거나 한 칸의
+   *    사람을 바꾸면 **예전 경기의 확정 점수가 새 경기에 그대로 붙는다**.
+   *    김·이 조가 넣은 6:3 이 박·최 조의 기록이 되는 식이다.
+   * ⚠️ 여기에 두는 이유 — 저장하는 곳이 일곱 군데다. 곳곳에서 따로
+   *    챙기게 하면 반드시 한 곳은 빠진다.
+   *
+   * 선언 위치도 일부러 위쪽이다. 이 파일은 "선언 전에 읽어서 대진 탭이
+   * 열리자마자 꺼지는" 사고를 한 번 겪었다.
+   */
+  const commitMatches = (next) => {
+    if (!meeting) return Promise.resolve();
+    return saveMatches(clubId, meeting.id, next, {
+      staleIds: staleScoreIds(meeting.matches, next, meeting),
+    });
+  };
+
   const venueOf = (m) => venues.find((v) => v.id === m?.venueId);
   const times = useMemo(() => {
     if (!meeting) return [];
@@ -228,7 +248,7 @@ export default function Match() {
       },
     );
     if (!matches.length) return flash('편성 가능한 구성이 없습니다');
-    saveMatches(clubId, meeting.id, matches);
+    commitMatches(matches);
 
     const mixedN = matches.filter((m) => m.type === '잡복').length;
     const xSingles = matches.filter((m) => m.type === '혼성단식').length;
@@ -244,7 +264,7 @@ export default function Match() {
   const runKdk = () => {
     const matches = generateKdk(attendees, meeting.courts);
     if (!matches.length) return flash('KDK 는 최소 4명이 필요합니다');
-    saveMatches(clubId, meeting.id, matches);
+    commitMatches(matches);
     const q = kdkQuality(attendees, matches);
     const groups = [...new Set(matches.map((m) => m.group))].length;
     flash(`KDK ${groups}개 조 · ${matches.length}경기 · 1인 ${q.minGames}경기`
@@ -379,7 +399,7 @@ export default function Match() {
 
   const saveDraft = () => {
     if (!meeting || !draft) return;
-    saveMatches(clubId, meeting.id, draft);
+    commitMatches(draft);
     /* 초안을 그대로 둔다 — 비우면 패널이 잠깐 빈 표로 깜빡인다.
        저장 직후에는 draft === matches 라 dirty 가 스스로 꺼진다. */
     flash(changedCount ? `${changedCount}칸을 저장했습니다` : '저장했습니다');
@@ -405,7 +425,7 @@ export default function Match() {
         { text: '계속 편집', style: 'cancel' },
         {
           text: '저장하고 나가기',
-          onPress: () => { saveMatches(clubId, meeting.id, draft); setDraft(null); setManualOn(false); go(); },
+          onPress: () => { commitMatches(draft); setDraft(null); setManualOn(false); go(); },
         },
         {
           text: '저장 안 함',
@@ -446,14 +466,14 @@ export default function Match() {
       onSelect: (o) => {
         if (o.key === 'regen') return gen();
         if (o.key === 'vacate') {
-          saveMatches(clubId, meeting.id, removeGhosts(matches, drawDiff.ghosts));
+          commitMatches(removeGhosts(matches, drawDiff.ghosts));
           return flash(`${drawDiff.ghosts.length}명의 자리를 비웠습니다`);
         }
         if (o.key === 'drop') {
-          saveMatches(clubId, meeting.id, dropAffected(matches, drawDiff.affected));
+          commitMatches(dropAffected(matches, drawDiff.affected));
           return flash(`${drawDiff.affected.length}경기를 삭제했습니다`);
         }
-        saveMatches(clubId, meeting.id, []);
+        commitMatches([]);
         return flash('대진표를 삭제했습니다');
       },
     });
@@ -572,28 +592,47 @@ export default function Match() {
       : { a: '', b: '' });
   };
 
-  /** 점수를 넣는다. 운영진이면 바로 확정, 회원이면 상대 확인 대기. */
+  /** 쓰기 실패를 사람 말로 바꾼다.
+      ⚠️ 규칙이 막으면 "permission-denied" 만 온다. 그대로 띄우면 사용자는
+         앱이 고장 난 줄 안다. 왜 막혔는지 짐작할 수 있게 적는다. */
+  const scoreFail = (e) => {
+    const code = String(e?.code || '');
+    if (code.includes('permission-denied')) {
+      return flash('저장되지 않았습니다 — 이 경기에 뛴 사람만 넣을 수 있고, 확정된 점수는 운영진만 고칩니다');
+    }
+    return flash('저장하지 못했습니다. 연결을 확인하고 다시 해 주세요');
+  };
+
+  /**
+   * 점수를 넣는다.
+   *
+   * 입력은 **뛴 사람이** 한다 — 운영진이라도 자기가 뛴 경기는 똑같이
+   * 넣고 상대의 확인을 받는다. "운영진은 혼자 정해도 된다"는 구멍을
+   * 만들지 않기 위해서다. 운영진의 몫은 수정이다(확정된 경기 고치기,
+   * 자기가 안 뛴 경기 정하기) — 그때만 바로 확정한다.
+   */
   const saveSc = (mid) => {
-    if (!validScore(sc.a, sc.b)) return flash('점수를 확인해 주세요 (동점 불가)');
+    if (!validScore(sc.a, sc.b)) return flash('점수를 확인해 주세요 (빈 칸·동점 불가)');
     const m = matches.find((x) => x.id === mid);
     if (!m) return flash('경기를 찾지 못했습니다');
 
-    const mySide = sideOf(m, me);
-    const rep = makeReport({ a: sc.a, b: sc.b, uid: me, side: mySide || 'A' });
-
-    /* 운영진은 바로 확정한다 — 운영진의 입력이 곧 최종 판단이다.
-       상대 확인을 기다리게 하면 "운영진이 고쳤는데 왜 안 바뀌지"가 된다. */
-    if (isAdmin) {
-      adminSetScore(clubId, meeting.id, mid, makeFinal(rep, me, { admin: true }));
-      flash('점수를 확정했습니다');
+    if (isAdminOverride(m, meeting, me, isAdmin)) {
+      const rep = makeReport({ a: sc.a, b: sc.b, uid: me, side: 'A' });
+      adminSetScore(clubId, meeting.id, mid, makeFinal(rep, me, { admin: true }))
+        .then(() => flash('운영진 수정으로 확정했습니다'))
+        .catch(scoreFail);
     } else {
-      reportScore(clubId, meeting.id, mid, rep);
+      const mySide = sideOf(m, me);
+      if (!mySide) return flash('이 경기에 뛴 사람만 점수를 넣을 수 있습니다');
+      const rep = makeReport({ a: sc.a, b: sc.b, uid: me, side: mySide });
       /* ⚠️ 상대 팀에 앱 쓰는 사람이 없으면 아무도 확인을 못 누른다.
             그 사실을 여기서 말해 주지 않으면 영영 대기로 남는다. */
       const need = otherSide(mySide);
-      flash(hasConfirmer(m, need)
-        ? '상대 팀 확인을 기다립니다'
-        : '상대 팀에 앱 사용자가 없어 운영진이 확정해야 합니다');
+      reportScore(clubId, meeting.id, mid, rep)
+        .then(() => flash(hasConfirmer(m, need)
+          ? '상대 팀에 확인 요청을 보냈습니다'
+          : '상대 팀에 앱 사용자가 없어 운영진이 확정해야 합니다'))
+        .catch(scoreFail);
     }
     setEditing(null); setSc({ a: '', b: '' });
   };
@@ -602,8 +641,9 @@ export default function Match() {
   const doConfirm = (m) => {
     const rep = reportOf(meeting, m.id);
     if (!rep || !canConfirm(m, meeting, me, isAdmin)) return;
-    confirmScore(clubId, meeting.id, m.id, makeFinal(rep, me));
-    flash(`${m.round}타임 ${courtLabel(venueOf(meeting), m.court)}코트 확정`);
+    confirmScore(clubId, meeting.id, m.id, makeFinal(rep, me))
+      .then(() => flash(`${m.round}타임 ${courtLabel(venueOf(meeting), m.court)}코트 확정`))
+      .catch(scoreFail);
   };
 
   /** 상대 팀이 "그 점수 아닌데" — 보고를 물린다 */
@@ -614,7 +654,11 @@ export default function Match() {
         {
           text: '다시 넣기',
           style: 'destructive',
-          onPress: () => { rejectScore(clubId, meeting.id, m.id); flash('점수를 지웠습니다'); },
+          onPress: () => {
+            rejectScore(clubId, meeting.id, m.id, me)
+              .then(() => flash('점수를 지웠습니다. 넣은 사람에게 알렸습니다'))
+              .catch(scoreFail);
+          },
         }]);
   };
 
@@ -627,9 +671,10 @@ export default function Match() {
           text: '확정 취소',
           style: 'destructive',
           onPress: () => {
-            clearScore(clubId, meeting.id, m.id);
+            clearScore(clubId, meeting.id, m.id)
+              .then(() => flash('확정을 취소했습니다'))
+              .catch(scoreFail);
             setEditing(null);
-            flash('확정을 취소했습니다');
           },
         }]);
   };
@@ -690,6 +735,23 @@ export default function Match() {
     [matches, meeting, me, isAdmin],
   );
   const scoreProgress = useMemo(() => progressOf(matches, meeting), [matches, meeting]);
+
+  /* ---------- 예전 대진의 명단 채우기 ----------
+     보안 규칙은 명단(lineup)을 보고 "이 사람이 뛰었나"를 판단한다. 그런데
+     이 기능 전에 짠 대진에는 명단이 없다. 그대로 두면 **그 모임에서는
+     아무도 점수를 못 넣는다** — 규칙이 전부 거부한다.
+
+     운영진이 이 화면을 열면 명단을 한 번 채워 둔다. 대진은 건드리지
+     않고 명단만 적는다. 명단이 이미 대진과 같으면 아무것도 안 한다.
+     회원은 명단을 쓸 권한이 없으므로 운영진일 때만. */
+  const lineupFixed = useRef(null);
+  useEffect(() => {
+    if (!isAdmin || !meeting || !(meeting.matches || []).length) return;
+    if (sameLineup(meeting.lineup, lineupOf(meeting.matches))) return;
+    if (lineupFixed.current === meeting.id) return;     // 한 번만 시도
+    lineupFixed.current = meeting.id;
+    saveLineup(clubId, meeting.id, meeting.matches).catch(() => {});
+  }, [isAdmin, meeting?.id, meeting?.matches, meeting?.lineup]);
 
   /* ---------------- 화면 ---------------- */
   const nM = attendees.filter((p) => p.gender === 'M').length;
@@ -1557,16 +1619,16 @@ export default function Match() {
                       "저장"이 곧 확정인 줄 알고 넣는데 실제로는 상대
                       확인이 남아 있다. 모르면 확정된 줄 알고 코트를 뜬다. */}
                   <Text style={{ fontSize: 11.5, color: C.sub, lineHeight: 17 }}>
-                    {isAdmin
-                      ? '운영진이 넣은 점수는 바로 확정됩니다.'
+                    {isAdminOverride(m, meeting, me, isAdmin)
+                      ? '운영진 수정 — 상대 확인 없이 바로 확정됩니다.'
                       : `저장하면 ${(sideOf(m, me) === 'A'
-                        ? (m.teamB || []) : (m.teamA || [])).map(nameOf).join('·')} 님의 확인을 기다립니다.`}
+                        ? (m.teamB || []) : (m.teamA || [])).map(nameOf).join('·')} 님께 확인 요청 알림이 갑니다. 확인되면 확정됩니다.`}
                   </Text>
 
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <Btn tone="ghost" style={{ flex: 1 }} onPress={() => setEditing(null)}>취소</Btn>
                     <Btn tone="primary" style={{ flex: 2 }} onPress={() => saveSc(m.id)}>
-                      {isAdmin ? '확정' : '저장'}
+                      {isAdminOverride(m, meeting, me, isAdmin) ? '확정' : '확인 요청'}
                     </Btn>
                   </View>
 
