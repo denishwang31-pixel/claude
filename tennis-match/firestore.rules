@@ -349,6 +349,13 @@ service cloud.firestore {
         allow read: if isClubMember(clubId);
         allow write: if isClubAdmin(clubId);
       }
+      /* 원포인트 「봤어요」·「저장」 — 회원 본인만 읽고 쓴다.
+         남이 무엇을 봤는지는 운영진도 볼 수 없다(보여 줄 이유가 없다). */
+      match /tipStates/{uid} {
+        allow read: if isClubMember(clubId) && request.auth.uid == uid;
+        allow write: if isClubMember(clubId) && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['watched', 'saved', 'updatedAt']);
+      }
 
       // 회비: 회장·총무만 조회·수정
       match /fees/{monthKey} {

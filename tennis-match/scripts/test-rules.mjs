@@ -560,6 +560,30 @@ await T('운영진의 원포인트 영상 등록 허용',
   assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'tips', 't1'), { title: '포핸드', category: '포핸드', url: 'https://youtu.be/abc' })));
 await T('회원의 원포인트 조회 허용',
   assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'tips', 't1'))));
+await T('일반 회원의 원포인트 영상 등록 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'tips', 't2'), { title: 'x', category: '서브', url: 'https://youtu.be/abc' })));
+await T('일반 회원의 원포인트 추천 표시 변경 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'tips', 't1'), { pinned: true })));
+await T('일반 회원의 원포인트 영상 삭제 거부',
+  assertFails(deleteDoc(doc(mem1, 'clubs', CLUB, 'tips', 't1'))));
+await T('운영진의 원포인트 추천·수정 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'tips', 't1'), { pinned: true, level: 'beginner' })));
+
+console.log('\n[원포인트 봤어요·저장 — 본인만]');
+await T('본인 봤어요 기록 허용',
+  assertSucceeds(setDoc(doc(mem1, 'clubs', CLUB, 'tipStates', 'mem1'), { watched: { t1: true } }, { merge: true })));
+await T('본인 저장 끄기(칸 지우기) 허용',
+  assertSucceeds(setDoc(doc(mem1, 'clubs', CLUB, 'tipStates', 'mem1'), { saved: { t1: deleteField() } }, { merge: true })));
+await T('본인 기록 읽기 허용',
+  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'tipStates', 'mem1'))));
+await T('다른 회원 기록 읽기 거부(운영진도)',
+  assertFails(getDoc(doc(owner, 'clubs', CLUB, 'tipStates', 'mem1'))));
+await T('다른 회원 기록 쓰기 거부',
+  assertFails(setDoc(doc(owner, 'clubs', CLUB, 'tipStates', 'mem1'), { watched: { t1: true } }, { merge: true })));
+await T('정해진 칸 말고 다른 칸 거부',
+  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'tipStates', 'mem1'), { role: '회장' }, { merge: true })));
+await T('클럽 밖 사용자는 자기 uid 문서라도 거부',
+  assertFails(setDoc(doc(outsider, 'clubs', CLUB, 'tipStates', 'other9'), { watched: { t1: true } })));
 
 console.log('\n[구력 확인제도 — startedAt 잠금]');
 await T('비어 있을 때 본인이 처음 입력 허용',

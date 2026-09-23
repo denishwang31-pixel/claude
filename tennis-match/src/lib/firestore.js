@@ -404,12 +404,38 @@ export const checkAppAdmin = async (uid) => {
   } catch (e) { return false; }
 };
 
-/* ---- 원포인트 레슨(유튜브) ---- */
+/* ---- 원포인트 영상(유튜브) — 등록·수정·삭제는 운영진만(규칙) ---- */
 export const subTips = (clubId, cb) =>
   onSnapshot(C(clubId, 'tips'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
 
-export const addTip = (clubId, data) => addDoc(C(clubId, 'tips'), { ...data, createdAt: serverTimestamp() });
+/** data = onepoint.js 의 tipDoc() 결과 */
+export const addTip = (clubId, data, uid) =>
+  addDoc(C(clubId, 'tips'), { ...data, createdBy: uid || null, createdAt: serverTimestamp() });
+/** 수정. 수준을 비웠으면 필드를 지운다(없는 것이 "수준 없음"이다). */
+export const updateTip = (clubId, id, data) =>
+  updateDoc(D(clubId, 'tips', id), {
+    ...data,
+    level: data.level ? data.level : deleteField(),
+    updatedAt: serverTimestamp(),
+  });
+export const setTipPinned = (clubId, id, pinned) =>
+  updateDoc(D(clubId, 'tips', id), { pinned: !!pinned, updatedAt: serverTimestamp() });
 export const deleteTip = (clubId, id) => deleteDoc(D(clubId, 'tips', id));
+
+/* 회원별 「봤어요」·「저장」 — 본인만 읽고 쓴다(규칙).
+   영상마다 문서를 두지 않고 회원당 문서 하나에 모은다. 첫 화면이
+   구독 하나로 끝나고, 영상 60개여도 읽기가 한 번이다.
+     clubs/{clubId}/tipStates/{uid} = { watched: {tipId: true}, saved: {tipId: true} } */
+export const subTipStates = (clubId, uid, cb) =>
+  onSnapshot(D(clubId, 'tipStates', uid),
+    (d) => cb(d.exists() ? d.data() : {}),
+    () => cb({}));
+/** kind = 'watched' | 'saved'. 끄면 칸을 지운다(false 를 남기지 않는다). */
+export const setTipState = (clubId, uid, tipId, kind, on) =>
+  setDoc(D(clubId, 'tipStates', uid), {
+    [kind]: { [tipId]: on ? true : deleteField() },
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 
 /* ============================================================
    참가투표 — 일정 RSVP 와 별개. 회식 날짜, 대회 참가 의사처럼

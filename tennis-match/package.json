@@ -13,7 +13,7 @@
     "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-rules.mjs\"",
     "test:kdk": "node scripts/test-kdk.mjs",
     "test:team": "node scripts/test-team.mjs",
-    "test:all": "npm run test:imports && npm run test:labels && npm run test:engine && npm run test:kdk && npm run test:team && npm run test:tournament && npm run test:schedule && npm run test:courts && npm run test:venue && npm run test:reconcile && npm run test:manager && npm run test:duespool && npm run test:rsvp && npm run test:clubmatch && npm run test:league && npm run test:scheduleview && npm run test:roles && npm run test:coach && npm run test:delete && npm run test:scope && npm run test:agenda && npm run test:scale && npm run test:opens && npm run test:board && npm run test:courtnames && npm run test:scorereport && npm run test:rsvplink && npm run test:social",
+    "test:all": "npm run test:imports && npm run test:labels && npm run test:engine && npm run test:kdk && npm run test:team && npm run test:tournament && npm run test:schedule && npm run test:courts && npm run test:venue && npm run test:reconcile && npm run test:manager && npm run test:duespool && npm run test:rsvp && npm run test:clubmatch && npm run test:league && npm run test:scheduleview && npm run test:roles && npm run test:coach && npm run test:delete && npm run test:scope && npm run test:agenda && npm run test:scale && npm run test:opens && npm run test:board && npm run test:courtnames && npm run test:scorereport && npm run test:rsvplink && npm run test:onepoint && npm run test:social",
     "courts:seoul": "node scripts/fetch-courts.mjs",
     "test:courts": "node scripts/test-courts.mjs",
     "test:venue": "node scripts/test-venue-scope.mjs",
@@ -38,7 +38,8 @@
     "build:legal": "node scripts/build-legal.mjs",
     "test:courtnames": "node scripts/test-courtnames.mjs",
     "test:scorereport": "node scripts/test-scorereport.mjs",
-    "test:rsvplink": "node scripts/test-rsvplink.mjs"
+    "test:rsvplink": "node scripts/test-rsvplink.mjs",
+    "test:onepoint": "node scripts/test-onepoint.mjs"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "^8.0.1",
