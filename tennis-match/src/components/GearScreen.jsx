@@ -1,12 +1,17 @@
 /* 용품 — 카테고리별 테니스 용품 소개. 누르면 판매처(네이버 스마트스토어 등)로 이동.
    앱 관리자(appAdmins/{uid})만 등록·삭제하고, 운영진 포함 모든 회원은 보기·이동만 합니다.
    용품 데이터는 클럽이 아니라 앱 전체가 공유하는 루트 컬렉션(gear)에 저장됩니다.
-   이동 링크는 src/lib/ads.js 가 만들며, 나중에 제휴 코드를 붙여도 이 화면은 그대로입니다. */
-import React, { useState, useMemo, useEffect } from 'react';
-import { View, Text, ScrollView, Pressable, Image } from 'react-native';
+   이동 링크는 src/lib/ads.js 가 만들며, 나중에 제휴 코드를 붙여도 이 화면은 그대로입니다.
+
+   화면 모양은 원포인트(시안 A「선반」)와 같은 틀이다 — 칸 나누기 → 검색창 →
+   가로로 넘기는 선반(새로 들어온 용품, 카테고리마다 한 줄). 카테고리 칩을
+   두 줄로 늘어놓던 예전 모양은 "게시판 같다"는 이유로 원포인트와 함께 바꿨다.
+   판단(순서·검색)은 src/lib/gearView.js. */
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, Pressable, Image, Keyboard, Alert } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../app/_layout';
 import { useBottomPad } from '../hooks/useBottomPad';
-import { useClub } from '../hooks/useClub';
 import { useBackHandler } from '../hooks/useBackHandler';
 import { subGear, addGear, deleteGear } from '../lib/firestore';
 import { GEAR_CATEGORIES } from '../lib/constants';
@@ -16,11 +21,18 @@ import {
 } from '../lib/dropship';
 import { ScreenHeader } from './ScreenHeader';
 import { AddButton } from './LevelupTop';
+import { useOptionSheet } from './native';
 import { Label } from './pickers';
 import {
-  Card, SectionTitle, Chip, Btn, Field, FilterRow, EmptyState, CheckRow,
+  Card, Chip, Btn, Field, CheckRow,
 } from './ui';
-import { C, S, R, F, SHADOW } from '../lib/theme';
+import {
+  PAD, Shelf, SubHeader, SearchField, CategoryChips, EmptyBlock, MetaBadge, CourtBackdrop,
+} from './onepoint/parts';
+import {
+  gearShelves, searchGear, gearCounts, inGearCategory, gearCatOf, priceText,
+} from '../lib/gearView';
+import { C, S, R } from '../lib/theme';
 
 const BLANK = {
   title: '', category: GEAR_CATEGORIES[0], price: '', image: '', link: '', desc: '',
@@ -40,29 +52,136 @@ const BLANK = {
  *                   ⚠️ 스크롤 안이 아니라 밖에 둔다. 목록을 내려도 다른 칸으로
  *                      바로 건너갈 수 있어야 한다.
  */
+/* ---------------- 상품 그림 ---------------- */
+function GearImage({ g, size, radius = 12 }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <View style={{ width: size, height: size, borderRadius: radius, overflow: 'hidden', backgroundColor: C.ink }}>
+      <CourtBackdrop width={size} height={size} />
+      {!!g.image && !broken && (
+        <Image source={{ uri: g.image }} onError={() => setBroken(true)}
+          style={{ width: '100%', height: '100%', backgroundColor: C.surface }} resizeMode="cover" />
+      )}
+      {isSoldOut(g) && (
+        <View style={{ position: 'absolute', top: 6, left: 6, height: 24, paddingHorizontal: 8, borderRadius: 6, backgroundColor: C.danger, justifyContent: 'center' }}>
+          <Text allowFontScaling={false} style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>품절</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** 선반 카드 — 그림 → 이름 → 가격 → 판매처 */
+function GearCard({ g, width, isAppAdmin, onPress, onLongPress }) {
+  const seller = sellerName(g.link);
+  return (
+    <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={400}
+      accessibilityRole="link" accessibilityLabel={[g.title, priceText(g.price), seller].filter(Boolean).join(', ')}
+      style={({ pressed }) => ({ width, opacity: pressed ? 0.8 : 1 })}>
+      <GearImage g={g} size={width} />
+      <Text numberOfLines={2} maxFontSizeMultiplier={1.3} style={{ marginTop: 8, fontSize: 16, fontWeight: '700', lineHeight: 22, color: C.text }}>{g.title}</Text>
+      {!!priceText(g.price) && (
+        <Text maxFontSizeMultiplier={1.3} style={{ marginTop: 2, fontSize: 16, fontWeight: '800', color: C.text }}>{priceText(g.price)}</Text>
+      )}
+      <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ marginTop: 2, fontSize: 13, fontWeight: '600', color: C.sub }}>
+        {seller ? `${seller}에서 보기 ›` : '구매처 보기 ›'}
+      </Text>
+      {isAppAdmin && gearMode(g) === GEAR_MODE.DROPSHIP && (
+        <Text maxFontSizeMultiplier={1.3} style={{ marginTop: 2, fontSize: 12, fontWeight: '700', color: margin(g).profit > 0 ? C.green : C.danger }}>{marginText(g)}</Text>
+      )}
+    </Pressable>
+  );
+}
+
+/** 줄 — 검색 결과·카테고리 모아보기 */
+function GearRow({ g, showCategory = true, isAppAdmin, onPress, onLongPress }) {
+  const seller = sellerName(g.link);
+  return (
+    <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={400} accessibilityRole="link"
+      style={({ pressed }) => ({ flexDirection: 'row', gap: 12, minHeight: 112, paddingVertical: 8, opacity: pressed ? 0.8 : 1 })}>
+      <GearImage g={g} size={96} radius={10} />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text numberOfLines={2} maxFontSizeMultiplier={1.3} style={{ fontSize: 16, fontWeight: '700', lineHeight: 22, color: C.text }}>{g.title}</Text>
+        {!!g.desc && (
+          <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ marginTop: 2, fontSize: 13, fontWeight: '600', color: C.sub }}>{g.desc}</Text>
+        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+          {showCategory && <MetaBadge>{gearCatOf(g)}</MetaBadge>}
+          {!!priceText(g.price) && (
+            <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 16, fontWeight: '800', color: C.text }}>{priceText(g.price)}</Text>
+          )}
+          <Text maxFontSizeMultiplier={1.3} style={{ marginLeft: 'auto', fontSize: 13, fontWeight: '700', color: C.green }}>
+            {seller ? `${seller} ›` : '구매처 ›'}
+          </Text>
+        </View>
+        {isAppAdmin && gearMode(g) === GEAR_MODE.DROPSHIP && (
+          <Text maxFontSizeMultiplier={1.3} style={{ marginTop: 2, fontSize: 12, fontWeight: '700', color: margin(g).profit > 0 ? C.green : C.danger }}>{marginText(g)}</Text>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * @param title      머리 제목(등록 폼을 열었을 때, 또는 레벨업 밖에서 쓸 때)
+ * @param renderTop  레벨업의 머리(칸 나누기) — ({ right }) => 요소.
+ *                   있으면 제목 머리 대신 이걸 쓴다. 등록 폼을 열면 뒤로
+ *                   버튼이 있는 제목 머리로 바뀐다.
+ *                   ⚠️ 스크롤 안이 아니라 밖에 둔다. 목록을 내려도 다른 칸으로
+ *                      바로 건너갈 수 있어야 한다.
+ */
 export function GearScreen({ title = '용품', renderTop = null } = {}) {
-  const { clubId, me, viewMode, isAppAdmin } = useApp();
+  const { isAppAdmin } = useApp();
+  const insets = useSafeAreaInsets();
   const bottomPad = useBottomPad();
-  useClub(clubId, me, { viewMode }); // 클럽 컨텍스트 유지(용품은 앱 공통)
+  const sheetUi = useOptionSheet();
 
   const [items, setItems] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [cat, setCat] = useState(null);
   const [adding, setAdding] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [q, setQ] = useState('');
+  const [dq, setDq] = useState('');
+  const [resultCat, setResultCat] = useState('all');
   const [toast, setToast] = useState(null);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2000); };
   const [f, setF] = useState(BLANK);
+  const inputRef = useRef(null);
+  const scrollRef = useRef(null);
 
-  useEffect(() => subGear(setItems), []);
+  useEffect(() => subGear((l) => { setItems(l); setLoaded(true); }), []);
+  useEffect(() => { const t = setTimeout(() => setDq(q), 150); return () => clearTimeout(t); }, [q]);
+
+  const exitSearch = () => { setQ(''); setDq(''); setResultCat('all'); setSearching(false); Keyboard.dismiss(); };
 
   useBackHandler(() => {
     if (adding) { setAdding(false); return true; }
+    if (searching) { exitSearch(); return true; }
     if (cat) { setCat(null); return true; }
     return false;
   });
 
-  const list = useMemo(() => items.filter((x) => !cat || x.category === cat), [items, cat]);
+  const home = useMemo(() => gearShelves(items), [items]);
+  const counts = useMemo(() => gearCounts(items), [items]);
+  const results = useMemo(() => searchGear(items, dq), [items, dq]);
+  const resultCounts = useMemo(() => gearCounts(results), [results]);
+  const rc = resultCat !== 'all' && resultCounts.some((c) => c.category === resultCat) ? resultCat : 'all';
+  const shown = rc === 'all' ? results : results.filter((g) => gearCatOf(g) === rc);
 
   const check = useMemo(() => gearReady(f), [f]);
+
+  const open = (g) => openAd(g, AD_SLOTS.GEAR);
+  /* 길게 누르기 — 앱 관리자만. 예전 ✕ 단추는 스크롤하다 잘못 눌리기 쉬웠다. */
+  const manage = isAppAdmin ? (g) => sheetUi.open({
+    title: g.title,
+    options: [{ key: 'del', label: '삭제', destructive: true }],
+    destructiveIndex: 0,
+    onSelect: () => Alert.alert('이 용품을 지울까요?', '회원 화면과 홈 배너에서도 사라져요', [
+      { text: '그대로 두기', style: 'cancel' },
+      { text: '지우기', style: 'destructive', onPress: () => deleteGear(g.id).then(() => flash('지웠어요')).catch(() => flash('지우지 못했어요')) },
+    ]),
+  }) : undefined;
 
   const submit = () => {
     if (!check.ok) { flash(`${check.missing.join(' · ')}을(를) 채워 주세요`); return; }
@@ -95,34 +214,27 @@ export function GearScreen({ title = '용품', renderTop = null } = {}) {
     flash('용품이 등록되었습니다');
   };
 
-  return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      {renderTop && !adding ? renderTop({
-        right: isAppAdmin ? <AddButton label="용품 등록" onPress={() => setAdding(true)} /> : null,
-      }) : (
+  const toastNode = toast && (
+    <View pointerEvents="none" style={{
+      position: 'absolute', bottom: bottomPad - 8, alignSelf: 'center', backgroundColor: C.ink,
+      paddingHorizontal: 16, paddingVertical: 12, borderRadius: R.md,
+    }}>
+      <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>{toast}</Text>
+    </View>
+  );
+
+  /* ---- 등록 폼(앱 관리자) — 자기 머리(‹ 뒤로)를 갖는 별도 화면 ---- */
+  if (adding) {
+    return (
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
         <ScreenHeader
-          title={adding ? `${title} 등록` : title}
-          subtitle={isAppAdmin ? '용품 · 앱 관리자 모드 · 등록/삭제 가능' : '라켓·의류·소모품 추천'}
-          onBack={adding ? () => setAdding(false) : undefined}
+          title={`${title} 등록`}
+          subtitle="앱 관리자 · 등록한 용품은 모든 클럽 회원에게 보여요"
+          onBack={() => setAdding(false)}
           backLabel={title}
-          right={isAppAdmin ? (
-            <Chip tone={adding ? 'green' : 'soft'} onPress={() => setAdding(!adding)}>
-              {adding ? '닫기' : '+ 등록'}
-            </Chip>
-          ) : null}
         />
-      )}
-
-      <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: bottomPad }}>
-        <FilterRow>
-          <Chip tone={!cat ? 'green' : 'outline'} onPress={() => setCat(null)}>전체</Chip>
-          {GEAR_CATEGORIES.map((c) => (
-            <Chip key={c} tone={cat === c ? 'green' : 'outline'} onPress={() => setCat(c)}>{c}</Chip>
-          ))}
-        </FilterRow>
-
-        {isAppAdmin && adding && (
-          <Card style={{ marginTop: S.md }}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: S.lg, paddingBottom: bottomPad }}>
+          <Card>
             <Label>카테고리</Label>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: S.md }}>
               {GEAR_CATEGORIES.map((c) => (
@@ -247,90 +359,139 @@ export function GearScreen({ title = '용품', renderTop = null } = {}) {
               )}
             </View>
           </Card>
-        )}
+        </ScrollView>
+        {toastNode}
+      </View>
+    );
+  }
 
-        <View style={{ marginTop: S.md }}>
-          {list.map((it) => {
-            const seller = sellerName(it.link);
-            return (
-              <Pressable key={it.id} onPress={() => openAd(it, AD_SLOTS.GEAR)}
-                style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1, marginBottom: 10 })}>
-                <View style={[{
-                  backgroundColor: C.surface, borderRadius: R.lg, overflow: 'hidden',
-                  flexDirection: 'row',
-                }, SHADOW.sm]}>
-                  {it.image ? (
-                    <Image source={{ uri: it.image }} style={{ width: 104, height: 104 }} resizeMode="cover" />
-                  ) : (
-                    <View style={{ width: 104, height: 104, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 28 }}>🎾</Text>
-                    </View>
-                  )}
-                  <View style={{ flex: 1, padding: 12 }}>
-                    <View style={{ flexDirection: 'row', gap: 5 }}>
-                      <Chip tone="soft">{it.category}</Chip>
-                      {isSoldOut(it) && <Chip tone="red">품절</Chip>}
-                      {/* 마진은 앱 운영자만 본다 — 회원에게 원가가 보이면 안 된다 */}
-                      {isAppAdmin && gearMode(it) === GEAR_MODE.DROPSHIP && (
-                        <Chip tone={margin(it).profit > 0 ? 'green' : 'red'}>{marginText(it)}</Chip>
-                      )}
-                    </View>
-                    <Text numberOfLines={2} style={[F.bodyBold, { marginTop: 5 }]}>{it.title}</Text>
-                    {!!it.desc && (
-                      <Text numberOfLines={1} style={{ fontSize: 11.5, color: C.sub, marginTop: 2 }}>{it.desc}</Text>
-                    )}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
-                      {!!it.price && (
-                        <Text style={{ fontSize: 15, fontWeight: '700', color: C.green }}>
-                          {Number(it.price).toLocaleString()}원
-                        </Text>
-                      )}
-                      {!!it.link && (
-                        <Text style={{ fontSize: 11, color: C.green2, fontWeight: '700' }}>
-                          {seller ? `${seller} →` : '구매처 →'}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
+  const disclaimer = (
+    <Text style={{ fontSize: 12, fontWeight: '500', color: C.faint, marginTop: S.xl, textAlign: 'center', lineHeight: 17, paddingHorizontal: PAD }}>
+      상품 정보와 결제는 각 판매처가 제공합니다.{'\n'}
+      테니스매치는 통신판매중개자가 아니며 거래에 관여하지 않습니다.
+    </Text>
+  );
 
-                  {isAppAdmin && (
-                    <Pressable onPress={() => { deleteGear(it.id); flash('삭제됨'); }}
-                      hitSlop={10} style={{ position: 'absolute', top: 8, right: 10 }}>
-                      <Text style={{ fontSize: 13, color: C.danger, fontWeight: '800' }}>✕</Text>
-                    </Pressable>
-                  )}
-                </View>
-              </Pressable>
-            );
-          })}
-
-          {list.length === 0 && (
-            <EmptyState
-              icon="🛍"
-              title={cat ? `${cat} 항목이 없습니다` : '등록된 용품이 없습니다'}
-              body={isAppAdmin
-                ? '오른쪽 위 [+ 등록]으로 상품을 추가하세요. 링크를 넣으면 누를 때 판매처로 바로 이동합니다.'
-                : '앱 관리자가 추천 용품을 등록하면 여기에 표시됩니다.'}
-            />
-          )}
+  const searchBody = () => {
+    const k = dq.trim();
+    if (!k) {
+      return (
+        <Text maxFontSizeMultiplier={1.3} style={{ paddingHorizontal: PAD, paddingTop: 12, fontSize: 15, fontWeight: '600', color: C.sub }}>
+          상품 이름·설명으로 찾아요. 카테고리 이름(라켓, 신발…)도 돼요.
+        </Text>
+      );
+    }
+    if (results.length === 0) {
+      return <EmptyBlock art={false} title={`‘${k}’ 용품은 아직 없어요`} body="비슷한 말로 찾아보세요" />;
+    }
+    return (
+      <View>
+        <View style={{ paddingHorizontal: PAD, paddingTop: 8 }}>
+          <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 18, fontWeight: '800', color: C.text }}>‘{k}’ 용품 {results.length}개</Text>
         </View>
-
-        {list.length > 0 && (
-          <Text style={{ fontSize: 10.5, color: C.faint, marginTop: S.lg, textAlign: 'center', lineHeight: 16 }}>
-            상품 정보와 결제는 각 판매처가 제공합니다.{'\n'}
-            테니스매치는 통신판매중개자가 아니며 거래에 관여하지 않습니다.
-          </Text>
+        {resultCounts.length > 1 && (
+          <View style={{ marginTop: 12 }}>
+            <CategoryChips value={rc} onChange={setResultCat}
+              items={[{ key: 'all', label: '전체', count: results.length },
+                ...resultCounts.map((c) => ({ key: c.category, label: c.category, count: c.count }))]} />
+          </View>
         )}
-      </ScrollView>
-
-      {toast && (
-        <View style={{
-          position: 'absolute', bottom: 24, alignSelf: 'center', backgroundColor: C.ink,
-          paddingHorizontal: 16, paddingVertical: 11, borderRadius: R.md,
-        }}>
-          <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '700' }}>{toast}</Text>
+        <View style={{ paddingHorizontal: PAD, marginTop: 4 }}>
+          {shown.map((g) => (
+            <GearRow key={g.id} g={g} isAppAdmin={isAppAdmin} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />
+          ))}
         </View>
+      </View>
+    );
+  };
+
+  const shelvesBody = () => (
+    <>
+      {home.newest.length > 0 && (
+        <Shelf title="새로 들어온 용품" data={home.newest}
+          renderItem={(g) => <GearCard g={g} width={168} isAppAdmin={isAppAdmin} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />} />
       )}
+      {home.byCategory.map((s) => (
+        <Shelf key={s.category} title={s.category} count={s.count} data={s.items}
+          onAll={() => { setCat(s.category); scrollRef.current?.scrollTo({ y: 0, animated: false }); }}
+          renderItem={(g) => <GearCard g={g} width={home.newest.length > 0 ? 144 : 168} isAppAdmin={isAppAdmin} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />} />
+      ))}
+      {disclaimer}
+    </>
+  );
+
+  const categoryBody = () => {
+    const list = inGearCategory(items, cat);
+    return (
+      <View>
+        <View style={{ paddingTop: insets.top + 4 }}>
+          <SubHeader title={cat} count={`${list.length}개`} onBack={() => setCat(null)}
+            right={isAppAdmin ? <AddButton label="용품 등록" onPress={() => { setF({ ...BLANK, category: cat }); setAdding(true); }} /> : null} />
+        </View>
+        <View style={{ marginTop: 8 }}>
+          <CategoryChips value={cat} onChange={setCat}
+            items={counts.map((c) => ({ key: c.category, label: c.category, count: c.count }))} />
+        </View>
+        <View style={{ paddingHorizontal: PAD, marginTop: 8 }}>
+          {list.map((g) => (
+            <GearRow key={g.id} g={g} showCategory={false} isAppAdmin={isAppAdmin} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />
+          ))}
+        </View>
+        {disclaimer}
+      </View>
+    );
+  };
+
+  const emptyBody = !loaded ? null : isAppAdmin ? (
+    <EmptyBlock badge="앱 관리자로 보는 중" title="첫 용품을 올려 볼까요?"
+      body={'판매 페이지 링크를 넣으면\n누를 때 판매처로 바로 이동해요.'}
+      actionLabel="용품 등록하기" onAction={() => setAdding(true)}
+      footnote="회원에게는 ‘아직 올라온 용품이 없어요’로 보여요" />
+  ) : (
+    <EmptyBlock title="아직 올라온 용품이 없어요" body="라켓·신발·스트링 추천을 모으고 있어요." />
+  );
+
+  /* ⚠️ 검색창은 늘 같은 자리(두 번째 자식) — 옮겨 그리면 키보드가 닫힌다(원포인트와 같은 이유) */
+  const showSearch = searching || (!cat && home.mode !== 'empty');
+  let first = null;
+  let body;
+  const addBtn = isAppAdmin ? <AddButton label="용품 등록" onPress={() => setAdding(true)} /> : null;
+  if (searching) {
+    first = <View style={{ height: insets.top + 8 }} />;
+    body = searchBody();
+  } else if (cat) {
+    body = categoryBody();
+  } else if (home.mode === 'empty') {
+    first = renderTop ? renderTop({ right: null }) : <ScreenHeader title={title} />;
+    body = emptyBody;
+  } else {
+    first = renderTop ? renderTop({ right: addBtn }) : <ScreenHeader title={title} right={addBtn} />;
+    body = shelvesBody();
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      {first}
+      {showSearch ? (
+        <View style={{ paddingHorizontal: PAD, paddingBottom: 8 }}>
+          <SearchField
+            inputRef={inputRef}
+            value={q}
+            onChangeText={setQ}
+            focused={searching}
+            onFocus={() => setSearching(true)}
+            onClear={() => { setQ(''); setDq(''); inputRef.current?.focus(); }}
+            onCancel={searching ? exitSearch : undefined}
+            placeholder="용품 검색 (예: 라켓, 스트링)"
+            label="용품 검색"
+          />
+        </View>
+      ) : null}
+      <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: bottomPad }}>
+        {body}
+      </ScrollView>
+      {sheetUi.node}
+      {toastNode}
     </View>
   );
 }

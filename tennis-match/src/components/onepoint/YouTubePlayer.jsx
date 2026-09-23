@@ -113,16 +113,20 @@ export const YouTubePlayer = forwardRef(function YouTubePlayer({ videoId, start 
           else if (m.t === 'error') setFailed(true);
         }}
         onError={() => setFailed(true)}
-        /* 플레이어 안의 유튜브 로고·제목을 누르면 유튜브 페이지로 가려 한다.
-           그걸 이 작은 칸 안에 열면 돌아올 길이 없다 — 유튜브 앱으로 넘긴다. */
+        /* 플레이어가 스스로 다른 페이지로 가려 하면 **막기만 한다**.
+           예전엔 그 주소를 유튜브 앱으로 넘겼는데, 보다가 뒤로가기를 누르면
+           유튜브 앱이 튀어나왔다(앱 주인이 겪음). 유튜브 플레이어는 로고·
+           제목·끝 화면 등에서 youtube.com 이나 intent:// 로 가려 하고, 그 순간이
+           뒤로가기와 겹치면 앱 밖으로 나가 버린다.
+           앱 밖으로 나가는 길은 사용자가 직접 누르는 [↗ 유튜브] 하나뿐이다. */
         onShouldStartLoadWithRequest={(req) => {
           const u = req.url || '';
           if (req.isTopFrame === false) return true;
           if (u.startsWith(BASE) || u.startsWith('about:') || u.startsWith('data:')) return true;
           if (/^https:\/\/(www\.)?youtube\.com\/(embed|iframe_api|s\/)/.test(u)) return true;
-          Linking.openURL(u).catch(() => {});
           return false;
         }}
+        onOpenWindow={() => {}}
       />
     </View>
   );

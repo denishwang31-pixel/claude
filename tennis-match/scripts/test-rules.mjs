@@ -569,22 +569,6 @@ await T('일반 회원의 원포인트 영상 삭제 거부',
 await T('운영진의 원포인트 추천·수정 허용',
   assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'tips', 't1'), { pinned: true, level: 'beginner' })));
 
-console.log('\n[원포인트 봤어요·저장 — 본인만]');
-await T('본인 봤어요 기록 허용',
-  assertSucceeds(setDoc(doc(mem1, 'clubs', CLUB, 'tipStates', 'mem1'), { watched: { t1: true } }, { merge: true })));
-await T('본인 저장 끄기(칸 지우기) 허용',
-  assertSucceeds(setDoc(doc(mem1, 'clubs', CLUB, 'tipStates', 'mem1'), { saved: { t1: deleteField() } }, { merge: true })));
-await T('본인 기록 읽기 허용',
-  assertSucceeds(getDoc(doc(mem1, 'clubs', CLUB, 'tipStates', 'mem1'))));
-await T('다른 회원 기록 읽기 거부(운영진도)',
-  assertFails(getDoc(doc(owner, 'clubs', CLUB, 'tipStates', 'mem1'))));
-await T('다른 회원 기록 쓰기 거부',
-  assertFails(setDoc(doc(owner, 'clubs', CLUB, 'tipStates', 'mem1'), { watched: { t1: true } }, { merge: true })));
-await T('정해진 칸 말고 다른 칸 거부',
-  assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'tipStates', 'mem1'), { role: '회장' }, { merge: true })));
-await T('클럽 밖 사용자는 자기 uid 문서라도 거부',
-  assertFails(setDoc(doc(outsider, 'clubs', CLUB, 'tipStates', 'other9'), { watched: { t1: true } })));
-
 console.log('\n[구력 확인제도 — startedAt 잠금]');
 await T('비어 있을 때 본인이 처음 입력 허용',
   assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { startedAt: '2019-03-01' })));
@@ -1171,6 +1155,73 @@ await T('앱 운영자의 처리 표시 허용',
   assertSucceeds(updateDoc(doc(appAdmin, 'courtReports', 'r1'), { status: 'done' })));
 await T('앱 운영자도 신고 삭제 거부(기록은 남는다)',
   assertFails(deleteDoc(doc(appAdmin, 'courtReports', 'r1'))));
+
+console.log('\n[원포인트 — 앱 운영자·승인 코치만 올린다]');
+{
+  const opAdmin = env.authenticatedContext('appboss').firestore();
+  /* 앞의 코치 검사가 coach2 를 대기로 돌려놓으므로 따로 승인된 코치를 둔다 */
+  await seed((db) => setDoc(doc(db, 'coaches', 'coach3'), { name: '최코치', status: 'approved' }));
+  const opCoach = env.authenticatedContext('coach3').firestore();     // 승인된 코치
+  const opPending = env.authenticatedContext('coach1').firestore();   // 대기 중인 코치
+  const V = (o = {}) => ({ title: '포핸드 궤도', category: '포핸드', url: 'https://youtu.be/AAAAAAAAAAA',
+    note: '', videoId: 'AAAAAAAAAAA', pinned: false, ...o });
+  await T('앱 운영자의 영상 등록 허용',
+    assertSucceeds(setDoc(doc(opAdmin, 'onepoint', 'a1'), V({ createdBy: 'appboss', pinned: true }))));
+  await T('승인된 코치의 자기 영상 등록 허용',
+    assertSucceeds(setDoc(doc(opCoach, 'onepoint', 'c1'), V({ createdBy: 'coach3', coachId: 'coach3', coachName: '최코치' }))));
+  await T('승인 대기 코치의 등록 거부',
+    assertFails(setDoc(doc(opPending, 'onepoint', 'p1'), V({ createdBy: 'coach1', coachId: 'coach1' }))));
+  await T('클럽 운영진(앱 운영자 아님)의 등록 거부',
+    assertFails(setDoc(doc(owner, 'onepoint', 'o1'), V({ createdBy: 'owner1' }))));
+  await T('일반 회원의 등록 거부',
+    assertFails(setDoc(doc(mem1, 'onepoint', 'm1'), V({ createdBy: 'mem1' }))));
+  await T('코치가 추천 표시를 달고 등록 거부',
+    assertFails(setDoc(doc(opCoach, 'onepoint', 'c2'), V({ createdBy: 'coach3', coachId: 'coach3', pinned: true }))));
+  await T('코치가 남의 이름(createdBy)으로 등록 거부',
+    assertFails(setDoc(doc(opCoach, 'onepoint', 'c3'), V({ createdBy: 'appboss', coachId: 'coach3' }))));
+  await T('코치가 코치 표시 없이 등록 거부(누가 올렸는지 숨기기)',
+    assertFails(setDoc(doc(opCoach, 'onepoint', 'c4'), V({ createdBy: 'coach3' }))));
+  await T('정해진 칸 말고 다른 칸 거부',
+    assertFails(setDoc(doc(opAdmin, 'onepoint', 'a2'), V({ createdBy: 'appboss', hack: 1 }))));
+  await T('로그인한 회원의 조회 허용',
+    assertSucceeds(getDoc(doc(mem1, 'onepoint', 'c1'))));
+  await T('비로그인 조회 거부',
+    assertFails(getDoc(doc(anon, 'onepoint', 'c1'))));
+  await T('코치의 자기 영상 수정 허용',
+    assertSucceeds(updateDoc(doc(opCoach, 'onepoint', 'c1'), { title: '포핸드 궤도 교정' })));
+  await T('코치가 자기 영상에 추천 표시 거부',
+    assertFails(updateDoc(doc(opCoach, 'onepoint', 'c1'), { pinned: true })));
+  await T('코치가 남(앱 운영자)의 영상 수정 거부',
+    assertFails(updateDoc(doc(opCoach, 'onepoint', 'a1'), { title: 'x' })));
+  await T('코치가 남의 영상 삭제 거부',
+    assertFails(deleteDoc(doc(opCoach, 'onepoint', 'a1'))));
+  await T('앱 운영자의 코치 영상 추천 표시 허용',
+    assertSucceeds(updateDoc(doc(opAdmin, 'onepoint', 'c1'), { pinned: true })));
+  await T('앱 운영자도 올린 사람을 바꾸는 것 거부',
+    assertFails(updateDoc(doc(opAdmin, 'onepoint', 'c1'), { createdBy: 'appboss' })));
+  await T('일반 회원의 수정 거부',
+    assertFails(updateDoc(doc(mem1, 'onepoint', 'c1'), { title: 'x' })));
+  await T('코치의 자기 영상 삭제 허용',
+    assertSucceeds(deleteDoc(doc(opCoach, 'onepoint', 'c1'))));
+  await T('앱 운영자의 삭제 허용',
+    assertSucceeds(deleteDoc(doc(opAdmin, 'onepoint', 'a1'))));
+
+  console.log('\n[원포인트 봤어요·저장 — 본인만]');
+  await T('본인 봤어요 기록 허용',
+    assertSucceeds(setDoc(doc(mem1, 'onepointStates', 'mem1'), { watched: { c1: true } }, { merge: true })));
+  await T('본인 저장 끄기(칸 지우기) 허용',
+    assertSucceeds(setDoc(doc(mem1, 'onepointStates', 'mem1'), { saved: { c1: deleteField() } }, { merge: true })));
+  await T('본인 기록 읽기 허용',
+    assertSucceeds(getDoc(doc(mem1, 'onepointStates', 'mem1'))));
+  await T('남의 기록 읽기 거부(앱 운영자도)',
+    assertFails(getDoc(doc(opAdmin, 'onepointStates', 'mem1'))));
+  await T('남의 기록 쓰기 거부',
+    assertFails(setDoc(doc(opAdmin, 'onepointStates', 'mem1'), { watched: { c1: true } }, { merge: true })));
+  await T('정해진 칸 말고 다른 칸 거부',
+    assertFails(setDoc(doc(mem1, 'onepointStates', 'mem1'), { role: '회장' }, { merge: true })));
+  await T('비로그인 쓰기 거부',
+    assertFails(setDoc(doc(anon, 'onepointStates', 'x'), { watched: {} })));
+}
 
 await env.cleanup();
 if (failures.length) {

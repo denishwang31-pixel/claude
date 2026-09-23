@@ -48,7 +48,7 @@ function Pick({ label, on, onPress, style }) {
  * @param initialCategory 새로 등록할 때 미리 골라 둘 영역
  * @param onSubmit (doc, editing) => Promise — 저장. 실패하면 던진다.
  */
-export function VideoAddSheet({ visible, editing, initialCategory, videos, onSubmit, onClose }) {
+export function VideoAddSheet({ visible, editing, initialCategory, videos, onSubmit, onClose, allowPin = false }) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const [f, setF] = useState(BLANK);
@@ -191,13 +191,16 @@ export function VideoAddSheet({ visible, editing, initialCategory, videos, onSub
                 ))}
               </View>
 
-              <View style={{
-                marginTop: 16, minHeight: 56, borderRadius: 12, borderWidth: 1, borderColor: C.border,
-                backgroundColor: C.surface, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
-              }}>
-                <Text maxFontSizeMultiplier={MAXF} style={{ flex: 1, fontSize: 15, fontWeight: '700', color: C.text }}>추천으로 맨 앞에 두기</Text>
-                <AppSwitch value={f.pinned} onValueChange={set('pinned')} />
-              </View>
+              {/* 「추천」은 앱 관리자만 단다 — 코치에게는 스위치를 보이지 않는다(규칙도 막는다) */}
+              {allowPin && (
+                <View style={{
+                  marginTop: 16, minHeight: 56, borderRadius: 12, borderWidth: 1, borderColor: C.border,
+                  backgroundColor: C.surface, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
+                }}>
+                  <Text maxFontSizeMultiplier={MAXF} style={{ flex: 1, fontSize: 15, fontWeight: '700', color: C.text }}>추천으로 맨 앞에 두기</Text>
+                  <AppSwitch value={f.pinned} onValueChange={set('pinned')} />
+                </View>
+              )}
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 24 }}>
                 <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />

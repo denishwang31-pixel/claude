@@ -343,20 +343,12 @@ service cloud.firestore {
         allow read, write: if canSeeFees(clubId);
       }
 
-      // 원포인트 영상: 읽기 멤버 전체, 등록은 운영진
-      // (용품은 앱 전체 공용이므로 루트 /gear 로 이동 — 아래 참조)
+      // 원포인트 영상(예전 자리) — 지금은 루트 /onepoint 에 올린다(아래 참조).
+      // 옮기기 전까지 남은 영상을 읽고 지울 수 있게 규칙은 남겨 둔다.
       match /tips/{tipId} {
         allow read: if isClubMember(clubId);
         allow write: if isClubAdmin(clubId);
       }
-      /* 원포인트 「봤어요」·「저장」 — 회원 본인만 읽고 쓴다.
-         남이 무엇을 봤는지는 운영진도 볼 수 없다(보여 줄 이유가 없다). */
-      match /tipStates/{uid} {
-        allow read: if isClubMember(clubId) && request.auth.uid == uid;
-        allow write: if isClubMember(clubId) && request.auth.uid == uid
-          && request.resource.data.keys().hasOnly(['watched', 'saved', 'updatedAt']);
-      }
-
       // 회비: 회장·총무만 조회·수정
       match /fees/{monthKey} {
         allow read, write: if canSeeFees(clubId);
@@ -528,6 +520,46 @@ service cloud.firestore {
     match /gear/{gearId} {
       allow read: if signedIn();
       allow write: if isAppAdmin();
+    }
+
+    /* 원포인트 영상 — 앱 전체 공용.
+       올릴 수 있는 사람: 앱 운영자, 앱 운영자가 승인한 코치(coaches/{uid}.status == approved).
+       클럽 운영진이라고 올릴 수 있는 게 아니다 — 아무나 올리면 영상의 질을 지킬 수 없다.
+       코치는 자기 영상만 고치고 지운다. 「추천」 표시는 앱 운영자만. */
+    function isApprovedCoach() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
+        && get(/databases/$(database)/documents/coaches/$(request.auth.uid)).data.get('status', '') == 'approved';
+    }
+    match /onepoint/{videoId} {
+      function shapeOk() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['title', 'category', 'url', 'note', 'videoId', 'pinned', 'level',
+                                 'createdBy', 'coachId', 'coachName', 'createdAt', 'updatedAt'])
+          && d.title is string && d.title.size() > 0 && d.title.size() <= 80
+          && d.url is string && d.url.size() <= 300;
+      }
+      function sameOwnerFields() {
+        return request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.get('coachId', '') == resource.data.get('coachId', '');
+      }
+      allow read: if signedIn();
+      allow create: if shapeOk() && request.resource.data.createdBy == request.auth.uid
+        && (isAppAdmin() || (isApprovedCoach()
+              && request.resource.data.get('coachId', '') == request.auth.uid
+              && request.resource.data.get('pinned', false) == false));
+      allow update: if shapeOk() && sameOwnerFields()
+        && (isAppAdmin() || (isApprovedCoach()
+              && resource.data.createdBy == request.auth.uid
+              && request.resource.data.get('pinned', false) == resource.data.get('pinned', false)));
+      allow delete: if isAppAdmin() || (isApprovedCoach() && resource.data.createdBy == request.auth.uid);
+    }
+    /* 원포인트 「봤어요」·「저장」 — 본인만 읽고 쓴다. 남이 무엇을 봤는지는
+       앱 운영자도 볼 수 없다(보여 줄 이유가 없다). */
+    match /onepointStates/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['watched', 'saved', 'updatedAt']);
     }
 
     /* ---------- 코치 프로필(루트, 앱 공용) ----------

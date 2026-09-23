@@ -3,6 +3,7 @@ import {
   CATEGORIES, parseYouTubeId, thumbUrl, videoIdOf, parseStartAt, formatStart, catOf, ms,
   buildShelves, searchVideos, highlightParts, addRecent, suggestionsFor, nextInCategory,
   checkDraft, tipDoc, levelLabel, categoryCounts, inCategory, a11yLabel, oembedUrl,
+  canManage, canPin, canUpload, legacyMoves,
 } from '../src/lib/onepoint.js';
 
 let pass = 0, fail = 0;
@@ -59,11 +60,13 @@ eq(levelLabel('x'), '', '모르는 수준은 빈 칸');
 console.log('[선반]');
 eq(buildShelves([]).mode, 'empty', '0개 = 빈 상태');
 {
-  const few = [V({ createdAt: 1 }), V({ createdAt: 3 }), V({ createdAt: 2, pinned: true })];
-  const s = buildShelves(few);
-  eq(s.mode, 'compact', '5개 이하 = 줄 목록');
-  eq(s.list.map((v) => v.createdAt), [2, 3, 1], '추천 먼저, 그다음 최신');
-  eq(buildShelves([...few, V(), V()]).mode, 'compact', '정확히 5개도 줄 목록');
+  seq = 0;
+  const one = buildShelves([V({ category: '백핸드' })]);
+  eq(one.mode, 'shelves', '1개여도 선반(시안과 같은 화면)');
+  eq(one.newest, [], '영역이 하나뿐이면 새로 올라온 영상 줄은 숨김(같은 줄 두 번)');
+  eq(one.byCategory.map((x) => x.category), ['백핸드'], '영역 선반 하나');
+  const two = buildShelves([V({ category: '백핸드' }), V({ category: '서브' })]);
+  eq(two.newest.length, 2, '영역이 둘이면 새로 올라온 영상 줄이 생김');
 }
 {
   seq = 0;
@@ -168,6 +171,35 @@ console.log('[등록 검사]');
   eq(d, { title: '제목', category: '서브', url: 'https://youtu.be/AAAAAAAAAAA', note: '3분부터', videoId: 'AAAAAAAAAAA', pinned: false }, '빈 수준은 적지 않음');
   eq(tipDoc({ ...base, level: 'advanced' }, 'x').level, 'advanced', '수준 저장');
   eq(tipDoc({ ...base, level: 'pro' }, 'x').level, undefined, '모르는 수준은 버림');
+}
+
+console.log('[권한]');
+{
+  const mine = { createdBy: 'c1' };
+  const other = { createdBy: 'boss' };
+  eq(canManage(other, { me: 'boss', isAppAdmin: true }), true, '앱 운영자는 전부');
+  eq(canManage(mine, { me: 'c1', isCoach: true }), true, '코치는 자기 영상');
+  eq(canManage(other, { me: 'c1', isCoach: true }), false, '코치는 남의 영상 못 건드림');
+  eq(canManage(mine, { me: 'c1', isCoach: false }), false, '승인이 풀린 코치는 못 건드림');
+  eq(canManage(mine, { me: null, isAppAdmin: true }), false, '로그인 없음');
+  eq(canPin({ isAppAdmin: false }), false, '추천은 앱 운영자만');
+  eq(canPin({ isAppAdmin: true }), true, '앱 운영자 추천');
+  eq(canUpload({ isCoach: true }), true, '승인 코치 등록');
+  eq(canUpload({}), false, '일반 회원·클럽 운영진은 등록 못 함');
+}
+
+console.log('[예전 클럽 영상 옮기기]');
+{
+  const cur = [{ url: `https://youtu.be/${ID}` }];
+  const legacy = [
+    { id: 't1', url: `https://www.youtube.com/watch?v=${ID}` },   // 이미 있음
+    { id: 't2', url: 'https://youtu.be/BBBBBBBBBBB' },
+    { id: 't3', url: 'https://youtu.be/BBBBBBBBBBB' },            // 같은 클럽 안 중복
+    { id: 't4', url: 'https://naver.com' },                        // 유튜브 아님
+  ];
+  const m = legacyMoves(legacy, cur);
+  eq(m.copy.map((x) => x.id), ['t2'], '없는 영상만 한 번 옮김');
+  eq(m.drop.map((x) => x.id), ['t1', 't3', 't4'], '나머지는 지우기만');
 }
 
 console.log('[읽기 문구]');

@@ -12,12 +12,26 @@
      여부는 앱 주인의 승인으로 가른다.
 
    예약·결제는 여기 없다 — 사용자가 "추후 개발"로 정한 부분이다.
+
+   화면 모양은 원포인트(시안 A)와 같은 틀이다 — 칸 나누기 → 검색창 →
+   지역 칩 한 줄(가로로 넘김) → 코치 줄 목록. 예전엔 시·도 17개를 칩으로
+   여러 줄 깔아서 코치 목록이 화면 아래로 밀려났다.
+   상세에서 코치의 영상(원포인트에 올린 것 + 소개 영상)은 앱 안에서 재생한다.
+   "코치로 등록"은 목록 맨 아래로 내렸다 — 회원 대부분은 코치가 아니다.
    ============================================================ */
 import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Image, Linking } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  subCoaches, subMyCoach, saveCoach, subCoachVideos, addCoachVideo, deleteCoachVideo,
+  subCoaches, subMyCoach, saveCoach, subCoachVideos, addCoachVideo, deleteCoachVideo, subOnepoint,
 } from '../lib/firestore';
+import { useBottomPad } from '../hooks/useBottomPad';
+import { useBackHandler } from '../hooks/useBackHandler';
+import {
+  PAD, ShelfHeader, SubHeader, SearchField, CategoryChips, EmptyBlock, MetaBadge, VideoCard, CourtBackdrop,
+} from './onepoint/parts';
+import { PlayerModal } from './onepoint/PlayerModal';
+import { parseYouTubeId } from '../lib/onepoint';
 import {
   COACH_STATUS, COACH_STATUS_LABEL, VIDEO_STATUS, VIDEO_STATUS_LABEL,
   statusTone, normalizeCoach, coachProfileReady, submitPatch,
@@ -29,7 +43,7 @@ import { ALL_COURTS, courtRegionText } from '../lib/courtData';
 import { courtKey } from '../lib/courtInfo';
 import { Label } from './pickers';
 import {
-  Card, SectionTitle, Chip, Btn, Field, EmptyState, Divider,
+  Card, SectionTitle, Chip, Btn, Field, Divider,
 } from './ui';
 import { C, F } from '../lib/theme';
 
@@ -38,132 +52,148 @@ const BLANK = {
   certs: [], courts: [], lessonSlots: [], feeNote: '',
 };
 
-/* ---------------- 코치 한 장 ---------------- */
-function CoachCard({ coach, videoCount, onPress }) {
+/* ---------------- 코치 얼굴 ---------------- */
+function Avatar({ coach, size }) {
+  const [broken, setBroken] = useState(false);
   return (
-    <Card style={{ marginTop: 8 }} onPress={onPress}>
-      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-        {coach.photo ? (
-          <Image source={{ uri: coach.photo }}
-            style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: C.fill }} />
-        ) : (
-          <View style={{
-            width: 52, height: 52, borderRadius: 26, backgroundColor: C.greenSoft,
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Text style={{ fontSize: 20 }}>🎾</Text>
-          </View>
-        )}
-        <View style={{ flex: 1 }}>
-          <Text style={F.bodyBold}>{coach.name}</Text>
-          <Text style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>{coach.regionText}</Text>
-          {!!coach.intro && (
-            <Text style={{ fontSize: 12, color: C.text, marginTop: 4 }} numberOfLines={2}>
-              {coach.intro}
-            </Text>
-          )}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
-            {videoCount > 0 && <Chip tone="green">영상 {videoCount}</Chip>}
-            {(coach.lessonSlots || []).length > 0 && (
-              <Chip tone="outline">레슨 {coach.lessonSlots.length}타임</Chip>
-            )}
-            {(coach.certs || []).slice(0, 2).map((x) => <Chip key={x} tone="soft">{x}</Chip>)}
-          </View>
-        </View>
-      </View>
-    </Card>
+    <View style={{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center' }}>
+      <CourtBackdrop width={size} height={size} />
+      {coach.photo && !broken ? (
+        <Image source={{ uri: coach.photo }} onError={() => setBroken(true)} style={{ width: size, height: size }} />
+      ) : (
+        <Text allowFontScaling={false} style={{ fontSize: size * 0.4, fontWeight: '800', color: '#FFFFFF' }}>
+          {String(coach.name || '?').slice(0, 1)}
+        </Text>
+      )}
+    </View>
   );
 }
 
-/* ---------------- 코치 상세 ---------------- */
-function CoachDetail({ coach, videos, onBack }) {
-  const mine = publicVideos(videos).filter((v) => v.coachId === coach.id);
-  const slots = sortLessonSlots(coach.lessonSlots);
+/* ---------------- 코치 한 줄 ---------------- */
+function CoachRow({ coach, videoCount, onPress }) {
+  const slots = (coach.lessonSlots || []).length;
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button"
+      accessibilityLabel={[`${coach.name} 코치`, coach.regionText, videoCount ? `영상 ${videoCount}개` : ''].filter(Boolean).join(', ')}
+      style={({ pressed }) => ({
+        flexDirection: 'row', gap: 12, paddingVertical: 12, minHeight: 88,
+        borderBottomWidth: 1, borderBottomColor: C.border, opacity: pressed ? 0.8 : 1,
+      })}>
+      <Avatar coach={coach} size={64} />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+          <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ flexShrink: 1, fontSize: 17, fontWeight: '800', color: C.text }}>{coach.name}</Text>
+          <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ flexShrink: 1, fontSize: 13, fontWeight: '600', color: C.sub }}>{coach.regionText}</Text>
+        </View>
+        {!!coach.intro && (
+          <Text numberOfLines={2} maxFontSizeMultiplier={1.3} style={{ marginTop: 3, fontSize: 14, fontWeight: '600', color: C.text, lineHeight: 20 }}>{coach.intro}</Text>
+        )}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+          {videoCount > 0 && <MetaBadge>영상 {videoCount}</MetaBadge>}
+          {slots > 0 && <MetaBadge tone="level">레슨 {slots}타임</MetaBadge>}
+          {(coach.certs || []).slice(0, 1).map((x) => <MetaBadge key={x} tone="level">{x}</MetaBadge>)}
+        </View>
+      </View>
+      <Text allowFontScaling={false} style={{ alignSelf: 'center', fontSize: 22, color: C.faint }}>›</Text>
+    </Pressable>
+  );
+}
 
+/** 상세의 구역 — 제목 + 흰 카드 */
+function Block({ title, hint, children }) {
+  return (
+    <View style={{ marginTop: 20 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, paddingHorizontal: PAD, marginBottom: 8 }}>
+        <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 19, fontWeight: '800', color: C.text }}>{title}</Text>
+        {!!hint && <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 15, fontWeight: '700', color: C.sub }}>{hint}</Text>}
+      </View>
+      {children}
+    </View>
+  );
+}
+const boxStyle = {
+  marginHorizontal: PAD, backgroundColor: C.surface, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: PAD,
+};
+
+/* ---------------- 코치 상세 ---------------- */
+function CoachDetail({ coach, clips, onPlay }) {
+  const slots = sortLessonSlots(coach.lessonSlots);
   return (
     <View>
-      <Pressable onPress={onBack} style={{ paddingVertical: 8 }}>
-        <Text style={{ fontSize: 13, color: C.green2, fontWeight: '700' }}>‹ 코치 목록</Text>
-      </Pressable>
-
-      <Card>
-        <Text style={{ fontSize: 20, fontWeight: '800', color: C.text }}>{coach.name}</Text>
-        <Text style={{ fontSize: 12, color: C.sub, marginTop: 3 }}>{coach.regionText}</Text>
-        {!!coach.intro && (
-          <Text style={{ fontSize: 13, color: C.text, marginTop: 10, lineHeight: 20 }}>
-            {coach.intro}
-          </Text>
-        )}
-      </Card>
-
-      <SectionTitle>경력</SectionTitle>
-      <Card>
-        <Text style={{ fontSize: 13, color: C.text, lineHeight: 21 }}>
-          {coach.career || '등록된 경력이 없습니다'}
+      <View style={[boxStyle, { flexDirection: 'row', gap: 16, alignItems: 'center' }]}>
+        <Avatar coach={coach} size={72} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 22, fontWeight: '800', color: C.text }}>{coach.name} 코치</Text>
+          <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 14, fontWeight: '600', color: C.sub, marginTop: 2 }}>{coach.regionText}</Text>
+        </View>
+      </View>
+      {!!coach.intro && (
+        <Text maxFontSizeMultiplier={1.3} style={{ marginHorizontal: PAD, marginTop: 12, fontSize: 16, fontWeight: '600', color: C.text, lineHeight: 24 }}>
+          {coach.intro}
         </Text>
-        {(coach.certs || []).length > 0 && (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
-            {coach.certs.map((x) => <Chip key={x} tone="soft">{x}</Chip>)}
-          </View>
-        )}
-      </Card>
+      )}
+      {!!coach.phone && (
+        <Pressable onPress={() => Linking.openURL(`tel:${coach.phone}`)} accessibilityRole="button"
+          style={({ pressed }) => ({
+            marginHorizontal: PAD, marginTop: 16, minHeight: 52, borderRadius: 12, backgroundColor: C.green,
+            alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.85 : 1,
+          })}>
+          <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 16, fontWeight: '800', color: '#FFFFFF' }}>📞 전화하기 · {coach.phone}</Text>
+        </Pressable>
+      )}
+      {!!coach.phone && (
+        <Text maxFontSizeMultiplier={1.3} style={{ marginHorizontal: PAD, marginTop: 6, fontSize: 13, fontWeight: '600', color: C.sub, textAlign: 'center' }}>
+          예약과 결제는 코치와 직접 하세요
+        </Text>
+      )}
+
+      {clips.length > 0 && (
+        <View style={{ marginTop: 8 }}>
+          <ShelfHeader title="영상" count={clips.length} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: PAD, gap: 12 }}>
+            {clips.map((v) => <VideoCard key={v.id} v={v} width={220} onPress={() => onPlay(v)} />)}
+          </ScrollView>
+        </View>
+      )}
+
+      <Block title="경력">
+        <View style={boxStyle}>
+          <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 15, fontWeight: '500', color: C.text, lineHeight: 23 }}>
+            {coach.career || '등록된 경력이 없습니다'}
+          </Text>
+          {(coach.certs || []).length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+              {coach.certs.map((x) => <MetaBadge key={x}>{x}</MetaBadge>)}
+            </View>
+          )}
+        </View>
+      </Block>
 
       {slots.length > 0 && (
-        <>
-          <SectionTitle hint={`${slots.length}타임`}>레슨 시간</SectionTitle>
-          <Card>
-            {slots.map((s, i) => (
-              <View key={`${s.day}${s.from}${i}`}
-                style={{ paddingVertical: 6, borderTopWidth: i ? 1 : 0, borderTopColor: C.border }}>
-                <Text style={{ fontSize: 13, color: C.text }}>{lessonSlotText(s)}</Text>
+        <Block title="레슨 시간" hint={`${slots.length}타임`}>
+          <View style={boxStyle}>
+            {slots.map((sl, i) => (
+              <View key={`${sl.day}${sl.from}${i}`}
+                style={{ minHeight: 40, justifyContent: 'center', borderTopWidth: i ? 1 : 0, borderTopColor: C.border }}>
+                <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 15, fontWeight: '600', color: C.text }}>{lessonSlotText(sl)}</Text>
               </View>
             ))}
             {!!coach.feeNote && (
-              <Text style={{ fontSize: 12, color: C.sub, marginTop: 8 }}>{coach.feeNote}</Text>
+              <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 14, fontWeight: '600', color: C.sub, marginTop: 8 }}>{coach.feeNote}</Text>
             )}
-          </Card>
-        </>
+          </View>
+        </Block>
       )}
 
       {(coach.courts || []).length > 0 && (
-        <>
-          <SectionTitle>레슨 코트</SectionTitle>
-          <Card>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
-              {coach.courts.map((k) => {
-                const c = ALL_COURTS.find((x) => courtKey(x) === k);
-                return <Chip key={k} tone="outline">{c ? c.name : k.split('|')[1]}</Chip>;
-              })}
-            </View>
-          </Card>
-        </>
-      )}
-
-      <SectionTitle hint={`${mine.length}편`}>영상</SectionTitle>
-      {mine.length === 0 && (
-        <Card><Text style={{ fontSize: 12, color: C.sub }}>아직 올라온 영상이 없습니다</Text></Card>
-      )}
-      {mine.map((v) => (
-        <Card key={v.id} style={{ marginTop: 8 }} onPress={() => Linking.openURL(v.url)}>
-          {!!videoThumb(v.url) && (
-            <Image source={{ uri: videoThumb(v.url) }}
-              style={{ width: '100%', height: 160, borderRadius: 8, backgroundColor: C.fill }} />
-          )}
-          <Text style={[F.bodyBold, { marginTop: 8 }]}>{v.title}</Text>
-          {!!v.note && <Text style={{ fontSize: 12, color: C.sub, marginTop: 3 }}>{v.note}</Text>}
-        </Card>
-      ))}
-
-      {!!coach.phone && (
-        <>
-          <SectionTitle>연락처</SectionTitle>
-          <Card onPress={() => Linking.openURL(`tel:${coach.phone}`)}>
-            <Text style={{ fontSize: 15, color: C.green2, fontWeight: '700' }}>{coach.phone}</Text>
-            <Text style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>
-              눌러서 전화 · 예약과 결제는 코치와 직접 하세요
-            </Text>
-          </Card>
-        </>
+        <Block title="레슨 코트">
+          <View style={[boxStyle, { flexDirection: 'row', flexWrap: 'wrap', gap: 6 }]}>
+            {coach.courts.map((k) => {
+              const ct = ALL_COURTS.find((x) => courtKey(x) === k);
+              return <MetaBadge key={k} tone="level">{ct ? ct.name : k.split('|')[1]}</MetaBadge>;
+            })}
+          </View>
+        </Block>
       )}
     </View>
   );
@@ -439,19 +469,39 @@ function MyCoach({ uid, mine, videos, flash }) {
 }
 
 /* ---------------- 바깥 껍데기 ---------------- */
-export function CoachScreen({ uid, flash }) {
+/**
+ * @param renderTop  레벨업 머리(칸 나누기) — 찾기 화면에서만 그린다
+ * @param openId     바로 열 코치(원포인트 영상에서 [코치 보기 ›]로 왔을 때)
+ * @param onOpened   openId 를 받았다고 알려 준다(다시 열리지 않게)
+ */
+export function CoachScreen({ uid, flash, renderTop = null, openId: askOpen = null, onOpened }) {
+  const insets = useSafeAreaInsets();
+  const bottomPad = useBottomPad();
   const [coaches, setCoaches] = useState([]);
   const [videos, setVideos] = useState([]);
+  const [points, setPoints] = useState([]);
   const [mine, setMine] = useState(null);
-  const [tab, setTab] = useState('find');     // find | mine
+  const [view, setView] = useState('find');     // find | mine
   const [openId, setOpenId] = useState(null);
   const [sido, setSido] = useState(null);
   const [gungu, setGungu] = useState(null);
   const [kw, setKw] = useState('');
+  const [kwFocused, setKwFocused] = useState(false);
+  const [playing, setPlaying] = useState(null);
 
   useEffect(() => subCoaches(setCoaches), []);
   useEffect(() => subCoachVideos(setVideos), []);
+  useEffect(() => subOnepoint(setPoints), []);
   useEffect(() => subMyCoach(uid, setMine), [uid]);
+  useEffect(() => {
+    if (askOpen) { setOpenId(askOpen); setView('find'); onOpened?.(); }
+  }, [askOpen]);
+
+  useBackHandler(() => {
+    if (openId) { setOpenId(null); return true; }
+    if (view === 'mine') { setView('find'); return true; }
+    return false;
+  });
 
   /* 코치가 등록한 코트의 지역표 — 사는 곳이 아니라 가르치는 곳으로도
      검색되게 하려면 이게 필요하다. 코트 목록은 앱에 내장돼 있어 공짜다. */
@@ -461,11 +511,23 @@ export function CoachScreen({ uid, flash }) {
     return m;
   }, []);
 
+  /* 코치의 영상 = 원포인트에 올린 것 + 승인된 소개 영상 */
+  const clipsOf = useMemo(() => {
+    const m = {};
+    points.filter((v) => v.coachId).forEach((v) => { (m[v.coachId] = m[v.coachId] || []).push(v); });
+    publicVideos(videos).forEach((v) => {
+      const id = parseYouTubeId(v.url);
+      if (!id) return;
+      const list = (m[v.coachId] = m[v.coachId] || []);
+      if (!list.some((x) => (x.videoId || parseYouTubeId(x.url)) === id)) list.push({ ...v, videoId: id, category: v.category || '기타' });
+    });
+    return m;
+  }, [points, videos]);
   const videoCount = useMemo(() => {
     const n = {};
-    publicVideos(videos).forEach((v) => { n[v.coachId] = (n[v.coachId] || 0) + 1; });
+    Object.keys(clipsOf).forEach((k) => { n[k] = clipsOf[k].length; });
     return n;
-  }, [videos]);
+  }, [clipsOf]);
 
   const list = useMemo(
     () => sortCoaches(
@@ -475,67 +537,122 @@ export function CoachScreen({ uid, flash }) {
     [coaches, sido, gungu, kw, courtRegions, videoCount],
   );
 
+  const player = (
+    <PlayerModal
+      video={playing}
+      videos={playing ? (clipsOf[playing.coachId] || []) : []}
+      backLabel={playing ? `${playing.coachName || '코치'} 영상` : ''}
+      onOpenVideo={(v) => setPlaying(v)}
+      onClose={() => setPlaying(null)}
+    />
+  );
+
+  /* ---- 상세 ---- */
   const open = coaches.find((c) => c.id === openId);
   if (open) {
+    const coach = open;
     return (
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-        <CoachDetail coach={open} videos={videos} onBack={() => setOpenId(null)} />
-      </ScrollView>
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
+        <View style={{ paddingTop: insets.top + 4 }}>
+          <SubHeader title={`${coach.name} 코치`} onBack={() => setOpenId(null)} />
+        </View>
+        <ScrollView contentContainerStyle={{ paddingBottom: bottomPad }}>
+          <CoachDetail coach={{ ...coach, id: open.id }} clips={clipsOf[open.id] || []}
+            onPlay={(v) => setPlaying({ ...v, coachName: v.coachName || coach.name, coachId: open.id })} />
+        </ScrollView>
+        {player}
+      </View>
     );
   }
 
-  return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-      <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
-        <Chip tone={tab === 'find' ? 'green' : 'outline'} onPress={() => setTab('find')}>코치 찾기</Chip>
-        <Chip tone={tab === 'mine' ? 'green' : 'outline'} onPress={() => setTab('mine')}>
-          {mine ? '내 코치 프로필' : '코치로 등록'}
-        </Chip>
-      </View>
-
-      {tab === 'mine' ? (
-        <MyCoach uid={uid} mine={mine} videos={videos} flash={flash} />
-      ) : (
-        <View>
-          <Label hint="시/도만 골라도 검색됩니다">지역</Label>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            <Chip tone={!sido ? 'green' : 'outline'}
-              onPress={() => { setSido(null); setGungu(null); }}>전체</Chip>
-            {SIDO_LIST.map((s) => (
-              <Chip key={s} tone={sido === s ? 'green' : 'outline'}
-                onPress={() => { setSido(s); setGungu(null); }}>{s}</Chip>
-            ))}
-          </View>
-          {!!sido && (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-              <Chip tone={!gungu ? 'soft' : 'outline'} onPress={() => setGungu(null)}>{sido} 전체</Chip>
-              {gunguOf(sido).map((g) => (
-                <Chip key={g} tone={gungu === g ? 'soft' : 'outline'}
-                  onPress={() => setGungu(g)}>{g}</Chip>
-              ))}
+  /* ---- 내 코치 프로필(등록) ---- */
+  if (view === 'mine') {
+    return (
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
+        <View style={{ paddingTop: insets.top + 4 }}>
+          <SubHeader title={mine ? '내 코치 프로필' : '코치로 등록'} onBack={() => setView('find')} />
+        </View>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: PAD, paddingBottom: bottomPad }}>
+          {mine?.status === COACH_STATUS.APPROVED && (
+            <View style={{ backgroundColor: C.greenSoft, borderRadius: 16, padding: PAD, marginBottom: 8 }}>
+              <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 15, fontWeight: '800', color: C.green }}>원포인트에 영상을 올릴 수 있어요</Text>
+              <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 14, fontWeight: '600', color: C.text, marginTop: 4, lineHeight: 20 }}>
+                레벨업 › 원포인트 오른쪽 위 ＋ 에서 올리면 모든 회원에게 바로 보이고, 영상 아래에 코치님 이름이 붙어요.
+              </Text>
             </View>
           )}
+          <MyCoach uid={uid} mine={mine} videos={videos} flash={flash} />
+        </ScrollView>
+      </View>
+    );
+  }
 
-          <View style={{ marginTop: 12 }}>
-            <Field placeholder="이름 · 경력으로 검색" value={kw} onChangeText={setKw} />
+  /* ---- 찾기 ---- */
+  const regionTitle = [sido, gungu].filter(Boolean).join(' ') || '전체 지역';
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      {renderTop ? renderTop() : <View style={{ height: insets.top + 8 }} />}
+      <View style={{ paddingHorizontal: PAD, paddingBottom: 8 }}>
+        <SearchField value={kw} onChangeText={setKw} focused={kwFocused}
+          onFocus={() => setKwFocused(true)}
+          onClear={() => setKw('')}
+          onCancel={kwFocused ? () => { setKw(''); setKwFocused(false); } : undefined}
+          placeholder="코치 검색 (이름·경력·자격증)" label="코치 검색" />
+      </View>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: bottomPad }}>
+        {!!mine && (
+          <Pressable onPress={() => setView('mine')} accessibilityRole="button"
+            style={({ pressed }) => ({
+              marginHorizontal: PAD, marginBottom: 8, minHeight: 56, borderRadius: 16, backgroundColor: C.surface,
+              borderWidth: 1, borderColor: C.border, paddingHorizontal: PAD, flexDirection: 'row', alignItems: 'center', gap: 8,
+              opacity: pressed ? 0.8 : 1,
+            })}>
+            <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 15, fontWeight: '800', color: C.text }}>내 코치 프로필</Text>
+            <Chip tone={statusTone(mine.status)}>{COACH_STATUS_LABEL[mine.status] || mine.status}</Chip>
+            <Text style={{ marginLeft: 'auto', fontSize: 22, color: C.faint }}>›</Text>
+          </Pressable>
+        )}
+
+        <CategoryChips value={sido || 'all'}
+          onChange={(k) => { setSido(k === 'all' ? null : k); setGungu(null); }}
+          items={[{ key: 'all', label: '전체 지역' }, ...SIDO_LIST.map((x) => ({ key: x, label: x }))]} />
+        {!!sido && (
+          <View style={{ marginTop: 8 }}>
+            <CategoryChips value={gungu || 'all'} onChange={(k) => setGungu(k === 'all' ? null : k)}
+              items={[{ key: 'all', label: `${sido} 전체` }, ...gunguOf(sido).map((g) => ({ key: g, label: g }))]} />
           </View>
+        )}
 
-          <SectionTitle hint={`${list.length}명`}>
-            {[sido, gungu].filter(Boolean).join(' ') || '전체 지역'}
-          </SectionTitle>
-
-          {list.length === 0 ? (
-            <EmptyState
-              icon="🎾"
-              title="아직 등록된 코치가 없습니다"
-              body="지역을 넓혀 보시거나, 코치라면 [코치로 등록]에서 프로필을 올려 주세요."
-            />
-          ) : list.map((c) => (
-            <CoachCard key={c.id} coach={c} videoCount={videoCount[c.id] || 0}
-              onPress={() => setOpenId(c.id)} />
-          ))}
+        <View style={{ marginTop: 8 }}>
+          <ShelfHeader title={`${regionTitle} 코치`} count={list.length} />
         </View>
-      )}
-    </ScrollView>
+        {list.length === 0 ? (
+          <EmptyBlock title="아직 등록된 코치가 없어요"
+            body={sido ? '지역을 넓혀 보세요.' : '승인된 코치가 생기면 여기에 보여요.'} />
+        ) : (
+          <View style={{ paddingHorizontal: PAD }}>
+            {list.map((c) => (
+              <CoachRow key={c.id} coach={c} videoCount={videoCount[c.id] || 0} onPress={() => setOpenId(c.id)} />
+            ))}
+          </View>
+        )}
+
+        {!mine && (
+          <Pressable onPress={() => setView('mine')} accessibilityRole="button"
+            style={({ pressed }) => ({
+              marginHorizontal: PAD, marginTop: 24, borderRadius: 16, backgroundColor: C.greenSoft,
+              padding: PAD, flexDirection: 'row', alignItems: 'center', minHeight: 72, opacity: pressed ? 0.85 : 1,
+            })}>
+            <View style={{ flex: 1 }}>
+              <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 15, fontWeight: '800', color: C.text }}>코치이신가요?</Text>
+              <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 14, fontWeight: '600', color: C.sub, marginTop: 2 }}>
+                프로필이 승인되면 원포인트에 영상도 올릴 수 있어요
+              </Text>
+            </View>
+            <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 15, fontWeight: '800', color: C.green }}>코치로 등록 ›</Text>
+          </Pressable>
+        )}
+      </ScrollView>
+    </View>
   );
 }

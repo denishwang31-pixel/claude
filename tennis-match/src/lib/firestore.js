@@ -404,38 +404,52 @@ export const checkAppAdmin = async (uid) => {
   } catch (e) { return false; }
 };
 
-/* ---- 원포인트 영상(유튜브) — 등록·수정·삭제는 운영진만(규칙) ---- */
-export const subTips = (clubId, cb) =>
-  onSnapshot(C(clubId, 'tips'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+/* ---- 원포인트 영상(유튜브) — 앱 전체 공용(루트 onepoint) ----
+   올리는 사람은 앱 운영자와 승인된 코치뿐(규칙). 클럽마다 따로 두지 않는다 —
+   코치는 클럽에 속하지 않고, 좋은 영상은 모든 클럽이 같이 보는 게 낫다. */
+const OP = () => collection(db, 'onepoint');
+export const subOnepoint = (cb) =>
+  onSnapshot(OP(), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => cb([]));
 
-/** data = onepoint.js 의 tipDoc() 결과 */
-export const addTip = (clubId, data, uid) =>
-  addDoc(C(clubId, 'tips'), { ...data, createdBy: uid || null, createdAt: serverTimestamp() });
+/** data = onepoint.js 의 tipDoc() 결과. coach 가 있으면 코치 영상으로 적는다. */
+export const addOnepoint = (data, uid, coach = null) =>
+  addDoc(OP(), {
+    ...data,
+    ...(coach ? { coachId: uid, coachName: coach.name || '', pinned: false } : {}),
+    createdBy: uid,
+    createdAt: serverTimestamp(),
+  });
 /** 수정. 수준을 비웠으면 필드를 지운다(없는 것이 "수준 없음"이다). */
-export const updateTip = (clubId, id, data) =>
-  updateDoc(D(clubId, 'tips', id), {
+export const updateOnepoint = (id, data) =>
+  updateDoc(doc(db, 'onepoint', id), {
     ...data,
     level: data.level ? data.level : deleteField(),
     updatedAt: serverTimestamp(),
   });
-export const setTipPinned = (clubId, id, pinned) =>
-  updateDoc(D(clubId, 'tips', id), { pinned: !!pinned, updatedAt: serverTimestamp() });
-export const deleteTip = (clubId, id) => deleteDoc(D(clubId, 'tips', id));
+export const setOnepointPinned = (id, pinned) =>
+  updateDoc(doc(db, 'onepoint', id), { pinned: !!pinned, updatedAt: serverTimestamp() });
+export const deleteOnepoint = (id) => deleteDoc(doc(db, 'onepoint', id));
 
-/* 회원별 「봤어요」·「저장」 — 본인만 읽고 쓴다(규칙).
-   영상마다 문서를 두지 않고 회원당 문서 하나에 모은다. 첫 화면이
-   구독 하나로 끝나고, 영상 60개여도 읽기가 한 번이다.
-     clubs/{clubId}/tipStates/{uid} = { watched: {tipId: true}, saved: {tipId: true} } */
-export const subTipStates = (clubId, uid, cb) =>
-  onSnapshot(D(clubId, 'tipStates', uid),
+/* 회원별 「봤어요」·「저장」 — 본인만 읽고 쓴다(규칙). 영상마다 문서를 두지 않고
+   한 사람당 문서 하나: onepointStates/{uid} = { watched: {id: true}, saved: {id: true} } */
+export const subOnepointStates = (uid, cb) => {
+  if (!uid) { cb({}); return () => {}; }
+  return onSnapshot(doc(db, 'onepointStates', uid),
     (d) => cb(d.exists() ? d.data() : {}),
     () => cb({}));
+};
 /** kind = 'watched' | 'saved'. 끄면 칸을 지운다(false 를 남기지 않는다). */
-export const setTipState = (clubId, uid, tipId, kind, on) =>
-  setDoc(D(clubId, 'tipStates', uid), {
-    [kind]: { [tipId]: on ? true : deleteField() },
+export const setOnepointState = (uid, id, kind, on) =>
+  setDoc(doc(db, 'onepointStates', uid), {
+    [kind]: { [id]: on ? true : deleteField() },
     updatedAt: serverTimestamp(),
   }, { merge: true });
+
+/* 예전 자리(clubs/{id}/tips) — 클럽 운영진이 올리던 때의 영상. 앱 운영자가
+   원포인트 화면의 [앱 전체로 옮기기]를 누르면 루트로 옮기고 지운다. */
+export const subTips = (clubId, cb) =>
+  onSnapshot(C(clubId, 'tips'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => cb([]));
+export const deleteTip = (clubId, id) => deleteDoc(D(clubId, 'tips', id));
 
 /* ============================================================
    참가투표 — 일정 RSVP 와 별개. 회식 날짜, 대회 참가 의사처럼

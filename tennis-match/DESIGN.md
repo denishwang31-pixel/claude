@@ -116,8 +116,10 @@ app/_layout.jsx              전역 상태(AppCtx) · 로그인 감시 · 라우
 > 합치고 더보기의 코치 찾기도 옮겼다. 이름을 정한 이유는 FEATURES.md 4장.
 >
 > 레벨업의 머리는 `src/components/LevelupTop.jsx` 하나 — 칸 나누기(높이 56, 칸 48)가
-> 화면 첫 줄이고, 오른쪽에 운영진 ＋ 버튼(56×56)이 붙는다. 원포인트는
-> `src/components/onepoint/`(판단은 `src/lib/onepoint.js`).
+> 화면 첫 줄이고, 오른쪽에 등록 ＋ 버튼(56×56)이 붙는다(원포인트: 앱 관리자·승인 코치,
+> 용품: 앱 관리자). 원포인트는 `src/components/onepoint/`(판단은 `src/lib/onepoint.js`),
+> 용품·코치도 같은 부품(검색창·선반·칩 한 줄·빈 상태, `onepoint/parts.jsx`)을 쓴다.
+> 용품의 판단은 `src/lib/gearView.js`.
 
 ### 3-3. [더보기] — 허브 구조
 

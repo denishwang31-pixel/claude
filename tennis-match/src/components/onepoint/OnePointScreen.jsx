@@ -22,6 +22,12 @@
       얻어 가는 것만 약속해야 사람들이 들어온다(levelup.jsx 참고).
    ⚠️ 코치 한 줄은 두 군데뿐 — 재생 화면 끝, 영역 모아보기 끝.
       첫 화면·검색 결과에는 두지 않는다.
+
+   누가 올리나 (앱 주인이 정함)
+     앱 관리자와, 앱 관리자가 승인한 코치만. 클럽 운영진이라고 올릴 수
+     있는 게 아니다 — 영상의 질을 지키려는 것이다. 그래서 영상은 클럽마다
+     따로가 아니라 앱 전체 공용(onepoint)이다. 코치는 자기 영상만 고치고
+     지우며, 「추천」은 앱 관리자만 단다. 규칙(firestore.rules)도 같다.
    ============================================================ */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -30,21 +36,22 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../../app/_layout';
 import { useBottomPad } from '../../hooks/useBottomPad';
-import { useClub } from '../../hooks/useClub';
 import { useBackHandler } from '../../hooks/useBackHandler';
 import { useOptionSheet } from '../native';
 import { AddButton } from '../LevelupTop';
 import {
-  subTips, addTip, updateTip, setTipPinned, deleteTip, subTipStates, setTipState, subCoaches,
+  subOnepoint, addOnepoint, updateOnepoint, setOnepointPinned, deleteOnepoint,
+  subOnepointStates, setOnepointState, subCoaches, subMyCoach, subTips, deleteTip,
 } from '../../lib/firestore';
 import { COACH_STATUS } from '../../lib/coach';
 import { getJSON, setJSON } from '../../lib/deviceStore';
 import {
   buildShelves, searchVideos, categoryCounts, inCategory, catOf, addRecent, suggestionsFor,
+  canManage, canPin, canUpload, legacyMoves, tipDoc, videoIdOf, CATEGORIES,
 } from '../../lib/onepoint';
 import {
   PAD, VideoShelf, VideoRow, VideoCard, ShelfHeader, SearchField, CategoryChips, CoachLine,
-  MemberEmpty, AdminEmpty, NoResults, WordChip,
+  MemberEmpty, AdminEmpty, NoResults, WordChip, LegacyBanner,
 } from './parts';
 import { PlayerModal } from './PlayerModal';
 import { VideoAddSheet } from './VideoAddSheet';
@@ -56,12 +63,11 @@ const RECENT_KEY = 'onepoint.recent';
 
 /**
  * @param renderTop  ({ right, beside }) => 레벨업 머리(칸 나누기)
- * @param onGoCoach  레벨업 칸을 「코치」로
+ * @param onGoCoach  (coachId?) => 레벨업 칸을 「코치」로(코치 아이디가 있으면 그 코치 화면)
  * @param onGoGear   레벨업 칸을 「용품」으로
  */
 export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
-  const { clubId, me, viewMode } = useApp();
-  const { isAdmin } = useClub(clubId, me, { viewMode });
+  const { clubId, me, isAppAdmin } = useApp();
   const insets = useSafeAreaInsets();
   const bottomPad = useBottomPad();
   const { width } = useWindowDimensions();
@@ -73,9 +79,19 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
   const [states, setStates] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [coachCount, setCoachCount] = useState(0);
-  useEffect(() => (clubId ? subTips(clubId, (l) => { setItems(l); setLoaded(true); }) : undefined), [clubId]);
-  useEffect(() => (clubId && me ? subTipStates(clubId, me, setStates) : undefined), [clubId, me]);
+  const [myCoach, setMyCoach] = useState(null);
+  const [legacy, setLegacy] = useState([]);
+  const [moving, setMoving] = useState(false);
+  useEffect(() => subOnepoint((l) => { setItems(l); setLoaded(true); }), []);
+  useEffect(() => subOnepointStates(me, setStates), [me]);
   useEffect(() => subCoaches((list) => setCoachCount(list.filter((c) => c.status === COACH_STATUS.APPROVED).length)), []);
+  useEffect(() => subMyCoach(me, setMyCoach), [me]);
+  /* 예전에 클럽 운영진이 이 클럽에만 올린 영상 — 앱 관리자에게만 옮기기 안내를 띄운다 */
+  useEffect(() => (isAppAdmin && clubId ? subTips(clubId, setLegacy) : (setLegacy([]), undefined)), [isAppAdmin, clubId]);
+
+  const isCoach = myCoach?.status === COACH_STATUS.APPROVED;
+  const who = { me, isAppAdmin: !!isAppAdmin, isCoach };
+  const uploader = canUpload(who);
 
   const watchedMap = useMemo(() => states.watched || {}, [states]);
   const savedMap = useMemo(() => states.saved || {}, [states]);
@@ -150,48 +166,79 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
     if (!wide) scrollRef.current?.scrollTo({ y: 0, animated: false });
   };
   const toggle = (kind, id, current) => {
-    if (!clubId || !me) return;
-    setTipState(clubId, me, id, kind, !current).catch(() => flash('저장하지 못했어요'));
+    if (!me) return;
+    setOnepointState(me, id, kind, !current).catch(() => flash('저장하지 못했어요'));
   };
 
-  const adminMenu = isAdmin ? (v) => sheetUi.open({
-    title: v.title,
-    options: [
+  /* 길게 누르기 — 고칠 수 있는 영상에만(앱 관리자: 전부, 코치: 자기 것).
+     일반 회원은 길게 눌러도 아무 일도 없다. */
+  const manageMenu = (v) => {
+    if (!canManage(v, who)) return;
+    const options = [
       { key: 'edit', label: '수정' },
-      { key: 'pin', label: v.pinned ? '추천 해제' : '추천으로 두기' },
+      ...(canPin(who) ? [{ key: 'pin', label: v.pinned ? '추천 해제' : '추천으로 두기' }] : []),
       { key: 'del', label: '삭제', destructive: true },
-    ],
-    destructiveIndex: 2,
-    onSelect: (o) => {
-      if (o.key === 'edit') setSheet({ editing: v });
-      else if (o.key === 'pin') setTipPinned(clubId, v.id, !v.pinned).catch(() => flash('바꾸지 못했어요'));
-      else if (o.key === 'del') {
-        Alert.alert('이 영상을 지울까요?', '회원 화면에서도 사라져요', [
-          { text: '그대로 두기', style: 'cancel' },
-          {
-            text: '지우기', style: 'destructive',
-            onPress: () => deleteTip(clubId, v.id).then(() => flash('지웠어요')).catch(() => flash('지우지 못했어요')),
-          },
-        ]);
-      }
-    },
-  }) : undefined;
+    ];
+    sheetUi.open({
+      title: v.title,
+      options,
+      destructiveIndex: options.length - 1,
+      onSelect: (o) => {
+        if (o.key === 'edit') setSheet({ editing: v });
+        else if (o.key === 'pin') setOnepointPinned(v.id, !v.pinned).catch(() => flash('바꾸지 못했어요'));
+        else if (o.key === 'del') {
+          Alert.alert('이 영상을 지울까요?', '회원 화면에서도 사라져요', [
+            { text: '그대로 두기', style: 'cancel' },
+            {
+              text: '지우기', style: 'destructive',
+              onPress: () => deleteOnepoint(v.id).then(() => flash('지웠어요')).catch(() => flash('지우지 못했어요')),
+            },
+          ]);
+        }
+      },
+    });
+  };
+  const adminMenu = uploader ? manageMenu : undefined;
 
   const submit = async (doc, editing) => {
     if (editing) {
-      await updateTip(clubId, editing.id, doc);
+      await updateOnepoint(editing.id, doc);
       setSheet(null);
       flash('고쳤어요');
     } else {
-      await addTip(clubId, doc, me);
+      /* 앱 관리자가 코치이기도 하면 앱 관리자로 올린다(코치 표시 없이) */
+      await addOnepoint(doc, me, isAppAdmin ? null : myCoach);
       setSheet(null);
       flash('등록했어요');
       if (!wide) setScrollTo(doc.category); else setCat(doc.category);
     }
   };
 
+  /* 예전 클럽 영상을 앱 전체로 옮긴다 — 같은 영상이 이미 있으면 지우기만 */
+  const moveLegacy = async () => {
+    if (moving) return;
+    setMoving(true);
+    const { copy, drop } = legacyMoves(legacy, items);
+    let failed = 0;
+    for (const t of copy) {
+      try {
+        const cat0 = CATEGORIES.includes(t.category) ? t.category : '기타';
+        await addOnepoint(tipDoc({ ...t, category: cat0 }, videoIdOf(t)), me, null);
+        await deleteTip(clubId, t.id);
+      } catch (e) { failed += 1; }
+    }
+    for (const t of drop) {
+      try { await deleteTip(clubId, t.id); } catch (e) { failed += 1; }
+    }
+    setMoving(false);
+    flash(failed ? `${failed}개는 옮기지 못했어요. 다시 눌러 주세요` : '앱 전체로 옮겼어요');
+  };
+  const legacyBanner = isAppAdmin && legacy.length > 0
+    ? <LegacyBanner count={legacy.length} moving={moving} onMove={moveLegacy} />
+    : null;
+
   const playing = playingId ? items.find((v) => v.id === playingId) || null : null;
-  const addBtn = isAdmin ? <AddButton label="영상 등록" onPress={() => setSheet({ initialCategory: cat || '' })} /> : null;
+  const addBtn = uploader ? <AddButton label="영상 등록" onPress={() => setSheet({ initialCategory: cat || '' })} /> : null;
 
   /* ---- 검색 결과 ---- */
   const results = useMemo(() => searchVideos(items, dq), [items, dq]);
@@ -263,31 +310,22 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
 
   /* ---- 첫 화면(선반) ---- */
   const shelvesBody = (cardBig = 248, cardSmall = 184) => {
-    if (home.mode === 'compact') {
-      return (
-        <View style={{ marginTop: 4 }}>
-          <ShelfHeader title={`영상 ${home.list.length}개`} />
-          <View style={{ paddingHorizontal: PAD }}>
-            {home.list.map((v) => (
-              <VideoRow key={v.id} v={v} watched={isWatched(v.id)}
-                onPress={() => open(v)} onLongPress={adminMenu ? () => adminMenu(v) : undefined} />
-            ))}
-          </View>
-        </View>
-      );
-    }
     if (home.mode !== 'shelves') return null;
     const lp = adminMenu ? (v) => adminMenu(v) : undefined;
     return (
       <>
-        <VideoShelf title="새로 올라온 영상" items={home.newest} cardWidth={cardBig}
-          isWatched={isWatched} onOpen={open} onLongPress={lp} />
+        {legacyBanner}
+        {home.newest.length > 0 && (
+          <VideoShelf title="새로 올라온 영상" items={home.newest} cardWidth={cardBig}
+            isWatched={isWatched} onOpen={open} onLongPress={lp} />
+        )}
         {home.saved.length > 0 && (
           <VideoShelf title="저장한 영상" count={home.saved.length} items={home.saved} cardWidth={cardSmall}
             isWatched={isWatched} onOpen={open} onLongPress={lp} />
         )}
         {home.byCategory.map((s) => (
-          <VideoShelf key={s.category} title={s.category} count={s.count} items={s.items} cardWidth={cardSmall}
+          <VideoShelf key={s.category} title={s.category} count={s.count} items={s.items}
+            cardWidth={home.newest.length > 0 ? cardSmall : cardBig}
             showCategory={false} isWatched={isWatched} onOpen={open} onLongPress={lp}
             onAll={() => openCategory(s.category)}
             onLayout={(e) => { shelfY.current[s.category] = e.nativeEvent.layout.y; }} />
@@ -297,9 +335,13 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
   };
 
   /* 첫 목록이 오기 전에 "영상이 없어요"를 번쩍 보여 주지 않는다 */
-  const emptyBody = !loaded ? null : isAdmin
-    ? <AdminEmpty onAdd={() => setSheet({ initialCategory: '' })} />
-    : <MemberEmpty onGear={onGoGear} />;
+  const emptyBody = !loaded ? null : uploader ? (
+    <View>
+      {legacyBanner}
+      <AdminEmpty role={isAppAdmin ? '앱 관리자로 보는 중' : '코치로 보는 중'}
+        onAdd={() => setSheet({ initialCategory: '' })} />
+    </View>
+  ) : <MemberEmpty onGear={onGoGear} />;
 
   /* ---- 영역 모아보기(폰) ---- */
   const categoryBody = () => {
@@ -324,7 +366,7 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
             <VideoRow key={v.id} v={v} watched={isWatched(v.id)} showCategory={false}
               onPress={() => open(v)} onLongPress={adminMenu ? () => adminMenu(v) : undefined} />
           ))}
-          <CoachLine category={cat} count={coachCount} onPress={onGoCoach} />
+          <CoachLine category={cat} count={coachCount} onPress={() => onGoCoach?.()} />
         </View>
       </View>
     );
@@ -348,7 +390,7 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
           </View>
         )}
         <View style={{ paddingHorizontal: PAD }}>
-          <CoachLine category={cat} count={coachCount} onPress={onGoCoach} />
+          <CoachLine category={cat} count={coachCount} onPress={() => onGoCoach?.()} />
         </View>
       </View>
     );
@@ -367,7 +409,7 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
         onOpenVideo={(v) => setPlayingId(v.id)}
         onOpenCategory={(c) => { setPlayingId(null); openCategory(c); }}
         coachCount={coachCount}
-        onGoCoach={() => { setPlayingId(null); onGoCoach?.(); }}
+        onGoCoach={(coachId) => { setPlayingId(null); onGoCoach?.(coachId); }}
         onClose={() => setPlayingId(null)}
       />
       <VideoAddSheet
@@ -375,6 +417,7 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
         editing={sheet?.editing || null}
         initialCategory={sheet?.initialCategory || ''}
         videos={items}
+        allowPin={canPin(who)}
         onSubmit={submit}
         onClose={() => setSheet(null)}
       />

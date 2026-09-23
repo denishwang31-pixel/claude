@@ -20,12 +20,33 @@ export const PAD = 16;
 const MAXF = 1.3;   // 글자 키움 설정을 따라가되, 카드가 무너지지 않을 만큼만
 
 /* ---------------- 썸네일 ---------------- */
+/** 썸네일이 오기 전·못 받았을 때 깔리는 코트 그림 — 시안의 빈 썸네일과 같은 모양.
+    검은 네모가 줄지어 있으면 "고장났나?" 싶다. */
+export function CourtBackdrop({ width, height }) {
+  const line = 'rgba(143,214,184,0.35)';
+  const w = width * 0.78;
+  const h = height * 0.7;
+  return (
+    <View style={{ position: 'absolute', top: 0, left: 0, width, height, backgroundColor: '#1D4A3A', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: w, height: h, borderWidth: 1.5, borderColor: line }}>
+        <View style={{ position: 'absolute', left: w / 2 - 1, top: -4, bottom: -4, width: 1.5, backgroundColor: line }} />
+        <View style={{ position: 'absolute', left: 0, right: 0, top: h * 0.12, height: 1, backgroundColor: line }} />
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: h * 0.12, height: 1, backgroundColor: line }} />
+        <View style={{ position: 'absolute', left: w * 0.23, top: h * 0.12, bottom: h * 0.12, width: 1, backgroundColor: line }} />
+        <View style={{ position: 'absolute', right: w * 0.23, top: h * 0.12, bottom: h * 0.12, width: 1, backgroundColor: line }} />
+        <View style={{ position: 'absolute', left: w * 0.23, right: w * 0.23, top: h / 2, height: 1, backgroundColor: line }} />
+      </View>
+    </View>
+  );
+}
+
 export function VideoThumb({ v, width, height, radius = 12, watched }) {
   const [broken, setBroken] = useState(false);
   const uri = thumbUrl(videoIdOf(v));
   const d = height >= 130 ? 48 : height >= 90 ? 40 : 32;
   return (
     <View style={{ width, height, borderRadius: radius, overflow: 'hidden', backgroundColor: C.ink }}>
+      <CourtBackdrop width={width} height={height} />
       {/* hqdefault 는 4:3 위아래에 검은 띠가 있다 — 16:9 칸에 cover 로 맞추면 잘려 나간다 */}
       {!!uri && !broken && (
         <Image source={{ uri }} onError={() => setBroken(true)}
@@ -93,7 +114,7 @@ function Marked({ text, q, style, numberOfLines }) {
 /* ---------------- 선반 카드 (세로: 썸네일 → 제목 → 메타) ---------------- */
 export function VideoCard({ v, width, watched, showCategory = true, onPress, onLongPress }) {
   const h = Math.round((width * 9) / 16);
-  const meta = [showCategory ? catOf(v) : '', v.note].filter(Boolean).join(' · ');
+  const meta = [showCategory ? catOf(v) : '', v.coachName ? `${v.coachName} 코치` : v.note].filter(Boolean).join(' · ');
   return (
     <Pressable
       onPress={onPress} onLongPress={onLongPress} delayLongPress={400}
@@ -129,10 +150,11 @@ export function VideoRow({ v, watched, q = '', showCategory = true, onPress, onL
         <Marked text={v.title} q={q} numberOfLines={2} style={{
           fontSize: 16, fontWeight: '700', lineHeight: 22, color: watched ? C.sub : C.text,
         }} />
-        {(showCategory || !!level) && (
+        {(showCategory || !!level || !!v.coachName) && (
           <View style={{ flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
             {showCategory && <MetaBadge>{catOf(v)}</MetaBadge>}
             {!!level && <MetaBadge tone="level">{level}</MetaBadge>}
+            {!!v.coachName && <MetaBadge tone="level">{v.coachName} 코치</MetaBadge>}
           </View>
         )}
         {!!v.note && (
@@ -188,8 +210,77 @@ export function VideoShelf({
   );
 }
 
+/* ---------------- 아무 카드나 담는 선반 (용품 등) ---------------- */
+export function Shelf({ title, count, onAll, data, renderItem, keyOf = (x) => x.id, onLayout }) {
+  return (
+    <View onLayout={onLayout} style={{ marginTop: 12 }}>
+      <ShelfHeader title={title} count={count} onAll={onAll} />
+      <FlatList
+        horizontal
+        data={data}
+        keyExtractor={keyOf}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: PAD }}
+        ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
+        renderItem={({ item }) => renderItem(item)}
+      />
+    </View>
+  );
+}
+
+/** 한 영역만 모아 볼 때의 머리 — ‹ 이름 N개 */
+export function SubHeader({ title, count, onBack, right = null }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 56, paddingHorizontal: 8 }}>
+      <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="뒤로"
+        style={({ pressed }) => ({ width: 48, height: 48, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
+        <Text allowFontScaling={false} style={{ fontSize: 30, lineHeight: 32, color: C.green, fontWeight: '500' }}>‹</Text>
+      </Pressable>
+      <Text numberOfLines={1} maxFontSizeMultiplier={MAXF} style={{ flexShrink: 1, fontSize: 22, fontWeight: '800', color: C.text }}>{title}</Text>
+      {count != null && (
+        <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 16, fontWeight: '700', color: C.sub, marginLeft: 8 }}>{count}</Text>
+      )}
+      <View style={{ marginLeft: 'auto', paddingRight: 8 }}>{right}</View>
+    </View>
+  );
+}
+
+/** 빈 상태 공용 — 그림 + 제목 + 설명 + (버튼) */
+export function EmptyBlock({ badge, title, body, actionLabel, onAction, footnote, art = true }) {
+  return (
+    <View style={CENTER}>
+      {!!badge && (
+        <View style={{ height: 28, paddingHorizontal: 12, borderRadius: R.pill, backgroundColor: C.ink, justifyContent: 'center', marginBottom: 16 }}>
+          <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 13, fontWeight: '800', color: C.lime }}>{badge}</Text>
+        </View>
+      )}
+      {art && <CourtArt />}
+      <Text maxFontSizeMultiplier={MAXF} style={{ marginTop: art ? 20 : 0, fontSize: 21, fontWeight: '800', color: C.text, textAlign: 'center' }}>{title}</Text>
+      {!!body && (
+        <Text maxFontSizeMultiplier={MAXF} style={{ marginTop: 8, fontSize: 16, fontWeight: '600', color: C.sub, textAlign: 'center', lineHeight: 23 }}>{body}</Text>
+      )}
+      {!!onAction && (
+        <Pressable onPress={onAction} accessibilityRole="button"
+          style={({ pressed }) => ({
+            marginTop: 20, minHeight: 52, alignSelf: 'stretch', borderRadius: 12, backgroundColor: C.green,
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: pressed ? 0.85 : 1,
+          })}>
+          <Icon name="add" size={22} color="#FFFFFF" />
+          <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 16, fontWeight: '800', color: '#FFFFFF' }}>{actionLabel}</Text>
+        </Pressable>
+      )}
+      {!!footnote && (
+        <Text maxFontSizeMultiplier={MAXF} style={{ marginTop: 12, fontSize: 14, fontWeight: '600', color: C.sub, textAlign: 'center' }}>{footnote}</Text>
+      )}
+    </View>
+  );
+}
+
 /* ---------------- 검색창 ---------------- */
-export function SearchField({ value, onChangeText, onFocus, focused, onClear, onCancel, inputRef, onSubmit, style }) {
+export function SearchField({
+  value, onChangeText, onFocus, focused, onClear, onCancel, inputRef, onSubmit, style,
+  placeholder = '영상 검색 (예: 슬라이스, 토스)', label = '영상 검색',
+}) {
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 4 }, style]}>
       <View style={{
@@ -204,12 +295,12 @@ export function SearchField({ value, onChangeText, onFocus, focused, onClear, on
           onChangeText={onChangeText}
           onFocus={onFocus}
           onSubmitEditing={onSubmit}
-          placeholder="영상 검색 (예: 슬라이스, 토스)"
+          placeholder={placeholder}
           placeholderTextColor={C.faint}
           returnKeyType="search"
           autoCorrect={false}
           maxFontSizeMultiplier={MAXF}
-          accessibilityLabel="영상 검색"
+          accessibilityLabel={label}
           style={{ flex: 1, height: '100%', marginLeft: 8, fontSize: 16, fontWeight: '500', color: C.text }}
         />
         {!!value && (
@@ -263,9 +354,13 @@ export function CategoryChips({ items, value, onChange }) {
 /* 광고처럼 보이면 안 된다. 채운 초록 버튼을 쓰지 않고 글자 링크만.
    놓는 곳은 두 군데뿐 — 재생 화면 맨 아래(card), 영역 모아보기 맨 끝.
    코치가 한 명도 없으면 아무것도 그리지 않는다. */
-export function CoachLine({ category, count, onPress, card }) {
-  if (!count) return null;
-  const lead = card ? '직접 봐 줄 사람이 필요하면' : `${category}, 직접 봐 줄 사람이 필요하면`;
+export function CoachLine({ category, count, onPress, card, coachName }) {
+  if (!count && !coachName) return null;
+  /* 코치가 올린 영상이면 "아무 코치"가 아니라 그 코치에게 바로 잇는다 —
+     방금 본 영상의 주인이라 가장 자연스러운 다리다. */
+  const lead = coachName ? `이 영상을 올린 ${coachName} 코치`
+    : card ? '직접 봐 줄 사람이 필요하면' : `${category}, 직접 봐 줄 사람이 필요하면`;
+  const sub = coachName ? '경력·연락처 보기' : `등록된 코치 ${count}명`;
   const link = (
     <Pressable onPress={onPress} accessibilityRole="link" accessibilityLabel="코치 보기"
       style={({ pressed }) => ({ minHeight: 48, justifyContent: 'center', paddingLeft: 8, opacity: pressed ? 0.6 : 1 })}>
@@ -281,7 +376,7 @@ export function CoachLine({ category, count, onPress, card }) {
       }}>
         <View style={{ flex: 1 }}>
           <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 15, fontWeight: '600', color: C.sub }}>{lead}</Text>
-          <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 13, fontWeight: '600', color: C.sub, marginTop: 2 }}>등록된 코치 {count}명</Text>
+          <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 13, fontWeight: '600', color: C.sub, marginTop: 2 }}>{sub}</Text>
         </View>
         {link}
       </View>
@@ -325,7 +420,7 @@ export function MemberEmpty({ onGear }) {
       <CourtArt />
       <Text maxFontSizeMultiplier={MAXF} style={{ marginTop: 20, fontSize: 21, fontWeight: '800', color: C.text }}>아직 올라온 영상이 없어요</Text>
       <Text maxFontSizeMultiplier={MAXF} style={{ marginTop: 8, fontSize: 16, fontWeight: '600', color: C.sub, textAlign: 'center' }}>
-        운영진이 좋은 레슨 영상을 모으고 있어요.
+        코치들이 좋은 영상을 모으고 있어요.
       </Text>
       {!!onGear && (
         <Pressable onPress={onGear} accessibilityRole="link"
@@ -337,11 +432,11 @@ export function MemberEmpty({ onGear }) {
   );
 }
 
-export function AdminEmpty({ onAdd }) {
+export function AdminEmpty({ onAdd, role = '앱 관리자로 보는 중' }) {
   return (
     <View style={CENTER}>
       <View style={{ height: 28, paddingHorizontal: 12, borderRadius: R.pill, backgroundColor: C.ink, justifyContent: 'center' }}>
-        <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 13, fontWeight: '800', color: C.lime }}>운영진으로 보는 중</Text>
+        <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 13, fontWeight: '800', color: C.lime }}>{role}</Text>
       </View>
       <Text maxFontSizeMultiplier={MAXF} style={{ marginTop: 20, fontSize: 22, fontWeight: '800', color: C.text }}>첫 영상을 올려 볼까요?</Text>
       <Text maxFontSizeMultiplier={MAXF} style={{ marginTop: 8, fontSize: 16, fontWeight: '600', color: C.sub, textAlign: 'center', lineHeight: 23 }}>
@@ -358,6 +453,32 @@ export function AdminEmpty({ onAdd }) {
       <Text maxFontSizeMultiplier={MAXF} style={{ marginTop: 12, fontSize: 14, fontWeight: '600', color: C.sub }}>
         회원에게는 ‘아직 영상이 없어요’로 보여요
       </Text>
+    </View>
+  );
+}
+
+/** 앱 관리자에게만 — 예전에 클럽 운영진이 이 클럽에만 올린 영상 옮기기 */
+export function LegacyBanner({ count, moving, onMove }) {
+  return (
+    <View style={{
+      marginHorizontal: PAD, marginTop: 8, borderRadius: 16, backgroundColor: C.warnBg,
+      borderWidth: 1, borderColor: '#FDE68A', padding: PAD,
+    }}>
+      <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 15, fontWeight: '800', color: C.text }}>
+        이 클럽에만 올라가 있던 영상 {count}개
+      </Text>
+      <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 14, fontWeight: '600', color: C.sub, marginTop: 4, lineHeight: 20 }}>
+        이제 영상은 앱 전체가 같이 봐요. 옮기면 모든 클럽 회원에게 보이고, 예전 자리에서는 지워져요.
+      </Text>
+      <Pressable onPress={onMove} disabled={moving} accessibilityRole="button"
+        style={({ pressed }) => ({
+          marginTop: 12, minHeight: 48, borderRadius: 12, backgroundColor: C.green,
+          alignItems: 'center', justifyContent: 'center', opacity: moving ? 0.5 : pressed ? 0.85 : 1,
+        })}>
+        <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 15, fontWeight: '800', color: '#FFFFFF' }}>
+          {moving ? '옮기는 중…' : '앱 전체로 옮기기'}
+        </Text>
+      </Pressable>
     </View>
   );
 }

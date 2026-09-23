@@ -45,6 +45,8 @@ export default function LevelUp() {
   const { me } = useApp();
   const [tab, setTab] = useState('tips');
   const [toast, setToast] = useState(null);
+  /* 원포인트 영상의 [코치 보기 ›]로 올 때 바로 열 코치 */
+  const [coachOpen, setCoachOpen] = useState(null);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
 
   /* 칸 나누기가 화면 첫 줄이다(제목·부제 없음 — 탭바에 이미 「레벨업」이
@@ -58,19 +60,17 @@ export default function LevelUp() {
     return (
       <OnePointScreen
         renderTop={renderTop}
-        onGoCoach={() => setTab('coach')}
+        onGoCoach={(coachId) => { setCoachOpen(coachId || null); setTab('coach'); }}
         onGoGear={() => setTab('gear')}
       />
     );
   }
 
-  /* 코치 화면은 원래 더보기 안에 있어서 자기 머리가 없다. 여기서 씌운다. */
+  /* 코치 화면은 상세·내 프로필에서 자기 머리(‹ 뒤로)를 쓰므로 머리를 넘겨준다 */
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      {renderTop()}
-      <View style={{ flex: 1 }}>
-        <CoachScreen uid={me} flash={flash} />
-      </View>
+      <CoachScreen uid={me} flash={flash} renderTop={renderTop}
+        openId={coachOpen} onOpened={() => setCoachOpen(null)} />
       {toast && (
         <View style={{
           position: 'absolute', bottom: 24, alignSelf: 'center', backgroundColor: C.ink,

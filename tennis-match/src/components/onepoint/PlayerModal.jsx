@@ -37,7 +37,7 @@ function ActionBtn({ label, on, onPress, a11y }) {
 
 export function PlayerModal({
   video, videos, isWatched, isSaved, onToggleWatched, onToggleSaved, onMarkWatched,
-  onOpenVideo, onOpenCategory, coachCount, onGoCoach, onClose,
+  onOpenVideo, onOpenCategory, coachCount, onGoCoach, onClose, backLabel,
 }) {
   const insets = useSafeAreaInsets();
   const player = useRef(null);
@@ -46,8 +46,8 @@ export function PlayerModal({
   const startAt = v ? parseStartAt(v.note, v.url) : null;
   const noteStart = v ? parseStartAt(v.note) : null;   // 버튼은 메모에서 시각을 찾았을 때만
   const { next, others } = nextInCategory(videos, v);
-  const watched = v ? isWatched(v.id) : false;
-  const saved = v ? isSaved(v.id) : false;
+  const watched = v && isWatched ? isWatched(v.id) : false;
+  const saved = v && isSaved ? isSaved(v.id) : false;
   const level = v ? levelLabel(v.level) : '';
 
   return (
@@ -62,7 +62,7 @@ export function PlayerModal({
                   alignItems: 'center', gap: 6, opacity: pressed ? 0.6 : 1,
                 })}>
                 <Text allowFontScaling={false} style={{ color: '#FFFFFF', fontSize: 28, lineHeight: 30, fontWeight: '500' }}>‹</Text>
-                <Text maxFontSizeMultiplier={MAXF} style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '800' }}>{cat}</Text>
+                <Text maxFontSizeMultiplier={MAXF} style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '800' }}>{backLabel || cat}</Text>
               </Pressable>
             </View>
           </View>
@@ -75,7 +75,7 @@ export function PlayerModal({
                 videoId={videoIdOf(v)}
                 start={startAt || 0}
                 url={v.url}
-                onEnded={() => onMarkWatched(v.id)}
+                onEnded={() => onMarkWatched?.(v.id)}
               />
             </View>
 
@@ -90,7 +90,9 @@ export function PlayerModal({
 
               {!!v.note && (
                 <View style={{ marginTop: 16, borderRadius: 16, backgroundColor: C.greenSoft, padding: PAD }}>
-                  <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 13, fontWeight: '800', color: C.green }}>운영진 메모</Text>
+                  <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 13, fontWeight: '800', color: C.green }}>
+                    {v.coachName ? `${v.coachName} 코치의 메모` : '메모'}
+                  </Text>
                   <Text maxFontSizeMultiplier={MAXF} style={{ marginTop: 4, fontSize: 16, fontWeight: '700', color: C.text, lineHeight: 23 }}>{v.note}</Text>
                   {noteStart != null && (
                     <Pressable onPress={() => player.current?.seekTo(noteStart)} accessibilityRole="button"
@@ -106,27 +108,34 @@ export function PlayerModal({
               )}
 
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
-                <ActionBtn label={watched ? '✓ 봤어요' : '봤어요'} on={watched} a11y="봤어요" onPress={() => onToggleWatched(v.id)} />
-                <ActionBtn label={saved ? '🔖 저장됨' : '🔖 저장'} on={saved} a11y="저장" onPress={() => onToggleSaved(v.id)} />
+                {!!onToggleWatched && (
+                  <ActionBtn label={watched ? '✓ 봤어요' : '봤어요'} on={watched} a11y="봤어요" onPress={() => onToggleWatched(v.id)} />
+                )}
+                {!!onToggleSaved && (
+                  <ActionBtn label={saved ? '🔖 저장됨' : '🔖 저장'} on={saved} a11y="저장" onPress={() => onToggleSaved(v.id)} />
+                )}
                 <ActionBtn label="↗ 유튜브" a11y="유튜브에서 열기" onPress={() => Linking.openURL(v.url).catch(() => {})} />
               </View>
 
-              {!!next && (
+              {!!next && !!onOpenVideo && (
                 <View style={{ marginTop: 24 }}>
                   <View style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center' }}>
                     <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 16, fontWeight: '800', color: C.text }}>{cat} 다음 영상</Text>
-                    {others > 1 && (
+                    {others > 1 && !!onOpenCategory && (
                       <Pressable onPress={() => onOpenCategory(cat)} accessibilityRole="button"
                         style={({ pressed }) => ({ marginLeft: 'auto', minHeight: 48, justifyContent: 'center', paddingLeft: 12, opacity: pressed ? 0.6 : 1 })}>
                         <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 15, fontWeight: '800', color: C.green }}>{others - 1}개 더 ›</Text>
                       </Pressable>
                     )}
                   </View>
-                  <VideoRow v={next} watched={isWatched(next.id)} showCategory={false} onPress={() => onOpenVideo(next)} />
+                  <VideoRow v={next} watched={isWatched ? isWatched(next.id) : false} showCategory={false} onPress={() => onOpenVideo(next)} />
                 </View>
               )}
 
-              <CoachLine card count={coachCount} onPress={onGoCoach} />
+              {!!onGoCoach && (
+                <CoachLine card count={coachCount} coachName={v.coachName}
+                  onPress={() => onGoCoach(v.coachId || null)} />
+              )}
             </View>
           </ScrollView>
         </View>

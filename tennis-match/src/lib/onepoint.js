@@ -13,8 +13,6 @@ import { TIP_CATEGORIES } from './constants.js';
 
 export const CATEGORIES = TIP_CATEGORIES;
 
-/** 영상이 이보다 적으면 선반 대신 줄 목록 — 선반이 짧으면 휑하다 */
-export const COMPACT_MAX = 5;
 export const NEWEST_COUNT = 6;
 export const SHELF_MAX = 10;
 export const RECENT_MAX = 5;
@@ -102,15 +100,19 @@ export function categoryCounts(videos) {
 /**
  * 첫 화면을 어떻게 그릴지.
  *   empty    영상 0개
- *   compact  1~5개 — 줄 목록 하나
- *   shelves  6개 이상 — 새로 올라온 영상 / 저장한 영상 / 영역별 선반
+ *   shelves  1개 이상 — 새로 올라온 영상 / 저장한 영상 / 영역별 선반
+ *
+ * 예전 명세는 5개 이하면 줄 목록으로 바꿨는데, 실제로 영상이 적은 첫
+ * 단계에서 시안과 전혀 다른 화면이 나와 버렸다(앱 주인이 "시안과 너무
+ * 다르다"). 개수와 상관없이 늘 같은 선반 화면을 쓴다.
+ *
+ * 「새로 올라온 영상」은 영상이 있는 영역이 두 개 이상일 때만 둔다.
+ * 영역이 하나뿐이면 그 영역 선반과 똑같은 줄이 두 번 나온다.
  */
 export function buildShelves(videos, savedIds = new Set()) {
   const all = videos || [];
   if (all.length === 0) return { mode: 'empty' };
-  if (all.length <= COMPACT_MAX) return { mode: 'compact', list: [...all].sort(byPinnedThenNew) };
 
-  const newest = [...all].sort(byNew).slice(0, NEWEST_COUNT);
   const saved = all.filter((v) => savedIds.has(v.id)).sort(byPinnedThenNew);
   const byCategory = CATEGORIES
     .map((c) => {
@@ -118,7 +120,39 @@ export function buildShelves(videos, savedIds = new Set()) {
       return { category: c, count: items.length, items: items.slice(0, SHELF_MAX) };
     })
     .filter((s) => s.count > 0);
+  const newest = byCategory.length >= 2 ? [...all].sort(byNew).slice(0, NEWEST_COUNT) : [];
   return { mode: 'shelves', newest, saved, byCategory };
+}
+
+/**
+ * 이 영상을 고치거나 지울 수 있나.
+ * 앱 운영자는 전부, 승인된 코치는 자기가 올린 것만(규칙과 같다).
+ * 「추천」 표시는 앱 운영자만.
+ */
+export function canManage(v, { me, isAppAdmin, isCoach }) {
+  if (!v || !me) return false;
+  if (isAppAdmin) return true;
+  return !!isCoach && v.createdBy === me;
+}
+export const canPin = ({ isAppAdmin }) => !!isAppAdmin;
+export const canUpload = ({ isAppAdmin, isCoach }) => !!isAppAdmin || !!isCoach;
+
+/**
+ * 예전 자리(클럽별 tips)에서 옮길 영상.
+ * 이미 같은 영상이 앱 전체에 있으면 옮기지 않고 지우기만 한다.
+ * @returns {{ copy: [...], drop: [...] }}
+ */
+export function legacyMoves(legacy, current) {
+  const have = new Set((current || []).map(videoIdOf).filter(Boolean));
+  const copy = [];
+  const drop = [];
+  (legacy || []).forEach((t) => {
+    const id = videoIdOf(t);
+    if (!id || have.has(id)) { drop.push(t); return; }
+    have.add(id);
+    copy.push(t);
+  });
+  return { copy, drop };
 }
 
 /* 띄어쓰기·대소문자 무시 — "스플릿 스텝" = "스플릿스텝" */
@@ -246,5 +280,5 @@ export default {
   CATEGORIES, LEVELS, levelLabel, parseYouTubeId, thumbUrl, videoIdOf, oembedUrl,
   parseStartAt, formatClock, formatStart, catOf, ms, byPinnedThenNew, inCategory,
   categoryCounts, buildShelves, norm, searchVideos, highlightParts, addRecent,
-  suggestionsFor, nextInCategory, checkDraft, tipDoc, a11yLabel,
+  suggestionsFor, nextInCategory, checkDraft, tipDoc, a11yLabel, canManage, canPin, canUpload, legacyMoves,
 };
