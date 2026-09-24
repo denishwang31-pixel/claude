@@ -47,7 +47,7 @@ import { COACH_STATUS } from '../../lib/coach';
 import { getJSON, setJSON } from '../../lib/deviceStore';
 import {
   buildShelves, searchVideos, categoryCounts, inCategory, catOf, addRecent, suggestionsFor,
-  canManage, canPin, canUpload, legacyMoves, tipDoc, videoIdOf, CATEGORIES,
+  canManage, canPin, canUpload, legacyMoves, tipDoc, videoIdOf, CATEGORIES, CATEGORY_ICON,
 } from '../../lib/onepoint';
 import {
   PAD, VideoShelf, VideoRow, VideoCard, ShelfHeader, SearchField, CategoryChips, CoachLine,
@@ -318,15 +318,16 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
         {/* 영역별로 보기 — 새로 올라온 영상 바로 위(앱 주인 요청). 태블릿은 왼쪽 목록이 같은 일을 한다. */}
         {!wide && <CategoryGrid counts={counts} onPick={openCategory} />}
         {home.newest.length > 0 && (
-          <VideoShelf title="새로 올라온 영상" items={home.newest} cardWidth={cardBig}
+          <VideoShelf band tone="new" icon="sparkles-outline" title="새로 올라온 영상" items={home.newest} cardWidth={cardBig}
             isWatched={isWatched} onOpen={open} onLongPress={lp} />
         )}
         {home.saved.length > 0 && (
-          <VideoShelf title="저장한 영상" count={home.saved.length} items={home.saved} cardWidth={cardSmall}
+          <VideoShelf band icon="bookmark-outline" title="저장한 영상" count={home.saved.length} items={home.saved} cardWidth={cardSmall}
             isWatched={isWatched} onOpen={open} onLongPress={lp} />
         )}
         {home.byCategory.map((s) => (
-          <VideoShelf key={s.category} title={s.category} count={s.count} items={s.items}
+          <VideoShelf band icon={CATEGORY_ICON[s.category] || CATEGORY_ICON.기타}
+            key={s.category} title={s.category} count={s.count} items={s.items}
             cardWidth={home.newest.length > 0 ? cardSmall : cardBig}
             showCategory={false} isWatched={isWatched} onOpen={open} onLongPress={lp}
             onAll={() => openCategory(s.category)}

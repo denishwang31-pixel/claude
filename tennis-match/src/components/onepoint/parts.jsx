@@ -166,13 +166,27 @@ export function VideoRow({ v, watched, q = '', showCategory = true, onPress, onL
 }
 
 /* ---------------- 제목 줄 (선반·목록 머리) ---------------- */
-export function ShelfHeader({ title, count, onAll }) {
+export function ShelfHeader({ title, count, onAll, icon, tone }) {
+  const hot = tone === 'new';
   return (
     <View style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', paddingHorizontal: PAD }}>
-      <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 19, fontWeight: '800', color: C.text, letterSpacing: -0.3 }}>{title}</Text>
-      {count != null && (
-        <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 15, fontWeight: '700', color: C.sub, marginLeft: 8 }}>{count}개</Text>
+      {!!icon && (
+        /* 영역 그림 배지 — 선반이 어디서 끝나고 시작하는지 한눈에 보이게(앱 주인 요청) */
+        <View style={{
+          width: 32, height: 32, borderRadius: 10, marginRight: 10, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: hot ? C.green : C.greenSoft,
+        }}>
+          <Icon name={icon} size={17} color={hot ? '#fff' : C.green} />
+        </View>
       )}
+      <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 19, fontWeight: '800', color: C.text, letterSpacing: -0.3 }}>{title}</Text>
+      {count != null && (icon ? (
+        <View style={{ marginLeft: 8, paddingHorizontal: 8, height: 22, borderRadius: 11, justifyContent: 'center', backgroundColor: C.fill }}>
+          <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 12, fontWeight: '800', color: C.sub }}>{count}개</Text>
+        </View>
+      ) : (
+        <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 15, fontWeight: '700', color: C.sub, marginLeft: 8 }}>{count}개</Text>
+      ))}
       {!!onAll && (
         <Pressable onPress={onAll} accessibilityRole="button" accessibilityLabel={`${title} 전체 보기`}
           style={({ pressed }) => ({
@@ -187,13 +201,23 @@ export function ShelfHeader({ title, count, onAll }) {
 }
 
 /* ---------------- 선반 (제목 줄 + 가로 목록) ---------------- */
-/* 다음 카드가 반쯤 걸쳐 보여야 "옆으로 넘길 수 있다"는 걸 안다. 스냅은 쓰지 않는다. */
+/* 다음 카드가 반쯤 걸쳐 보여야 "옆으로 넘길 수 있다"는 걸 안다. 스냅은 쓰지 않는다.
+
+   band: 선반마다 흰 띠를 깔고 위아래 선을 긋는다. 배경(오프화이트) 위에 선반이
+   그냥 이어지면 "새로 올라온 영상"과 "포핸드"가 어디서 갈리는지 안 보였다
+   (앱 주인: "구분이 잘 안 보인다"). tone 'new' 는 맨 위 선반 — 연한 초록 띠. */
 export function VideoShelf({
   title, count, onAll, items, cardWidth, isWatched, onOpen, onLongPress, showCategory = true, onLayout,
+  icon, tone, band = false,
 }) {
+  const hot = tone === 'new';
   return (
-    <View onLayout={onLayout} style={{ marginTop: 12 }}>
-      <ShelfHeader title={title} count={count} onAll={onAll} />
+    <View onLayout={onLayout} style={band ? {
+      marginTop: 12, paddingTop: 6, paddingBottom: 14,
+      backgroundColor: hot ? C.greenSoft : C.surface,
+      borderTopWidth: 1, borderBottomWidth: 1, borderColor: hot ? '#CDEFE1' : C.border,
+    } : { marginTop: 12 }}>
+      <ShelfHeader title={title} count={count} onAll={onAll} icon={icon} tone={tone} />
       <FlatList
         horizontal
         data={items}
