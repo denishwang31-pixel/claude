@@ -37,6 +37,7 @@ const { inviteMessage, responseMessage } = require('./clubMatch');
 const { scorePushPlan, scorePushText } = require('./scoreReport');
 const { onRequest } = require('firebase-functions/v2/https');
 const rsvpLinkLib = require('./rsvpLink');
+const mergeLib = require('./mergeMember');
 const { planAutoSend, unpaidMembers, summaryForManager } = require('./dunning');
 const {
   billingScopes, membersInScope, feeDocKey, notifyRule,
@@ -120,6 +121,10 @@ exports.onMeetingUpdated = onDocumentUpdated({ ...REGION, document: 'clubs/{club
   const after = event.data?.after.data();
   if (!before || !after) return;
   const { clubId, meetingId } = event.params;
+
+  /* 오프라인 회원을 합치면서 다시 쓴 것 — 사람이 바꾼 게 아니다. 알림을 보내면
+     "○○님이 참석으로 바꿨습니다"가 무더기로 간다. */
+  if (mergeLib.isMergeWrite(before, after)) return;
 
   // 우천/기타 취소
   if (!before.canceled && after.canceled) {
@@ -811,6 +816,7 @@ exports.onMatchesRecorded = onDocumentUpdated(
       (m.matches || []).forEach((x) => { if (x && x.score && x.id) ids.add(x.id); });
       return ids.size;
     };
+    if (mergeLib.isMergeWrite(event.data.before.data(), event.data.after.data())) return;
     const delta = scored(event.data.after.data()) - scored(event.data.before.data());
     if (delta <= 0) return;
     await db.collection('stats').doc('service')
@@ -885,3 +891,94 @@ exports.rsvpLink = onRequest({ ...REGION, cors: false, maxInstances: 5 }, async 
     return fail(500, 'server', '잠시 후 다시 해 주세요.');
   }
 });
+
+/* ================= 오프라인 회원 → 앱 가입 회원 합치기 =================
+   회장·총무가 [합치기]를 누르면 clubs/{c}/memberJobs 에 일감이 생기고,
+   여기서 클럽 안의 모든 기록에서 오프라인 아이디를 새 uid 로 바꿔 쓴다.
+
+   왜 서버에서 하나
+     회비 명단은 회장·총무만, 구력은 한 번 적으면 잠기는 등 칸마다 규칙이
+     다르다. 앱에서 하나하나 고치면 한 군데서 막혀 반만 합쳐진 채로 남는다.
+     서버는 규칙을 거치지 않으므로 한 번에 끝까지 간다. 누가 부를 수
+     있는지는 규칙(memberJobs 만들기 = 회장·총무)과 아래 확인이 막는다.
+   판단은 mergeMember.js — 여기는 읽고 쓰기만. */
+async function runMerge(clubRef, offlineId, uid) {
+  const [offSnap, onSnap] = await Promise.all([
+    clubRef.collection('members').doc(offlineId).get(),
+    clubRef.collection('members').doc(uid).get(),
+  ]);
+  const check = mergeLib.checkMerge({
+    offlineId, uid,
+    offline: offSnap.exists ? offSnap.data() : null,
+    online: onSnap.exists ? onSnap.data() : null,
+  });
+  if (!check.ok) return { status: 'failed', reason: check.code, detail: check.message };
+
+  const mark = { from: offlineId, to: uid, at: new Date().toISOString() };
+  let writer = db.batch();
+  let pending = 0;
+  let docs = 0;
+  const flush = async (force) => {
+    if (pending && (force || pending >= 400)) { await writer.commit(); writer = db.batch(); pending = 0; }
+  };
+  const rewrite = async (ref, data, extra = {}) => {
+    const r = mergeLib.renameDeep(data, offlineId, uid);
+    if (!r.changed) return;
+    writer.set(ref, { ...r.value, ...extra });
+    pending += 1; docs += 1;
+    await flush(false);
+  };
+
+  for (const name of mergeLib.CLUB_COLLECTIONS) {
+    const snap = await clubRef.collection(name).get();
+    for (const d of snap.docs) {
+      /* 이 두 문서는 아이디가 곧 문서 이름이라 아래에서 따로 옮긴다 */
+      if ((name === 'members' || name === 'memberFees') && (d.id === offlineId || d.id === uid)) continue;
+      await rewrite(d.ref, d.data(), name === 'meetings' ? { [mergeLib.MERGE_MARK]: mark } : {});
+    }
+  }
+  const clubSnap = await clubRef.get();
+  if (clubSnap.exists) await rewrite(clubRef, clubSnap.data());
+  for (const field of ['hostClubId', 'guestClubId']) {
+    const snap = await db.collection('clubMatches').where(field, '==', clubRef.id).get();
+    for (const d of snap.docs) await rewrite(d.ref, d.data());
+  }
+
+  /* 회원 문서 — 비어 있는 칸만 채우고 오프라인 문서는 지운다 */
+  const offData = mergeLib.renameDeep(offSnap.data(), offlineId, uid).value;
+  const onData = mergeLib.renameDeep(onSnap.data(), offlineId, uid).value;
+  writer.set(onSnap.ref, { ...onData, ...mergeLib.memberPatch(onData, offData, offlineId), mergedAt: new Date() });
+  writer.delete(offSnap.ref);
+  pending += 2;
+
+  /* 개인 납부 내역 — 합치고 옛 것은 지운다(겹치면 앱 계정 쪽을 남긴다) */
+  const [feeOff, feeOn] = await Promise.all([
+    clubRef.collection('memberFees').doc(offlineId).get(),
+    clubRef.collection('memberFees').doc(uid).get(),
+  ]);
+  if (feeOff.exists) {
+    const a = mergeLib.renameDeep(feeOff.data(), offlineId, uid).value;
+    const b = feeOn.exists ? mergeLib.renameDeep(feeOn.data(), offlineId, uid).value : {};
+    writer.set(feeOn.ref, mergeLib.mergeKeep(b, a));
+    writer.delete(feeOff.ref);
+    pending += 2;
+  }
+  await flush(true);
+  return { status: 'done', docs, detail: `기록 ${docs}건을 옮겼습니다.` };
+}
+
+exports.onMemberJobCreated = onDocumentCreated(
+  { ...REGION, document: 'clubs/{clubId}/memberJobs/{jobId}', timeoutSeconds: 300 },
+  async (event) => {
+    const job = event.data?.data();
+    if (!job || job.type !== 'mergeOffline') return;
+    const clubRef = db.collection('clubs').doc(event.params.clubId);
+    try {
+      const result = await runMerge(clubRef, job.offlineId, job.uid);
+      await event.data.ref.update({ ...result, doneAt: new Date() });
+    } catch (e) {
+      logger.error('mergeOffline failed', event.params.clubId, e);
+      await event.data.ref.update({ status: 'failed', reason: 'exception', detail: String((e && e.message) || e) }).catch(() => {});
+    }
+  },
+);

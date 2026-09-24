@@ -391,6 +391,17 @@ export const subGear = (cb) =>
   onSnapshot(collection(db, 'gear'), (s) =>
     cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
 
+/* 용품 추천 이유 — gearPicks/{상품_사람}. 누가 쓸 수 있는지는 규칙과 gearView.js 가 정한다 */
+export const subGearPicks = (cb) =>
+  onSnapshot(collection(db, 'gearPicks'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => cb([]));
+export const saveGearPick = (id, data, isNew) =>
+  setDoc(doc(db, 'gearPicks', id), {
+    ...data,
+    ...(isNew ? { createdAt: serverTimestamp() } : {}),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+export const deleteGearPick = (id) => deleteDoc(doc(db, 'gearPicks', id));
+
 export const addGear = (data) => addDoc(collection(db, 'gear'), { ...data, createdAt: serverTimestamp() });
 export const updateGear = (id, patch) => updateDoc(doc(db, 'gear', id), patch);
 export const deleteGear = (id) => deleteDoc(doc(db, 'gear', id));
@@ -450,6 +461,14 @@ export const setOnepointState = (uid, id, kind, on) =>
 export const subTips = (clubId, cb) =>
   onSnapshot(C(clubId, 'tips'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => cb([]));
 export const deleteTip = (clubId, id) => deleteDoc(D(clubId, 'tips', id));
+
+/* ---- 오프라인 회원 → 앱 가입 회원 합치기 — 서버 함수(onMemberJobCreated)가 한다 ---- */
+export const requestMemberMerge = (clubId, offlineId, uid, by) =>
+  addDoc(C(clubId, 'memberJobs'), {
+    type: 'mergeOffline', offlineId, uid, by, status: 'queued', createdAt: serverTimestamp(),
+  });
+export const subMemberJob = (clubId, jobId, cb) =>
+  onSnapshot(D(clubId, 'memberJobs', jobId), (d) => cb(d.exists() ? d.data() : null), () => cb(null));
 
 /* ============================================================
    참가투표 — 일정 RSVP 와 별개. 회식 날짜, 대회 참가 의사처럼

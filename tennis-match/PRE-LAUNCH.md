@@ -70,9 +70,10 @@
       못 받으므로, 이 값은 함부로 건드리지 않는다.
 
 - [ ] **스토어 스크린샷 · 소개문구** — 미착수.
-      아이콘·스플래시 이미지 파일은 `assets/` 에 있고 app.json 이 가리키고
-      있다(icon / adaptive-icon / splash / notification-icon). 다만 만든 지
-      오래됐으니 출시 전에 한 번은 실제로 띄워 보고 판단한다.
+      아이콘·스플래시는 Claude Design 시안의 공 심볼로 바꿨다(진한 원 + 흰 공).
+      원본은 `scripts/build-icons.mjs` 안의 SVG 하나 — 고칠 때는 그 파일을 고치고
+      다시 돌린다(`assets/brand/src/mark.svg` 도 같이 나온다).
+      ⚠️ 런처 아이콘·스플래시는 **새 빌드(APK)** 부터 바뀐다. OTA 로는 안 바뀐다.
       스크린샷과 소개문구는 아직 아무것도 없다 — 이게 없으면 등록이 안 된다.
 
 - [ ] **버전 체계** — `app.json` 이 `0.1.0` / `versionCode: 1` 그대로다.

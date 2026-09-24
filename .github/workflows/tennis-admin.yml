@@ -1,0 +1,71 @@
+# 테니스매치 — 앱 관리자 지정
+#
+# 이메일을 넣고 [Run workflow] 를 누르면 그 계정을 앱 관리자로 만든다.
+# 앱 관리자는 원포인트 영상 올리기, 용품 등록, 코치 승인 등을 한다.
+#
+# ⚠️ 새 계정(아이디·비밀번호)을 만들어 주는 게 아니다. 평소 로그인하는
+#    본인 계정을 관리자로 지정한다. 그 이메일로 앱에 한 번은 로그인해
+#    있어야 한다. 비밀번호를 채팅·로그에 남기지 않기 위해서다.
+# ⚠️ 이 파일은 기본 브랜치와 작업 브랜치에 똑같이 둔다(버튼은 기본 브랜치 것을 쓴다).
+name: 테니스매치 앱 관리자
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: '무엇을 할까'
+        type: choice
+        options: [grant, list, revoke]
+        default: grant
+      target:
+        description: '이메일 (예: 평소 로그인하는 구글 이메일). list 는 비워 두세요'
+        type: string
+        default: ''
+      ref:
+        description: '스크립트를 가져올 브랜치'
+        type: string
+        default: 'claude/tennis-app-roadmap-review-oxol8b'
+
+permissions:
+  contents: read
+
+jobs:
+  admin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tennis-match
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 서버 라이브러리 설치
+        run: npm ci --prefix functions
+
+      # ⚠️ printf 로 쓴다 — echo 로 쓰면 JSON 따옴표가 셸에서 깨진다(배포 workflow 와 같은 이유)
+      - name: 인증 준비
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT 시크릿이 비어 있습니다."
+            exit 1
+          fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+
+      # 이메일은 로그에 가려서 남긴다(스크립트가 de***@gmail.com 으로 찍는다).
+      # ⚠️ 입력값을 run 줄에 직접 끼우지 않는다 — env 로 넘겨야 셸 해석을 피한다.
+      - name: 실행
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+          GOOGLE_CLOUD_PROJECT: tennis-match-52b31
+          ADMIN_ACTION: ${{ inputs.action }}
+          ADMIN_TARGET: ${{ inputs.target }}
+        run: |
+          if [ -n "$ADMIN_TARGET" ]; then echo "::add-mask::$ADMIN_TARGET"; fi
+          node scripts/app-admin.cjs

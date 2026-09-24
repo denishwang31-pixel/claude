@@ -270,6 +270,22 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      /* 오프라인 회원 → 앱 가입 회원 합치기 일감. 실제 합치기는 서버 함수가 한다
+         (functions/index.js onMemberJobCreated). 회비 기록까지 옮기므로 회장·총무만. */
+      match /memberJobs/{jobId} {
+        allow read: if isClubAdmin(clubId);
+        allow create: if canSeeFees(clubId)
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.type == 'mergeOffline'
+          && request.resource.data.offlineId is string
+          && request.resource.data.offlineId.matches('local:[A-Za-z0-9_-]+')
+          && request.resource.data.uid is string
+          && !request.resource.data.uid.matches('local:.*')
+          && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.resource.data.offlineId))
+          && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.resource.data.uid));
+        allow update, delete: if false;
+      }
+
       /* 게시판: 작성 멤버. 회원 수정은 댓글 추가(comments)만. 삭제는 총무 또는 작성자(FIX-03 S-3) */
       match /posts/{postId} {
         /* ⚠️ 공지는 운영진만. 화면에서 회원에게 '공지' 말머리를 안
@@ -554,6 +570,48 @@ service cloud.firestore {
               && request.resource.data.get('pinned', false) == resource.data.get('pinned', false)));
       allow delete: if isAppAdmin() || (isApprovedCoach() && resource.data.createdBy == request.auth.uid);
     }
+    /* 용품 추천 이유 — 문서 이름 = 상품아이디_사람uid (한 사람이 한 상품에 하나).
+       쓸 수 있는 사람(src/lib/gearView.js pickEligibility 와 같다):
+         coach  승인된 코치 — 이름은 코치 프로필 이름 그대로
+         player 운영진이 인증한 NTRP 4.0 이상 + 구력 5년 이상인 회원 —
+                NTRP·구력·이름을 그 클럽 회원 문서에서 그대로 옮겨 적어야 한다
+                (스스로 높게 적어 넣지 못하게). 셀프 평가 NTRP 는 인정하지 않는다.
+         editor 앱 운영자
+       구력은 규칙이 날짜를 다루기 어려워 연도 차이로 센다. */
+    match /gearPicks/{pickId} {
+      function pd() { return request.resource.data; }
+      function pickBaseOk() {
+        return pd().keys().hasOnly(['gearId', 'uid', 'kind', 'name', 'text', 'ntrp', 'startedAt', 'clubId', 'createdAt', 'updatedAt'])
+          && pd().uid == request.auth.uid
+          && pickId == pd().gearId + '_' + request.auth.uid
+          && pd().text is string && pd().text.size() > 0 && pd().text.size() <= 120
+          && exists(/databases/$(database)/documents/gear/$(pd().gearId));
+      }
+      function coachPickOk() {
+        return pd().kind == 'coach' && isApprovedCoach()
+          && pd().name == get(/databases/$(database)/documents/coaches/$(request.auth.uid)).data.get('name', '');
+      }
+      /* ⚠️ 종류부터 거른다 — 코치·운영자 추천에는 clubId 가 없어서, 회원 문서를
+            먼저 읽으면 규칙이 오류로 거절해 버린다(|| 뒤에서도 오류는 전체를 막는다). */
+      function playerPickOk() {
+        return pd().kind == 'player' && pd().get('clubId', '') is string && pd().get('clubId', '') != ''
+          && isClubMember(pd().clubId)
+          && playerMemberOk(get(/databases/$(database)/documents/clubs/$(pd().clubId)/members/$(request.auth.uid)).data);
+      }
+      function playerMemberOk(m) {
+        return m.get('ntrpCertified', 0) >= 4.0
+          && pd().ntrp == m.get('ntrpCertified', 0)
+          && pd().name == m.get('name', '')
+          && pd().startedAt == m.get('startedAt', '')
+          && pd().startedAt.matches('[0-9]{4}-.*')
+          && int(pd().startedAt.split('-')[0]) <= request.time.year() - 5;
+      }
+      function editorPickOk() { return pd().kind == 'editor' && isAppAdmin(); }
+      allow read: if signedIn();
+      allow create, update: if signedIn() && pickBaseOk() && (editorPickOk() || coachPickOk() || playerPickOk());
+      allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isAppAdmin());
+    }
+
     /* 원포인트 「봤어요」·「저장」 — 본인만 읽고 쓴다. 남이 무엇을 봤는지는
        앱 운영자도 볼 수 없다(보여 줄 이유가 없다). */
     match /onepointStates/{uid} {

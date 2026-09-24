@@ -8,17 +8,27 @@
    구력 확인제도
      테니스 시작 년월은 한 번 저장되면 본인도 못 바꾼다. 대회 참가 자격이
      "구력 3년 이하부"처럼 걸려 있어서, 대회 앞두고 슬쩍 늦추는 걸 막기 위한
-     장치다. 잘못 넣었으면 회장만 풀어 줄 수 있다. */
-import React, { useState } from 'react';
+     장치다. 잘못 넣었으면 회장만 풀어 줄 수 있다.
+
+   오프라인 회원 합치기
+     앱이 없어 오프라인으로 등록해 두었던 사람이 나중에 앱에 가입하면
+     한 사람이 둘로 갈라진다. 회장·총무가 [합치기]를 누르면 서버가 참석·
+     대진·점수·회비 기록을 앱 계정으로 옮기고 오프라인 회원을 지운다
+     (functions/mergeMember.js). 이름이 같은 짝은 위에서 먼저 권한다 —
+     동명이인이 있을 수 있어 자동으로 합치지는 않는다. */
+import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
 import {
   updateMemberProfile, addMember, deleteMember, setMemberRole, setMemberRoles,
-  assignVenuesBulk,
+  assignVenuesBulk, requestMemberMerge, subMemberJob,
 } from '../lib/firestore';
+import {
+  isOfflineId, onlineMembers, mergeCandidates, mergeConfirmText,
+} from '../lib/mergeMember';
 import {
   ROLES, ASSIGNABLE_ROLES, ROLE_DESC, GRADES, BUSU, BUSU_KEYS,
   roleTone, isStaffRole, normalizeRole, assignableRolesFor, canAssignRole,
-  memberRoles, rolesPayload, rolesLabel, isStaffMember, primaryRole,
+  memberRoles, rolesPayload, rolesLabel, isStaffMember, primaryRole, canSeeFees,
 } from '../lib/constants';
 import { effectiveNtrp, careerText } from '../lib/ntrp';
 import { Label, MonthField } from './pickers';
@@ -39,6 +49,38 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
     name: '', gender: 'M', busu: '', grade: '', region: '', startedAt: '',
     role: ROLES.MEMBER, venueIds: [],
   });
+
+  /* ---- 오프라인 회원 합치기 (회장·총무) ---- */
+  const canMerge = canSeeFees(myRole);
+  const [mergeJob, setMergeJob] = useState(null);   // { id, label, status, detail, slow }
+  useEffect(() => {
+    if (!mergeJob?.id) return undefined;
+    const slow = setTimeout(() => setMergeJob((j) => (j && j.status === 'queued' ? { ...j, slow: true } : j)), 20000);
+    const off = subMemberJob(clubId, mergeJob.id, (job) => {
+      if (!job) return;
+      setMergeJob((j) => (j ? { ...j, status: job.status, detail: job.detail || '' } : j));
+    });
+    return () => { clearTimeout(slow); off(); };
+  }, [clubId, mergeJob?.id]);
+
+  const askMerge = (off, on) => {
+    Alert.alert('같은 사람으로 합칠까요?', mergeConfirmText(off, on), [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '합치기', style: 'destructive',
+        onPress: async () => {
+          try {
+            const ref = await requestMemberMerge(clubId, off.id, on.id, me);
+            setMergeJob({ id: ref.id, label: `${off.name} → ${on.name}`, status: 'queued' });
+            setOpenId(null);
+          } catch (e) {
+            flash('합치기를 시작하지 못했습니다');
+          }
+        },
+      },
+    ]);
+  };
+  const candidates = canMerge ? mergeCandidates(members) : [];
 
   const openEdit = (m) => {
     if (openId === m.id) return setOpenId(null);
@@ -273,6 +315,49 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
         </>
       )}
 
+      {!!mergeJob && (
+        <Card style={{ marginTop: 12, backgroundColor: mergeJob.status === 'failed' ? C.dangerBg : C.greenSoft }}>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: C.text }}>
+            {mergeJob.status === 'done' ? '합쳤습니다' : mergeJob.status === 'failed' ? '합치지 못했습니다' : '합치는 중…'} · {mergeJob.label}
+          </Text>
+          {!!mergeJob.detail && <Text style={{ fontSize: 13, color: C.sub, marginTop: 4 }}>{mergeJob.detail}</Text>}
+          {mergeJob.status === 'queued' && mergeJob.slow && (
+            <Text style={{ fontSize: 13, color: C.warn, marginTop: 4, lineHeight: 19 }}>
+              시간이 오래 걸립니다. 서버 기능(Cloud Functions)이 아직 배포되지 않았을 수 있어요 —
+              배포 후 자동으로 처리됩니다.
+            </Text>
+          )}
+          {mergeJob.status !== 'queued' && (
+            <Pressable onPress={() => setMergeJob(null)} style={{ marginTop: 8, minHeight: 40, justifyContent: 'center' }}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: C.green }}>닫기</Text>
+            </Pressable>
+          )}
+        </Card>
+      )}
+
+      {candidates.length > 0 && (
+        <>
+          <SectionTitle hint="이름이 같은 오프라인 회원 ↔ 앱 회원">앱에 가입한 오프라인 회원</SectionTitle>
+          <Card>
+            <Text style={{ fontSize: 13, color: C.sub, lineHeight: 19, marginBottom: 6 }}>
+              같은 사람이면 합쳐 주세요. 예전 참석·대진·점수·회비 기록이 앱 계정으로 옮겨집니다.
+            </Text>
+            {candidates.map(({ offline: off, online: on }, i) => (
+              <View key={off.id} style={{
+                flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48,
+                borderTopWidth: i ? 1 : 0, borderTopColor: C.border,
+              }}>
+                <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: C.text }}>
+                  {off.name} <Text style={{ color: C.sub, fontWeight: '600' }}>(오프라인)</Text>
+                  {'  →  '}{on.name} <Text style={{ color: C.sub, fontWeight: '600' }}>(앱)</Text>
+                </Text>
+                <Btn small onPress={() => askMerge(off, on)}>합치기</Btn>
+              </View>
+            ))}
+          </Card>
+        </>
+      )}
+
       <SectionTitle>전체 회원 ({members.length}명)</SectionTitle>
       <Card>
         {members.map((m, i) => {
@@ -407,6 +492,21 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                           <Chip key={st} tone={d.status === st ? 'green' : 'outline'} onPress={() => setD({ ...d, status: st })}>{st}</Chip>
                         ))}
                       </View>
+                    </View>
+                  )}
+
+                  {/* 오프라인 회원 → 앱에 가입한 회원과 합치기 (회장·총무) */}
+                  {canMerge && isOfflineId(m.id) && (
+                    <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: '#e7e5e4', paddingTop: 10 }}>
+                      <Label hint="이 사람이 앱에 가입했다면">앱 회원과 합치기</Label>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {onlineMembers(members).map((on) => (
+                          <Chip key={on.id} tone="outline" onPress={() => askMerge(m, on)}>{on.name}</Chip>
+                        ))}
+                      </View>
+                      <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 6, lineHeight: 15 }}>
+                        고른 앱 회원에게 이 사람의 참석·대진·점수·회비 기록을 옮기고, 오프라인 회원은 지웁니다.
+                      </Text>
                     </View>
                   )}
 

@@ -23,7 +23,7 @@
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#022c22"
+        "backgroundColor": "#1C2318"
       }
     },
     "ios": {
@@ -54,7 +54,7 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#022c22"
+      "backgroundColor": "#F6F4EC"
     },
     "extra": {
       "router": {

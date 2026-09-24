@@ -1223,6 +1223,78 @@ console.log('\n[원포인트 — 앱 운영자·승인 코치만 올린다]');
     assertFails(setDoc(doc(anon, 'onepointStates', 'x'), { watched: {} })));
 }
 
+console.log('\n[용품 추천 이유 — 코치·고수·앱 운영자만]');
+{
+  await seed(async (db) => {
+    await setDoc(doc(db, 'gear', 'g1'), { title: '블레이드', category: '라켓' });
+    await setDoc(doc(db, 'coaches', 'coach4'), { name: '한코치', status: 'approved' });
+    await setDoc(doc(db, 'clubs', CLUB, 'members', 'pro1'), { name: '고수', ntrpCertified: 4.5, startedAt: '2012-05-01', role: '회원' });
+    await setDoc(doc(db, 'clubs', CLUB, 'members', 'self1'), { name: '셀프', ntrpSelf: 5.0, startedAt: '2010-01-01', role: '회원' });
+    await setDoc(doc(db, 'clubs', CLUB, 'members', 'new1'), { name: '신입고수', ntrpCertified: 4.5, startedAt: `${new Date().getFullYear() - 2}-01-01`, role: '회원' });
+  });
+  const cCoach = env.authenticatedContext('coach4').firestore();
+  const cPro = env.authenticatedContext('pro1').firestore();
+  const cSelf = env.authenticatedContext('self1').firestore();
+  const cNew = env.authenticatedContext('new1').firestore();
+  const P = (uid, o) => ({ gearId: 'g1', uid, text: '컨트롤이 좋아요', ...o });
+  await T('승인된 코치의 추천 허용',
+    assertSucceeds(setDoc(doc(cCoach, 'gearPicks', 'g1_coach4'), P('coach4', { kind: 'coach', name: '한코치' }))));
+  await T('코치가 다른 이름으로 추천 거부',
+    assertFails(setDoc(doc(cCoach, 'gearPicks', 'g1_coach4'), P('coach4', { kind: 'coach', name: '국대코치' }))));
+  await T('인증 NTRP 4.5·구력 5년 이상 회원의 추천 허용',
+    assertSucceeds(setDoc(doc(cPro, 'gearPicks', 'g1_pro1'), P('pro1', { kind: 'player', name: '고수', ntrp: 4.5, startedAt: '2012-05-01', clubId: CLUB }))));
+  await T('NTRP 를 부풀려 적은 추천 거부',
+    assertFails(setDoc(doc(cPro, 'gearPicks', 'g1_pro1'), P('pro1', { kind: 'player', name: '고수', ntrp: 5.0, startedAt: '2012-05-01', clubId: CLUB }))));
+  await T('셀프 평가 NTRP 만 있는 회원 거부',
+    assertFails(setDoc(doc(cSelf, 'gearPicks', 'g1_self1'), P('self1', { kind: 'player', name: '셀프', ntrp: 5.0, startedAt: '2010-01-01', clubId: CLUB }))));
+  await T('구력 5년 미만 회원 거부',
+    assertFails(setDoc(doc(cNew, 'gearPicks', 'g1_new1'), P('new1', { kind: 'player', name: '신입고수', ntrp: 4.5, startedAt: `${new Date().getFullYear() - 2}-01-01`, clubId: CLUB }))));
+  await T('일반 회원이 코치라고 적은 추천 거부',
+    assertFails(setDoc(doc(mem1, 'gearPicks', 'g1_mem1'), P('mem1', { kind: 'coach', name: '김코치' }))));
+  await T('앱 운영자의 추천 허용',
+    assertSucceeds(setDoc(doc(appAdmin, 'gearPicks', 'g1_appboss'), P('appboss', { kind: 'editor', name: '테니스매치' }))));
+  await T('남의 이름(문서 아이디)으로 추천 거부',
+    assertFails(setDoc(doc(cCoach, 'gearPicks', 'g1_pro1'), P('coach4', { kind: 'coach', name: '한코치' }))));
+  await T('없는 상품에 추천 거부',
+    assertFails(setDoc(doc(cCoach, 'gearPicks', 'zz_coach4'), P('coach4', { gearId: 'zz', kind: 'coach', name: '한코치' }))));
+  await T('너무 긴 추천 거부',
+    assertFails(setDoc(doc(cCoach, 'gearPicks', 'g1_coach4'), P('coach4', { kind: 'coach', name: '한코치', text: 'x'.repeat(121) }))));
+  await T('로그인한 회원의 추천 읽기 허용',
+    assertSucceeds(getDoc(doc(mem1, 'gearPicks', 'g1_coach4'))));
+  await T('남의 추천 삭제 거부',
+    assertFails(deleteDoc(doc(cPro, 'gearPicks', 'g1_coach4'))));
+  await T('앱 운영자의 추천 삭제 허용',
+    assertSucceeds(deleteDoc(doc(appAdmin, 'gearPicks', 'g1_pro1'))));
+  await T('본인 추천 삭제 허용',
+    assertSucceeds(deleteDoc(doc(cCoach, 'gearPicks', 'g1_coach4'))));
+}
+
+console.log('\n[오프라인 회원 합치기 일감 — 회장·총무만]');
+{
+  await seed((db) => setDoc(doc(db, 'clubs', CLUB, 'members', 'local:zz1'), { name: '오프라인김', gender: 'M' }));
+  const J = (o = {}) => ({ type: 'mergeOffline', offlineId: 'local:zz1', uid: 'mem1', by: 'owner1', status: 'queued', ...o });
+  await T('총무의 합치기 요청 허용',
+    assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'memberJobs', 'j1'), J())));
+  await T('일반 회원의 합치기 요청 거부',
+    assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'memberJobs', 'j2'), J({ by: 'mem1' }))));
+  await T('남의 이름(by)으로 요청 거부',
+    assertFails(setDoc(doc(owner, 'clubs', CLUB, 'memberJobs', 'j3'), J({ by: 'mem1' }))));
+  await T('오프라인 아이디가 아닌 회원을 합치기 거부',
+    assertFails(setDoc(doc(owner, 'clubs', CLUB, 'memberJobs', 'j4'), J({ offlineId: 'mem2' }))));
+  await T('오프라인끼리 합치기 거부',
+    assertFails(setDoc(doc(owner, 'clubs', CLUB, 'memberJobs', 'j5'), J({ uid: 'local:zz1' }))));
+  await T('클럽에 없는 회원과 합치기 거부',
+    assertFails(setDoc(doc(owner, 'clubs', CLUB, 'memberJobs', 'j6'), J({ uid: 'nobody' }))));
+  await T('다른 종류의 일감 거부',
+    assertFails(setDoc(doc(owner, 'clubs', CLUB, 'memberJobs', 'j7'), J({ type: 'deleteAll' }))));
+  await T('요청 결과를 앱에서 고치기 거부',
+    assertFails(updateDoc(doc(owner, 'clubs', CLUB, 'memberJobs', 'j1'), { status: 'done' })));
+  await T('운영진의 결과 읽기 허용',
+    assertSucceeds(getDoc(doc(owner, 'clubs', CLUB, 'memberJobs', 'j1'))));
+  await T('클럽 밖 사용자의 결과 읽기 거부',
+    assertFails(getDoc(doc(outsider, 'clubs', CLUB, 'memberJobs', 'j1'))));
+}
+
 await env.cleanup();
 if (failures.length) {
   console.log('\n실패한 검사 —');

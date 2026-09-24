@@ -13,8 +13,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../app/_layout';
 import { useBottomPad } from '../hooks/useBottomPad';
 import { useBackHandler } from '../hooks/useBackHandler';
-import { subGear, addGear, deleteGear } from '../lib/firestore';
-import { GEAR_CATEGORIES } from '../lib/constants';
+import {
+  subGear, addGear, deleteGear, subGearPicks, saveGearPick, deleteGearPick, subMyCoach,
+} from '../lib/firestore';
+import { GEAR_CATEGORIES, GEAR_CATEGORY_HINT } from '../lib/constants';
+import { useClub } from '../hooks/useClub';
+import { GearSheet } from './GearSheet';
 import { openAd, sellerName, AD_SLOTS } from '../lib/ads';
 import {
   GEAR_MODE, GEAR_MODE_LABEL, gearMode, margin, marginText, gearReady, isSoldOut,
@@ -31,6 +35,7 @@ import {
 } from './onepoint/parts';
 import {
   gearShelves, searchGear, gearCounts, inGearCategory, gearCatOf, priceText,
+  groupPicks, pickEligibility, pickLabel, pickDoc, pickId,
 } from '../lib/gearView';
 import { C, S, R } from '../lib/theme';
 
@@ -71,8 +76,19 @@ function GearImage({ g, size, radius = 12 }) {
   );
 }
 
-/** 선반 카드 — 그림 → 이름 → 가격 → 판매처 */
-function GearCard({ g, width, isAppAdmin, onPress, onLongPress }) {
+/** 누가 추천했는지 한 줄 — "한코치 코치 추천 외 2" */
+function PickLine({ picks }) {
+  if (!picks || !picks.length) return null;
+  const first = pickLabel(picks[0]).split(' · ')[0];
+  return (
+    <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ marginTop: 2, fontSize: 13, fontWeight: '800', color: C.green }}>
+      💬 {picks[0].kind === 'editor' ? first : `${first} 추천`}{picks.length > 1 ? ` 외 ${picks.length - 1}` : ''}
+    </Text>
+  );
+}
+
+/** 선반 카드 — 그림 → 이름 → 가격 → 추천 → 판매처 */
+function GearCard({ g, width, isAppAdmin, picks, onPress, onLongPress }) {
   const seller = sellerName(g.link);
   return (
     <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={400}
@@ -83,8 +99,9 @@ function GearCard({ g, width, isAppAdmin, onPress, onLongPress }) {
       {!!priceText(g.price) && (
         <Text maxFontSizeMultiplier={1.3} style={{ marginTop: 2, fontSize: 16, fontWeight: '800', color: C.text }}>{priceText(g.price)}</Text>
       )}
+      <PickLine picks={picks} />
       <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ marginTop: 2, fontSize: 13, fontWeight: '600', color: C.sub }}>
-        {seller ? `${seller}에서 보기 ›` : '구매처 보기 ›'}
+        {seller || '구매처 링크'}
       </Text>
       {isAppAdmin && gearMode(g) === GEAR_MODE.DROPSHIP && (
         <Text maxFontSizeMultiplier={1.3} style={{ marginTop: 2, fontSize: 12, fontWeight: '700', color: margin(g).profit > 0 ? C.green : C.danger }}>{marginText(g)}</Text>
@@ -94,7 +111,7 @@ function GearCard({ g, width, isAppAdmin, onPress, onLongPress }) {
 }
 
 /** 줄 — 검색 결과·카테고리 모아보기 */
-function GearRow({ g, showCategory = true, isAppAdmin, onPress, onLongPress }) {
+function GearRow({ g, showCategory = true, isAppAdmin, picks, onPress, onLongPress }) {
   const seller = sellerName(g.link);
   return (
     <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={400} accessibilityRole="link"
@@ -114,6 +131,7 @@ function GearRow({ g, showCategory = true, isAppAdmin, onPress, onLongPress }) {
             {seller ? `${seller} ›` : '구매처 ›'}
           </Text>
         </View>
+        <PickLine picks={picks} />
         {isAppAdmin && gearMode(g) === GEAR_MODE.DROPSHIP && (
           <Text maxFontSizeMultiplier={1.3} style={{ marginTop: 2, fontSize: 12, fontWeight: '700', color: margin(g).profit > 0 ? C.green : C.danger }}>{marginText(g)}</Text>
         )}
@@ -131,7 +149,8 @@ function GearRow({ g, showCategory = true, isAppAdmin, onPress, onLongPress }) {
  *                      바로 건너갈 수 있어야 한다.
  */
 export function GearScreen({ title = '용품', renderTop = null } = {}) {
-  const { isAppAdmin } = useApp();
+  const { clubId, me, viewMode, isAppAdmin } = useApp();
+  const { members } = useClub(clubId, me, { viewMode });
   const insets = useSafeAreaInsets();
   const bottomPad = useBottomPad();
   const sheetUi = useOptionSheet();
@@ -150,13 +169,22 @@ export function GearScreen({ title = '용품', renderTop = null } = {}) {
   const inputRef = useRef(null);
   const scrollRef = useRef(null);
 
+  const [picks, setPicks] = useState([]);
+  const [myCoach, setMyCoach] = useState(null);
+  const [detailId, setDetailId] = useState(null);
   useEffect(() => subGear((l) => { setItems(l); setLoaded(true); }), []);
+  useEffect(() => subGearPicks(setPicks), []);
+  useEffect(() => subMyCoach(me, setMyCoach), [me]);
+  const picksOf = useMemo(() => groupPicks(picks), [picks]);
+  const myMember = (members || []).find((m) => m.id === me) || null;
+  const eligibility = { ...pickEligibility({ isAppAdmin, coach: myCoach, member: myMember, clubId }), isAppAdmin };
   useEffect(() => { const t = setTimeout(() => setDq(q), 150); return () => clearTimeout(t); }, [q]);
 
   const exitSearch = () => { setQ(''); setDq(''); setResultCat('all'); setSearching(false); Keyboard.dismiss(); };
 
   useBackHandler(() => {
     if (adding) { setAdding(false); return true; }
+    if (detailId) { setDetailId(null); return true; }
     if (searching) { exitSearch(); return true; }
     if (cat) { setCat(null); return true; }
     return false;
@@ -171,7 +199,22 @@ export function GearScreen({ title = '용품', renderTop = null } = {}) {
 
   const check = useMemo(() => gearReady(f), [f]);
 
-  const open = (g) => openAd(g, AD_SLOTS.GEAR);
+  /* 누르면 상세(추천 이유)부터. 판매처로는 상세의 [○○에서 보기]로 간다. */
+  const open = (g) => setDetailId(g.id);
+  const detail = detailId ? items.find((g) => g.id === detailId) || null : null;
+  const savePick = async (text, isNew) => {
+    try {
+      await saveGearPick(pickId(detail.id, me), pickDoc(detail.id, me, eligibility, text), isNew);
+      flash('추천을 남겼어요');
+    } catch (e) {
+      flash('저장하지 못했어요');
+      throw e;
+    }
+  };
+  const removePick = (p) => Alert.alert('이 추천을 지울까요?', '', [
+    { text: '그대로 두기', style: 'cancel' },
+    { text: '지우기', style: 'destructive', onPress: () => deleteGearPick(p.id).then(() => flash('지웠어요')).catch(() => flash('지우지 못했어요')) },
+  ]);
   /* 길게 누르기 — 앱 관리자만. 예전 ✕ 단추는 스크롤하다 잘못 눌리기 쉬웠다. */
   const manage = isAppAdmin ? (g) => sheetUi.open({
     title: g.title,
@@ -241,6 +284,11 @@ export function GearScreen({ title = '용품', renderTop = null } = {}) {
                 <Chip key={c} tone={f.category === c ? 'green' : 'outline'} onPress={() => setF({ ...f, category: c })}>{c}</Chip>
               ))}
             </View>
+            {!!GEAR_CATEGORY_HINT[f.category] && (
+              <Text style={{ fontSize: 12, color: C.sub, marginTop: -6, marginBottom: S.md }}>
+                {f.category}: {GEAR_CATEGORY_HINT[f.category]}
+              </Text>
+            )}
 
             <Label hint="링크형은 판매처로 보내기만 합니다 · 드랍십은 앱에서 주문을 받습니다">
               판매 방식
@@ -398,7 +446,7 @@ export function GearScreen({ title = '용품', renderTop = null } = {}) {
         )}
         <View style={{ paddingHorizontal: PAD, marginTop: 4 }}>
           {shown.map((g) => (
-            <GearRow key={g.id} g={g} isAppAdmin={isAppAdmin} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />
+            <GearRow key={g.id} g={g} isAppAdmin={isAppAdmin} picks={picksOf[g.id]} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />
           ))}
         </View>
       </View>
@@ -409,12 +457,12 @@ export function GearScreen({ title = '용품', renderTop = null } = {}) {
     <>
       {home.newest.length > 0 && (
         <Shelf title="새로 들어온 용품" data={home.newest}
-          renderItem={(g) => <GearCard g={g} width={168} isAppAdmin={isAppAdmin} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />} />
+          renderItem={(g) => <GearCard g={g} width={168} isAppAdmin={isAppAdmin} picks={picksOf[g.id]} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />} />
       )}
       {home.byCategory.map((s) => (
         <Shelf key={s.category} title={s.category} count={s.count} data={s.items}
           onAll={() => { setCat(s.category); scrollRef.current?.scrollTo({ y: 0, animated: false }); }}
-          renderItem={(g) => <GearCard g={g} width={home.newest.length > 0 ? 144 : 168} isAppAdmin={isAppAdmin} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />} />
+          renderItem={(g) => <GearCard g={g} width={home.newest.length > 0 ? 144 : 168} isAppAdmin={isAppAdmin} picks={picksOf[g.id]} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />} />
       ))}
       {disclaimer}
     </>
@@ -434,7 +482,7 @@ export function GearScreen({ title = '용품', renderTop = null } = {}) {
         </View>
         <View style={{ paddingHorizontal: PAD, marginTop: 8 }}>
           {list.map((g) => (
-            <GearRow key={g.id} g={g} showCategory={false} isAppAdmin={isAppAdmin} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />
+            <GearRow key={g.id} g={g} showCategory={false} isAppAdmin={isAppAdmin} picks={picksOf[g.id]} onPress={() => open(g)} onLongPress={manage ? () => manage(g) : undefined} />
           ))}
         </View>
         {disclaimer}
@@ -491,6 +539,16 @@ export function GearScreen({ title = '용품', renderTop = null } = {}) {
         {body}
       </ScrollView>
       {sheetUi.node}
+      <GearSheet
+        gear={detail}
+        picks={detail ? picksOf[detail.id] || [] : []}
+        me={me}
+        eligibility={eligibility}
+        onBuy={() => detail && openAd(detail, AD_SLOTS.GEAR)}
+        onSavePick={savePick}
+        onDeletePick={removePick}
+        onClose={() => setDetailId(null)}
+      />
       {toastNode}
     </View>
   );
