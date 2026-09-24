@@ -76,8 +76,9 @@ async function main() {
 main().catch((e) => {
   const msg = String((e && e.message) || e);
   if (/PERMISSION_DENIED|insufficient permission|does not have/i.test(msg)) {
-    console.log('::error::서비스 계정에 권한이 없습니다. Firebase 콘솔 › 프로젝트 설정 › 서비스 계정에서 쓰는 계정에 '
-      + '「Firebase Authentication 관리자」와 「Cloud Datastore 사용자」 역할이 필요합니다.');
+    /* 콘솔 메뉴 이름은 언어·개편에 따라 달라서 적지 않는다 — 바뀌지 않는 역할 아이디로 알린다 */
+    console.log('::error::서비스 계정에 권한이 없습니다. 이 서비스 계정(FIREBASE_SERVICE_ACCOUNT)에 '
+      + 'IAM 역할 roles/firebaseauth.admin 과 roles/datastore.user 가 필요합니다.');
   } else {
     console.log(`::error::${msg}`);
   }
