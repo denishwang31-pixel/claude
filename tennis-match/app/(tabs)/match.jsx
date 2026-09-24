@@ -31,6 +31,7 @@ import {
   SCORE_STATE, scoreStateOf, reportOf, finalOf, sideOf, otherSide,
   canReport, canConfirm, hasConfirmer, validScore, makeReport, makeFinal,
   awaitingMyConfirm, progressOf, staleScoreIds, isAdminOverride, lineupOf, sameLineup,
+  myRoundSlots, pickMyRound,
 } from '../../src/lib/scoreReport';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
@@ -776,19 +777,25 @@ export default function Match() {
     },
   });
 
-  /* 내 다음 경기 — 아직 점수가 안 들어간 것 중 가장 이른 것.
+  /* 내 경기 — 그날 경기 수만큼 [1경기]~[N경기] 버튼을 두고, 내가 뛰는 경기만
+     누를 수 있다(안 뛰는 경기는 흐리게). 누르면 아래에 타임·코트·시간·멤버·
+     결과 입력이 나온다. 처음엔 아직 점수가 없는 가장 이른 내 경기가 골라져 있다.
      ⚠️ 코트에서 서서 보는 화면이다. 회원이 알고 싶은 것은 대진표 전체가
-        아니라 "내가 몇 타임 몇 번 코트에서 누구랑 하는가" 하나다.
-        전체 표에서 자기 이름을 찾는 일을 없앤다. */
-  const myNext = useMemo(() => {
-    if (!me) return null;
-    return [...(matches || [])]
-      .filter((m) => [...(m.teamA || []), ...(m.teamB || [])].includes(me))
-      .filter((m) => !m.score)
-      .sort((a, b) => (a.round || 0) - (b.round || 0))[0] || null;
-  }, [matches, me]);
-
+        아니라 "내가 몇 타임 몇 번 코트에서 누구랑 하는가"다.
+     예전엔 다음 경기 하나만 보여서 하루 3~4경기 중 뒤 경기를 미리 볼 수 없었다. */
+  const mySlots = useMemo(
+    () => myRoundSlots(matches, me, meeting?.rounds),
+    [matches, me, meeting?.rounds],
+  );
+  const [myRoundPick, setMyRoundPick] = useState(null);
+  useEffect(() => { setMyRoundPick(null); }, [meeting?.id]);
+  const myRound = mySlots.some((x) => x.round === myRoundPick && x.match)
+    ? myRoundPick
+    : pickMyRound(mySlots, (m) => scoreStateOf(meeting, m.id) === SCORE_STATE.FINAL || !!m.score);
+  const myNext = (mySlots.find((x) => x.round === myRound) || {}).match || null;
   const myNextTime = myNext ? times.find((t) => t.round === myNext.round) : null;
+  const myNextState = myNext ? scoreStateOf(meeting, myNext.id) : null;
+  const myNextFinal = myNextState === SCORE_STATE.FINAL ? finalOf(meeting, myNext.id) : null;
 
   const Header = (
     <View>
@@ -798,8 +805,32 @@ export default function Match() {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <HeroPill>내 경기</HeroPill>
             <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600' }}>
-              {myNext.type || '복식'}
+              {mySlots.length}경기 중 {mySlots.filter((x) => x.match).length}경기 출전 · {myNext.type || '복식'}
             </Text>
+          </View>
+
+          {/* 1경기 ~ N경기 — 안 뛰는 경기는 흐리게, 누를 수 없다 */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: S.md }}>
+            {mySlots.map(({ round, match }) => {
+              const on = round === myRound;
+              const done = !!match && (scoreStateOf(meeting, match.id) === SCORE_STATE.FINAL || !!match.score);
+              return (
+                <Pressable key={round} disabled={!match} onPress={() => setMyRoundPick(round)}
+                  accessibilityRole="button" accessibilityState={{ selected: on, disabled: !match }}
+                  accessibilityLabel={`${round}경기${match ? (done ? ', 결과 입력됨' : '') : ', 내 경기 아님'}`}
+                  style={({ pressed }) => ({
+                    minWidth: 58, minHeight: 40, paddingHorizontal: 10, borderRadius: R.md,
+                    alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: on ? C.lime : match ? 'rgba(255,255,255,0.12)' : 'transparent',
+                    borderWidth: 1, borderColor: on ? C.lime : match ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.12)',
+                    opacity: !match ? 0.35 : pressed ? 0.8 : 1,
+                  })}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: on ? C.ink : '#fff' }}>
+                    {round}경기{done ? ' ✓' : ''}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
 
           <Text style={{
@@ -838,12 +869,23 @@ export default function Match() {
             </View>
           </View>
 
+          {/* 결과 — 확정됐으면 점수, 상대 확인을 기다리면 그 표시 */}
+          {!!myNextFinal && (
+            <Text style={{ color: C.lime, fontSize: 15, fontWeight: '800', marginTop: S.md, textAlign: 'center' }}>
+              결과 {myNextFinal.a} : {myNextFinal.b} · 확정
+            </Text>
+          )}
+          {myNextState === SCORE_STATE.PENDING && (
+            <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '700', marginTop: S.md, textAlign: 'center' }}>
+              점수를 넣었습니다 · 상대 팀 확인 대기 중
+            </Text>
+          )}
           {canReport(myNext, meeting, me, isAdmin) && (
             <View style={{ marginTop: S.md }}>
               <Btn full tone="lime"
                 icon={<Icon name="edit" size={17} color={C.green} />}
                 onPress={() => openScore(myNext)}>
-                결과 입력
+                {myNextFinal ? '결과 고치기' : myNextState === SCORE_STATE.PENDING ? '넣은 점수 고치기' : '결과 입력'}
               </Btn>
             </View>
           )}

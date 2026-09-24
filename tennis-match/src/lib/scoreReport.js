@@ -194,6 +194,34 @@ export function myUnreported(matches, meeting, uid) {
     sideOf(m, uid) && scoreStateOf(meeting, m.id) === SCORE_STATE.NONE);
 }
 
+/**
+ * 대진 화면 위 「내 경기」의 1~N경기 버튼.
+ * 그날의 경기(타임) 수만큼 칸을 만들고, 내가 뛰는 경기만 match 를 채운다.
+ * 예전엔 "아직 점수 없는 가장 이른 경기" 하나만 보여서, 하루 3~4경기를
+ * 뛰는 사람이 뒤 경기를 미리 볼 수 없었다(앱 주인이 겪음).
+ * @returns [{ round, match | null }]
+ */
+export function myRoundSlots(matches, uid, rounds = 0) {
+  const all = matches || [];
+  const maxR = Math.max(Number(rounds) || 0, 0, ...all.map((m) => Number(m.round) || 0));
+  return Array.from({ length: maxR }, (_, i) => {
+    const r = i + 1;
+    const match = uid
+      ? all.find((m) => Number(m.round) === r && sideOf(m, uid)) || null
+      : null;
+    return { round: r, match };
+  });
+}
+
+/** 처음 열었을 때 고를 경기 — 아직 점수가 없는 내 경기 중 가장 이른 것,
+    다 끝났으면 내 마지막 경기. 내 경기가 없으면 null. */
+export function pickMyRound(slots, isDone = (m) => !!m.score) {
+  const mine = (slots || []).filter((s) => s.match);
+  if (!mine.length) return null;
+  const next = mine.find((s) => !isDone(s.match));
+  return (next || mine[mine.length - 1]).round;
+}
+
 /** 한 모임의 진행 상황 — "18경기 중 12확정 · 3대기" */
 export function progressOf(matches, meeting) {
   let final = 0;

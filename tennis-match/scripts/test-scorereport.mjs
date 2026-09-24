@@ -10,7 +10,7 @@ import {
   validScore, canReport, canConfirm, canEditFinal, hasConfirmer,
   makeReport, makeFinal, awaitingMyConfirm, myUnreported, progressOf,
   lineupOf, sameLineup, staleScoreIds, scoreOp, isAdminOverride,
-  scorePushPlan, scorePushText,
+  scorePushPlan, scorePushText, myRoundSlots, pickMyRound,
 } from '../src/lib/scoreReport.js';
 import { createRequire } from 'node:module';
 
@@ -310,6 +310,28 @@ section('앱과 서버가 같은 답을 내는가');
   });
   ['local:x', 'g:손님', 'u1', '', null].forEach((id) =>
     eq(`오프라인 판정 ${String(id)}`, srv.isOfflineId(id), isOfflineId(id)));
+}
+
+console.log('\n[내 경기 1~N경기 버튼]');
+{
+  const ms = [
+    { id: 'r1c1', round: 1, teamA: ['me', 'a'], teamB: ['b', 'c'], score: { a: 6, b: 3 } },
+    { id: 'r1c2', round: 1, teamA: ['d', 'e'], teamB: ['f', 'g'] },
+    { id: 'r2c1', round: 2, teamA: ['d', 'e'], teamB: ['f', 'g'] },
+    { id: 'r3c2', round: 3, teamA: ['b', 'c'], teamB: ['a', 'me'] },
+    { id: 'r4c1', round: 4, teamA: ['me', 'b'], teamB: ['c', 'd'] },
+  ];
+  const slots = myRoundSlots(ms, 'me', 4);
+  eq('칸 수 = 그날 경기 수', slots.length, 4);
+  eq('내가 뛰는 경기만 채움', slots.map((x) => (x.match ? x.match.id : null)), ['r1c1', null, 'r3c2', 'r4c1']);
+  eq('B팀으로 뛰어도 내 경기', slots[2].match.id, 'r3c2');
+  eq('처음엔 아직 점수 없는 가장 이른 내 경기', pickMyRound(slots), 3);
+  const done = ms.map((m) => ({ ...m, score: { a: 6, b: 4 } }));
+  eq('다 끝났으면 마지막 내 경기', pickMyRound(myRoundSlots(done, 'me', 4)), 4);
+  eq('내 경기 없으면 null', pickMyRound(myRoundSlots(ms, 'nobody', 4)), null);
+  eq('모임 경기 수보다 대진이 길면 대진 기준', myRoundSlots([{ id: 'x', round: 6, teamA: ['me'], teamB: ['z'] }], 'me', 4).length, 6);
+  eq('로그인 없음이면 전부 빈 칸', myRoundSlots(ms, null, 4).every((x) => !x.match), true);
+  eq('대진 없음', myRoundSlots([], 'me', 0).length, 0);
 }
 
 console.log(`\n점수 보고 테스트: ${pass} 통과 / ${fail} 실패`);
