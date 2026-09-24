@@ -1,0 +1,88 @@
+# 테니스매치 — 서울 공공 테니스장 목록 갱신
+#
+# 서울 열린데이터광장 API 로 서울시 공공서비스예약의 테니스장을 전부 받아
+# tennis-match/src/lib/courtsSeoul.generated.js 를 새로 굽는다. 각 코트에
+# 예약 화면 직행 주소(rsv_svc_id)가 붙는다.
+# 바뀐 게 있으면 작업 브랜치에 커밋하고, OTA 배포만 이어서 돌린다.
+#
+# 필요한 시크릿
+#   SEOUL_OPEN_API_KEY   data.seoul.go.kr 인증키(무료, 즉시 발급)
+#
+# ⚠️ 예약 실행은 기본 브랜치의 이 파일로만 돈다 — 두 브랜치에 똑같이 둔다.
+name: 테니스매치 코트 목록 갱신
+
+on:
+  schedule:
+    # 매월 1일 UTC 18:10 = 한국 03:10 (대회 갱신 02:00 과 겹치지 않게)
+    - cron: '10 18 1 * *'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: '갱신할 브랜치'
+        type: string
+        default: 'claude/tennis-app-roadmap-review-oxol8b'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: tennis-courts
+  cancel-in-progress: false
+
+jobs:
+  courts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BRANCH: ${{ inputs.ref || 'claude/tennis-app-roadmap-review-oxol8b' }}
+    defaults:
+      run:
+        working-directory: tennis-match
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BRANCH }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 서울 테니스장 받기
+        env:
+          SEOUL_OPEN_API_KEY: ${{ secrets.SEOUL_OPEN_API_KEY }}
+        run: |
+          if [ -z "$SEOUL_OPEN_API_KEY" ]; then
+            echo "::error::SEOUL_OPEN_API_KEY 시크릿이 없습니다. data.seoul.go.kr 에서 인증키를 받아 Settings → Secrets and variables → Actions 에 넣어 주세요."
+            exit 1
+          fi
+          echo "SEOUL_OPEN_API_KEY: 있음"
+          node scripts/fetch-courts.mjs
+
+      - name: 검사
+        run: node scripts/test-courts.mjs
+
+      - name: 바뀌었으면 커밋
+        id: commit
+        run: |
+          if git diff --quiet -- src/lib/courtsSeoul.generated.js; then
+            echo "바뀐 것 없음"
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/courtsSeoul.generated.js
+          git commit -m "서울 공공 테니스장 목록 갱신 (열린데이터광장)"
+          git push origin "HEAD:$BRANCH"
+          echo "changed=1" >> "$GITHUB_OUTPUT"
+
+      # 봇이 한 푸시는 배포를 자동으로 깨우지 않는다(GitHub 규칙). 그래서 OTA 만 직접 부른다.
+      - name: 앱 화면(OTA) 배포 부르기
+        if: steps.commit.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run tennis-deploy.yml --ref "$BRANCH" \
+            -f ref="$BRANCH" -f rules=false -f indexes=false -f functions=false \
+            -f hosting=false -f ota=true -f channel=preview

@@ -1,0 +1,13 @@
+{
+  "name": "tennis-match-jobs",
+  "private": true,
+  "type": "module",
+  "description": "밤마다 도는 작업(GitHub Actions). 앱 번들에는 들어가지 않는다.",
+  "scripts": {
+    "sync:tournaments": "node sync-tournaments.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "firebase-admin": "^14.5.0"
+  }
+}

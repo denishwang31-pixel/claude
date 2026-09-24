@@ -42,7 +42,8 @@
           "color": "#064e3b",
           "icon": "./assets/notification-icon.png"
         }
-      ]
+      ],
+      "./plugins/withBrowserQueries"
     ],
     "experiments": {
       "typedRoutes": false

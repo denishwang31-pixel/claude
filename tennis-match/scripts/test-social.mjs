@@ -9,11 +9,12 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import {
   PROVIDERS, PROVIDER_ORDER, PROVIDER_LABEL, PROVIDER_SHORT, PROVIDER_STYLE,
   REQUIREMENTS, SOCIAL_CONFIG,
   configFromExtra, unknownKeys, googleErrorText,
-  GOOGLE_SCOPES, googleRedirectUri,
+  GOOGLE_SCOPES, googleRedirectUri, browserCandidates, isNoBrowserError, KNOWN_BROWSERS,
   providerReady, enabledProviders, missingFor, googleClientMixup,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 } from '../src/lib/social.js';
@@ -360,6 +361,56 @@ failLines.forEach((ln) => {
 const stages = (signInSrc.match(/\[G\d+\]/g) || []);
 ok(stages.length === new Set(stages).size,
   `단계 번호가 겹치지 않는다 (${stages.join(' ')})`);
+
+
+console.log('[구글 로그인 창을 열 브라우저 — 「연결 앱」 선택창 막기]');
+{
+  /* 안드로이드 11+ 에서 흔한 모양: 목록이 비어 온다 → 그래도 크롬·삼성으로 시도 */
+  const empty = browserCandidates({ browserPackages: [], servicePackages: [], preferredBrowserPackage: null, defaultBrowserPackage: null });
+  eq(empty.slice(0, 2), ['com.android.chrome', 'com.sec.android.app.sbrowser'], '목록이 비어도 크롬 → 삼성 인터넷 순으로 시도');
+  eq(browserCandidates(null).slice(0, 2), ['com.android.chrome', 'com.sec.android.app.sbrowser'], 'expo 가 실패해도(null) 후보가 있다');
+  ok(browserCandidates(undefined).length > 0, 'undefined 여도 비지 않는다');
+  /* 사용자가 정한 브라우저가 먼저 */
+  const pref = browserCandidates({ preferredBrowserPackage: 'com.naver.whale', defaultBrowserPackage: 'com.android.chrome', servicePackages: ['com.android.chrome', 'com.naver.whale'] });
+  eq(pref[0], 'com.naver.whale', '선호 브라우저가 맨 앞');
+  eq(pref.filter((p) => p === 'com.android.chrome').length, 1, '같은 이름은 한 번만');
+  /* 'android' 는 선택창 자체 — 넣으면 선택창이 그대로 뜬다 */
+  const withResolver = browserCandidates({ defaultBrowserPackage: 'android', servicePackages: ['org.mozilla.firefox'] });
+  ok(!withResolver.includes('android'), "'android'(선택창)는 후보에서 뺀다");
+  eq(withResolver[0], 'org.mozilla.firefox', '서비스 목록의 브라우저가 앞');
+  /* 서비스 목록 중 아는 브라우저를 먼저 */
+  const svc = browserCandidates({ servicePackages: ['com.example.unknown', 'com.sec.android.app.sbrowser'] });
+  eq(svc[0], 'com.sec.android.app.sbrowser', '서비스 목록 중 아는 브라우저가 먼저');
+  ok(svc.includes('com.example.unknown'), '모르는 서비스도 뒤에 남긴다');
+  ok(!browserCandidates({}).some((p) => /gmail|google\.android\.gm/i.test(p)), '지메일은 절대 후보가 아니다');
+  eq(KNOWN_BROWSERS[0], 'com.android.chrome', '크롬이 기본 후보 1순위');
+
+  ok(isNoBrowserError(new Error('No matching browser activity found')), '"브라우저 없음"은 다음 후보로');
+  ok(isNoBrowserError({ code: 'PREFERRED_PACKAGE_NOT_FOUND' }), '선호 패키지 없음도 다음 후보로');
+  ok(!isNoBrowserError(new Error('network failed')), '다른 실패는 멈춘다');
+  ok(!isNoBrowserError(null), 'null 은 브라우저 없음이 아니다');
+
+  /* 여는 쪽이 후보를 끝까지 돌고, 마지막엔 지정 없이 연다 */
+  const src = readFileSync(resolve(ROOT, 'src/lib/socialSignIn.js'), 'utf8');
+  ok(/browserCandidates\(/.test(src) && /isNoBrowserError\(/.test(src), '로그인은 후보 목록과 "없음" 판정을 쓴다');
+  ok(/\[\.\.\.candidates, undefined\]/.test(src), '후보를 다 써도 못 열면 지정 없이 한 번 더');
+
+  /* 매니페스트 <queries> — 다음 빌드부터 목록이 제대로 온다 */
+  const require = createRequire(import.meta.url);
+  let addQuery = null;
+  try { ({ addQuery } = require('../plugins/withBrowserQueries.js')); } catch (e) { addQuery = null; }
+  ok(typeof addQuery === 'function', '매니페스트 플러그인이 있다');
+  if (addQuery) {
+    const m = addQuery({ manifest: { queries: [{ intent: [{ action: [{ $: { 'android:name': 'android.support.customtabs.action.CustomTabsService' } }] }] }] } });
+    const intents = m.manifest.queries[0].intent;
+    eq(intents.length, 2, '기존 커스텀 탭 항목은 두고 https 보기를 더한다');
+    const again = addQuery(m);
+    eq(again.manifest.queries[0].intent.length, 2, '두 번 돌려도 한 번만 들어간다');
+    ok(addQuery({ manifest: {} }).manifest.queries[0].intent.length === 1, 'queries 가 없어도 만든다');
+  }
+  const appJson = JSON.parse(readFileSync(resolve(ROOT, 'app.json'), 'utf8'));
+  ok(appJson.expo.plugins.includes('./plugins/withBrowserQueries'), 'app.json 에 플러그인이 걸려 있다');
+}
 
 console.log(`\n소셜 로그인 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

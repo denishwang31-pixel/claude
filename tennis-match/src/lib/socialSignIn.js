@@ -30,6 +30,7 @@
    ============================================================ */
 import {
   googleErrorText, googleRedirectUri, googleClientMixup, GOOGLE_SCOPES,
+  browserCandidates, isNoBrowserError,
 } from './social';
 import { LIVE_SOCIAL_CONFIG } from './socialConfig';
 
@@ -94,21 +95,18 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
 
         로그인 주소는 브라우저로 열려야 한다 — 커스텀 탭을 지원하는
         브라우저만 고른다(그래야 로그인 후 앱으로 되돌아온다).
-        사용자가 정한 기본 브라우저를 먼저 쓰고, 없으면 시스템 기본,
-        그것도 없으면 지원하는 것 아무거나.
+        후보 순서는 social.js browserCandidates() 가 정한다(검사 있음).
+        안드로이드 11+ 에선 expo 가 주는 목록이 비어 오기 쉬워서, 예전처럼
+        "목록의 첫 번째"만 믿으면 지정 없이 열려 선택창이 떴다.
 
      ⚠️ 못 고르면 지정 없이 연다 — 예전과 같은 동작이다. 브라우저를
         못 찾았다고 로그인 자체를 막으면 안 된다. */
-  let browserPackage;
+  let candidates = [];
   try {
     const wb = await import('expo-web-browser');
-    const found = await wb.getCustomTabsSupportingBrowsersAsync();
-    browserPackage = found?.preferredBrowserPackage
-      || found?.defaultBrowserPackage
-      || (found?.browserPackages || [])[0]
-      || undefined;
+    candidates = browserCandidates(await wb.getCustomTabsSupportingBrowsersAsync());
   } catch (e) {
-    browserPackage = undefined;
+    candidates = browserCandidates(null);
   }
 
   let result;
@@ -121,10 +119,25 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
       responseType: AuthSession.ResponseType.Code,
       usePKCE: true,
     });
-    result = await request.promptAsync(GOOGLE_DISCOVERY,
-      browserPackage ? { browserPackage } : undefined);
   } catch (e) {
-    return { ok: false, error: `[G4] 구글 로그인 창을 열지 못했습니다. ${googleErrorText(e)}`.trim() };
+    return { ok: false, error: `[G12] 구글 로그인 준비에 실패했습니다. ${googleErrorText(e)}`.trim() };
+  }
+  /* 후보를 하나씩. "그 브라우저가 없다"면 다음으로, 다른 실패는 그대로 멈춘다.
+     끝까지 못 열면 마지막으로 지정 없이 연다(예전 동작 — 선택창이 뜰 수 있다). */
+  let lastErr = null;
+  for (const browserPackage of [...candidates, undefined]) {
+    try {
+      result = await request.promptAsync(GOOGLE_DISCOVERY,
+        browserPackage ? { browserPackage } : undefined);
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      if (!isNoBrowserError(e)) break;
+    }
+  }
+  if (lastErr) {
+    return { ok: false, error: `[G4] 구글 로그인 창을 열지 못했습니다. ${googleErrorText(lastErr)}`.trim() };
   }
 
   if (!result || result.type === 'dismiss' || result.type === 'cancel') {

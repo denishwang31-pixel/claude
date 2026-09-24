@@ -117,15 +117,35 @@ export const regionText = (t) =>
 
 /* ---------------- 고르기 ---------------- */
 
-/** 목록에 남길 것인가 */
-export function visibleOpen(list, { today, region = null, state = null, kw = '' } = {}) {
+/** 지금 신청할 수 있거나 곧 신청을 받는 대회인가 — 목록에 기본으로 남는 것 */
+export const isOpenForSignup = (t, today) => {
+  const st = openState(t, today);
+  return st === OPEN_STATE.SIGNUP || st === OPEN_STATE.SOON;
+};
+
+/**
+ * 목록에 남길 것인가.
+ *
+ * 기본은 **접수 중·접수 예정만**이다. 접수 마감일이 지나면 그날부터
+ * 목록에서 사라진다(앱 주인 요청 — "마감 지난 대회는 안 보이게").
+ * 대회 날짜가 남았어도 신청을 못 하면 이 화면에서 할 일이 없다.
+ *
+ * past: true  → 반대로 마감·진행 중·끝난 대회만(앱 관리자가 정리할 때)
+ * state       → 그 단계만 정확히
+ */
+export function visibleOpen(list, { today, region = null, state = null, past = false, kw = '' } = {}) {
   const q = String(kw || '').trim().toLowerCase();
   return (list || []).filter((t) => {
     if (!t || !t.id) return false;
-    /* 끝난 대회는 기본으로 감춘다. 지난 대회 요강을 찾는 사람보다
-       이번 달에 나갈 대회를 찾는 사람이 훨씬 많다. */
+    /* 관리자가 뺀 자동 수집 대회 — 기본 목록엔 없고 관리자 「마감·지난」에서만 보인다 */
+    if (t.hidden && !past) return false;
     const st = openState(t, today);
-    if (state ? st !== state : st === OPEN_STATE.DONE) return false;
+    if (t.hidden && past) return true;
+    if (state) {
+      if (st !== state) return false;
+    } else if (past ? isOpenForSignup(t, today) : !isOpenForSignup(t, today)) {
+      return false;
+    }
     if (region && t.sido !== region) return false;
     if (q) {
       const hay = `${t.name || ''} ${t.host || ''} ${t.org || ''} ${regionText(t)}`.toLowerCase();
@@ -167,9 +187,10 @@ export const openSidos = (list) =>
  */
 export function nearbyNote(list, { today, monthKey, region = null } = {}) {
   const near = (list || []).filter((t) => {
+    if (t?.hidden) return false;
     if (region && t?.sido !== region) return false;
-    const st = openState(t, today);
-    if (st === OPEN_STATE.DONE || st === OPEN_STATE.CLOSED) return false;
+    /* 목록과 같은 기준 — 마감된 대회를 세면 눌러 봐도 목록에 없다 */
+    if (!isOpenForSignup(t, today)) return false;
     return d(t?.startDate).slice(0, 7) === monthKey;
   });
   if (!near.length) return null;
@@ -205,5 +226,5 @@ export function validateOpen(t) {
 export default {
   OPEN_STATE, OPEN_STATE_LABEL, OPEN_STATE_TONE,
   lastDay, openState, openStatusLine, periodText, regionText,
-  visibleOpen, sortOpen, openSidos, nearbyNote, validateOpen,
+  isOpenForSignup, visibleOpen, sortOpen, openSidos, nearbyNote, validateOpen,
 };

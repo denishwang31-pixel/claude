@@ -121,10 +121,22 @@ console.log('\n[목록 고르기]');
     { id: 'd', name: '마감된대회', sido: '서울', startDate: '2026-09-25', signupTo: '2026-09-01' },
   ];
 
-  eq(visibleOpen(LIST, { today: TODAY }).map((t) => t.id), ['a', 'b', 'd'],
-    '끝난 대회는 기본으로 감춘다 — 지난 요강보다 이번 달 대회를 찾는 사람이 많다');
+  eq(visibleOpen(LIST, { today: TODAY }).map((t) => t.id), ['a', 'b'],
+    '기본은 접수 중·접수 예정만 — 마감일이 지난 대회(d)와 끝난 대회(c)는 안 보인다');
+  eq(visibleOpen(LIST, { today: TODAY, past: true }).map((t) => t.id), ['c', 'd'],
+    '관리자용 「마감·지난 대회」는 그 반대');
+  eq(visibleOpen([{ id: 'x', name: 'x', startDate: '2026-10-10', signupTo: TODAY }], { today: TODAY }).map((t) => t.id), ['x'],
+    '마감일 당일까지는 보인다');
+  eq(visibleOpen([{ id: 'y', name: 'y', startDate: '2026-10-10', signupTo: '2026-09-09' }], { today: '2026-09-10' }), [],
+    '마감 다음 날부터 사라진다');
+  eq(visibleOpen([{ id: 'z', name: 'z', startDate: TODAY }], { today: TODAY }), [],
+    '대회 당일(진행 중)은 접수가 끝난 것이라 안 보인다');
   eq(visibleOpen(LIST, { today: TODAY, state: OPEN_STATE.DONE }).map((t) => t.id), ['c'],
     '지난 대회만 따로 볼 수도 있다');
+  const HID = [{ id: 'h', name: 'h', startDate: '2026-10-10', signupTo: '2026-09-30', hidden: true, source: 'auto' }];
+  eq(visibleOpen(HID, { today: TODAY }), [], '관리자가 뺀(숨긴) 자동 대회는 접수 중이어도 안 보인다');
+  eq(visibleOpen(HID, { today: TODAY, past: true }).map((t) => t.id), ['h'], '관리자 「마감·지난」에선 보인다');
+  eq(nearbyNote(HID, { today: TODAY, monthKey: '2026-10' }), null, '숨긴 대회는 이 달 N건에도 안 센다');
   eq(visibleOpen(LIST, { today: TODAY, region: '부산' }).map((t) => t.id), ['b'], '지역으로');
   eq(visibleOpen(LIST, { today: TODAY, kw: '부산' }).map((t) => t.id), ['b'], '이름으로');
   eq(visibleOpen(LIST, { today: TODAY, kw: '없는말' }), [], '없으면 빈 목록');
@@ -134,8 +146,10 @@ console.log('\n[목록 고르기]');
   /* ⚠️ 날짜순으로만 세우면 "이미 마감된 다음 주 대회"가 "다음 달 접수
      중인 대회"보다 위에 온다. 지금 신청할 수 있는 것이 먼저다. */
   const sorted = sortOpen(visibleOpen(LIST, { today: TODAY }), TODAY);
-  eq(sorted.map((t) => t.id), ['a', 'b', 'd'],
-    '접수 중 → 예정 → 마감 순. 마감된 9/25 대회가 11/1 대회보다 아래다');
+  eq(sorted.map((t) => t.id), ['a', 'b'],
+    '접수 중 → 예정 순');
+  eq(sortOpen(LIST, TODAY).map((t) => t.id), ['a', 'b', 'd', 'c'],
+    '정렬만 하면 접수 중 → 예정 → 마감 → 끝 순. 마감된 9/25 대회가 11/1 대회보다 아래다');
 
   eq(openSidos(LIST), ['부산', '서울'], '지역 칩 목록(가나다순)');
 }

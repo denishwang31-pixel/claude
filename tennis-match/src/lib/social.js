@@ -337,6 +337,61 @@ export function googleRedirectUri(applicationId) {
   return id ? `${id}:/oauthredirect` : '';
 }
 
+/* ---------------- 로그인 창을 열 브라우저 ---------------- */
+/* 지정 없이 열면 안드로이드가 「연결 앱」 선택창을 띄운다. 구글 로그인
+   주소(accounts.google.com)는 지메일·구글 앱도 받겠다고 손을 들기 때문이다.
+   거기서 지메일을 고르면 메일 쓰기 화면이 나오고 로그인이 날아간다
+   — 앱 주인이 실제로 겪었다.
+
+   expo-web-browser 가 알려 주는 목록은 안드로이드 11 부터 비어 오기
+   쉽다(다른 앱 목록을 보려면 매니페스트에 적어야 한다). 그래서
+     1. 알려 준 것(선호 → 기본 → 커스텀 탭 서비스 → 브라우저 목록)
+     2. 그래도 비면 널리 깔린 브라우저 이름
+   순서로 후보를 만들고, 여는 쪽이 하나씩 시도한다. 없는 패키지는
+   "No matching browser activity" 로 바로 실패하니 다음으로 넘어가면 된다.
+   'android' 는 선택창 자체의 패키지라 절대 넣지 않는다. */
+export const KNOWN_BROWSERS = [
+  'com.android.chrome',
+  'com.sec.android.app.sbrowser',
+  'com.chrome.beta',
+  'com.microsoft.emmx',
+  'org.mozilla.firefox',
+  'com.brave.browser',
+  'com.naver.whale',
+];
+
+/**
+ * @param {{preferredBrowserPackage?, defaultBrowserPackage?, servicePackages?, browserPackages?}|null} found
+ * @returns {string[]} 시도할 순서. 비지 않는다.
+ */
+export function browserCandidates(found) {
+  const f = found || {};
+  const services = Array.isArray(f.servicePackages) ? f.servicePackages : [];
+  const browsers = Array.isArray(f.browserPackages) ? f.browserPackages : [];
+  /* 서비스 목록 중 아는 브라우저를 앞으로 — 커스텀 탭을 제대로 지원하는 쪽 */
+  const knownFirst = [
+    ...KNOWN_BROWSERS.filter((p) => services.includes(p)),
+    ...services,
+  ];
+  const raw = [
+    f.preferredBrowserPackage, f.defaultBrowserPackage,
+    ...knownFirst, ...browsers, ...KNOWN_BROWSERS.slice(0, 2),
+  ];
+  const out = [];
+  raw.forEach((p) => {
+    const s = String(p || '').trim();
+    if (!s || s === 'android' || out.includes(s)) return;
+    out.push(s);
+  });
+  return out;
+}
+
+/** 이 오류는 "그 브라우저가 없다" — 다음 후보로 넘어가도 되는 실패 */
+export function isNoBrowserError(e) {
+  const t = `${e?.code || ''} ${e?.message || e || ''}`;
+  return /no matching browser|NoMatchingActivity|ActivityNotFound|PREFERRED_PACKAGE_NOT_FOUND/i.test(t);
+}
+
 /* ---------------- 로그인 결과 읽기 ---------------- */
 /* 창을 띄우는 것은 socialSignIn.js 가 하지만, "받은 것을 어떻게 읽나"는
    판단이라 여기 둔다. 저쪽은 네이티브 모듈을 불러오므로 node 로 도는
@@ -414,6 +469,7 @@ export default {
   REQUIREMENTS, SOCIAL_CONFIG,
   configFromExtra, unknownKeys,
   GOOGLE_SCOPES, googleRedirectUri, googleErrorText,
+  KNOWN_BROWSERS, browserCandidates, isNoBrowserError,
   providerReady, enabledProviders, missingFor, googleClientMixup,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 };

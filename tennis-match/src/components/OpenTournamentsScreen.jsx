@@ -64,7 +64,7 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
       today: today(),
       region,
       kw,
-      state: showDone ? OPEN_STATE.DONE : null,
+      past: showDone && !!isAppAdmin,
     }),
     today(),
   ), [all, region, kw, showDone]);
@@ -108,7 +108,8 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
     };
     try {
       if (editing === 'new') await addOpenTournament(payload, me);
-      else await updateOpenTournament(editing, payload);
+      /* 자동으로 모은 대회를 고치면 잠근다 — 밤마다 도는 갱신이 되돌리지 않게 */
+      else await updateOpenTournament(editing, draft.source === 'auto' ? { ...payload, locked: true } : payload);
       setEditing(null); setDraft(blank());
       return flash(editing === 'new' ? '대회를 등록했습니다' : '수정했습니다');
     } catch (e) {
@@ -122,8 +123,11 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
       text: '삭제',
       style: 'destructive',
       onPress: async () => {
-        await deleteOpenTournament(t.id);
-        flash('삭제했습니다');
+        /* 자동으로 모은 대회는 지워도 다음 날 새벽에 다시 모인다.
+           그래서 지우지 않고 숨긴 채 잠근다(자동 갱신이 건드리지 않는다). */
+        if (t.source === 'auto') await updateOpenTournament(t.id, { hidden: true, locked: true });
+        else await deleteOpenTournament(t.id);
+        flash('목록에서 뺐습니다');
       },
     },
   ]);
@@ -257,23 +261,26 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
         </View>
       )}
 
-      <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
-        <Chip tone={!showDone ? 'green' : 'outline'} onPress={() => setShowDone(false)}>
-          예정·접수 중
-        </Chip>
-        <Chip tone={showDone ? 'green' : 'outline'} onPress={() => setShowDone(true)}>
-          지난 대회
-        </Chip>
-      </View>
+      {/* 마감된 대회는 목록에서 사라진다. 정리할 사람(앱 관리자)만 따로 본다. */}
+      {isAppAdmin && (
+        <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
+          <Chip tone={!showDone ? 'green' : 'outline'} onPress={() => setShowDone(false)}>
+            접수 중·예정
+          </Chip>
+          <Chip tone={showDone ? 'green' : 'outline'} onPress={() => setShowDone(true)}>
+            마감·지난 대회
+          </Chip>
+        </View>
+      )}
 
       <SectionTitle right={
         <Text style={{ fontSize: 11, color: C.faint }}>{list.length}건</Text>
-      }>{showDone ? '지난 대회' : '대회 목록'}</SectionTitle>
+      }>{showDone && isAppAdmin ? '마감·지난 대회' : '접수 중·접수 예정 대회'}</SectionTitle>
 
       {list.length === 0 ? (
         <EmptyState
           icon="🏆"
-          title={showDone ? '지난 대회 기록이 없습니다' : '등록된 대회가 없습니다'}
+          title={showDone && isAppAdmin ? '마감·지난 대회가 없습니다' : '지금 접수 중이거나 곧 접수하는 대회가 없습니다'}
           body={isAppAdmin
             ? '아래 [대회 등록]으로 요강을 옮겨 적으세요.'
             : '대회가 등록되면 여기에 표시됩니다. 지역을 바꿔서 찾아보세요.'}
@@ -299,6 +306,11 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
             </Text>
             {!!t.host && (
               <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>주최 {t.host}</Text>
+            )}
+            {isAppAdmin && t.source === 'auto' && (
+              <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 2 }}>
+                {t.locked ? '자동 수집 · 고친 뒤 잠김(자동 갱신이 덮어쓰지 않음)' : '자동 수집 · 매일 새벽 2시 갱신'}
+              </Text>
             )}
 
             <Text style={{
@@ -343,8 +355,9 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
       })}
 
       <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 12, lineHeight: 16 }}>
-        요강과 일정은 주최 측 사정으로 바뀔 수 있습니다. 신청 전에 링크에서
-        한 번 더 확인해 주세요.
+        접수 마감일이 지난 대회는 목록에서 자동으로 빠집니다. 목록은 매일
+        새벽 2시에 협회·대회 사이트를 보고 갱신합니다. 요강과 일정은 주최 측
+        사정으로 바뀔 수 있으니 신청 전에 링크에서 한 번 더 확인해 주세요.
       </Text>
 
       {isAppAdmin && (

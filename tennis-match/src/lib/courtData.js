@@ -32,6 +32,18 @@ const YEYAK_SEOUL = (name) =>
 const GG_SHARE = (name) =>
   `https://share.gg.go.kr/search?keyword=${encodeURIComponent(name)}`;
 
+/* 경기 시·군 예약 시스템 — 2026-09 웹 검색으로 주소를 확인했다.
+   시·군마다 시스템이 달라 통합 API 가 없다. 확인된 코트 상세는 link,
+   그 시·군 예약 목록은 searchUrl 로 둔다. */
+const BUCHEON = (seq) =>
+  `https://reserv.bucheon.go.kr/site/main/lending/lendingDetail?lending_info_seq=${seq}&inst_cate=01`;
+const SUWON = (seqNo) =>
+  `https://www.suwon.go.kr/web/reserv/faci/sportsview.do?q_guCode=113&seqNo=${seqNo}`;
+const ANYANG_RESERVE = 'https://www.anyang.go.kr/reserve/selectFcltsResveWebList.do?searchCnd=all&key=2048&searchUseAt=Y';
+const GOYANG_RESERVE = 'https://www.goyang.go.kr/resve/manage/BD_selectResveManageList.do?q_resveTopClCode=CL_04&q_resveClCode=CL_04_1';
+const PAJU_TENNIS = 'https://www.pjtennis.or.kr/guide';
+const HANAM_RENTAL = 'https://rental.hanamsport.or.kr/webrental/rental_sport.do';
+
 /** 서울시 공공서비스예약 — 서비스 ID 를 알면 예약 화면으로 직행 */
 export const yeyakUrl = (svcId) =>
   `https://yeyak.seoul.go.kr/web/reservation/selectReservView.do?rsv_svc_id=${svcId}`;
@@ -77,7 +89,7 @@ export const PUBLIC_COURTS = [
   {
     sido: '서울', gungu: '강서구', dong: '가양동', name: '마루공원 테니스장',
     addr: '서울 강서구 양천로 700', surface: SURFACE.HARD, indoor: false, courts: 6,
-    operator: '서울시 공공서비스예약',
+    operator: '서울시 공공서비스예약', link: yeyakUrl('S210205141719898815'),
     link: yeyakUrl('S210205141719898815'),
   },
   {
@@ -93,7 +105,7 @@ export const PUBLIC_COURTS = [
   {
     sido: '서울', gungu: '서초구', dong: '양재동', name: '양재시민의숲 테니스장',
     addr: '서울 서초구 매헌로', surface: SURFACE.HARD, indoor: false, courts: 4,
-    operator: '서초구시설관리공단', searchUrl: YEYAK_SEOUL('양재 테니스장'),
+    operator: '서초구시설관리공단', searchUrl: 'https://www.seocho.go.kr/sports/fmcs/60',
   },
   {
     sido: '서울', gungu: '영등포구', dong: '여의도동', name: '여의도공원 테니스장',
@@ -199,7 +211,7 @@ export const PUBLIC_COURTS = [
   {
     sido: '경기', gungu: '안양시', dong: '동안구 비산동', name: '평촌 테니스장',
     addr: '경기 안양시 동안구', surface: SURFACE.CLAY, indoor: false, courts: 6,
-    operator: '안양도시공사', searchUrl: GG_SHARE('안양 테니스장'),
+    operator: '안양도시공사', searchUrl: ANYANG_RESERVE,
   },
   {
     sido: '경기', gungu: '수원시', dong: '팔달구 인계동', name: '수원종합운동장 테니스장',
@@ -209,17 +221,17 @@ export const PUBLIC_COURTS = [
   {
     sido: '경기', gungu: '고양시', dong: '일산동구 장항동', name: '고양종합운동장 테니스장',
     addr: '경기 고양시 일산서구 중앙로', surface: SURFACE.HARD, indoor: false, courts: 8,
-    operator: '고양도시관리공사', searchUrl: GG_SHARE('고양 테니스장'),
+    operator: '고양도시관리공사', searchUrl: GOYANG_RESERVE,
   },
   {
     sido: '경기', gungu: '부천시', dong: '원미구 춘의동', name: '부천종합운동장 테니스장',
     addr: '경기 부천시 원미구 삼작로', surface: SURFACE.HARD, indoor: false, courts: 6,
-    operator: '부천도시공사', searchUrl: GG_SHARE('부천 테니스장'),
+    operator: '부천도시공사', link: BUCHEON(115),
   },
   {
     sido: '경기', gungu: '안산시', dong: '단원구 초지동', name: '안산와스타디움 테니스장',
     addr: '경기 안산시 단원구 화랑로', surface: SURFACE.HARD, indoor: false, courts: 6,
-    operator: '안산도시공사', searchUrl: GG_SHARE('안산 테니스장'),
+    operator: '안산도시공사', searchUrl: 'https://reserve.ansan.go.kr/',
   },
   {
     sido: '경기', gungu: '의정부시', dong: '의정부동', name: '의정부종합운동장 테니스장',
@@ -229,7 +241,7 @@ export const PUBLIC_COURTS = [
   {
     sido: '경기', gungu: '남양주시', dong: '다산동', name: '남양주종합운동장 테니스장',
     addr: '경기 남양주시 경춘로', surface: SURFACE.HARD, indoor: false, courts: 6,
-    operator: '남양주도시공사', searchUrl: GG_SHARE('남양주 테니스장'),
+    operator: '남양주도시공사', searchUrl: 'https://www.nyj.go.kr/rent/',
   },
   {
     sido: '경기', gungu: '화성시', dong: '동탄', name: '화성종합경기타운 테니스장',
@@ -239,32 +251,32 @@ export const PUBLIC_COURTS = [
   {
     sido: '경기', gungu: '평택시', dong: '비전동', name: '평택종합운동장 테니스장',
     addr: '경기 평택시 경기대로', surface: SURFACE.HARD, indoor: false, courts: 6,
-    operator: '평택도시공사', searchUrl: GG_SHARE('평택 테니스장'),
+    operator: '평택도시공사', searchUrl: 'https://www.pyeongtaek.go.kr/sports/fmcs/1',
   },
   {
     sido: '경기', gungu: '시흥시', dong: '정왕동', name: '시흥종합운동장 테니스장',
     addr: '경기 시흥시 정왕대로', surface: SURFACE.HARD, indoor: false, courts: 4,
-    operator: '시흥도시공사', searchUrl: GG_SHARE('시흥 테니스장'),
+    operator: '시흥도시공사', searchUrl: 'https://siso.siheung.go.kr/space/list.do?searchCategory=3&searchDetailCategory=22&pageIndex=1&key=204000',
   },
   {
     sido: '경기', gungu: '파주시', dong: '금촌동', name: '파주스타디움 테니스장',
     addr: '경기 파주시 청암로', surface: SURFACE.HARD, indoor: false, courts: 6,
-    operator: '파주도시관광공사', searchUrl: GG_SHARE('파주 테니스장'),
+    operator: '파주도시관광공사', searchUrl: PAJU_TENNIS,
   },
   {
     sido: '경기', gungu: '김포시', dong: '사우동', name: '김포종합운동장 테니스장',
     addr: '경기 김포시 김포대로', surface: SURFACE.HARD, indoor: false, courts: 4,
-    operator: '김포도시관리공사', searchUrl: GG_SHARE('김포 테니스장'),
+    operator: '김포도시관리공사', searchUrl: 'https://yeyak.guc.or.kr/fmcs/1',
   },
   {
     sido: '경기', gungu: '군포시', dong: '산본동', name: '군포시민체육광장 테니스장',
     addr: '경기 군포시 고산로', surface: SURFACE.HARD, indoor: false, courts: 4,
-    operator: '군포도시공사', searchUrl: GG_SHARE('군포 테니스장'),
+    operator: '군포도시공사', searchUrl: 'https://www.gunpouc.or.kr/fmcs/157',
   },
   {
     sido: '경기', gungu: '하남시', dong: '신장동', name: '하남종합운동장 테니스장',
     addr: '경기 하남시 대청로', surface: SURFACE.HARD, indoor: false, courts: 4,
-    operator: '하남도시공사', searchUrl: GG_SHARE('하남 테니스장'),
+    operator: '하남도시공사', link: HANAM_RENTAL,
   },
   {
     sido: '경기', gungu: '구리시', dong: '교문동', name: '구리시민체육관 테니스장',
@@ -290,6 +302,111 @@ export const PUBLIC_COURTS = [
     sido: '경기', gungu: '양주시', dong: '남방동', name: '양주시민회관 테니스장',
     addr: '경기 양주시 부흥로', surface: SURFACE.HARD, indoor: false, courts: 4,
     operator: '양주도시공사', searchUrl: GG_SHARE('양주 테니스장'),
+  },
+  /* ---------------- 2026-09 추가 (웹 검색으로 예약 주소 확인) ---------------- */
+  {
+    sido: '서울', gungu: '양천구', dong: '신정동', name: '안양천 테니스장',
+    addr: '서울 양천구 안양천로', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '양천구 통합예약',
+    link: 'https://www.yangcheon.go.kr/reservation/reservation/ex/reservationCal/View.do?riIdx=RI001407',
+  },
+  {
+    sido: '경기', gungu: '수원시', dong: '', name: '수원 올림픽공원 테니스장',
+    addr: '경기 수원시', surface: SURFACE.HARD, indoor: false, courts: 4,
+    operator: '수원시 통합예약', link: SUWON(715),
+  },
+  {
+    sido: '경기', gungu: '수원시', dong: '', name: '여기산 테니스장',
+    addr: '경기 수원시 권선구', surface: SURFACE.HARD, indoor: false, courts: 2,
+    operator: '수원시 통합예약', link: SUWON(718),
+  },
+  {
+    sido: '경기', gungu: '수원시', dong: '', name: '정현중보들테니스센터 (실내)',
+    addr: '경기 수원시', surface: SURFACE.INDOOR, indoor: true, courts: 0,
+    operator: '수원시 통합예약', link: SUWON(846),
+  },
+  {
+    sido: '경기', gungu: '부천시', dong: '', name: '부천실내테니스장',
+    addr: '경기 부천시', surface: SURFACE.INDOOR, indoor: true, courts: 0,
+    operator: '부천시 공공서비스예약', link: BUCHEON(195),
+  },
+  {
+    sido: '경기', gungu: '부천시', dong: '', name: '부천체육관 테니스장',
+    addr: '경기 부천시', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '부천시 공공서비스예약', link: BUCHEON(192),
+  },
+  {
+    sido: '경기', gungu: '부천시', dong: '오정동', name: '오정레포츠센터 테니스장',
+    addr: '경기 부천시 오정구', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '부천시 공공서비스예약', link: BUCHEON(188),
+  },
+  {
+    sido: '경기', gungu: '부천시', dong: '', name: '해그늘체육공원 테니스장',
+    addr: '경기 부천시', surface: SURFACE.TURF, indoor: false, courts: 0,
+    operator: '부천시 공공서비스예약', link: BUCHEON(194),
+  },
+  {
+    sido: '경기', gungu: '부천시', dong: '', name: '원미테니스장',
+    addr: '경기 부천시 원미구', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '부천시 공공서비스예약', link: BUCHEON(112),
+  },
+  {
+    sido: '경기', gungu: '용인시', dong: '', name: '용인 시립실외 테니스장',
+    addr: '경기 용인시', surface: SURFACE.HARD, indoor: false, courts: 4,
+    operator: '용인특례시 공공체육시설 통합예약',
+    link: 'https://publicsports.yongin.go.kr/publicsports/sports/selectFcltyRceptResveViewU.do?resveId=7598&pageUnit=8&pageIndex=3&checkSearchMonthNow=false',
+  },
+  {
+    sido: '경기', gungu: '고양시', dong: '일산동구 백석동', name: '고양백석체육센터 테니스장',
+    addr: '경기 고양시 일산동구', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '고양도시관리공사', searchUrl: 'https://gbc.gys.or.kr:446/rent/tennis_guide.php',
+  },
+  {
+    sido: '경기', gungu: '안양시', dong: '', name: '안양시립코트 (시테니스협회 예약)',
+    addr: '경기 안양시', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '안양시테니스협회', searchUrl: 'https://www.aytennis.or.kr/guide',
+  },
+  {
+    sido: '경기', gungu: '안산시', dong: '단원구 고잔동', name: '안산 시립호수테니스장',
+    addr: '경기 안산시 단원구', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '안산시 통합예약', searchUrl: 'https://reserve.ansan.go.kr/',
+  },
+  {
+    sido: '경기', gungu: '하남시', dong: '망월동', name: '미사한강5호공원 테니스장',
+    addr: '경기 하남시 망월동 832', surface: SURFACE.HARD, indoor: false, courts: 4,
+    operator: '하남시 체육진흥과', searchUrl: 'https://www.hanam.go.kr/www/contents.do?key=4100',
+  },
+  {
+    sido: '경기', gungu: '하남시', dong: '', name: '하남 유니온파크 테니스장',
+    addr: '경기 하남시', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '하남시 체육진흥과', searchUrl: 'https://www.hanam.go.kr/www/contents.do?key=3389',
+  },
+  {
+    sido: '경기', gungu: '파주시', dong: '금촌동', name: '금촌 체육공원 테니스장',
+    addr: '경기 파주시 금촌동', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '파주시',
+    link: 'https://www.paju.go.kr/user/facilityReserve/BD_selectSportsFacilityView.do?facMstSn=2',
+  },
+  ...['통일공원', '광탄', '교하', '운정 건강공원', '적성', '월롱'].map((n) => ({
+    sido: '경기', gungu: '파주시', dong: '', name: `파주 ${n} 테니스장`,
+    addr: '경기 파주시', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '파주시테니스협회', searchUrl: PAJU_TENNIS,
+  })),
+  {
+    sido: '경기', gungu: '김포시', dong: '', name: '김포생활체육관 테니스장',
+    addr: '경기 김포시', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '김포도시관리공사', searchUrl: 'https://yeyak.guc.or.kr/fmcs/1',
+  },
+  {
+    sido: '경기', gungu: '남양주시', dong: '', name: '남양주체육문화센터 테니스장',
+    addr: '경기 남양주시', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '남양주도시공사', searchUrl: 'https://www.ncuc.or.kr/nyj/319',
+  },
+  {
+    sido: '경기', gungu: '양평군', dong: '개군면', name: '개군레포츠공원 테니스장',
+    addr: '경기 양평군 개군면', surface: SURFACE.HARD, indoor: false, courts: 0,
+    operator: '경기공유서비스',
+    link: 'https://share.gg.go.kr/facilityListO/view?instiCode=4170046&facilityId=F0001&eshare=1',
   },
 ];
 

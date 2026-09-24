@@ -216,5 +216,21 @@ eq(a11yLabel({ title: '토스', category: '서브', level: 'beginner' }, true), 
 eq(a11yLabel({ title: '토스', category: '서브' }, false), '토스, 서브', '없는 것은 빼고');
 ok(CATEGORIES.length === 8 && CATEGORIES[CATEGORIES.length - 1] === '기타', '영역 8개, 기타가 끝');
 
+
+console.log('[앱 사용자 전체가 본다 — 클럽 없어도]');
+{
+  const rd = (f) => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
+  const rules = rd('firestore.rules');
+  const block = rules.slice(rules.indexOf('match /onepoint/{videoId}'), rules.indexOf('match /onepointStates'));
+  ok(/allow read: if signedIn\(\);/.test(block), '영상 읽기는 로그인만 하면 누구나(클럽 회원 조건 없음)');
+  ok(/\n    match \/onepoint\/\{videoId\}/.test(rules), '영상은 클럽 아래가 아니라 최상위 컬렉션(들여쓰기 한 단)');
+  const fs = rd('src/lib/firestore.js');
+  ok(/export const subOnepoint = \(cb\) =>/.test(fs), '영상 구독은 clubId 를 받지 않는다');
+  const scr = rd('src/components/onepoint/OnePointScreen.jsx');
+  ok(/subOnepoint\(\(l\)/.test(scr), '화면은 클럽과 상관없이 영상을 구독한다');
+  const layout = rd('app/_layout.jsx');
+  ok(/!session\.clubId && !session\.skipped/.test(layout), '클럽 없이 「둘러보기」한 사람도 탭 화면에 들어온다');
+}
+
 console.log(`\n원포인트 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);
