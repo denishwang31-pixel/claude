@@ -369,7 +369,7 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
             <VideoRow key={v.id} v={v} watched={isWatched(v.id)} showCategory={false}
               onPress={() => open(v)} onLongPress={adminMenu ? () => adminMenu(v) : undefined} />
           ))}
-          <CoachLine category={cat} count={coachCount} onPress={() => onGoCoach?.()} />
+          {!!onGoCoach && <CoachLine category={cat} count={coachCount} onPress={() => onGoCoach()} />}
         </View>
       </View>
     );
@@ -393,7 +393,7 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
           </View>
         )}
         <View style={{ paddingHorizontal: PAD }}>
-          <CoachLine category={cat} count={coachCount} onPress={() => onGoCoach?.()} />
+          {!!onGoCoach && <CoachLine category={cat} count={coachCount} onPress={() => onGoCoach()} />}
         </View>
       </View>
     );
@@ -412,7 +412,7 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
         onOpenVideo={(v) => setPlayingId(v.id)}
         onOpenCategory={(c) => { setPlayingId(null); openCategory(c); }}
         coachCount={coachCount}
-        onGoCoach={(coachId) => { setPlayingId(null); onGoCoach?.(coachId); }}
+        onGoCoach={onGoCoach ? (coachId) => { setPlayingId(null); onGoCoach(coachId); } : undefined}
         onClose={() => setPlayingId(null)}
       />
       <VideoAddSheet

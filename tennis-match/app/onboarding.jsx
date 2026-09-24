@@ -588,7 +588,7 @@ export default function Onboarding() {
           </Text>
         </Pressable>
         <Text style={{ fontSize: 10, color: C.faint, marginTop: 6, textAlign: 'center', lineHeight: 15 }}>
-          클럽 없이도 원포인트 영상·용품·코치와 게스트 모집 게시판을 볼 수 있습니다.{'\n'}
+          클럽 없이도 원포인트 영상과 게스트 모집 게시판을 볼 수 있습니다.{'\n'}
           언제든 [더보기]에서 클럽을 찾거나 만들 수 있어요.
         </Text>
       </View>

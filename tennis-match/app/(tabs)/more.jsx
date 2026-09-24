@@ -354,7 +354,7 @@ export default function More() {
             <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>아직 클럽에 속해 있지 않습니다</Text>
             <Text style={{ color: C.lime2, fontSize: 12, marginTop: 6, lineHeight: 18 }}>
               클럽에 들어가면 일정·대진표·회비·랭킹을 함께 쓸 수 있습니다.
-              지금은 게시판·게스트 모집·용품을 볼 수 있어요.
+              지금은 원포인트 영상·게시판·게스트 모집을 볼 수 있어요.
             </Text>
           </Card>
 

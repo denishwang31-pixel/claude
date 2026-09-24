@@ -41,9 +41,18 @@ export const LEVELUP_TABS = [
   { key: 'coach', label: '코치' },
 ];
 
+/* 출시 전 정리(앱 주인 결정): 용품·코치는 **앱 관리자에게만** 보인다.
+   내용이 덜 찬 상태로 일반 사용자에게 열면 빈 화면·광고처럼 보여 오히려
+   손해다. 관리자는 지금처럼 셋 다 보면서 채워 두고, 열 때 이 줄만 바꾼다. */
+export const visibleLevelupTabs = (isAppAdmin) =>
+  (isAppAdmin ? LEVELUP_TABS : LEVELUP_TABS.filter((t) => t.key === 'tips'));
+
 export default function LevelUp() {
-  const { me } = useApp();
-  const [tab, setTab] = useState('tips');
+  const { me, isAppAdmin } = useApp();
+  const [tabState, setTab] = useState('tips');
+  const tabs = visibleLevelupTabs(!!isAppAdmin);
+  /* 관리자 권한이 빠지면(또는 아직 못 읽었으면) 숨긴 칸에 머물지 않게 */
+  const tab = tabs.some((t) => t.key === tabState) ? tabState : 'tips';
   const [toast, setToast] = useState(null);
   /* 원포인트 영상의 [코치 보기 ›]로 올 때 바로 열 코치 */
   const [coachOpen, setCoachOpen] = useState(null);
@@ -52,7 +61,7 @@ export default function LevelUp() {
   /* 칸 나누기가 화면 첫 줄이다(제목·부제 없음 — 탭바에 이미 「레벨업」이
      보인다). 세 칸이 같은 머리를 쓰고, 각 칸은 오른쪽 버튼만 채운다. */
   const renderTop = ({ right = null, beside = null } = {}) => (
-    <LevelupTop options={LEVELUP_TABS} value={tab} onChange={setTab} right={right} beside={beside} />
+    <LevelupTop options={tabs} value={tab} onChange={setTab} right={right} beside={beside} />
   );
 
   if (tab === 'gear') return <GearScreen title="용품" renderTop={renderTop} />;
@@ -60,8 +69,8 @@ export default function LevelUp() {
     return (
       <OnePointScreen
         renderTop={renderTop}
-        onGoCoach={(coachId) => { setCoachOpen(coachId || null); setTab('coach'); }}
-        onGoGear={() => setTab('gear')}
+        onGoCoach={isAppAdmin ? (coachId) => { setCoachOpen(coachId || null); setTab('coach'); } : undefined}
+        onGoGear={isAppAdmin ? () => setTab('gear') : undefined}
       />
     );
   }

@@ -232,5 +232,20 @@ console.log('[앱 사용자 전체가 본다 — 클럽 없어도]');
   ok(/!session\.clubId && !session\.skipped/.test(layout), '클럽 없이 「둘러보기」한 사람도 탭 화면에 들어온다');
 }
 
+
+console.log('[용품·코치는 앱 관리자에게만 — 출시 전 정리]');
+{
+  const rd = (f) => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
+  const lv = rd('app/(tabs)/levelup.jsx');
+  ok(/isAppAdmin \? LEVELUP_TABS : LEVELUP_TABS\.filter\(\(t\) => t\.key === 'tips'\)/.test(lv), '일반 사용자는 원포인트 칸만');
+  ok(/options=\{tabs\}/.test(lv), '윗줄 칸 나누기도 걸러진 목록을 쓴다');
+  ok(/tabs\.some\(\(t\) => t\.key === tabState\) \? tabState : 'tips'/.test(lv), '숨긴 칸에 머물러 있지 않는다');
+  ok(/onGoCoach=\{isAppAdmin \?/.test(lv) && /onGoGear=\{isAppAdmin \?/.test(lv), '원포인트 안의 코치·용품 다리도 관리자만');
+  const op = rd('src/components/onepoint/OnePointScreen.jsx');
+  ok(!/onGoCoach\?\.\(\)/.test(op), '코치 줄은 다리가 있을 때만 그린다');
+  ok((op.match(/\{!!onGoCoach && <CoachLine/g) || []).length === 2, '영역 목록 두 곳 모두');
+  ok(/onGoCoach=\{onGoCoach \?/.test(op), '영상 재생 화면의 [코치 보기]도 숨긴다');
+}
+
 console.log(`\n원포인트 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

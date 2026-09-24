@@ -24,6 +24,13 @@ export function LevelupTop({ options, value, onChange, right = null, beside = nu
   return (
     <View style={{ paddingTop: insets.top + 8, paddingBottom: 8, paddingHorizontal: 16, backgroundColor: C.bg }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {options.length === 1 ? (
+          /* 칸이 하나뿐이면(일반 사용자 — 용품·코치 숨김) 고를 것이 없으니 제목으로 */
+          <View style={[{ height: 56, justifyContent: 'center' }, beside ? { width: 420 } : { flex: 1 }]}>
+            <Text maxFontSizeMultiplier={1.3} accessibilityRole="header"
+              style={{ fontSize: 24, fontWeight: '800', color: C.text, letterSpacing: -0.4 }}>{options[0].label}</Text>
+          </View>
+        ) : (
         <View style={[{
           height: 56, borderRadius: 14, padding: 3, flexDirection: 'row', gap: 3,
           backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
@@ -45,6 +52,7 @@ export function LevelupTop({ options, value, onChange, right = null, beside = nu
             );
           })}
         </View>
+        )}
         {beside ? <View style={{ flex: 1 }}>{beside}</View> : null}
         {right}
       </View>
