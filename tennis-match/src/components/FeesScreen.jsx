@@ -3,7 +3,7 @@
 
    회비 관리(FeeManageScreen)가 이 부품들을 조립한다:
      FeeDashboard  현황판 — 기간 고르기 + 납부·미납·미수금 + 수입·지출·잔액
-     PaidList      개인별 납부 현황 — 이름 옆 드롭다운으로 납부/미납
+     PaidList      개인별 납부 현황 — 이름 옆 칸을 누르면 납부↔미납
      ExpensePanel  지출 관리 — 코트장 거르기 · 지출 입력 · 목록 · 삭제
 
    코트장별 구분
@@ -22,7 +22,6 @@ import { DateField, Label } from './pickers';
 import { VenuePicker } from './VenuePicker';
 import { BillingScopeTabs } from './ScopeControls';
 import { Card, Chip, Btn, Field, HeroCard } from './ui';
-import { Dropdown } from './Dropdown';
 import { C, S } from '../lib/theme';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -127,8 +126,9 @@ export function FeeDashboard({
 }
 
 /* ---------------- 개인별 납부 현황 ----------------
-   이름 옆 드롭다운으로 납부/미납을 **고른다**(누를 때마다 뒤집지 않는다).
-   예전엔 알약을 누르면 뒤집혀서, 잘못 눌렀을 때 되돌릴 수 있는지 알 수 없었다. */
+   이름 옆 칸을 **한 번 누르면** 납부 ↔ 미납이 바로 바뀐다(앱 주인이 정함 —
+   드롭다운으로 고르는 한 단계가 번거롭다). 잘못 눌렀으면 한 번 더 누르면
+   되돌아간다. 그래서 칸 안에 "누르면 바뀐다"는 표시(⇄)를 같이 둔다. */
 export function PaidList({ clubId, members, paidMap, amount, feeKey, periodKey, flash }) {
   const setPaidState = (m, paidNow) => {
     if (!!paidMap[m.id] === paidNow) return;
@@ -138,13 +138,13 @@ export function PaidList({ clubId, members, paidMap, amount, feeKey, periodKey, 
       .then(() => flash(`${m.name} → ${paidNow ? '납부' : '미납'}`))
       .catch(() => flash('바꾸지 못했습니다'));
   };
-  /* 미납을 위로 — 총무가 챙길 사람이 먼저 보이게 */
-  const list = [...members].sort((a, b) => Number(!!paidMap[a.id]) - Number(!!paidMap[b.id])
-    || String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+  /* 이름순으로 **고정**한다. 미납을 위로 올리면, 누르는 순간 그 사람이 아래로
+     내려가 버려서 "잘못 눌렀으니 한 번 더"를 할 수가 없다. */
+  const list = [...members].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
   return (
     <Card>
       <Text style={{ fontSize: 12, fontWeight: '600', color: C.sub, marginBottom: 6 }}>
-        오른쪽 칸을 눌러 납부/미납을 고릅니다 · 잘못 골랐으면 다시 고르면 됩니다
+        오른쪽 칸을 누르면 납부 ↔ 미납이 바로 바뀝니다 · 잘못 눌렀으면 한 번 더 누르세요
       </Text>
       {list.map((m, i) => (
         <View key={m.id} style={{
@@ -152,18 +152,28 @@ export function PaidList({ clubId, members, paidMap, amount, feeKey, periodKey, 
           borderTopWidth: i ? 1 : 0, borderTopColor: C.border,
         }}>
           <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>{m.name}</Text>
-          <Dropdown
-            title={`${m.name} · ${periodKey}`}
-            a11y={`${m.name} 납부 상태`}
-            value={paidMap[m.id] ? 'paid' : 'unpaid'}
-            tone={paidMap[m.id] ? 'good' : 'bad'}
-            options={[{ key: 'paid', label: '납부' }, { key: 'unpaid', label: '미납' }]}
-            onChange={(k) => setPaidState(m, k === 'paid')}
-          />
+          <PaidToggle paid={!!paidMap[m.id]} name={m.name} onPress={() => setPaidState(m, !paidMap[m.id])} />
         </View>
       ))}
       {members.length === 0 && <Text style={{ fontSize: 13, color: C.faint }}>활동 회원이 없습니다.</Text>}
     </Card>
+  );
+}
+
+/** 납부/미납 알약 — 누르면 반대로 바뀐다 */
+function PaidToggle({ paid, name, onPress }) {
+  return (
+    <Pressable onPress={onPress} hitSlop={6} accessibilityRole="button"
+      accessibilityLabel={`${name} ${paid ? '납부' : '미납'}, 누르면 ${paid ? '미납' : '납부'}으로 바뀝니다`}
+      style={({ pressed }) => ({
+        minWidth: 76, minHeight: 36, paddingHorizontal: 12, borderRadius: 999,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+        backgroundColor: paid ? C.green : '#FEE2E2', borderWidth: 1, borderColor: paid ? C.green : '#FECACA',
+        opacity: pressed ? 0.7 : 1,
+      })}>
+      <Text style={{ fontSize: 13, fontWeight: '800', color: paid ? '#FFFFFF' : '#B91C1C' }}>{paid ? '납부' : '미납'}</Text>
+      <Text style={{ fontSize: 11, fontWeight: '800', color: paid ? 'rgba(255,255,255,0.75)' : '#DC2626' }}>⇄</Text>
+    </Pressable>
   );
 }
 
