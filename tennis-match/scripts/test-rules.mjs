@@ -1269,6 +1269,17 @@ console.log('\n[용품 추천 이유 — 코치·고수·앱 운영자만]');
     assertSucceeds(deleteDoc(doc(cCoach, 'gearPicks', 'g1_coach4'))));
 }
 
+console.log('\n[회비 알림 손 발송 일감 — 회장·총무만]');
+{
+  const DJ = (o = {}) => ({ type: 'dunning', stageKey: 'final', period: '2026-09', scopeId: null, by: 'owner1', status: 'queued', ...o });
+  await T('총무의 회비 알림 발송 요청 허용',
+    assertSucceeds(setDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'd1'), DJ())));
+  await T('일반 회원의 회비 알림 발송 요청 거부',
+    assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'pushJobs', 'd2'), DJ({ by: 'mem1' }))));
+  await T('남의 이름으로 발송 요청 거부',
+    assertFails(setDoc(doc(owner, 'clubs', CLUB, 'pushJobs', 'd3'), DJ({ by: 'mem1' }))));
+}
+
 console.log('\n[오프라인 회원 합치기 일감 — 회장·총무만]');
 {
   await seed((db) => setDoc(doc(db, 'clubs', CLUB, 'members', 'local:zz1'), { name: '오프라인김', gender: 'M' }));

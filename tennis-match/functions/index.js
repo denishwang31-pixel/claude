@@ -38,7 +38,10 @@ const { scorePushPlan, scorePushText } = require('./scoreReport');
 const { onRequest } = require('firebase-functions/v2/https');
 const rsvpLinkLib = require('./rsvpLink');
 const mergeLib = require('./mergeMember');
-const { planAutoSend, unpaidMembers, summaryForManager } = require('./dunning');
+const {
+  planAutoSend, unpaidMembers, summaryForManager,
+  DUN_STAGES, recipientsFor, messageFor, canSend, dueDateOf,
+} = require('./dunning');
 const {
   billingScopes, membersInScope, feeDocKey, notifyRule,
 } = require('./scope');
@@ -327,12 +330,73 @@ async function runTestPush(clubRef, uid) {
   }
 }
 
+/** 총무가 누른 회비 알림 한 단계를 실제로 보낸다. 대상·문구는 공용 모듈이 정한다
+    (앱이 보낸 명단을 믿지 않는다 — 미납자만 서버가 다시 고른다). */
+async function runDunningJob(clubRef, job) {
+  const stage = DUN_STAGES.find((x) => x.key === job.stageKey);
+  const period = String(job.period || '');
+  if (!stage || !/^\d{4}(-\d{2})?$/.test(period)) return { status: 'failed', reason: 'bad-request', detail: '잘못된 요청입니다' };
+
+  const logRef = clubRef.collection('meta').doc('dunning');
+  const [clubSnap, memberSnap, venueSnap, logSnap] = await Promise.all([
+    clubRef.get(), clubRef.collection('members').get(), clubRef.collection('venues').get(), logRef.get(),
+  ]);
+  if (!clubSnap.exists) return { status: 'failed', reason: 'no-club' };
+  const clubData = { id: clubRef.id, ...clubSnap.data() };
+  const members = memberSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const venues = venueSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const scope = billingScopes(clubData, venues).find((x) => (x.id || null) === (job.scopeId || null));
+  if (!scope) return { status: 'failed', reason: 'scope', detail: '청구 단위를 찾을 수 없습니다' };
+  const venue = venues.find((v) => v.id === scope.id) || null;
+  if (!notifyRule(clubData, venue, 'fee').on) return { status: 'skipped', reason: 'off', detail: '회비 알림이 꺼져 있습니다' };
+
+  const docKey = feeDocKey(period, scope.id);
+  const sent = logSnap.exists ? (logSnap.data().sent || {}) : {};
+  const today = seoulToday();
+  const gate = canSend(stage, docKey, sent, today);
+  if (!gate.ok) return { status: 'skipped', reason: 'dup', detail: gate.reason };
+
+  const feeDoc = await clubRef.collection('fees').doc(docKey).get();
+  const paid = feeDoc.exists ? (feeDoc.data().paid || {}) : {};
+  const amount = (feeDoc.exists && feeDoc.data().amount) || scope.amount;
+  const scoped = membersInScope(members, scope.id);
+  const to = recipientsFor(stage, scoped, paid);
+  if (!to.length) return { status: 'skipped', reason: 'none', detail: '보낼 대상이 없습니다' };
+
+  const clubName = scope.id ? `${clubData.name || '클럽'} ${scope.name}` : clubData.name;
+  const msg = messageFor(stage, {
+    clubName, monthKey: period, amount, dueDate: dueDateOf(period, scope.dueDay), account: scope.account,
+  });
+  const tokens = to.map((m) => m.pushToken).filter(Boolean);
+  if (tokens.length) {
+    await sendPush(tokens, msg.title, msg.body, { type: 'fee', month: period, scope: scope.id || '', stage: stage.key });
+  }
+  await logRef.set({
+    sent: { [docKey]: { [stage.key]: today, [`${stage.key}Times`]: FieldValue.increment(1) } },
+  }, { merge: true });
+  const noApp = to.length - tokens.length;
+  return {
+    status: 'done', sent: tokens.length, recipients: to.length,
+    detail: `${to.length}명 중 ${tokens.length}명에게 보냈습니다${noApp ? ` (앱 알림을 못 받는 ${noApp}명 제외)` : ''}`,
+  };
+}
+
 exports.onPushJobCreated = onDocumentCreated(
   { ...REGION, document: 'clubs/{clubId}/pushJobs/{jobId}' },
   async (event) => {
     const job = event.data?.data();
     if (!job) return;
     const { clubId } = event.params;
+
+    /* 회비 알림을 총무가 손으로 보낸 것. 예전엔 앱이 "보냈다"고 기록만 하고
+       실제로는 아무것도 안 보냈다 — 최종 안내는 자동 발송에서 빠지므로
+       한 번도 나간 적이 없었다. 여기서 실제로 보낸다. */
+    if (job.type === 'dunning') {
+      const result = await runDunningJob(db.collection('clubs').doc(clubId), job)
+        .catch((e) => ({ status: 'failed', reason: 'exception', detail: String((e && e.message) || e) }));
+      await event.data.ref.update({ ...result, doneAt: new Date() }).catch(() => {});
+      return;
+    }
 
     if (job.type === 'test') {
       const result = await runTestPush(db.collection('clubs').doc(clubId), job.by);

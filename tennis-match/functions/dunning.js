@@ -146,13 +146,24 @@ const summaryForManager = (clubName, monthKey, unpaid, amount) => ({
     : '전원 납부 완료되었습니다.',
 });
 
-function canSend(stage, monthKey, sent = {}) {
+function canSend(stage, monthKey, sent = {}, today = null) {
   if (!stage) return { ok: false, reason: '오늘 보낼 단계가 없습니다' };
-  if (sent && sent[monthKey] && sent[monthKey][stage.key]) {
+  const last = sent && sent[monthKey] && sent[monthKey][stage.key];
+  if (!stage.auto) {
+    if (last && today && last === today) return { ok: false, reason: `${stage.label}은 오늘 이미 보냈습니다. 내일 다시 보낼 수 있어요` };
+    return { ok: true, reason: '' };
+  }
+  if (last) {
     return { ok: false, reason: `${stage.label}은 이미 보냈습니다` };
   }
   return { ok: true, reason: '' };
 }
+
+const sentTimes = (stage, monthKey, sent = {}) => {
+  const log = (sent && sent[monthKey]) || {};
+  if (!stage || !log[stage.key]) return 0;
+  return Number(log[`${stage.key}Times`]) || 1;
+};
 
 function planAutoSend({
   clubName, monthKey, today, dueDay, amount, members, paidMap, sent, account,
@@ -180,5 +191,5 @@ function planAutoSend({
 
 module.exports = {
   DUN_STAGE, DUN_STAGES, dueDateOf, daysBetween, stageFor, unpaidMembers,
-  recipientsFor, periodLabel, messageFor, summaryForManager, canSend, planAutoSend,
+  recipientsFor, periodLabel, messageFor, summaryForManager, canSend, sentTimes, planAutoSend,
 };

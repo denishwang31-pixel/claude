@@ -733,6 +733,14 @@ export const saveFeeAliases = (clubId, map) =>
 export const subDunningLog = (clubId, cb) =>
   onSnapshot(D(clubId, 'meta', 'dunning'), (d) => cb(d.exists() ? (d.data().sent || {}) : {}));
 
+/** 회비 알림 한 단계를 서버가 실제로 보내게 한다(onPushJobCreated · type 'dunning').
+    결과(몇 명에게 갔는지)는 subPushJob 으로 받는다. */
+export const requestDunningSend = (clubId, { stageKey, period, scopeId, by }) =>
+  addDoc(C(clubId, 'pushJobs'), {
+    type: 'dunning', stageKey, period, scopeId: scopeId || null, by,
+    status: 'queued', createdAt: serverTimestamp(),
+  });
+
 export const markDunningSent = (clubId, monthKey, stageKey, today) =>
   setDoc(D(clubId, 'meta', 'dunning'), {
     sent: { [monthKey]: { [stageKey]: today } },

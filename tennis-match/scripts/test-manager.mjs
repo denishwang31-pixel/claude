@@ -1,7 +1,7 @@
 /* 총무 기능 테스트 — 독촉 규칙과 결산 집계 */
 import {
   DUN_STAGE, DUN_STAGES, dueDateOf, daysBetween, stageFor,
-  unpaidMembers, recipientsFor, messageFor, canSend, planAutoSend, periodLabel,
+  unpaidMembers, recipientsFor, messageFor, canSend, sentTimes, planAutoSend, periodLabel,
   summaryForManager,
 } from '../src/lib/dunning.js';
 import {
@@ -85,6 +85,22 @@ console.log('[규칙 5 — 같은 단계는 한 번만]');
     amount: 30000, members: MEMBERS, paidMap: {}, sent,
   });
   ok(plan.recipients.length === 0, '중복 발송 계획이 서지 않는다');
+}
+
+console.log('[최종 안내는 여러 번 — 하루 한 번]');
+{
+  const fin = DUN_STAGES.find((s) => s.key === DUN_STAGE.FINAL);
+  const sent = { '2026-08': { final: '2026-08-20', finalTimes: 2 } };
+  ok(canSend(fin, '2026-08', {}, '2026-08-20').ok, '처음 보낼 수 있다');
+  ok(canSend(fin, '2026-08', sent, '2026-08-21').ok, '보낸 뒤에도 다음 날 다시 보낼 수 있다');
+  ok(!canSend(fin, '2026-08', sent, '2026-08-20').ok, '같은 날 두 번은 막힌다');
+  ok(/오늘 이미/.test(canSend(fin, '2026-08', sent, '2026-08-20').reason), '막힌 이유를 알려 준다');
+  ok(canSend(fin, '2026-08', sent).ok, '날짜를 안 주면(예전 호출) 막지 않는다');
+  const first = DUN_STAGES.find((s) => s.key === DUN_STAGE.FIRST);
+  ok(!canSend(first, '2026-08', { '2026-08': { first: '2026-08-11' } }, '2026-08-30').ok, '자동 단계는 여전히 한 번만');
+  ok(sentTimes(fin, '2026-08', sent) === 2, '보낸 횟수');
+  ok(sentTimes(fin, '2026-08', { '2026-08': { final: '2026-08-20' } }) === 1, '횟수 기록이 없던 예전 기록은 1회');
+  ok(sentTimes(fin, '2026-09', sent) === 0, '안 보낸 달은 0');
 }
 
 console.log('[자동 발송 계획]');
@@ -277,7 +293,13 @@ console.log('\n[앱 ↔ 서버 사본 대조]');
     ],
     canSend: [
       [DUN_STAGES[1], '2026-08', SENT], [DUN_STAGES[2], '2026-08', SENT],
+      [DUN_STAGES[3], '2026-08', { '2026-08': { final: '2026-08-20' } }, '2026-08-20'],
+      [DUN_STAGES[3], '2026-08', { '2026-08': { final: '2026-08-20' } }, '2026-08-21'],
       [null, '2026-08', SENT], [DUN_STAGES[1], '2026-09', SENT],
+    ],
+    sentTimes: [
+      [DUN_STAGES[3], '2026-08', { '2026-08': { final: '2026-08-20', finalTimes: 3 } }],
+      [DUN_STAGES[3], '2026-08', {}],
     ],
     planAutoSend: [
       [{ clubName: '염곡클럽', monthKey: '2026-08', today: '2026-08-11', dueDay: 10, amount: 30000, members: MEMBERS, paidMap: PAID, sent: {}, account: '국민 123' }],
@@ -291,7 +313,7 @@ console.log('\n[앱 ↔ 서버 사본 대조]');
 
   const app = {
     dueDateOf, daysBetween, stageFor, unpaidMembers, recipientsFor,
-    periodLabel, messageFor, summaryForManager, canSend, planAutoSend,
+    periodLabel, messageFor, summaryForManager, canSend, sentTimes, planAutoSend,
   };
 
   let compared = 0;

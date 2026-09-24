@@ -51,7 +51,7 @@ import {
 } from '../../lib/onepoint';
 import {
   PAD, VideoShelf, VideoRow, VideoCard, ShelfHeader, SearchField, CategoryChips, CoachLine,
-  MemberEmpty, AdminEmpty, NoResults, WordChip, LegacyBanner,
+  MemberEmpty, AdminEmpty, NoResults, WordChip, LegacyBanner, CategoryGrid,
 } from './parts';
 import { PlayerModal } from './PlayerModal';
 import { VideoAddSheet } from './VideoAddSheet';
@@ -315,6 +315,8 @@ export function OnePointScreen({ renderTop, onGoCoach, onGoGear }) {
     return (
       <>
         {legacyBanner}
+        {/* 영역별로 보기 — 새로 올라온 영상 바로 위(앱 주인 요청). 태블릿은 왼쪽 목록이 같은 일을 한다. */}
+        {!wide && <CategoryGrid counts={counts} onPick={openCategory} />}
         {home.newest.length > 0 && (
           <VideoShelf title="새로 올라온 영상" items={home.newest} cardWidth={cardBig}
             isWatched={isWatched} onOpen={open} onLongPress={lp} />

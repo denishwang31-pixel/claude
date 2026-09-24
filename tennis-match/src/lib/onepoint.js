@@ -17,6 +17,18 @@ export const NEWEST_COUNT = 6;
 export const SHELF_MAX = 10;
 export const RECENT_MAX = 5;
 
+/** 「영역별로 보기」 칸의 그림(Ionicons 이름) — scripts/test-onepoint.mjs 가 실제로 있는 이름인지 본다 */
+export const CATEGORY_ICON = {
+  포핸드: 'arrow-redo-outline',
+  백핸드: 'arrow-undo-outline',
+  발리: 'grid-outline',
+  서브: 'body-outline',
+  스매시: 'flash-outline',
+  풋워크: 'footsteps-outline',
+  전술: 'easel-outline',
+  기타: 'ellipsis-horizontal-circle-outline',
+};
+
 /** 수준 — 저장은 영어 키, 화면은 한글 */
 export const LEVELS = [
   { key: 'beginner', label: '입문' },

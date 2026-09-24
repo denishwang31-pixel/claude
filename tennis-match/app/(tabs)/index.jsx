@@ -51,9 +51,10 @@ const MANAGE = [
   ['members', '회원', 'members'],
   ['joinreq', '가입 신청', 'joinreq'],
   ['attendance', '출석', 'attendance'],
-  ['fees', '회비·지출', 'fees', 'fees'],
-  ['reconcile', '입금 대사', 'reconcile', 'fees'],
-  ['polls', '회비 알림', 'dunning', 'fees'],
+  /* 회비는 한 칸 — 들어가서 위쪽 드롭다운으로 회비 현황·정기 회비·지출·일회성 정산을 고른다.
+     예전엔 회비·지출 / 입금 대사 / 회비 알림이 따로 있었다. 입금 대사는 은행 내역을
+     붙여넣어야 해서 실제로 쓰기 어렵다는 앱 주인 판단으로 홈에서 뺐다(더보기에는 남김). */
+  ['fees', '회비 관리', 'feemgmt', 'fees'],
 ];
 
 /** 매일 쓰는 것만 바로가기로 — 나머지는 [더보기] */
@@ -549,14 +550,16 @@ export default function Home() {
                     backgroundColor: going ? C.greenSoft : 'transparent',
                     borderRadius: going ? R.md : 0,
                     marginTop: i ? 0 : 0,
-                    opacity: notGoing ? 0.45 : 1,
                   }}>
+                    {/* 불참이면 일정 정보만 흐리게 한다. 아래 [참석으로] 버튼까지
+                       흐리면 "눌러도 안 되는 것"으로 보여서 아무도 안 누른다
+                       (앱 주인이 겪음). */}
                     <Pressable
                       onPress={() => goMeeting(m)}
                       style={({ pressed }) => ({
                         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                         paddingVertical: 11, paddingHorizontal: going ? 10 : 0,
-                        opacity: pressed ? 0.6 : 1,
+                        opacity: pressed ? 0.6 : notGoing ? 0.45 : 1,
                       })}>
                       <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -601,13 +604,15 @@ export default function Home() {
                           있는지도 같이 알 수 있게 한다. */}
                     {mine !== undefined && canRsvpSelf(meVal, m) && (
                       <View style={{ flexDirection: 'row', gap: 6, paddingBottom: 11 }}>
+                        {/* 불참 상태에서 할 수 있는 일은 "참석으로 바꾸기" 하나다 —
+                           그 버튼을 초록으로 채워 눈에 띄게 한다 */}
                         <Btn small
-                          tone={going ? 'primary' : 'ghost'}
+                          tone={going || notGoing ? 'primary' : 'ghost'}
                           onPress={() => setRsvp(clubId, m.id, me, RSVP.YES, me)}>
-                          {going ? '참석 중' : '참석으로'}
+                          {going ? '참석 중' : notGoing ? '참석으로 바꾸기' : '참석으로'}
                         </Btn>
                         <Btn small
-                          tone={notGoing ? 'danger' : 'ghost'}
+                          tone="ghost"
                           onPress={() => setRsvp(clubId, m.id, me, RSVP.NO, me)}>
                           {notGoing ? '불참 중' : '불참으로'}
                         </Btn>

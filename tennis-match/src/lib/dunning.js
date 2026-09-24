@@ -11,7 +11,8 @@
      3. 미납 현황은 본인에게만 보인다. 다른 회원의 납부 여부는 알 수 없다.
         (명예훼손 소지 + 분위기 파탄)
      4. 마지막 단계(D+10)는 자동으로 나가지 않는다. 총무가 확인하고 보낸다.
-     5. 같은 단계는 한 번만. 중복 발송은 독촉이 아니라 괴롭힘이다.
+     5. 자동 단계는 한 번만. 중복 발송은 독촉이 아니라 괴롭힘이다.
+        최종 안내(사람이 누름)만 여러 번 — 단, 하루 한 번.
    ============================================================ */
 
 /** 독촉 단계 — 납부 기한(dueDay) 기준 경과일 */
@@ -164,15 +165,33 @@ export const summaryForManager = (clubName, monthKey, unpaid, amount) => ({
 
 /**
  * 이 단계를 지금 보내도 되는가.
- * @param sent 이미 보낸 기록 { '2026-08': { first: '2026-08-11', ... } }
+ * @param sent  이미 보낸 기록 { '2026-08': { first: '2026-08-11', final: '…', finalTimes: 2 } }
+ * @param today 오늘('YYYY-MM-DD') — 사람이 보내는 단계의 하루 한 번 제한에 쓴다
+ *
+ * 자동 단계는 한 번만(규칙 5). 사람이 보고 누르는 **최종 안내는 여러 번**
+ * 보낼 수 있다 — 한 번 보내면 막혀서, 그 뒤로 계속 안 내는 사람에게 다시
+ * 안내할 길이 없었다(앱 주인 요청). 대신 **하루에 한 번**만 — 잘못 두 번
+ * 누르거나 같은 날 몇 번씩 보내면 그건 안내가 아니라 괴롭힘이다.
  */
-export function canSend(stage, monthKey, sent = {}) {
+export function canSend(stage, monthKey, sent = {}, today = null) {
   if (!stage) return { ok: false, reason: '오늘 보낼 단계가 없습니다' };
-  if (sent?.[monthKey]?.[stage.key]) {
+  const last = sent && sent[monthKey] && sent[monthKey][stage.key];
+  if (!stage.auto) {
+    if (last && today && last === today) return { ok: false, reason: `${stage.label}은 오늘 이미 보냈습니다. 내일 다시 보낼 수 있어요` };
+    return { ok: true, reason: '' };
+  }
+  if (last) {
     return { ok: false, reason: `${stage.label}은 이미 보냈습니다` };
   }
   return { ok: true, reason: '' };
 }
+
+/** 이 단계를 몇 번 보냈나(사람이 보내는 단계만 여러 번) */
+export const sentTimes = (stage, monthKey, sent = {}) => {
+  const log = (sent && sent[monthKey]) || {};
+  if (!stage || !log[stage.key]) return 0;
+  return Number(log[`${stage.key}Times`]) || 1;
+};
 
 /**
  * 자동 발송 계획 — Cloud Functions 가 매일 호출한다.

@@ -266,7 +266,9 @@ service cloud.firestore {
         allow read: if isClubAdmin(clubId);
         allow create: if isClubAdmin(clubId)
           && request.resource.data.by == request.auth.uid
-          && request.resource.data.type in ['rsvpAsk', 'test'];
+          && (request.resource.data.type in ['rsvpAsk', 'test']
+              /* 회비 알림 손 발송 — 회비를 다루는 회장·총무만 */
+              || (request.resource.data.type == 'dunning' && canSeeFees(clubId)));
         allow update, delete: if false;
       }
 

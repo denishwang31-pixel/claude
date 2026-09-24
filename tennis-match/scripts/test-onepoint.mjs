@@ -3,8 +3,9 @@ import {
   CATEGORIES, parseYouTubeId, thumbUrl, videoIdOf, parseStartAt, formatStart, catOf, ms,
   buildShelves, searchVideos, highlightParts, addRecent, suggestionsFor, nextInCategory,
   checkDraft, tipDoc, levelLabel, categoryCounts, inCategory, a11yLabel, oembedUrl,
-  canManage, canPin, canUpload, legacyMoves,
+  canManage, canPin, canUpload, legacyMoves, CATEGORY_ICON,
 } from '../src/lib/onepoint.js';
+import { readFileSync } from 'node:fs';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.log('  ✗', m); } };
@@ -200,6 +201,14 @@ console.log('[예전 클럽 영상 옮기기]');
   const m = legacyMoves(legacy, cur);
   eq(m.copy.map((x) => x.id), ['t2'], '없는 영상만 한 번 옮김');
   eq(m.drop.map((x) => x.id), ['t1', 't3', 't4'], '나머지는 지우기만');
+}
+
+console.log('[영역별로 보기 그림]');
+{
+  let glyphs = null;
+  try { glyphs = JSON.parse(readFileSync(new URL('../node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/Ionicons.json', import.meta.url), 'utf8')); } catch (e) { glyphs = null; }
+  ok(!!glyphs, '아이콘 목록을 읽었다(npm ci 필요)');
+  CATEGORIES.forEach((c) => ok(glyphs && CATEGORY_ICON[c] in glyphs, `${c} 그림 '${CATEGORY_ICON[c]}' 이(가) 실제로 있다 — 없으면 「?」로 나온다`));
 }
 
 console.log('[읽기 문구]');

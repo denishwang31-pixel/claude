@@ -19,6 +19,7 @@ import { BillingScopeTabs } from './ScopeControls';
 import { Card, SectionTitle, Chip, Btn, Field, HeroCard,
 } from './ui';
 import { C, S } from '../lib/theme';
+import { Dropdown } from './Dropdown';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const monthKeyNow = () => new Date().toISOString().slice(0, 7);
@@ -26,13 +27,19 @@ const yearKeyNow = () => new Date().toISOString().slice(0, 4);
 
 const EXPENSE_CATS = ['코트 대관', '공·소모품', '경조사', '회식', '대회 참가', '기타'];
 
+/**
+ * @param tab       밖(회비 관리의 드롭다운)에서 칸을 정할 때 — 주면 안쪽 탭 줄을 숨긴다
+ * @param onGoStatus 「회비 현황」(알림 보내기)으로 건너가기
+ */
 export function Fees({
   clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash,
   venues = [], seeFees = true, seeAllVenues = true, myLeadVenues = [],
   pools = [], scopeId = null, setScopeId = () => {},
+  tab: tabProp = null, onGoStatus = null,
 }) {
   const [cycle, setCycle] = useState(FEE_CYCLE.MONTHLY);
-  const [tab, setTab] = useState('income'); // income | expense | pool
+  const [tabState, setTab] = useState('income'); // income | expense | pool
+  const tab = tabProp || tabState;
   const [paste, setPaste] = useState('');
   const [expenses, setExpenses] = useState([]);
   const [adding, setAdding] = useState(false);
@@ -86,10 +93,16 @@ export function Fees({
      지금까지 쌓인 문서를 그대로 읽고 쓴다. */
   const feeKey = feeDocKey(periodKey, scope.id);
 
-  const togglePaid = (id) => {
-    const next = { ...paidMap, [id]: !paidMap[id] };
+  /* 납부 상태를 **정해서** 바꾼다(누를 때마다 뒤집지 않는다).
+     예전엔 이름 옆 알약을 누르면 뒤집혔는데, 잘못 눌렀을 때 되돌릴 수 있는지
+     알 수 없었다(앱 주인이 겪음). 드롭다운으로 납부/미납을 고르게 한다. */
+  const setPaidState = (m, paidNow) => {
+    if (!!paidMap[m.id] === paidNow) return;
+    const next = { ...paidMap, [m.id]: paidNow };
     // 이전 상태를 같이 넘긴다 — 바뀐 사람만 개인 문서에 반영하기 위해
-    setFeePaid(clubId, feeKey, next, amount, paidMap);
+    setFeePaid(clubId, feeKey, next, amount, paidMap)
+      .then(() => flash(`${m.name} → ${paidNow ? '납부' : '미납'}`))
+      .catch(() => flash('바꾸지 못했습니다'));
   };
 
   const runMatch = () => {
@@ -216,11 +229,13 @@ export function Fees({
         </View>
       </HeroCard>
 
-      <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-        <Tab v="income" label="정기 회비" />
-        <Tab v="expense" label="지출" />
-        <Tab v="pool" label="일회성 정산" />
-      </View>
+      {!tabProp && (
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+          <Tab v="income" label="정기 회비" />
+          <Tab v="expense" label="지출" />
+          <Tab v="pool" label="일회성 정산" />
+        </View>
+      )}
 
       {tab === 'pool' ? (
         /* 대회·캠프·회식처럼 그때그때 걷는 돈. 정기 회비와 성격이 달라
@@ -238,17 +253,19 @@ export function Fees({
           </View>
           <Card>
             <Text style={{ fontSize: 11, color: C.faint, marginBottom: 8 }}>
-              1인당 {Number(amount).toLocaleString()}원 · 이름을 눌러 납부/미납을 바꿉니다
+              1인당 {Number(amount).toLocaleString()}원 · 오른쪽 칸을 눌러 납부/미납을 고릅니다(잘못 눌렀으면 다시 고르면 됩니다)
             </Text>
             {active.map((m, i) => (
               <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 7, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
                 <Text style={{ fontSize: 14, fontWeight: '600' }}>{m.name}</Text>
-                <Pressable onPress={() => togglePaid(m.id)}
-                  style={{ paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999, backgroundColor: paidMap[m.id] ? C.green : '#fee2e2' }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: paidMap[m.id] ? '#fff' : '#b91c1c' }}>
-                    {paidMap[m.id] ? '납부' : '미납'}
-                  </Text>
-                </Pressable>
+                <Dropdown
+                  title={`${m.name} · ${periodKey}`}
+                  a11y={`${m.name} 납부 상태`}
+                  value={paidMap[m.id] ? 'paid' : 'unpaid'}
+                  tone={paidMap[m.id] ? 'good' : 'bad'}
+                  options={[{ key: 'paid', label: '납부' }, { key: 'unpaid', label: '미납' }]}
+                  onChange={(k) => setPaidState(m, k === 'paid')}
+                />
               </View>
             ))}
             {active.length === 0 && <Text style={{ fontSize: 12, color: C.faint }}>활동 회원이 없습니다.</Text>}
@@ -270,11 +287,15 @@ export function Fees({
             </View>
           </Card>
 
-          <View style={{ marginTop: 10 }}>
-            <Btn full tone="ghost" onPress={() => flash('미납자에게 리마인드 푸시 발송 (PHASE 3 연동 지점)')}>
-              미납자 {active.length - paidN}명에게 리마인드
-            </Btn>
-          </View>
+          {/* 예전 버튼은 "발송" 흉내만 내고 아무것도 안 보냈다. 실제 발송은
+             「회비 현황」의 알림 단계에서 한다 — 그리로 보낸다. */}
+          {!!onGoStatus && active.length - paidN > 0 && (
+            <View style={{ marginTop: 10 }}>
+              <Btn full tone="ghost" onPress={onGoStatus}>
+                미납자 {active.length - paidN}명에게 알림 보내기 → 회비 현황
+              </Btn>
+            </View>
+          )}
         </View>
       ) : (
         <View>

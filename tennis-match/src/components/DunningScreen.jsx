@@ -4,15 +4,18 @@
      · 알림은 클럽 이름으로 나간다. 총무 개인 이름이 들어가지 않는다.
      · 미납자 본인에게만 개별로 간다. 단체 공지로 명단이 뿌려지지 않는다.
      · 마지막 단계는 자동으로 안 나간다. 총무가 보고 누른다.
-     · 같은 단계는 한 번만. 이미 보냈으면 버튼이 막힌다. */
-import React, { useMemo, useState, useEffect } from 'react';
+     · 자동 단계는 한 번만. 최종 안내는 여러 번(하루 한 번) — 계속 안 내는
+       사람에게 다시 안내할 수 있게. 최근 발송일과 횟수를 버튼 아래 적는다.
+     · [발송]은 서버가 실제로 보낸다(pushJobs · type 'dunning'). 예전엔 앱이
+       "보냈다"고 기록만 하고 알림은 안 나갔다. */
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { View, Text, Alert, Pressable } from 'react-native';
 import {
   DUN_STAGES, DUN_STAGE, dueDateOf, stageFor, unpaidMembers, recipientsFor,
-  messageFor, canSend, periodLabel,
+  messageFor, canSend, periodLabel, sentTimes,
 } from '../lib/dunning';
 import {
-  markDunningSent, saveFeePolicy, saveVenueFee, resolveFeeClaim, setFeePaid,
+  requestDunningSend, subPushJob, saveFeePolicy, saveVenueFee, resolveFeeClaim, setFeePaid,
 } from '../lib/firestore';
 import {
   billingScopes, membersInScope, feeDocKey, notifyRule,
@@ -27,8 +30,12 @@ const won = (n) => `${Number(n || 0).toLocaleString()}원`;
 
 export function Dunning({
   clubId, club, members, fee, periodKey, sentLog = {}, claims = [], isAdmin, flash,
-  venues = [], scopeId = null, setScopeId = () => {},
+  venues = [], scopeId = null, setScopeId = () => {}, me = null,
 }) {
+  /* 방금 누른 발송의 결과 — 서버가 몇 명에게 보냈는지 적어 준다 */
+  const [job, setJob] = useState(null);   // { id, label, status, detail }
+  const jobOff = useRef(null);
+  useEffect(() => () => jobOff.current?.(), []);
   /* ---------- 어느 단위로 걷는가 ----------
      코트장마다 걷는 클럽이면 청구 단위가 여러 개다. 금액·납부일·계좌·
      대상자가 단위마다 다르므로, 화면도 한 번에 하나만 다룬다.
@@ -67,7 +74,7 @@ export function Dunning({
         ? `${venue.name}에서 회비 알림을 꺼 두었습니다`
         : '회비 알림이 꺼져 있습니다 — [설정] → [알림 종류]');
     }
-    const gate = canSend(stage, docKey, sentLog);
+    const gate = canSend(stage, docKey, sentLog, today());
     if (!gate.ok) return flash(gate.reason);
 
     const to = recipientsFor(stage, active, paid);
@@ -81,9 +88,11 @@ export function Dunning({
       account,
     });
 
+    const lastAt = sentLog?.[docKey]?.[stage.key];
     return Alert.alert(
-      `${stage.label} 발송`,
+      lastAt ? `${stage.label} 다시 발송` : `${stage.label} 발송`,
       `${to.length}명에게 개별로 발송합니다.\n`
+      + (lastAt ? `(지난 발송: ${lastAt})\n` : '')
       + `(단체 공지가 아니라 각자에게만 갑니다)\n\n`
       + `제목: ${msg.title}\n내용: ${msg.body}`,
       [
@@ -91,8 +100,19 @@ export function Dunning({
         {
           text: '발송',
           onPress: async () => {
-            await markDunningSent(clubId, docKey, stage.key, today());
-            flash(`${to.length}명에게 ${stage.label} 발송 요청됨`);
+            try {
+              const ref = await requestDunningSend(clubId, {
+                stageKey: stage.key, period: periodKey, scopeId: scope.id, by: me,
+              });
+              jobOff.current?.();
+              setJob({ id: ref.id, label: stage.label, status: 'queued', detail: '' });
+              jobOff.current = subPushJob(clubId, ref.id, (j) => {
+                if (!j) return;
+                setJob((cur) => (cur && cur.id === ref.id ? { ...cur, status: j.status, detail: j.detail || '' } : cur));
+              });
+            } catch (e) {
+              flash('발송을 시작하지 못했습니다');
+            }
           },
         },
       ],
@@ -200,8 +220,16 @@ export function Dunning({
       )}
 
       <SectionTitle hint="총무 이름이 아니라 클럽 이름으로 나갑니다">알림 단계</SectionTitle>
+      {!!job && (
+        <Card style={{ marginTop: 8, backgroundColor: job.status === 'failed' ? C.dangerBg : job.status === 'queued' ? C.fill : C.greenSoft }}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: C.text }}>
+            {job.label} · {job.status === 'queued' ? '보내는 중…' : job.status === 'done' ? '보냈습니다' : job.status === 'failed' ? '보내지 못했습니다' : '보내지 않았습니다'}
+          </Text>
+          {!!job.detail && <Text style={{ fontSize: 12, color: C.sub, marginTop: 4 }}>{job.detail}</Text>}
+        </Card>
+      )}
       {DUN_STAGES.map((stage) => {
-        const gate = canSend(stage, docKey, sentLog);
+        const gate = canSend(stage, docKey, sentLog, today());
         const to = recipientsFor(stage, active, paid);
         const isToday = todayStage?.key === stage.key;
         const sentAt = sentLog?.[docKey]?.[stage.key];
@@ -225,13 +253,20 @@ export function Dunning({
                 </Text>
                 <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 4 }}>
                   대상 {to.length}명
-                  {sentAt ? ` · ${sentAt} 발송함` : ''}
                 </Text>
               </View>
               <Btn small disabled={!gate.ok || !to.length} onPress={() => send(stage)}>
-                {sentAt ? '발송됨' : '발송'}
+                {!stage.auto && sentAt ? '다시 발송' : sentAt ? '발송됨' : '발송'}
               </Btn>
             </View>
+            {/* 최근 발송일 — 최종 안내는 여러 번 보낼 수 있으니 몇 번째인지도 */}
+            {!!sentAt && (
+              <Text style={{ fontSize: 12, fontWeight: '700', color: C.sub, marginTop: 8 }}>
+                최근 발송 {sentAt}
+                {!stage.auto && sentTimes(stage, docKey, sentLog) > 1 ? ` · 지금까지 ${sentTimes(stage, docKey, sentLog)}번` : ''}
+                {!stage.auto && sentAt === today() ? ' · 내일 다시 보낼 수 있어요' : ''}
+              </Text>
+            )}
           </Card>
         );
       })}

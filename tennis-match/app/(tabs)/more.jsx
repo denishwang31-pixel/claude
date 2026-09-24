@@ -21,6 +21,7 @@ import { Members } from '../../src/components/MembersScreen';
 import { Fees } from '../../src/components/FeesScreen';
 import { Reconcile } from '../../src/components/ReconcileScreen';
 import { Dunning } from '../../src/components/DunningScreen';
+import { FeeManage } from '../../src/components/FeeManageScreen';
 import { Settlement } from '../../src/components/SettlementScreen';
 import { Handover } from '../../src/components/HandoverScreen';
 import { MyFees } from '../../src/components/MyFeesScreen';
@@ -120,9 +121,8 @@ const MENU_GROUPS = [
       ['joinreq', 'joinreq', SCREEN.joinreq, '검색으로 들어온 신청을 승인'],
       ['invite', 'invite', SCREEN.invite, '초대코드·링크 보내기'],
       ['attendance', 'attendance', SCREEN.attendance, null],
-      ['fees', 'fees', SCREEN.fees, '정기 회비 · 지출 · 일회성 정산', 'fees'],
+      ['feemgmt', 'fees', SCREEN.feemgmt, '회비 현황 · 납부 체크 · 지출 · 일회성 정산', 'fees'],
       ['reconcile', 'fees', SCREEN.reconcile, '거래내역 붙여넣기 → 자동 확인', 'fees'],
-      ['dunning', 'polls', SCREEN.dunning, '미납자에게 개별 발송', 'fees'],
       ['settlement', 'rank', SCREEN.settlement, '총회 자료 자동 생성', 'fees'],
       ['handover', 'members', SCREEN.handover, '권한만 넘기면 기록은 남습니다', 'fees'],
       ['venues', 'venues', SCREEN.venues, '우리 클럽이 정기적으로 쓰는 코트'],
@@ -284,8 +284,23 @@ export default function More() {
         <Dunning {...{
           clubId, club, members, fee, periodKey: feeMonth, sentLog: dunningLog, flash,
           isAdmin: seeFees, claims: feeClaims,
-          venues, scopeId: feeScopeId, setScopeId: setFeeScopeId,
+          venues, scopeId: feeScopeId, setScopeId: setFeeScopeId, me,
         }} />
+      );
+      /* 회비 관리 — 회비 현황·정기 회비·지출·일회성 정산을 드롭다운 하나로 */
+      case 'feemgmt': return (
+        <FeeManage
+          dunningProps={{
+            clubId, club, members, fee, periodKey: feeMonth, sentLog: dunningLog, flash,
+            isAdmin: seeFees, claims: feeClaims,
+            venues, scopeId: feeScopeId, setScopeId: setFeeScopeId, me,
+          }}
+          feesProps={{
+            clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash,
+            venues, seeFees, seeAllVenues, myLeadVenues, pools: duesPools,
+            scopeId: feeScopeId, setScopeId: setFeeScopeId,
+          }}
+        />
       );
       case 'settlement': return (
         <Settlement {...{ clubId, club, members, expenses, flash, isAdmin: seeFees }} />

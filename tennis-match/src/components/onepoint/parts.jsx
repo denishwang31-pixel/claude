@@ -13,7 +13,7 @@ import { View, Text, Pressable, Image, FlatList, ScrollView, TextInput } from 'r
 import { Icon } from '../Icon';
 import { C, R } from '../../lib/theme';
 import {
-  thumbUrl, videoIdOf, catOf, levelLabel, highlightParts, a11yLabel,
+  thumbUrl, videoIdOf, catOf, levelLabel, highlightParts, a11yLabel, CATEGORIES, CATEGORY_ICON,
 } from '../../lib/onepoint';
 
 export const PAD = 16;
@@ -206,6 +206,51 @@ export function VideoShelf({
             onPress={() => onOpen(item)} onLongPress={onLongPress ? () => onLongPress(item) : undefined} />
         )}
       />
+    </View>
+  );
+}
+
+/* ---------------- 영역별로 보기 — 4칸 격자 ----------------
+   앱 주인이 보낸 시안 그대로: 그림 + 영역 이름 + 개수. 영상이 없는 영역은
+   흐리게 「준비 중」. 화면을 많이 차지하지 않게 칸 높이를 낮게(56) 둔다 —
+   아래 선반이 한눈에 이어져 보여야 한다. */
+export function CategoryGrid({ counts, onPick, columns = 4 }) {
+  const n = (c) => (counts.find((x) => x.category === c) || {}).count || 0;
+  return (
+    <View style={{
+      marginHorizontal: PAD, marginTop: 8, borderRadius: 16, backgroundColor: C.surface,
+      borderWidth: 1, borderColor: C.border, paddingHorizontal: 8, paddingTop: 10, paddingBottom: 8,
+    }}>
+      <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 13, fontWeight: '800', color: C.sub, marginLeft: 6, marginBottom: 6 }}>
+        영역별로 보기
+      </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {CATEGORIES.map((c) => {
+          const cnt = n(c);
+          const empty = cnt === 0;
+          return (
+            <View key={c} style={{ width: `${100 / columns}%`, padding: 3 }}>
+              <Pressable
+                onPress={empty ? undefined : () => onPick(c)}
+                disabled={empty}
+                accessibilityRole="button"
+                accessibilityLabel={empty ? `${c}, 준비 중` : `${c} 영상 ${cnt}개`}
+                style={({ pressed }) => ({
+                  minHeight: 56, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                  paddingVertical: 4, borderWidth: 1, borderColor: C.border,
+                  backgroundColor: pressed ? C.greenSoft : C.surface,
+                  opacity: empty ? 0.45 : 1,
+                })}>
+                <Icon name={CATEGORY_ICON[c]} size={16} color={empty ? C.faint : C.green} />
+                <Text maxFontSizeMultiplier={1.2} numberOfLines={1} style={{ marginTop: 2, fontSize: 13, fontWeight: '800', color: empty ? C.faint : C.text }}>{c}</Text>
+                <Text maxFontSizeMultiplier={1.2} style={{ fontSize: 11, fontWeight: '600', color: C.faint }}>
+                  {empty ? '준비 중' : `${cnt}개`}
+                </Text>
+              </Pressable>
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 }
