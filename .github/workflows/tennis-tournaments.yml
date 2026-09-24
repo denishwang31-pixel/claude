@@ -1,0 +1,75 @@
+# 테니스매치 — 공개 대회 자동 갱신 (매일 02:00 한국 시간)
+#
+# 협회·대회 사이트와 웹 검색으로 "접수 중·접수 예정" 동호인 대회를 모아
+# [대회 찾기] 목록(openTournaments)을 갱신한다. 마감일이 지난 대회는 앱이
+# 알아서 숨기고, 끝난 자동 대회는 여기서 지운다.
+#
+# 필요한 시크릿 (Settings → Secrets and variables → Actions)
+#   ANTHROPIC_API_KEY         Claude API 키 (새로 넣어야 함)
+#   FIREBASE_SERVICE_ACCOUNT  이미 배포에 쓰는 것
+#
+# ⚠️ 예약 실행(schedule)은 **기본 브랜치에 있는 이 파일**로만 돈다. 그래서
+#    이 파일은 기본 브랜치와 작업 브랜치에 똑같이 둔다. 코드는 아래 ref 에서 가져온다.
+# ⚠️ GitHub 예약 실행은 몰리는 시간엔 몇 분~수십 분 늦게 시작할 수 있다.
+name: 테니스매치 대회 자동 갱신
+
+on:
+  schedule:
+    # UTC 17:00 = 한국 02:00
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '시험 실행(목록을 바꾸지 않고 결과만 보기)'
+        type: boolean
+        default: true
+      ref:
+        description: '스크립트를 가져올 브랜치'
+        type: string
+        default: 'claude/tennis-app-roadmap-review-oxol8b'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tennis-tournaments
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: tennis-match/jobs
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || 'claude/tennis-app-roadmap-review-oxol8b' }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 라이브러리 설치
+        run: npm ci
+
+      # ⚠️ 키 값은 찍지 않는다 — 있다/없다만
+      - name: 인증 준비
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          AK: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$SA" ]; then echo "::error::FIREBASE_SERVICE_ACCOUNT 시크릿이 없습니다."; exit 1; fi
+          if [ -z "$AK" ]; then echo "::error::ANTHROPIC_API_KEY 시크릿이 없습니다. Settings → Secrets and variables → Actions 에 넣어 주세요."; exit 1; fi
+          echo "FIREBASE_SERVICE_ACCOUNT: 있음 · ANTHROPIC_API_KEY: 있음"
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+
+      - name: 대회 모으기·반영
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+          GOOGLE_CLOUD_PROJECT: tennis-match-52b31
+          # 예약 실행은 실제 반영, 손으로 누를 땐 기본이 시험 실행
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
+        run: node sync-tournaments.mjs
