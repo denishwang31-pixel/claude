@@ -18,7 +18,6 @@ import { JOIN_STATUS, normalizeRole, SCREEN } from '../../src/lib/constants';
 import { feeRule } from '../../src/lib/scope';
 import { Board, Guest, Courts } from '../../src/components/MoreScreens';
 import { Members } from '../../src/components/MembersScreen';
-import { Fees } from '../../src/components/FeesScreen';
 import { Reconcile } from '../../src/components/ReconcileScreen';
 import { Dunning } from '../../src/components/DunningScreen';
 import { FeeManage } from '../../src/components/FeeManageScreen';
@@ -287,20 +286,16 @@ export default function More() {
           venues, scopeId: feeScopeId, setScopeId: setFeeScopeId, me,
         }} />
       );
-      /* 회비 관리 — 회비 현황·정기 회비·지출·일회성 정산을 드롭다운 하나로 */
+      /* 회비 관리 — 현황판 + 회비 미납 관리 + 회비 지출 관리 (+ 일회성 정산).
+         예전 [회비·지출] 화면(fees)도 같은 화면으로 연다. */
+      case 'fees':
       case 'feemgmt': return (
-        <FeeManage
-          dunningProps={{
-            clubId, club, members, fee, periodKey: feeMonth, sentLog: dunningLog, flash,
-            isAdmin: seeFees, claims: feeClaims,
-            venues, scopeId: feeScopeId, setScopeId: setFeeScopeId, me,
-          }}
-          feesProps={{
-            clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash,
-            venues, seeFees, seeAllVenues, myLeadVenues, pools: duesPools,
-            scopeId: feeScopeId, setScopeId: setFeeScopeId,
-          }}
-        />
+        <FeeManage {...{
+          clubId, club, members, venues, feeMonth, setFeeMonth,
+          scopeId: feeScopeId, setScopeId: setFeeScopeId,
+          isAdmin, seeFees, seeAllVenues, myLeadVenues, expenses, pools: duesPools,
+          sentLog: dunningLog, claims: feeClaims, me, flash,
+        }} />
       );
       case 'settlement': return (
         <Settlement {...{ clubId, club, members, expenses, flash, isAdmin: seeFees }} />
@@ -309,13 +304,6 @@ export default function More() {
         <Handover {...{
           clubId, club, members, meetings, fees: allFees, history: handoverLog,
           canAppoint, me, flash,
-        }} />
-      );
-      case 'fees': return (
-        <Fees {...{
-          clubId, club, members, fee, feeMonth, setFeeMonth, isAdmin, flash,
-          venues, seeFees, seeAllVenues, myLeadVenues, pools: duesPools,
-          scopeId: feeScopeId, setScopeId: setFeeScopeId,
         }} />
       );
       case 'board': return <Board {...{ clubId, club, posts, publicPosts, meVal, me, isAdmin, flash }} />;

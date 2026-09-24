@@ -31,7 +31,11 @@ const won = (n) => `${Number(n || 0).toLocaleString()}원`;
 export function Dunning({
   clubId, club, members, fee, periodKey, sentLog = {}, claims = [], isAdmin, flash,
   venues = [], scopeId = null, setScopeId = () => {}, me = null,
+  sections = null,
 }) {
+  /* 회비 관리 화면은 이 화면의 일부만 쓴다(현황 숫자는 위 현황판이 보여 준다).
+     sections 가 없으면 전부 그린다. */
+  const show = (k) => !sections || sections.includes(k);
   /* 방금 누른 발송의 결과 — 서버가 몇 명에게 보냈는지 적어 준다 */
   const [job, setJob] = useState(null);   // { id, label, status, detail }
   const jobOff = useRef(null);
@@ -133,9 +137,9 @@ export function Dunning({
   return (
     <View>
       {/* 청구 단위 — 코트장마다 걷는 클럽에서만 보인다 */}
-      <BillingScopeTabs scopes={scopes} value={scope.id} onChange={setScopeId} />
+      {show('scope') && <BillingScopeTabs scopes={scopes} value={scope.id} onChange={setScopeId} />}
 
-      {!feeNotify.on && (
+      {show('stages') && !feeNotify.on && (
         <Card style={{ backgroundColor: C.warnBg, marginBottom: 10 }}>
           <Text style={{ fontSize: 12, color: C.warn, fontWeight: '700' }}>
             회비 알림이 꺼져 있습니다
@@ -149,7 +153,7 @@ export function Dunning({
         </Card>
       )}
 
-      <Card>
+      {show('summary') && <Card>
         <Text style={F.bodyBold}>
           {periodLabel(periodKey)} 회비 현황
           {scope.id ? ` · ${scope.name}` : ''}
@@ -163,9 +167,9 @@ export function Dunning({
           {won(amount)} · 납부 기한 {dueDate}
           {todayStage ? ` · 오늘은 "${todayStage.label}" 발송일입니다` : ''}
         </Text>
-      </Card>
+      </Card>}
 
-      {claims.length > 0 && (
+      {show('claims') && claims.length > 0 && (
         <>
           <SectionTitle hint="회원이 직접 보낸 요청입니다">
             확인 요청 {claims.length}건
@@ -219,7 +223,8 @@ export function Dunning({
         </>
       )}
 
-      <SectionTitle hint="총무 이름이 아니라 클럽 이름으로 나갑니다">알림 단계</SectionTitle>
+      {show('stages') && (<>
+      <SectionTitle hint={todayStage ? `오늘은 「${todayStage.label}」 발송일 · 클럽 이름으로 나갑니다` : '총무 이름이 아니라 클럽 이름으로 나갑니다'}>알림 단계</SectionTitle>
       {!!job && (
         <Card style={{ marginTop: 8, backgroundColor: job.status === 'failed' ? C.dangerBg : job.status === 'queued' ? C.fill : C.greenSoft }}>
           <Text style={{ fontSize: 13, fontWeight: '800', color: C.text }}>
@@ -277,7 +282,9 @@ export function Dunning({
           다른 회원은 누가 안 냈는지 알 수 없고, 단체 공지로도 나가지 않습니다.
         </Text>
       </Card>
+      </>)}
 
+      {show('policy') && (<>
       <SectionTitle>납부 안내 설정</SectionTitle>
       <Card>
         {editing ? (
@@ -329,8 +336,9 @@ export function Dunning({
           </View>
         )}
       </Card>
+      </>)}
 
-      {unpaid.length > 0 && (
+      {show('unpaid') && unpaid.length > 0 && (
         <>
           <SectionTitle hint="총무에게만 보입니다">미납자 {unpaid.length}명</SectionTitle>
           <Card>
