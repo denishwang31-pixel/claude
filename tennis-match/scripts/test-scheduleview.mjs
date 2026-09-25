@@ -10,7 +10,7 @@
 import {
   monthKey, monthLabel, shiftMonth, MONTH_STEP, windowEnd, visibleMeetings,
   groupByMonth, belongsToVenue, membersForMeeting, canRsvpSelf,
-  rsvpBlockReason, rsvpSummary,
+  rsvpBlockReason, rsvpSummary, rsvpGroups,
 } from '../src/lib/scheduleView.js';
 
 let pass = 0, fail = 0;
@@ -164,6 +164,23 @@ ok(!canRsvpSelf(PRESIDENT, { venueId: 'v2' }), '회장도 남의 코트는 못 �
 ok(rsvpBlockReason(PRESIDENT, { venueId: 'v2' }, '수도공고').includes('수도공고'),
   '왜 못 누르는지 코트장 이름과 함께 알려준다');
 eq('누를 수 있으면 설명 없음', rsvpBlockReason(PRESIDENT, { venueId: 'v1' }, '염곡'), '');
+
+/* ---------- 명단 나누기 ---------- */
+section('명단 — 참석 · 불참 · 미응답을 따로 (헷갈리지 않게)');
+{
+  const mt = { venueId: 'v1', rsvp: { m1: 'yes', m3: 'no', m4: 'maybe', m2: 'yes' }, guests: [{ name: '게스트1' }] };
+  const g = rsvpGroups(MEMBERS, mt);
+  eq('참석', g.yes.map((x) => x.id), ['m1']);
+  eq('불참', g.no.map((x) => x.id), ['m3']);
+  eq('미응답 — 예전 미정 포함, 이름순', g.none.map((x) => x.name), ['미배정', '빈배열']);
+  eq('게스트는 따로', g.guests.map((x) => x.name), ['게스트1']);
+  eq('남의 코트 사람(m2)은 어디에도 안 들어간다', [...g.yes, ...g.no, ...g.none].some((x) => x.id === 'm2'), false);
+  eq('휴면 회원은 빠진다', [...g.yes, ...g.no, ...g.none].some((x) => x.id === 'm6'), false);
+  const s = rsvpSummary(MEMBERS, mt);
+  eq('숫자가 현황 한 줄과 같다', [g.yes.length, g.no.length, g.none.length, g.yes.length + g.guests.length],
+    [s.yes, s.no, s.none, s.going]);
+  eq('빈 모임도 버틴다', rsvpGroups([], null), { yes: [], no: [], none: [], guests: [] });
+}
 
 /* ---------- 요약 ---------- */
 section('현황 요약 — 명단을 안 그려도 상태를 안다');

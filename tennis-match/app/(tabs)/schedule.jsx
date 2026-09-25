@@ -26,7 +26,7 @@ import {
 } from '../../src/lib/rsvpAsk';
 import {
   visibleMeetings, groupByMonth, membersForMeeting, canRsvpSelf,
-  rsvpBlockReason, rsvpSummary, MONTH_STEP,
+  rsvpBlockReason, rsvpSummary, rsvpGroups, MONTH_STEP,
 } from '../../src/lib/scheduleView';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
@@ -49,6 +49,35 @@ import {
 import { C, S, R, F } from '../../src/lib/theme';
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+/* 명단 한 무리 — 제목(점 + 이름 + 인원) 아래에 이름 칩 */
+const RSVP_TONE = {
+  yes: { dot: C.green, bg: C.greenSoft, fg: C.green },
+  no: { dot: '#DC2626', bg: '#FEE2E2', fg: '#B91C1C' },
+  none: { dot: '#D97706', bg: '#FEF3C7', fg: '#92400E' },
+};
+function RsvpGroup({ tone, label, people, empty }) {
+  const t = RSVP_TONE[tone];
+  return (
+    <View style={{ marginTop: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: t.dot }} />
+        <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.text }}>{label} {people.length}명</Text>
+      </View>
+      {people.length === 0 ? (
+        <Text style={{ fontSize: 11.5, color: C.faint }}>{empty || '없음'}</Text>
+      ) : (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+          {people.map((p) => (
+            <View key={p.id} style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: t.bg }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: t.fg }}>{p.name}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
 
 export default function Schedule() {
   const { clubId, me, viewMode } = useApp();
@@ -563,24 +592,34 @@ export default function Schedule() {
                        회원 200명이면 칩 2만 개고, 화면이 열리는 데서 걸린다. */}
                     {isOpen && (
                       <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingTop: 10 }}>
-                        <Text style={{ fontSize: 10.5, color: C.faint, marginBottom: 6 }}>
+                        <Text style={{ fontSize: 10.5, color: C.faint, marginBottom: 4 }}>
                           대상 {sum.target}명
                           {venueNameOf(mt) ? ` · ${venueNameOf(mt)} 소속` : ' · 전체'}
                         </Text>
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-                          {Object.entries(mt.rsvp || {}).filter(([, v]) => v === RSVP.YES).map(([id]) => (
-                            <Avatar key={id} id={id} nameOf={nameOf} members={members} />
-                          ))}
-                          {(mt.guests || []).map((g) => (
-                            <Avatar key={g.uid || g.name} id={'g:' + (g.uid || g.name)} nameOf={nameOf} members={members} />
-                          ))}
-                          {sum.going === 0 && (
-                            <Text style={{ fontSize: 11.5, color: C.faint }}>아직 참석자가 없습니다.</Text>
-                          )}
-                        </View>
+                        {/* 명단을 참석 · 불참 · 미응답으로 나눠 제목을 단다.
+                           예전엔 참석자 칩과 아래 "대신 처리" 칩이 제목 없이 이어져서
+                           어느 줄이 참석이고 어느 줄이 미응답인지 헷갈렸다(앱 주인). */}
+                        {(() => {
+                          const g = rsvpGroups(members, mt);
+                          return (
+                            <>
+                              <RsvpGroup tone="yes" label="참석" people={[...g.yes, ...g.guests]}
+                                empty="아직 참석자가 없습니다" />
+                              {g.no.length > 0 && <RsvpGroup tone="no" label="불참" people={g.no} />}
+                              {g.none.length > 0 && <RsvpGroup tone="none" label="미응답" people={g.none} />}
+                            </>
+                          );
+                        })()}
 
                         {isAdmin && (
-                          <View style={{ marginTop: 12 }}>
+                          /* 운영진 칸 — 위 명단(보기)과 섞이지 않게 회색 상자로 따로 묶는다 */
+                          <View style={{
+                            marginTop: 14, padding: 12, borderRadius: 14,
+                            backgroundColor: C.fill, borderWidth: 1, borderColor: C.border,
+                          }}>
+                            <Text style={{ fontSize: 13, fontWeight: '800', color: C.text, marginBottom: 8 }}>
+                              운영진 · 대신 처리
+                            </Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                               <View style={{ flex: 1 }}>
                                 <Text style={{ fontSize: 10.5, color: C.faint }}>
@@ -616,8 +655,12 @@ export default function Schedule() {
                               </View>
                             )}
 
-                            <Text style={{ fontSize: 10, color: C.faint, marginTop: 10, marginBottom: 6 }}>
-                              이름을 눌러 대신 처리 (참석 ↔ 불참) · 🔗 = 본인이 카톡 링크로 답함
+                            <Text style={{ fontSize: 11, color: C.sub, marginTop: 12, marginBottom: 6, lineHeight: 16 }}>
+                              이름을 누르면 참석 ↔ 불참이 바뀝니다{'\n'}
+                              <Text style={{ color: C.green, fontWeight: '800' }}>■ 참석</Text>
+                              {'  '}<Text style={{ color: '#b91c1c', fontWeight: '800' }}>■ 불참</Text>
+                              {'  '}<Text style={{ color: C.faint, fontWeight: '800' }}>□ 미응답</Text>
+                              {'  '}🔗 본인이 카톡 링크로 답함
                             </Text>
                             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
                               {membersForMeeting(members, mt).map((m) => {
@@ -628,7 +671,8 @@ export default function Schedule() {
                                     onPress={() => setRsvp(clubId, mt.id, m.id, on ? RSVP.NO : RSVP.YES, me)}
                                     style={{
                                       paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
-                                      backgroundColor: on ? C.green : v === RSVP.NO ? '#fee2e2' : '#f5f5f4',
+                                      backgroundColor: on ? C.green : v === RSVP.NO ? '#fee2e2' : C.surface,
+                                      borderWidth: 1, borderColor: on ? C.green : v === RSVP.NO ? '#fecaca' : C.border,
                                     }}>
                                     <Text style={{
                                       fontSize: 11, fontWeight: '700',

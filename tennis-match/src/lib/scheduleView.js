@@ -175,7 +175,35 @@ export function rsvpSummary(members, meeting) {
   };
 }
 
+/**
+ * 명단을 참석 · 불참 · 미응답으로 나눈다 — 모임 카드의 [명단]이 쓴다.
+ *
+ * 예전에는 참석자만 칩으로 늘어놓고, 그 아래 운영진용 "대신 처리" 칩(전원)이
+ * 바로 이어져서 어느 줄이 참석이고 어느 줄이 미응답인지 헷갈렸다(앱 주인).
+ * 그래서 세 무리로 나눠 제목을 붙인다. 셈은 rsvpSummary 와 같다(대상 회원 기준,
+ * 예전 '미정'은 미응답). 게스트는 참석 무리 끝에 붙는다.
+ * @returns {{yes: {id,name}[], no: {id,name}[], none: {id,name}[], guests: {id,name}[]}}
+ */
+export function rsvpGroups(members, meeting) {
+  const rsvp = meeting?.rsvp || {};
+  const out = { yes: [], no: [], none: [], guests: [] };
+  membersForMeeting(members, meeting).forEach((m) => {
+    const row = { id: m.id, name: m.name || '이름 없음' };
+    const v = rsvp[m.id];
+    if (v === 'yes') out.yes.push(row);
+    else if (v === 'no') out.no.push(row);
+    else out.none.push(row);
+  });
+  (meeting?.guests || []).forEach((g) => {
+    out.guests.push({ id: `g:${g.uid || g.name}`, name: g.name || '게스트' });
+  });
+  const byName = (a, b) => String(a.name).localeCompare(String(b.name), 'ko');
+  out.yes.sort(byName); out.no.sort(byName); out.none.sort(byName);
+  return out;
+}
+
 export default {
+  rsvpGroups,
   monthKey, monthLabel, shiftMonth, MONTH_STEP, windowEnd, visibleMeetings,
   groupByMonth, belongsToVenue, membersForMeeting, canRsvpSelf,
   rsvpBlockReason, rsvpSummary,
