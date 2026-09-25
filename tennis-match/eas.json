@@ -23,7 +23,8 @@
       },
       "ios": {
         "simulator": true
-      }
+      },
+      "autoIncrement": true
     },
     "preview-ios-device": {
       "distribution": "internal",

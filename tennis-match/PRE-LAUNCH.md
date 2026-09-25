@@ -34,10 +34,13 @@
       ⚠️ 개인 계정은 **비공개 테스트 12명 이상 · 14일 이상**을 거쳐야 프로덕션 출시 신청이 열린다.
       클럽 회원 12명을 테스터로 모아 두는 게 가장 빠르다. 이 14일이 출시 일정의 가장 긴 줄이다.
 - [ ] [주인] **패키지명 최종 확정** — `com.donghyun.tennismatch`. 한 번 올리면 영영 못 바꾼다.
-- [ ] [코드] **버전 1.0.0 · 출시용 빌드(AAB)** — `eas.json` production 프로필(app-bundle).
-      ⚠️ `appVersionSource: local` + `autoIncrement` 는 CI 에서 올린 versionCode 가 저장소에
-      안 남아 다음 빌드가 같은 번호로 거부될 수 있다 → `remote` 로 바꾸거나 빌드 후 커밋.
-      ⚠️ 1.0.0 으로 올리면 runtimeVersion 이 바뀌어 0.3.0 앱은 새 OTA 를 못 받는다(새 설치 필요).
+- [x] [코드] **빌드 번호(versionCode) 자동 기록** (2026-09-25) — preview·production 둘 다 빌드마다
+      올리고(eas.json autoIncrement), 빌드 workflow 가 올린 번호를 app.json 에 커밋한다
+      ([배포안함] 커밋). 같은 번호로 업로드가 거부되거나 APK 가 덮어 설치되지 않는 일을 막는다.
+- [ ] [코드] **버전 1.0.0 은 스토어 출시 빌드 직전에 올린다** — 일부러 지금 안 올렸다.
+      runtimeVersion 이 버전을 따라가서, 올리는 순간 지금 클럽 회원들의 0.3.0 앱은
+      OTA 를 더 못 받는다(새로 설치해야 함). 출시용 AAB(production)를 만들 때
+      1.0.0 으로 올리고, 회원들은 스토어 앱으로 갈아타게 한다.
 - [ ] [코드] **production 채널 OTA** — 자동 배포는 preview 채널만. 스토어 앱(production)은
       배포 workflow 를 손으로 channel=production 으로 돌려야 받는다. 출시 후 규칙으로 정해 둔다.
 - [ ] [주인] **앱 서명 SHA-1 두 개 등록** — Play 콘솔 › 앱 무결성에 나오는 **앱 서명 키** SHA-1 +
