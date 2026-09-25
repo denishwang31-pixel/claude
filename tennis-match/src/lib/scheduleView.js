@@ -202,7 +202,19 @@ export function rsvpGroups(members, meeting) {
   return out;
 }
 
+/**
+ * 운영진이 이름을 누를 때 다음 상태 — 미응답 → 참석 → 불참 → 미응답.
+ * 예전엔 참석 ↔ 불참만 오가서, 잘못 누르면 미응답으로 되돌릴 수 없었다(앱 주인).
+ * 예전 '미정'은 미응답으로 보고 참석으로 넘어간다. null = 미응답(값 지우기).
+ */
+export function nextRsvp(v) {
+  if (v === 'yes') return 'no';
+  if (v === 'no') return null;
+  return 'yes';
+}
+
 export default {
+  nextRsvp,
   rsvpGroups,
   monthKey, monthLabel, shiftMonth, MONTH_STEP, windowEnd, visibleMeetings,
   groupByMonth, belongsToVenue, membersForMeeting, canRsvpSelf,

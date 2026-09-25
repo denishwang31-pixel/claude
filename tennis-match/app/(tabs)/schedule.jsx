@@ -10,7 +10,7 @@ import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { weatherFor } from '../../src/lib/weather';
 import {
-  setRsvp, addMeeting, addMeetingsBatch, updateMeeting, updateMeetingsFrom,
+  setRsvp, clearRsvp, addMeeting, addMeetingsBatch, updateMeeting, updateMeetingsFrom,
   deleteMeeting, deleteMeetingsBulk, subGear, requestRsvp,
   applyToTournament, cancelTournamentApply, setRsvpLink,
 } from '../../src/lib/firestore';
@@ -26,7 +26,7 @@ import {
 } from '../../src/lib/rsvpAsk';
 import {
   visibleMeetings, groupByMonth, membersForMeeting, canRsvpSelf,
-  rsvpBlockReason, rsvpSummary, rsvpGroups, MONTH_STEP,
+  rsvpBlockReason, rsvpSummary, rsvpGroups, nextRsvp, MONTH_STEP,
 } from '../../src/lib/scheduleView';
 import { AD_SLOTS } from '../../src/lib/ads';
 import { AdBanner } from '../../src/components/AdBanner';
@@ -677,7 +677,7 @@ export default function Schedule() {
                             )}
 
                             <Text style={{ fontSize: 11, color: C.sub, marginTop: 12, marginBottom: 6, lineHeight: 16 }}>
-                              이름을 누르면 참석 ↔ 불참이 바뀝니다{'\n'}
+                              이름을 누를 때마다 미응답 → 참석 → 불참 → 미응답 순으로 바뀝니다{'\n'}
                               <Text style={{ color: C.green, fontWeight: '800' }}>■ 참석</Text>
                               {'  '}<Text style={{ color: '#b91c1c', fontWeight: '800' }}>■ 불참</Text>
                               {'  '}<Text style={{ color: C.faint, fontWeight: '800' }}>□ 미응답</Text>
@@ -689,7 +689,12 @@ export default function Schedule() {
                                 const on = v === RSVP.YES;
                                 return (
                                   <Pressable key={m.id}
-                                    onPress={() => setRsvp(clubId, mt.id, m.id, on ? RSVP.NO : RSVP.YES, me)}
+                                    onPress={() => {
+                                      const nx = nextRsvp(v);
+                                      if (nx) setRsvp(clubId, mt.id, m.id, nx, me);
+                                      else clearRsvp(clubId, mt.id, m.id, me);
+                                    }}
+                                    accessibilityLabel={`${m.name} ${on ? '참석' : v === RSVP.NO ? '불참' : '미응답'} — 누르면 ${nextRsvp(v) === 'yes' ? '참석' : nextRsvp(v) === 'no' ? '불참' : '미응답'}으로`}
                                     style={{
                                       paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
                                       backgroundColor: on ? C.green : v === RSVP.NO ? '#fee2e2' : C.surface,

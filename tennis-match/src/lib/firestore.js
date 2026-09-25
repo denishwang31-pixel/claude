@@ -213,6 +213,15 @@ export const setRsvp = (clubId, meetingId, memberId, value, actorId) =>
     [`rsvpBy.${memberId}`]: actorId || memberId,
   });
 
+/* 운영진이 잘못 누른 답을 미응답으로 되돌린다.
+   ⚠️ rsvpBy 는 지우지 않고 운영진으로 남긴다 — 비워 두면 서버가 "회원 본인이
+      참석을 취소했다"로 읽어 대진 확인 알림을 보낼 수 있다(rsvpAsk.changedAnswers). */
+export const clearRsvp = (clubId, meetingId, memberId, actorId) =>
+  updateDoc(D(clubId, 'meetings', meetingId), {
+    [`rsvp.${memberId}`]: deleteField(),
+    [`rsvpBy.${memberId}`]: actorId || '',
+  });
+
 /* 참석 투표 요청 — 아직 답하지 않은 사람에게만 푸시.
    앱에서 직접 푸시를 쏠 수는 없으므로(토큰은 서버만 본다) 요청서를
    한 장 남기고, Cloud Functions 가 그것을 보고 발송한다. */

@@ -10,7 +10,7 @@
 import {
   monthKey, monthLabel, shiftMonth, MONTH_STEP, windowEnd, visibleMeetings,
   groupByMonth, belongsToVenue, membersForMeeting, canRsvpSelf,
-  rsvpBlockReason, rsvpSummary, rsvpGroups,
+  rsvpBlockReason, rsvpSummary, rsvpGroups, nextRsvp,
 } from '../src/lib/scheduleView.js';
 
 let pass = 0, fail = 0;
@@ -181,6 +181,13 @@ section('명단 — 참석 · 불참 · 미응답을 따로 (헷갈리지 않게
     [s.yes, s.no, s.none, s.going]);
   eq('빈 모임도 버틴다', rsvpGroups([], null), { yes: [], no: [], none: [], guests: [] });
 }
+
+section('운영진 대신 처리 — 미응답으로도 되돌린다');
+eq('미응답 → 참석', nextRsvp(undefined), 'yes');
+eq('참석 → 불참', nextRsvp('yes'), 'no');
+eq('불참 → 미응답(지우기)', nextRsvp('no'), null);
+eq('예전 미정 → 참석', nextRsvp('maybe'), 'yes');
+eq('미응답에서 세 번 누르면 다시 미응답', nextRsvp(nextRsvp(nextRsvp(undefined))), null);
 
 /* ---------- 요약 ---------- */
 section('현황 요약 — 명단을 안 그려도 상태를 안다');
