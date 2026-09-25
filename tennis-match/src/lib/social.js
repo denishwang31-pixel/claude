@@ -111,13 +111,17 @@ export const PROVIDER_STYLE = {
  * platforms 는 그 버튼을 어느 OS 에서 그릴 것인가.
  */
 export const REQUIREMENTS = {
+  /* 카카오·네이버는 **웹 로그인 + 우리 서버(socialAuth 함수)** 로 붙였다(2026-09-25).
+     네이티브 SDK 가 아니라서 새 빌드 없이 키만 들어오면 켜진다. 앱에는 공개해도
+     되는 값(카카오 REST 키 = client_id, 네이버 Client ID)만 싣고, 네이버 Client Secret
+     은 **서버에만** 둔다 — 앱에 넣으면 누구나 뜯어서 볼 수 있다. */
   [PROVIDERS.KAKAO]: {
-    keys: ['kakaoRestKey', 'kakaoNativeKey'],
+    keys: ['kakaoRestKey'],
     needsServer: true,
     platforms: ['ios', 'android'],
   },
   [PROVIDERS.NAVER]: {
-    keys: ['naverClientId', 'naverClientSecret'],
+    keys: ['naverClientId'],
     needsServer: true,
     platforms: ['ios', 'android'],
   },
@@ -143,19 +147,15 @@ export const REQUIREMENTS = {
  * ⚠️ 값을 이 파일에 직접 적지 말 것. app.json 의 extra 나 EAS 시크릿에서
  *    읽어 넣는다. 저장소는 공개될 수 있고, 키는 한 번 새어 나가면
  *    발급처에서 지우고 다시 받는 것 말고는 방법이 없다.
- *    (secret 이 붙은 값 — naverClientSecret — 은 특히 그렇다)
+ *    (그래서 네이버 Client Secret 같은 비밀값은 아예 앱에 싣지 않는다 — 서버에만)
  */
 export const SOCIAL_CONFIG = {
   kakaoRestKey: '',
   kakaoNativeKey: '',
   naverClientId: '',
-  naverClientSecret: '',
   googleWebClientId: '',
   googleAndroidClientId: '',
   appleServiceId: '',
-  /* 카카오·네이버 토큰을 Firebase 계정으로 바꿔 주는 서버 함수 주소.
-     둘 중 하나라도 켜려면 이것이 먼저 있어야 한다. */
-  tokenEndpoint: '',
 };
 
 /**
@@ -202,9 +202,7 @@ export function providerReady(provider, config = SOCIAL_CONFIG, platform = null)
   /* platform 을 안 주면 OS 를 따지지 않는다 — 설정 점검 화면처럼
      "키가 다 있는가"만 보고 싶은 자리가 있다. */
   if (platform && !req.platforms.includes(platform)) return false;
-  if (!req.keys.every((k) => filled(config?.[k]))) return false;
-  if (req.needsServer && !filled(config?.tokenEndpoint)) return false;
-  return true;
+  return req.keys.every((k) => filled(config?.[k]));
 }
 
 /**
@@ -240,9 +238,7 @@ export const enabledProviders = (config = SOCIAL_CONFIG, platform = null) =>
 export function missingFor(provider, config = SOCIAL_CONFIG) {
   const req = REQUIREMENTS[provider];
   if (!req) return [];
-  const out = req.keys.filter((k) => !filled(config?.[k]));
-  if (req.needsServer && !filled(config?.tokenEndpoint)) out.push('tokenEndpoint');
-  return out;
+  return req.keys.filter((k) => !filled(config?.[k]));
 }
 
 /**
@@ -290,9 +286,11 @@ export function socialReadiness(config = SOCIAL_CONFIG) {
   };
 }
 
-/** 새 빌드가 필요한가 — 하나라도 켜면 필요하다(네이티브 모듈이 들어가므로) */
+/** 새 빌드가 필요한가 — 네이티브 모듈이 들어가는 것은 애플뿐이다.
+ *  구글(expo-auth-session)은 이미 빌드에 들어 있고, 카카오·네이버는 웹 로그인이라
+ *  키만 들어오면(OTA 로도) 켜진다. */
 export const needsNativeRebuild = (config = SOCIAL_CONFIG) =>
-  PROVIDER_ORDER.some((p) => providerReady(p, config));
+  providerReady(PROVIDERS.APPLE, config);
 
 /* ---------------- 구글 주소·범위 ---------------- */
 
@@ -392,6 +390,72 @@ export function isNoBrowserError(e) {
   return /no matching browser|NoMatchingActivity|ActivityNotFound|PREFERRED_PACKAGE_NOT_FOUND/i.test(t);
 }
 
+/* ---------------- 카카오 · 네이버 (웹 로그인 + 서버) ---------------- */
+/* 흐름은 functions/socialAuth.js 머리말 참고. 여기는 앱 쪽 판단만 — 주소 만들기,
+   돌아온 주소 읽기, 오류 문구. 창을 여는 것은 socialSignIn.js. */
+
+/** 카카오·네이버 콘솔에 등록하는 콜백 주소의 도메인 (서버 AUTH_HOST_DEFAULT 와 같아야 한다) */
+export const SOCIAL_AUTH_HOST = 'tennis-match-52b31.web.app';
+
+/** 카카오 「Redirect URI」·네이버 「Callback URL」 에 등록할 주소 */
+export const socialRedirectUri = (provider, host = SOCIAL_AUTH_HOST) =>
+  `https://${host}/auth/${provider}/callback`;
+
+/** 서버가 로그인 결과를 돌려보내는 앱 주소 */
+export const socialReturnUrl = (applicationId) => {
+  const id = String(applicationId || '').trim();
+  return id ? `${id}://oauth` : '';
+};
+
+/** state — 우리 앱이 연 로그인인지 확인하는 값. '<제공자>.<영숫자 32>' */
+export function makeState(provider, randomBytes) {
+  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = Array.isArray(randomBytes) || ArrayBuffer.isView(randomBytes)
+    ? Array.from(randomBytes)
+    : Array.from({ length: 32 }, () => Math.floor(Math.random() * 256));
+  const tail = bytes.slice(0, 32).map((b) => abc[b % abc.length]).join('');
+  return `${provider}.${tail.padEnd(16, 'x')}`;
+}
+
+/** 로그인 창 주소 */
+export function authorizeUrl(provider, { clientId, state, host = SOCIAL_AUTH_HOST }) {
+  const q = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  const base = { response_type: 'code', client_id: clientId, redirect_uri: socialRedirectUri(provider, host), state };
+  if (provider === PROVIDERS.KAKAO) return `https://kauth.kakao.com/oauth/authorize?${q(base)}`;
+  if (provider === PROVIDERS.NAVER) return `https://nid.naver.com/oauth2.0/authorize?${q(base)}`;
+  return '';
+}
+
+/** 서버가 돌려보낸 앱 주소 읽기 → {provider, state, token, name, error} */
+export function parseSocialReturn(url) {
+  const s = String(url || '');
+  const at = s.indexOf('?');
+  const out = { provider: '', state: '', token: '', name: '', error: '' };
+  if (at < 0) return { ...out, error: s ? 'empty' : '' };
+  s.slice(at + 1).split('&').forEach((kv) => {
+    const [k, v = ''] = kv.split('=');
+    let val = '';
+    try { val = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { val = ''; }
+    if (k in out) out[k] = val;
+  });
+  return out;
+}
+
+/** 서버 오류 코드 → 사람 말 ('' = 사용자가 닫음, 화면에 아무것도 안 띄움) */
+export function socialAuthErrorText(code, provider) {
+  const who = PROVIDER_SHORT[provider] || '소셜';
+  switch (code) {
+    case 'cancelled': return '';
+    case 'state': return `[S1] ${who} 로그인 확인값이 맞지 않습니다. 다시 시도해 주세요.`;
+    case 'config': return `[S2] ${who} 로그인 서버 설정이 아직 끝나지 않았습니다(운영자 확인 필요).`;
+    case 'exchange': return `[S3] ${who}에서 로그인 확인을 받지 못했습니다. 콘솔에 등록한 주소(${socialRedirectUri(provider)})와 키를 확인해 주세요.`;
+    case 'profile': return `[S4] ${who} 회원 정보를 읽지 못했습니다. 동의 항목을 확인해 주세요.`;
+    case 'permission': return '[S5] 서버에 토큰 생성 권한이 없습니다(서비스 계정 토큰 생성자 역할 필요).';
+    case 'provider': return `[S6] ${who}이(가) 로그인을 거부했습니다.`;
+    default: return `[S7] ${who} 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.`;
+  }
+}
+
 /* ---------------- 로그인 결과 읽기 ---------------- */
 /* 창을 띄우는 것은 socialSignIn.js 가 하지만, "받은 것을 어떻게 읽나"는
    판단이라 여기 둔다. 저쪽은 네이티브 모듈을 불러오므로 node 로 도는
@@ -428,21 +492,23 @@ export function googleErrorText(e) {
  * 순서대로 하면 된다. 한 단계라도 건너뛰면 마지막에 원인을 못 찾는다.
  */
 export const SETUP = {
+  /* ⚠️ 콘솔 메뉴 이름은 적지 않는다 — 바뀌기도 하고, 추측한 이름은 찾을 수 없게 만든다.
+        무엇을 해야 하는지와 넣을 값만 적는다. */
   [PROVIDERS.KAKAO]: [
-    'developers.kakao.com → [내 애플리케이션] → 애플리케이션 추가',
-    '[앱 설정 → 플랫폼] → Android 등록 (패키지명 + 키 해시)',
-    '[제품 설정 → 카카오 로그인] 활성화 → Redirect URI 등록',
-    '[동의항목] → 닉네임·이메일을 필수 동의로 (이메일은 별도 검수 신청)',
-    'REST API 키 · 네이티브 앱 키를 SOCIAL_CONFIG 에 넣기',
-    '서버 함수 배포 — 카카오 토큰을 Firebase 계정으로 바꿔 준다',
+    'developers.kakao.com 에서 애플리케이션을 만든다',
+    '그 앱의 REST API 키를 GitHub Secrets KAKAO_REST_KEY 에 넣는다 (앱·서버가 같이 쓴다)',
+    '카카오 로그인을 사용하도록 켜고, 리다이렉트 주소로 https://tennis-match-52b31.web.app/auth/kakao/callback 을 등록한다',
+    '동의 항목: 닉네임은 필수, 프로필 사진·이메일은 선택 — 이메일이 없어도 가입된다',
+    'Client Secret 을 켰다면 그 값을 KAKAO_CLIENT_SECRET 에 넣는다 (안 켰으면 비워 둔다)',
+    '배포를 손으로 한 번 돌린다(Cloud Functions 체크) — 서버가 키를 받는다',
   ],
   [PROVIDERS.NAVER]: [
-    'developers.naver.com → [애플리케이션 등록]',
-    '사용 API 에서 [네이버 로그인] 선택 → 이메일·별명을 필수로',
-    '[환경 추가] → Android 앱 패키지명 · 다운로드 URL 등록',
-    'Client ID / Client Secret 을 SOCIAL_CONFIG 에 넣기',
-    '서버 함수 배포 — 네이버 토큰을 Firebase 계정으로 바꿔 준다',
-    '⚠️ 검수 전에는 개발자 본인 계정으로만 로그인된다. 공개 전 검수 신청',
+    'developers.naver.com 에서 애플리케이션을 등록하고, 사용할 API 로 네이버 로그인을 고른다',
+    '받을 정보: 이름(또는 별명) 필수, 프로필 사진 선택',
+    '웹 환경으로 등록한다 — 서비스 주소 https://tennis-match-52b31.web.app , 콜백 주소 https://tennis-match-52b31.web.app/auth/naver/callback',
+    'Client ID → NAVER_CLIENT_ID, Client Secret → NAVER_CLIENT_SECRET (Secret 은 서버에만 들어간다)',
+    '배포를 손으로 한 번 돌린다(Cloud Functions 체크)',
+    '⚠️ 네이버 검수를 받기 전에는 개발자 센터에 테스터로 등록한 네이버 아이디만 로그인된다. 공개 전 검수 신청',
   ],
   [PROVIDERS.GOOGLE]: [
     'Firebase 콘솔 → Authentication → 로그인 방법 → Google 사용 설정',
@@ -470,6 +536,8 @@ export default {
   configFromExtra, unknownKeys,
   GOOGLE_SCOPES, googleRedirectUri, googleErrorText,
   KNOWN_BROWSERS, browserCandidates, isNoBrowserError,
+  SOCIAL_AUTH_HOST, socialRedirectUri, socialReturnUrl, makeState, authorizeUrl,
+  parseSocialReturn, socialAuthErrorText,
   providerReady, enabledProviders, missingFor, googleClientMixup,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 };

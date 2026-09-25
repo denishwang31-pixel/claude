@@ -551,20 +551,18 @@ console.log('\n[준비 안 된 로그인 버튼은 그리지 않는다]');
   eq(enabledProviders(googleOnly), [PROVIDERS.GOOGLE],
     '구글은 서버 함수 없이도 된다 — Firebase 가 기본 지원하는 제공자');
 
-  const kakaoNoServer = { kakaoRestKey: 'r', kakaoNativeKey: 'n' };
-  eq(providerReady(PROVIDERS.KAKAO, kakaoNoServer), false,
-    '카카오는 서버 함수 주소가 없으면 못 쓴다 — Firebase 가 모르는 제공자라서');
-  eq(missingFor(PROVIDERS.KAKAO, kakaoNoServer), ['tokenEndpoint'], '뭐가 빠졌는지 알려 준다');
-  eq(providerReady(PROVIDERS.KAKAO, { ...kakaoNoServer, tokenEndpoint: 'https://x' }), true,
-    '서버 주소까지 있으면 쓸 수 있다');
-
-  eq(missingFor(PROVIDERS.NAVER, {}), ['naverClientId', 'naverClientSecret', 'tokenEndpoint'],
-    '네이버는 셋 다 필요하다');
+  /* 카카오·네이버는 웹 로그인 + 우리 서버(socialAuth)라, 앱에는 공개 키 하나만 있으면 된다 */
+  eq(providerReady(PROVIDERS.KAKAO, { kakaoRestKey: 'r' }), true, '카카오는 REST 키만 있으면 버튼이 나온다');
+  eq(missingFor(PROVIDERS.KAKAO, {}), ['kakaoRestKey'], '뭐가 빠졌는지 알려 준다');
+  eq(missingFor(PROVIDERS.NAVER, {}), ['naverClientId'],
+    '네이버는 Client ID 하나 — Secret 은 서버에만');
   eq(missingFor('이상한값', {}), [], '모르는 제공자는 빈 목록');
 
   eq(needsNativeRebuild({}), false, '아무것도 안 켜면 APK 를 다시 안 만들어도 된다');
-  eq(needsNativeRebuild(googleOnly), true,
-    '하나라도 켜면 새 APK 가 필요하다 — 네이티브 모듈이 들어가므로 OTA 로는 안 나간다');
+  eq(needsNativeRebuild(googleOnly), false,
+    '구글은 이미 빌드에 들어 있어서 키만 있으면 된다');
+  eq(needsNativeRebuild({ appleServiceId: 'svc' }), true,
+    '애플은 네이티브 모듈이 들어가서 새 빌드가 필요하다');
 
   Object.values(PROVIDERS).forEach((p) => {
     ok(Array.isArray(SETUP[p]) && SETUP[p].length >= 3,

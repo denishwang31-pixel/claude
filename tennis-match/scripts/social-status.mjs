@@ -36,11 +36,9 @@ const ENV_OF = {
   kakaoRestKey: 'KAKAO_REST_KEY',
   kakaoNativeKey: 'KAKAO_NATIVE_KEY',
   naverClientId: 'NAVER_CLIENT_ID',
-  naverClientSecret: 'NAVER_CLIENT_SECRET',
   googleWebClientId: 'GOOGLE_WEB_CLIENT_ID',
   googleAndroidClientId: 'GOOGLE_ANDROID_CLIENT_ID',
   appleServiceId: 'APPLE_SERVICE_ID',
-  tokenEndpoint: 'SOCIAL_TOKEN_ENDPOINT',
 };
 
 const extra = {};
@@ -59,8 +57,7 @@ say('|---|---|---|');
 PROVIDER_ORDER.forEach((p) => {
   const ready = providerReady(p, config);
   const missing = Object.keys(SOCIAL_CONFIG)
-    .filter((k) => REQUIREMENTS[p].keys.includes(k)
-      || (REQUIREMENTS[p].needsServer && k === 'tokenEndpoint'))
+    .filter((k) => REQUIREMENTS[p].keys.includes(k))
     .filter((k) => !config[k])
     .map((k) => `\`${ENV_OF[k]}\``);
   say(`| ${PROVIDER_SHORT[p]} | ${ready ? '✅' : '—'} | ${missing.join(', ') || '없음'} |`);

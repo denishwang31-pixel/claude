@@ -45,7 +45,7 @@ import { LIVE_SOCIAL_CONFIG } from '../src/lib/socialConfig';
    때에만 안에서 await import() 한다 — 그 파일 머리말 참고. 여기서
    무심코 expo-auth-session 을 import 하면 앱이 시작도 못 하고 닫힌다.
    실제로 한 번 그렇게 됐다. 검사가 이걸 막고 있다. */
-import { signInWithGoogle } from '../src/lib/socialSignIn';
+import { signInWithGoogle, signInWithSocialWeb } from '../src/lib/socialSignIn';
 import { TERMS, PRIVACY } from '../src/lib/legalText';
 import { C, S, R, F, SHADOW, TAP } from '../src/lib/theme';
 import { APP_NAME } from '../src/lib/constants';
@@ -147,12 +147,12 @@ export default function Login() {
 
   const onSocial = async (p) => {
     setErr(''); setNote('');
-    if (p !== PROVIDERS.GOOGLE) {
+    if (p === PROVIDERS.APPLE) {
       setErr(`${PROVIDER_SHORT[p]} 로그인은 아직 준비 중입니다.`);
       return;
     }
     setBusy(true);
-    const r = await signInWithGoogle();
+    const r = p === PROVIDERS.GOOGLE ? await signInWithGoogle() : await signInWithSocialWeb(p);
     if (r.ok) { await go(r.uid); setBusy(false); return; }
     setBusy(false);
     if (r.error) setErr(r.error);   // 빈 문자열이면 사용자가 창을 닫은 것

@@ -120,9 +120,7 @@ jobs:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
           KAKAO_NATIVE_KEY: ${{ secrets.KAKAO_NATIVE_KEY }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
-          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           APPLE_SERVICE_ID: ${{ secrets.APPLE_SERVICE_ID }}
-          SOCIAL_TOKEN_ENDPOINT: ${{ secrets.SOCIAL_TOKEN_ENDPOINT }}
         run: node scripts/social-status.mjs
 
       - name: 빌드
@@ -153,9 +151,7 @@ jobs:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
           KAKAO_NATIVE_KEY: ${{ secrets.KAKAO_NATIVE_KEY }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
-          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           APPLE_SERVICE_ID: ${{ secrets.APPLE_SERVICE_ID }}
-          SOCIAL_TOKEN_ENDPOINT: ${{ secrets.SOCIAL_TOKEN_ENDPOINT }}
         run: |
           if [ -z "$EXPO_TOKEN_RAW" ]; then
             echo "::error::EXPO_TOKEN 시크릿이 비어 있습니다."

@@ -31,6 +31,7 @@
 import {
   googleErrorText, googleRedirectUri, googleClientMixup, GOOGLE_SCOPES,
   browserCandidates, isNoBrowserError,
+  PROVIDERS, makeState, authorizeUrl, socialReturnUrl, parseSocialReturn, socialAuthErrorText,
 } from './social';
 import { LIVE_SOCIAL_CONFIG } from './socialConfig';
 
@@ -206,4 +207,84 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
   }
 }
 
-export default { signInWithGoogle };
+/**
+ * 카카오·네이버로 로그인한다 — 웹 로그인 창 → 우리 서버(socialAuth) → 커스텀 토큰.
+ *
+ * 네이티브 SDK 를 쓰지 않아서 새 빌드 없이 키만 들어오면 된다. 비밀값은 서버에만 있다.
+ * 흐름은 functions/socialAuth.js 머리말 참고.
+ *
+ * @returns {Promise<{ok: boolean, uid?: string, name?: string, error?: string, cancelled?: boolean}>}
+ */
+export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFIG } = {}) {
+  const clientId = String(
+    provider === PROVIDERS.KAKAO ? config?.kakaoRestKey : provider === PROVIDERS.NAVER ? config?.naverClientId : '',
+  ).trim();
+  if (!clientId) return { ok: false, error: '[S0] 이 로그인은 아직 설정되지 않았습니다.' };
+
+  let WebBrowser;
+  let applicationId = '';
+  let bytes = null;
+  try {
+    const [wb, app] = await Promise.all([import('expo-web-browser'), import('expo-application')]);
+    WebBrowser = wb;
+    applicationId = app?.applicationId || '';
+  } catch (e) {
+    return { ok: false, error: '[S8] 이 앱에는 로그인 창 기능이 들어 있지 않습니다. 최신 버전을 설치해 주세요.' };
+  }
+  try {
+    const Crypto = await import('expo-crypto');
+    bytes = Crypto.getRandomBytes(32);
+  } catch (e) {
+    bytes = null;   // 없으면 makeState 가 Math.random 으로 만든다(위조 방지용 값이라 충분)
+  }
+  const returnUrl = socialReturnUrl(applicationId);
+  if (!returnUrl) return { ok: false, error: '[S9] 앱 패키지명을 읽지 못했습니다.' };
+
+  const state = makeState(provider, bytes);
+  const url = authorizeUrl(provider, { clientId, state });
+
+  let candidates = [];
+  try {
+    candidates = browserCandidates(await WebBrowser.getCustomTabsSupportingBrowsersAsync());
+  } catch (e) {
+    candidates = browserCandidates(null);
+  }
+  let result = null;
+  let lastErr = null;
+  for (const browserPackage of [...candidates, undefined]) {
+    try {
+      result = await WebBrowser.openAuthSessionAsync(url, returnUrl, browserPackage ? { browserPackage } : undefined);
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      if (!isNoBrowserError(e)) break;
+    }
+  }
+  if (lastErr) return { ok: false, error: `[S10] 브라우저 창을 열지 못했습니다. ${googleErrorText(lastErr)}`.trim() };
+  if (!result || result.type !== 'success') return { ok: false, cancelled: true, error: '' };
+
+  const back = parseSocialReturn(result.url);
+  if (back.error) {
+    const text = socialAuthErrorText(back.error, provider);
+    return text ? { ok: false, error: text } : { ok: false, cancelled: true, error: '' };
+  }
+  /* ⚠️ 우리가 연 로그인에서 돌아온 것인지 확인한다 — 다른 곳에서 만든 주소로
+        남의 계정에 들어가게 만드는 공격을 막는다. */
+  if (back.state !== state) return { ok: false, error: socialAuthErrorText('state', provider) };
+  if (!back.token) return { ok: false, error: socialAuthErrorText('server', provider) };
+
+  try {
+    const [{ signInWithCustomToken }, { auth }] = await Promise.all([
+      import('firebase/auth'),
+      import('../../firebaseConfig'),
+    ]);
+    const res = await signInWithCustomToken(auth, back.token);
+    return { ok: true, uid: res.user.uid, name: back.name };
+  } catch (e) {
+    const code = String(e?.code || '');
+    return { ok: false, error: `[S11] ${googleErrorText(e)}${code ? `\n(${code})` : ''}` };
+  }
+}
+
+export default { signInWithGoogle, signInWithSocialWeb };

@@ -59,14 +59,21 @@ GitHub Secrets 에 아래 이름으로 넣는다. 이름이 한 글자라도 다
 |---|---|
 | `GOOGLE_WEB_CLIENT_ID` | Firebase 콘솔에서 Google 로그인을 켜면 자동 생성 |
 | `GOOGLE_ANDROID_CLIENT_ID` | Google Cloud → 사용자 인증 정보 → Android (SHA-1 필요) |
-| `KAKAO_REST_KEY` · `KAKAO_NATIVE_KEY` | developers.kakao.com |
-| `NAVER_CLIENT_ID` · `NAVER_CLIENT_SECRET` | developers.naver.com |
+| `KAKAO_REST_KEY` | developers.kakao.com → 앱 키 (앱과 서버가 같이 쓴다) |
+| `KAKAO_CLIENT_SECRET` | 카카오 [보안] 에서 Client Secret 을 켰을 때만 (서버만) |
+| `NAVER_CLIENT_ID` | developers.naver.com (앱과 서버) |
+| `NAVER_CLIENT_SECRET` | developers.naver.com (**서버에만** — 앱에는 안 실린다) |
 | `APPLE_SERVICE_ID` | Apple Developer → Services ID |
-| `SOCIAL_TOKEN_ENDPOINT` | 카카오·네이버용 서버 함수 주소 |
 
-⚠️ **카카오·네이버는 `SOCIAL_TOKEN_ENDPOINT` 까지 있어야 버튼이 생긴다.**
-Firebase 가 모르는 제공자라, 받은 토큰을 Firebase 계정으로 바꿔 줄 서버
-함수가 필요하다. 구글·애플은 Firebase 기본 제공자라 서버가 필요 없다.
+**카카오·네이버 로그인 (2026-09-25 방식 변경)**
+네이티브 SDK 가 아니라 **웹 로그인 + 우리 서버 함수(`socialAuth`)** 다. 그래서
+- 새 빌드 없이 키만 넣으면 된다 — 배포(OTA)가 GitHub Secrets 를 읽어 앱에 싣는다.
+- 키를 넣은 뒤 배포를 **손으로 한 번, Cloud Functions 체크**해서 돌려야 서버가 키를 받는다.
+- 카카오 Redirect URI / 네이버 Callback URL 에 등록할 주소:
+  `https://tennis-match-52b31.web.app/auth/kakao/callback`,
+  `https://tennis-match-52b31.web.app/auth/naver/callback`
+- 서버 함수의 서비스 계정에 「서비스 계정 토큰 생성자」(roles/iam.serviceAccountTokenCreator)
+  역할이 있어야 커스텀 토큰을 만든다. 없으면 로그인 때 [S5] 가 뜬다.
 
 ⚠️⚠️ **GitHub Secrets 만으로는 앱에 안 들어간다.** 한 번 크게 돌아간 지점이다.
 

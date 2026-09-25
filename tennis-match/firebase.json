@@ -9,6 +9,13 @@
     "cleanUrls": true,
     "rewrites": [
       {
+        "source": "/auth/**",
+        "function": {
+          "functionId": "socialAuth",
+          "region": "asia-northeast3"
+        }
+      },
+      {
         "source": "/api/rsvp",
         "function": {
           "functionId": "rsvpLink",

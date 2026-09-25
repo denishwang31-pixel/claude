@@ -6,10 +6,11 @@
      2. iOS 에 카카오·네이버만 켜고 제출하는 것. 애플 심사 지침 4.8
         위반이라 반려된다 — 코드는 멀쩡한데 떨어진다.
    ============================================================ */
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { isAuthReturn, routeForIncoming } from '../src/lib/authReturn.js';
 import {
   PROVIDERS, PROVIDER_ORDER, PROVIDER_LABEL, PROVIDER_SHORT, PROVIDER_STYLE,
   REQUIREMENTS, SOCIAL_CONFIG,
@@ -29,10 +30,9 @@ const eq = (a, b, m) => ok(JSON.stringify(a) === JSON.stringify(b),
 /* 키가 다 있는 설정 */
 const FULL = {
   kakaoRestKey: 'k-rest', kakaoNativeKey: 'k-native',
-  naverClientId: 'n-id', naverClientSecret: 'n-secret',
+  naverClientId: 'n-id',
   googleWebClientId: 'g-web', googleAndroidClientId: 'g-and',
   appleServiceId: 'a-svc',
-  tokenEndpoint: 'https://example.com/social',
 };
 
 console.log('[사전이 빠짐없이 맞물린다]');
@@ -69,28 +69,23 @@ ok(!needsNativeRebuild(SOCIAL_CONFIG), '켠 것이 없으면 새 빌드도 필�
 ok(appleGap(SOCIAL_CONFIG) === null, '소셜을 아예 안 쓰면 애플 의무도 없다');
 
 console.log('[키가 반쯤 들어온 것은 준비된 것이 아니다]');
-ok(!providerReady(PROVIDERS.KAKAO, { ...FULL, kakaoNativeKey: '' }),
-  '카카오: 네이티브 키가 없으면 안 그린다');
+ok(providerReady(PROVIDERS.KAKAO, { ...FULL, kakaoNativeKey: '' }),
+  '카카오: 웹 로그인이라 네이티브 키는 없어도 된다');
 ok(!providerReady(PROVIDERS.KAKAO, { ...FULL, kakaoRestKey: '   ' }),
   '카카오: 공백만 있는 키는 없는 것으로 본다');
-ok(!providerReady(PROVIDERS.NAVER, { ...FULL, naverClientSecret: '' }),
-  '네이버: 시크릿이 없으면 안 그린다');
+ok(!providerReady(PROVIDERS.NAVER, { ...FULL, naverClientId: '' }),
+  '네이버: Client ID 가 없으면 안 그린다');
+ok(!('naverClientSecret' in SOCIAL_CONFIG) && !('tokenEndpoint' in SOCIAL_CONFIG),
+  '네이버 Client Secret 은 앱 설정에 아예 없다 — 서버에만');
 ok(!providerReady(PROVIDERS.GOOGLE, { ...FULL, googleAndroidClientId: '' }),
   '구글: 안드로이드 클라이언트 ID 가 없으면 안 그린다');
 
-console.log('[서버가 필요한 제공자는 서버 주소까지 있어야 한다]');
-/* 카카오·네이버는 Firebase 가 모르는 제공자다. 토큰을 바꿔 줄 서버가
-   없으면 로그인 창까지는 떠도 마지막에 앉은자리에서 실패한다 —
-   사용자 입장에서는 제일 짜증나는 실패다. */
-const noServer = { ...FULL, tokenEndpoint: '' };
-ok(!providerReady(PROVIDERS.KAKAO, noServer), '카카오: 서버 주소가 없으면 안 그린다');
-ok(!providerReady(PROVIDERS.NAVER, noServer), '네이버: 서버 주소가 없으면 안 그린다');
-ok(providerReady(PROVIDERS.GOOGLE, noServer), '구글: 서버가 필요 없다 — 그대로 그린다');
-ok(providerReady(PROVIDERS.APPLE, noServer, 'ios'), '애플: 서버가 필요 없다');
-eq(enabledProviders(noServer, 'android'), [PROVIDERS.GOOGLE],
-  '서버가 없으면 안드로이드에는 구글만 남는다');
-eq(missingFor(PROVIDERS.KAKAO, noServer), ['tokenEndpoint'],
-  '무엇이 없는지 이름으로 알려 준다');
+console.log('[카카오·네이버는 웹 로그인 + 서버 — 새 빌드 없이 켜진다]');
+ok(!needsNativeRebuild({ kakaoRestKey: 'k', naverClientId: 'n', googleWebClientId: 'g', googleAndroidClientId: 'g2' }),
+  '카카오·네이버·구글만이면 새 빌드가 필요 없다(키만 OTA 로)');
+ok(needsNativeRebuild(FULL), '애플을 켜면 새 빌드가 필요하다');
+eq(missingFor(PROVIDERS.KAKAO, {}), ['kakaoRestKey'], '카카오는 REST 키 하나');
+eq(missingFor(PROVIDERS.NAVER, {}), ['naverClientId'], '네이버는 Client ID 하나');
 
 console.log('[애플은 iOS 에서만 그린다]');
 ok(providerReady(PROVIDERS.APPLE, FULL, 'ios'), 'iOS: 그린다');
@@ -109,14 +104,12 @@ eq(enabledProviders(FULL, 'ios'),
 eq(enabledProviders(FULL, 'android'),
   [PROVIDERS.KAKAO, PROVIDERS.NAVER, PROVIDERS.GOOGLE],
   '안드로이드: 애플만 빠진다');
-ok(needsNativeRebuild(FULL), '하나라도 켜면 새 빌드가 필요하다');
 
 console.log('[애플 심사 지침 4.8 — 제출 전에 코드가 먼저 말한다]');
 /* 실제로 자주 당하는 반려다. 빌드를 다 만들어 제출한 뒤에야 알게 되면
    되돌리는 비용이 크다. */
 const kakaoOnly = {
   kakaoRestKey: 'k', kakaoNativeKey: 'k2',
-  tokenEndpoint: 'https://example.com/social',
 };
 const gap = appleGap(kakaoOnly);
 ok(gap !== null, '카카오만 켜면 경고가 나온다');
@@ -135,7 +128,6 @@ ok(appleGap({ googleWebClientId: 'g', googleAndroidClientId: 'g2' }) !== null,
    경고가 잘못 뜨면 사람은 곧 경고 전체를 무시한다. */
 const androidOnlySocial = {
   kakaoRestKey: 'k', kakaoNativeKey: 'k2',
-  tokenEndpoint: 'https://example.com/social',
 };
 ok(appleGap(androidOnlySocial) !== null,
   '카카오는 iOS 에서도 뜨므로 의무가 맞다');
@@ -154,7 +146,7 @@ ok(r.rows.find((x) => x.provider === PROVIDERS.GOOGLE).needsServer === false,
 const rFull = socialReadiness(FULL);
 eq(rFull.readyCount, 4, '다 채우면 4개 준비됨');
 ok(rFull.appleGap === null, '다 채우면 경고 없음');
-ok(rFull.needsRebuild === true, '다 채우면 새 빌드 필요');
+ok(rFull.needsRebuild === true, '다 채우면(애플 포함) 새 빌드 필요');
 
 console.log('[키는 저장소에 없어야 한다]');
 /* 값을 코드에 적어 두고 잊는 사고를 막는다. 한 번 새어 나간 키는
@@ -356,9 +348,9 @@ const failLines = signInSrc
   .filter((ln) => /error:\s*[`'"]/.test(ln) && !/error:\s*['"]['"]/.test(ln));
 ok(failLines.length >= 8, `실패 문구를 여러 자리에서 낸다 (${failLines.length}곳)`);
 failLines.forEach((ln) => {
-  ok(/\[G\d+\]/.test(ln), `실패 문구에 단계 번호가 있다 — ${ln.trim().slice(0, 44)}…`);
+  ok(/\[[GS]\d+\]/.test(ln), `실패 문구에 단계 번호가 있다 — ${ln.trim().slice(0, 44)}…`);
 });
-const stages = (signInSrc.match(/\[G\d+\]/g) || []);
+const stages = (signInSrc.match(/\[[GS]\d+\]/g) || []);
 ok(stages.length === new Set(stages).size,
   `단계 번호가 겹치지 않는다 (${stages.join(' ')})`);
 
@@ -411,6 +403,49 @@ console.log('[구글 로그인 창을 열 브라우저 — 「연결 앱」 선�
   const appJson = JSON.parse(readFileSync(resolve(ROOT, 'app.json'), 'utf8'));
   ok(appJson.expo.plugins.includes('./plugins/withBrowserQueries'), 'app.json 에 플러그인이 걸려 있다');
 }
+
+
+console.log('[카카오·네이버 웹 로그인 주소]');
+{
+  const { socialRedirectUri, socialReturnUrl, makeState, authorizeUrl, parseSocialReturn, socialAuthErrorText, SOCIAL_AUTH_HOST } = await import('../src/lib/social.js');
+  eq(socialRedirectUri('kakao'), 'https://tennis-match-52b31.web.app/auth/kakao/callback', '카카오 콘솔에 등록할 주소');
+  eq(socialRedirectUri('naver'), 'https://tennis-match-52b31.web.app/auth/naver/callback', '네이버 콘솔에 등록할 주소');
+  const srv = createRequire(import.meta.url)('../functions/socialAuth.js');
+  eq(SOCIAL_AUTH_HOST, srv.AUTH_HOST_DEFAULT, '앱과 서버가 같은 콜백 도메인을 쓴다');
+  eq(socialReturnUrl('com.donghyun.tennismatch'), srv.APP_RETURN_DEFAULT, '앱 복귀 주소도 서버와 같다');
+  const st = makeState('kakao', new Uint8Array(32).fill(7));
+  ok(srv.stateOk('kakao', st), '앱이 만든 state 를 서버가 받아 준다');
+  ok(srv.stateOk('naver', makeState('naver')), '난수 없이 만들어도 모양이 맞다');
+  ok(makeState('kakao') !== makeState('kakao'), 'state 는 매번 다르다');
+  const ku = authorizeUrl('kakao', { clientId: 'KEY', state: st });
+  ok(ku.startsWith('https://kauth.kakao.com/oauth/authorize?response_type=code&client_id=KEY&redirect_uri=https%3A%2F%2Ftennis-match-52b31.web.app%2Fauth%2Fkakao%2Fcallback&state='), '카카오 로그인 주소');
+  ok(authorizeUrl('naver', { clientId: 'NID', state: 'naver.x' }).startsWith('https://nid.naver.com/oauth2.0/authorize?'), '네이버 로그인 주소');
+  eq(authorizeUrl('google', { clientId: 'x', state: 'y' }), '', '구글은 이 길이 아니다');
+  /* 서버가 만든 주소를 앱이 그대로 읽는다 — 왕복 확인 */
+  const back = srv.appRedirect({ provider: 'kakao', state: st, token: 'aa.bb-cc', name: '김 테니스' });
+  eq(parseSocialReturn(back), { provider: 'kakao', state: st, token: 'aa.bb-cc', name: '김 테니스', error: '' }, '서버→앱 왕복');
+  eq(parseSocialReturn(srv.appRedirect({ provider: 'naver', error: 'cancelled' })).error, 'cancelled', '오류도 왕복');
+  eq(socialAuthErrorText('cancelled', 'kakao'), '', '취소는 조용히');
+  ok(/\[S2\]/.test(socialAuthErrorText('config', 'kakao')), '서버 설정 없음은 번호와 함께');
+  ok(/auth\/naver\/callback/.test(socialAuthErrorText('exchange', 'naver')), '교환 실패면 등록할 주소를 알려 준다');
+  const signSrc = readFileSync(resolve(ROOT, 'src/lib/socialSignIn.js'), 'utf8');
+  ok(/back\.state !== state/.test(signSrc), '돌아온 state 가 우리가 만든 것인지 확인한다');
+  ok(/signInWithCustomToken/.test(signSrc), '서버 토큰으로 Firebase 로그인');
+  ok(!/client_secret|clientSecret/i.test(signSrc), '앱 코드에 시크릿이 없다');
+  const loginSrc = readFileSync(resolve(ROOT, 'app/login.jsx'), 'utf8');
+  ok(/signInWithSocialWeb\(p\)/.test(loginSrc), '로그인 화면이 카카오·네이버 버튼을 웹 로그인에 잇는다');
+}
+
+console.log('[로그인 복귀 주소는 화면 이동에서 뺀다]');
+ok(isAuthReturn('com.donghyun.tennismatch://oauth?token=x'), '카카오·네이버 복귀');
+ok(isAuthReturn('com.donghyun.tennismatch:/oauthredirect?code=1'), '구글 복귀');
+ok(isAuthReturn('/oauth?token=x'), '경로만 온 경우');
+ok(!isAuthReturn('com.donghyun.tennismatch://join?code=AB12'), '초대 링크는 그대로 간다');
+ok(!isAuthReturn('/oauthsomething'), '비슷한 이름은 안 건드린다');
+eq(routeForIncoming('com.donghyun.tennismatch://oauth?token=x', false), null, '앱이 켜져 있으면 화면은 그대로');
+eq(routeForIncoming('com.donghyun.tennismatch://oauth?token=x', true), '/', '그 주소로 켜졌으면 첫 화면');
+eq(routeForIncoming('/join?code=1', false), '/join?code=1', '다른 주소는 손대지 않는다');
+ok(existsSync(resolve(ROOT, 'app/+native-intent.js')), 'expo-router 연결 파일이 있다');
 
 console.log(`\n소셜 로그인 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

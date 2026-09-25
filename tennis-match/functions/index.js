@@ -11,6 +11,7 @@ const {
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getAuth } = require('firebase-admin/auth');
 const { logger } = require('firebase-functions/v2');
 
 initializeApp();
@@ -38,6 +39,7 @@ const { scorePushPlan, scorePushText } = require('./scoreReport');
 const { onRequest } = require('firebase-functions/v2/https');
 const rsvpLinkLib = require('./rsvpLink');
 const mergeLib = require('./mergeMember');
+const socialAuthLib = require('./socialAuth');
 const {
   planAutoSend, unpaidMembers, summaryForManager,
   DUN_STAGES, recipientsFor, messageFor, canSend, dueDateOf,
@@ -1046,3 +1048,22 @@ exports.onMemberJobCreated = onDocumentCreated(
     }
   },
 );
+
+/* ============================================================
+   카카오 · 네이버 로그인 — 로그인 결과를 Firebase 커스텀 토큰으로
+   호스팅의 /auth/** 가 여기로 온다(firebase.json rewrites). 판단은 socialAuth.js.
+   비밀값은 functions/.env(배포 workflow 가 GitHub Secrets 에서 씀) 로만 들어온다.
+   ============================================================ */
+exports.socialAuth = onRequest({ ...REGION, cors: false, maxInstances: 5 }, async (req, res) => {
+  const url = await socialAuthLib.handle(
+    { path: req.path, query: req.query },
+    {
+      fetch,
+      auth: getAuth(),
+      env: process.env,
+      log: (...a) => console.warn('[socialAuth]', ...a),
+    },
+  );
+  res.set('Cache-Control', 'no-store');
+  res.redirect(302, url);
+});

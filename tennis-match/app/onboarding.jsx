@@ -61,7 +61,8 @@ export default function Onboarding() {
   const [switching, setSwitching] = useState(false);
 
   /* 공통 프로필 */
-  const [myName, setMyName] = useState('');
+  /* 카카오·네이버·구글로 들어온 사람은 그쪽 이름을 미리 채워 둔다(고칠 수 있다) */
+  const [myName, setMyName] = useState(() => String(auth.currentUser?.displayName || '').slice(0, 20));
   const [gender, setGender] = useState('M');
   const [startedAt, setStartedAt] = useState('');
   const [busu, setBusu] = useState('');

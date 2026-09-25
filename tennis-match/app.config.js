@@ -32,15 +32,15 @@ module.exports = ({ config }) => ({
     /* 이름은 src/lib/social.js 의 SOCIAL_CONFIG 키와 정확히 같아야 한다.
        다르면 조용히 무시되고 버튼이 안 나온다. 검사가 이 짝을 본다
        (scripts/test-social.mjs 의 [빌드 설정과 이름이 맞물린다]). */
+    /* ⚠️ 네이버 Client Secret 은 여기 넣지 않는다 — 앱에 실리면 누구나 꺼내 본다.
+       서버 함수(socialAuth)만 functions/.env 로 받는다. */
     social: {
       kakaoRestKey: env('KAKAO_REST_KEY'),
       kakaoNativeKey: env('KAKAO_NATIVE_KEY'),
       naverClientId: env('NAVER_CLIENT_ID'),
-      naverClientSecret: env('NAVER_CLIENT_SECRET'),
       googleWebClientId: env('GOOGLE_WEB_CLIENT_ID'),
       googleAndroidClientId: env('GOOGLE_ANDROID_CLIENT_ID'),
       appleServiceId: env('APPLE_SERVICE_ID'),
-      tokenEndpoint: env('SOCIAL_TOKEN_ENDPOINT'),
     },
   },
 });
