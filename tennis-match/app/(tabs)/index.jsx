@@ -37,6 +37,7 @@ import {
   HeroCard, HeroPill, RsvpRow, QuickTile, StatTile,
 } from '../../src/components/ui';
 import { C, S, R, F, SHADOW } from '../../src/lib/theme';
+import { APP_NAME } from '../../src/lib/constants';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -233,7 +234,7 @@ export default function Home() {
           backgroundColor: C.surface, paddingTop: insets.top + 8, paddingBottom: 12,
           paddingHorizontal: S.lg, borderBottomWidth: 1, borderBottomColor: C.border,
         }}>
-          <Text style={F.h2}>테니스매치</Text>
+          <Text style={F.h2}>{APP_NAME}</Text>
           <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>클럽 없이 둘러보는 중</Text>
         </View>
         <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: bottomPad }}>
@@ -249,7 +250,7 @@ export default function Home() {
           />
           {!!svc && (svc.clubs > 0 || svc.members > 0) && (
             <Card style={{ marginTop: S.md }}>
-              <Text style={[F.label, { marginBottom: 10 }]}>테니스매치와 함께하는 중</Text>
+              <Text style={[F.label, { marginBottom: 10 }]}>{APP_NAME}와 함께하는 중</Text>
               <View style={{ flexDirection: 'row', gap: S.sm }}>
                 <StatCard value={(svc.clubs || 0).toLocaleString()} label="클럽" />
                 <StatCard value={(svc.members || 0).toLocaleString()} label="회원" />

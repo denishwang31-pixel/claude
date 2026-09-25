@@ -21,7 +21,7 @@ import {
 } from '../src/lib/firestore';
 import { seedClub } from '../src/lib/seed';
 import { linkUserToClub, markPendingClub, skipOnboarding, getMySession, logout } from '../src/lib/auth';
-import { JOIN_STATUS, BUSU_KEYS } from '../src/lib/constants';
+import { JOIN_STATUS, BUSU_KEYS, APP_NAME } from '../src/lib/constants';
 import { DEFAULT_SETTINGS, roundsFromSettings } from '../src/lib/schedule';
 import { MonthField, Label } from '../src/components/pickers';
 import { RegionPicker } from '../src/components/RegionPicker';
@@ -595,7 +595,7 @@ export default function Onboarding() {
 
       {!!svc && (svc.clubs > 0 || svc.members > 0) && (
         <Card style={{ marginTop: S.xl }}>
-          <Text style={[F.label, { marginBottom: 10, textAlign: 'center' }]}>테니스매치와 함께하는 중</Text>
+          <Text style={[F.label, { marginBottom: 10, textAlign: 'center' }]}>{APP_NAME}와 함께하는 중</Text>
           <View style={{ flexDirection: 'row', gap: S.sm }}>
             <StatCard value={(svc.clubs || 0).toLocaleString()} label="클럽" />
             <StatCard value={(svc.members || 0).toLocaleString()} label="회원" />

@@ -48,6 +48,7 @@ import { LIVE_SOCIAL_CONFIG } from '../src/lib/socialConfig';
 import { signInWithGoogle } from '../src/lib/socialSignIn';
 import { TERMS, PRIVACY } from '../src/lib/legalText';
 import { C, S, R, F, SHADOW, TAP } from '../src/lib/theme';
+import { APP_NAME } from '../src/lib/constants';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PW = 6;
@@ -277,7 +278,7 @@ export default function Login() {
               <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
                 <Text style={{
                   fontSize: 27, fontWeight: '800', color: C.text, letterSpacing: -0.8,
-                }}>테니스매치</Text>
+                }}>{APP_NAME}</Text>
                 <Text style={{
                   fontSize: 27, fontWeight: '800', color: C.green, letterSpacing: -0.8,
                 }}>.</Text>
@@ -504,7 +505,7 @@ export default function Login() {
               flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
               flexWrap: 'wrap', gap: 4, marginTop: S.xl,
             }}>
-              <Text style={{ fontSize: 11.5, color: C.faint }}>계속 진행 시 테니스매치의</Text>
+              <Text style={{ fontSize: 11.5, color: C.faint }}>계속 진행 시 {APP_NAME}의</Text>
               <LinkText small onPress={() => setLegal('terms')}>이용약관</LinkText>
               <Text style={{ fontSize: 11.5, color: C.faint }}>및</Text>
               <LinkText small onPress={() => setLegal('privacy')}>개인정보처리방침</LinkText>

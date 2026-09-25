@@ -38,7 +38,7 @@ const page = (title, body) => `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} · 테니스매치</title>
+<title>${esc(title)} · Court</title>
 <style>
   :root { color-scheme: light dark; }
   body {
@@ -68,19 +68,20 @@ const page = (title, body) => `<!doctype html>
 </style>
 </head>
 <body>
-<h1>테니스매치</h1>
+<h1>Court</h1>
 <nav>
   <a href="/">홈</a>
   <a href="/privacy.html">개인정보처리방침</a>
   <a href="/terms.html">이용약관</a>
+  <a href="/delete-account.html">계정 삭제</a>
 </nav>
 ${body}
-<footer>테니스매치 — 테니스 클럽 운영 앱</footer>
+<footer>Court — 테니스 클럽 운영 앱</footer>
 </body>
 </html>
 `;
 
-const HOME = `<pre>테니스매치는 테니스 동호회의 일정·참석 투표·대진 편성·회비를
+const HOME = `<pre>Court(코트)는 테니스 동호회의 일정·참석 투표·대진 편성·회비를
 한곳에서 관리하는 앱입니다.
 
 할 수 있는 일
@@ -90,6 +91,37 @@ const HOME = `<pre>테니스매치는 테니스 동호회의 일정·참석 투�
 · 게스트를 모집하고 다른 클럽과 교류전을 엽니다
 
 아래 링크에서 이용약관과 개인정보처리방침을 확인하실 수 있습니다.</pre>`;
+
+/* 계정 삭제 안내 — 구글 플레이가 **앱 밖에서도** 삭제를 요청할 수 있는
+   웹 주소를 요구한다(데이터 보안 양식의 「계정 삭제 URL」). 앱을 이미 지운
+   사람도 여기서 요청할 수 있어야 한다.
+   ⚠️ 무엇이 지워지고 무엇이 남는지는 개인정보처리방침 「3. 보관 기간」과
+      같은 말이어야 한다. 방침을 고치면 여기도 고친다. */
+const DELETE = `<pre>Court 계정 삭제 안내
+
+1. 앱에서 직접 지우기 (바로 처리됩니다)
+   앱 → [더보기] → [약관·개인정보] → 맨 아래 [계정 삭제]
+   본인 확인 후 즉시 지워지며, 되돌릴 수 없습니다.
+
+2. 앱을 쓸 수 없을 때 — 이메일로 요청하기
+   ${'denis.hwang31@gmail.com'} 로 아래 내용을 보내 주세요.
+   · 제목: Court 계정 삭제 요청
+   · 가입한 이메일 주소 (또는 소셜 로그인 종류와 이름)
+   · 소속 클럽 이름 (있다면)
+   본인 확인 후 7일 안에 처리하고 결과를 회신합니다.
+
+지워지는 정보
+· 로그인 계정, 프로필(이름·성별·활동지역·실력 정보), 연락처
+· 알림을 받기 위한 기기 식별값(푸시 토큰)
+· 코치로 등록한 경우 코치 프로필
+
+남는 정보
+· 클럽 활동 기록(지난 대진표·경기 결과·회비 정산)에 적힌 이름
+  — 함께 운동한 다른 회원의 기록을 지키기 위해서입니다.
+  이 기록에는 연락처가 남지 않으며, 삭제된 계정으로는 다시 로그인할 수 없습니다.
+· 이름까지 지우기를 원하시면 위 이메일로 요청해 주세요.
+  소속 클럽 운영진과 확인한 뒤 처리합니다.
+· 법령에서 보관을 요구하는 기록이 있으면 그 기간 동안 보관 후 지웁니다.</pre>`;
 
 const blanks = pendingBlanks();
 if (blanks.length) {
@@ -102,6 +134,7 @@ mkdirSync(OUT, { recursive: true });
 writeFileSync(join(OUT, 'index.html'), page('홈', HOME));
 writeFileSync(join(OUT, 'privacy.html'), page('개인정보처리방침', `<pre>${esc(PRIVACY)}</pre>`));
 writeFileSync(join(OUT, 'terms.html'), page('이용약관', `<pre>${esc(TERMS)}</pre>`));
+writeFileSync(join(OUT, 'delete-account.html'), page('계정 삭제', DELETE));
 
 /* 카톡 참석 링크 페이지 — 앱 없는 오프라인 회원이 참석/불참을 누르는 곳.
    ⚠️ 약관과 같은 사이트에 올린다. Hosting 배포는 사이트 **전체를 갈아
@@ -110,4 +143,4 @@ writeFileSync(join(OUT, 'terms.html'), page('이용약관', `<pre>${esc(TERMS)}<
       그게 맞다 — 약관 없이 사이트 절반만 올리면 약관 페이지가 지워진다. */
 copyFileSync(join(ROOT, 'web', 'rsvp.html'), join(OUT, 'rsvp.html'));
 
-console.log('약관 페이지를 만들었습니다 — public/index.html, privacy.html, terms.html');
+console.log('약관 페이지를 만들었습니다 — public/index.html, privacy.html, terms.html, delete-account.html');

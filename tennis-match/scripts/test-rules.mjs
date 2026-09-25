@@ -1252,7 +1252,7 @@ console.log('\n[용품 추천 이유 — 코치·고수·앱 운영자만]');
   await T('일반 회원이 코치라고 적은 추천 거부',
     assertFails(setDoc(doc(mem1, 'gearPicks', 'g1_mem1'), P('mem1', { kind: 'coach', name: '김코치' }))));
   await T('앱 운영자의 추천 허용',
-    assertSucceeds(setDoc(doc(appAdmin, 'gearPicks', 'g1_appboss'), P('appboss', { kind: 'editor', name: '테니스매치' }))));
+    assertSucceeds(setDoc(doc(appAdmin, 'gearPicks', 'g1_appboss'), P('appboss', { kind: 'editor', name: 'Court' }))));
   await T('남의 이름(문서 아이디)으로 추천 거부',
     assertFails(setDoc(doc(cCoach, 'gearPicks', 'g1_pro1'), P('coach4', { kind: 'coach', name: '한코치' }))));
   await T('없는 상품에 추천 거부',

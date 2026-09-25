@@ -72,7 +72,7 @@ console.log('[추천 이유 — 누가 쓰나]');
 
   eq(pickLabel({ kind: 'coach', name: '한코치' }, now), '한코치 코치', '코치 이름표');
   eq(pickLabel({ kind: 'player', name: '고수', ntrp: 4.5, startedAt: '2012-05-01' }, now), '고수 · NTRP 4.5 · 구력 14년', '회원 이름표');
-  eq(pickLabel({ kind: 'editor' }, now), '테니스매치 추천', '운영 추천');
+  eq(pickLabel({ kind: 'editor' }, now), 'Court 추천', '운영 추천');
 
   const g = groupPicks([
     { gearId: 'g1', kind: 'player', ntrp: 4.0, text: 'a', createdAt: 1 },

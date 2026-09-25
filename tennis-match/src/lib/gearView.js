@@ -4,7 +4,7 @@
    원포인트와 같은 틀이다: 검색창 → 가로로 넘기는 선반(새로 들어온 용품,
    카테고리마다 한 줄). 판단은 여기, 그리기는 GearScreen.
    ============================================================ */
-import { GEAR_CATEGORIES } from './constants.js';
+import { GEAR_CATEGORIES, APP_NAME } from './constants.js';
 
 export const NEWEST_COUNT = 6;
 export const SHELF_MAX = 10;
@@ -108,14 +108,14 @@ export function pickEligibility({ isAppAdmin, coach, member, clubId, now = new D
   if (member && clubId && ntrp != null && ntrp >= PICK_MIN_NTRP && years != null && years >= PICK_MIN_YEARS) {
     return { ok: true, kind: 'player', name: member.name || '', ntrp, startedAt: member.startedAt, clubId };
   }
-  if (isAppAdmin) return { ok: true, kind: 'editor', name: '테니스매치' };
+  if (isAppAdmin) return { ok: true, kind: 'editor', name: APP_NAME };
   return {
     ok: false,
     reason: `승인된 코치, 또는 운영진이 인증한 NTRP ${PICK_MIN_NTRP.toFixed(1)} 이상·구력 ${PICK_MIN_YEARS}년 이상인 회원이 쓸 수 있어요.`,
   };
 }
 
-/** 추천 한 건의 이름표 — "김소라 코치" / "박준호 · NTRP 4.5 · 구력 12년" / "테니스매치 추천" */
+/** 추천 한 건의 이름표 — "김소라 코치" / "박준호 · NTRP 4.5 · 구력 12년" / "Court 추천" */
 export function pickLabel(p, now = new Date()) {
   if (!p) return '';
   if (p.kind === 'coach') return `${p.name} 코치`;
@@ -124,7 +124,7 @@ export function pickLabel(p, now = new Date()) {
     return [p.name, p.ntrp != null ? `NTRP ${Number(p.ntrp).toFixed(1)}` : '', y != null ? `구력 ${y}년` : '']
       .filter(Boolean).join(' · ');
   }
-  return '테니스매치 추천';
+  return `${APP_NAME} 추천`;
 }
 
 const KIND_ORDER = { coach: 0, player: 1, editor: 2 };

@@ -20,6 +20,7 @@ import { sellerName } from '../lib/ads';
 import { gearCatOf, priceText, pickLabel, PICK_MAX_LEN } from '../lib/gearView';
 import { SubHeader, MetaBadge, CourtBackdrop, PAD } from './onepoint/parts';
 import { C } from '../lib/theme';
+import { APP_NAME } from '../lib/constants';
 
 const MAXF = 1.3;
 
@@ -109,7 +110,7 @@ export function GearSheet({ gear, picks, me, eligibility, onBuy, onSavePick, onD
           {eligibility?.ok && writing && (
             <View style={{ marginTop: 12, borderRadius: 16, backgroundColor: C.surface, borderWidth: 2, borderColor: C.green, padding: PAD }}>
               <Text maxFontSizeMultiplier={MAXF} style={{ fontSize: 13, fontWeight: '800', color: C.green }}>
-                {eligibility.kind === 'editor' ? '「테니스매치 추천」으로 보여요' : `「${pickLabel(eligibility)}」 이름으로 보여요`}
+                {eligibility.kind === 'editor' ? `「${APP_NAME} 추천」으로 보여요` : `「${pickLabel(eligibility)}」 이름으로 보여요`}
               </Text>
               <TextInput
                 value={text}

@@ -38,6 +38,7 @@ import {
   groupPicks, pickEligibility, pickLabel, pickDoc, pickId,
 } from '../lib/gearView';
 import { C, S, R } from '../lib/theme';
+import { APP_NAME } from '../lib/constants';
 
 const BLANK = {
   title: '', category: GEAR_CATEGORIES[0], price: '', image: '', link: '', desc: '',
@@ -416,7 +417,7 @@ export function GearScreen({ title = '용품', renderTop = null } = {}) {
   const disclaimer = (
     <Text style={{ fontSize: 12, fontWeight: '500', color: C.faint, marginTop: S.xl, textAlign: 'center', lineHeight: 17, paddingHorizontal: PAD }}>
       상품 정보와 결제는 각 판매처가 제공합니다.{'\n'}
-      테니스매치는 통신판매중개자가 아니며 거래에 관여하지 않습니다.
+      {APP_NAME}는 통신판매중개자가 아니며 거래에 관여하지 않습니다.
     </Text>
   );
 
