@@ -25,7 +25,7 @@ import { normalizeRoundMinutes, roundMinutesLabel, screenRef } from '../lib/cons
 import { RegionPicker } from './RegionPicker';
 import { Icon } from './Icon';
 import { Label, TimeField } from './pickers';
-import { normalizeAsk, RSVP_DAYS_BEFORE } from '../lib/rsvpAsk';
+import { normalizeAsk, RSVP_DAYS_BEFORE, RSVP_MAX_SENDS, DEFAULT_RSVP_ASK, askSummary } from '../lib/rsvpAsk';
 import { RoundMinutesPicker } from './RoundMinutesPicker';
 import { BANKS, paySettings, availableMethods, PAY_LABEL } from '../lib/pay';
 import { Card, SectionTitle, Chip, Btn, Field } from './ui';
@@ -118,6 +118,15 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
 
   const set = (k, v) => setS({ ...s, [k]: v });
   const ask = normalizeAsk(s.rsvpAsk);
+  /* 참석 투표 자동 발송 — 저장은 늘 새 모양({enabled, sends, deadline})으로 */
+  const setAsk = (patch) => set('rsvpAsk', { enabled: ask.enabled, sends: ask.sends, deadline: ask.deadline, ...patch });
+  const setSend = (i, patch) => setAsk({ sends: ask.sends.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+  const addSend = () => {
+    const last = ask.sends[ask.sends.length - 1];
+    const d = last ? Math.max(0, last.daysBefore - 1) : 5;
+    setAsk({ sends: [...ask.sends, { daysBefore: d, time: last?.time || '12:00' }] });
+  };
+  const removeSend = (i) => setAsk({ sends: ask.sends.filter((_, j) => j !== i) });
 
   if (!isAdmin) {
     return (
@@ -294,7 +303,7 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
           </SectionTitle>
           <Card>
             <Pressable
-              onPress={() => set('rsvpAsk', { ...ask, enabled: !ask.enabled })}
+              onPress={() => setAsk({ enabled: !ask.enabled })}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{
                 width: 22, height: 22, borderRadius: 6,
@@ -314,23 +323,67 @@ export function ClubSettings({ clubId, club, venues = [], members = [], isAdmin,
 
             {ask.enabled && (
               <View style={{ marginTop: S.md, borderTopWidth: 1, borderTopColor: C.border, paddingTop: S.md }}>
-                <Label>며칠 전에</Label>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                  {RSVP_DAYS_BEFORE.map((d) => (
-                    <Chip key={d} tone={ask.daysBefore === d ? 'green' : 'outline'}
-                      onPress={() => set('rsvpAsk', { ...ask, daysBefore: d })}>
-                      {d}일 전
+                {/* 발송 차례 — 기본 2번(6일 전·5일 전 정오). 두 번째부터는 그때까지 답하지 않은 사람에게만 간다 */}
+                {ask.sends.map((x, i) => (
+                  <View key={`${i}-${x.daysBefore}-${x.time}`} style={{ marginBottom: S.md }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                      <Text style={[F.bodyBold, { flex: 1 }]}>{i + 1}번째 발송</Text>
+                      {ask.sends.length > 1 && (
+                        <Pressable onPress={() => removeSend(i)} hitSlop={8}>
+                          <Text style={{ fontSize: 12.5, color: C.danger || '#B91C1C', fontWeight: '700' }}>빼기</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {RSVP_DAYS_BEFORE.map((d) => (
+                        <Chip key={d} tone={x.daysBefore === d ? 'green' : 'outline'}
+                          onPress={() => setSend(i, { daysBefore: d })}>
+                          {d}일 전
+                        </Chip>
+                      ))}
+                    </View>
+                    <View style={{ marginTop: 8 }}>
+                      <TimeField value={x.time} onChange={(v) => setSend(i, { time: v })} />
+                    </View>
+                  </View>
+                ))}
+                {ask.sends.length < RSVP_MAX_SENDS && (
+                  <Btn small tone="ghost" onPress={addSend}>＋ 발송 한 번 더</Btn>
+                )}
+
+                <View style={{ marginTop: S.md, borderTopWidth: 1, borderTopColor: C.border, paddingTop: S.md }}>
+                  <Label hint="알림 문구와 일정 카드에 「마감 ○/○ 12:00까지」로 나갑니다. 지나도 버튼은 막지 않습니다">
+                    투표 마감
+                  </Label>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {RSVP_DAYS_BEFORE.map((d) => (
+                      <Chip key={d} tone={ask.deadline?.daysBefore === d ? 'green' : 'outline'}
+                        onPress={() => setAsk({ deadline: { daysBefore: d, time: ask.deadline?.time || '12:00' } })}>
+                        {d}일 전
+                      </Chip>
+                    ))}
+                    <Chip tone={!ask.deadline ? 'green' : 'outline'} onPress={() => setAsk({ deadline: null })}>
+                      안내 안 함
                     </Chip>
-                  ))}
+                  </View>
+                  {!!ask.deadline && (
+                    <View style={{ marginTop: 8 }}>
+                      <TimeField value={ask.deadline.time}
+                        onChange={(v) => setAsk({ deadline: { ...ask.deadline, time: v } })} />
+                    </View>
+                  )}
                 </View>
-                <View style={{ marginTop: S.md }}>
-                  <Label hint="이 시각에 보냅니다">발송 시각</Label>
-                  <TimeField value={ask.time} onChange={(v) => set('rsvpAsk', { ...ask, time: v })} />
-                </View>
-                <Text style={[F.caption, { marginTop: S.sm, lineHeight: 16 }]}>
-                  예정된 모임의 {ask.daysBefore}일 전 {ask.time}에, 아직 답하지 않은 회원에게만
-                  알림이 갑니다. 회원이 나중에 참석 여부를 바꾸면 운영진에게 알림이 옵니다.
+
+                <Text style={[F.caption, { marginTop: S.md, lineHeight: 17 }]}>
+                  예정된 모임의 {askSummary(ask)}. 아직 답하지 않은 회원에게만 갑니다.
+                  마감이 마지막 발송보다 앞이면 마지막 발송 시각으로 맞춥니다.
+                  그 밖에 필요할 때는 {screenRef('schedule')}에서 [투표 요청]을 누르세요.
                 </Text>
+                <View style={{ marginTop: 8, alignItems: 'flex-start' }}>
+                  <Btn small tone="ghost" onPress={() => set('rsvpAsk', { ...DEFAULT_RSVP_ASK, enabled: true })}>
+                    기본값으로 (6일 전·5일 전 12:00, 마감 4일 전 12:00)
+                  </Btn>
+                </View>
               </View>
             )}
           </Card>

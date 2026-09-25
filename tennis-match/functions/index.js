@@ -32,7 +32,7 @@ const kmaKey = () => process.env.KMA_SERVICE_KEY || '';
 const REGION = { region: 'asia-northeast3' }; // 서울
 
 const {
-  normalizeAsk, isAskDue, pendingVoters, askMessage, pushWorthyChanges, changeDigest,
+  normalizeAsk, dueAskKey, askTargetDates, pendingVoters, askMessage, pushWorthyChanges, changeDigest,
 } = require('./rsvpAsk');
 const { inviteMessage, responseMessage } = require('./clubMatch');
 const { scorePushPlan, scorePushText } = require('./scoreReport');
@@ -227,7 +227,7 @@ exports.onMeetingUpdated = onDocumentUpdated({ ...REGION, document: 'clubs/{club
    총무가 단톡방에서 "아직 답 안 주신 분?"을 손으로 세지 않게 한다.
 
    두 갈래로 들어온다.
-     자동 — 모임 N일 전 지정한 시각 (clubs/{id}.settings.rsvpAsk)
+     자동 — 모임 6일 전·5일 전 정오(기본), 클럽마다 바꿈 (clubs/{id}.settings.rsvpAsk.sends)
      수동 — 총무가 [투표 요청]을 누름 (pushJobs 문서가 생김)
 
    어느 쪽이든 아직 답하지 않은 사람에게만 간다. 이미 참석이라고 한
@@ -235,35 +235,38 @@ exports.onMeetingUpdated = onDocumentUpdated({ ...REGION, document: 'clubs/{club
    꺼 버린다 — 그 순간 이 기능은 죽는다. */
 
 /** 대상에게 실제로 쏘고, 모임에 발송 기록을 남긴다 */
-async function sendRsvpAsk(clubRef, meetingRef, meeting, targetIds, { auto } = {}) {
+async function sendRsvpAsk(clubRef, meetingRef, meeting, targetIds, { auto, autoKey } = {}) {
   const memberSnap = await clubRef.collection('members').get();
   const wanted = targetIds ? new Set(targetIds) : null;
-  const tokens = memberSnap.docs
-    .filter((d) => {
-      const m = { id: d.id, ...d.data() };
-      if (wanted && !wanted.has(d.id)) return false;
-      if (m.status && m.status !== '활동') return false;
-      // 요청서가 만들어진 뒤 답한 사람은 빼 준다 — 답한 사람에게 보내지 않는다
-      const v = (meeting.rsvp || {})[d.id];
-      return v === undefined || v === null || v === '';
-    })
-    .map((d) => d.data().pushToken)
+  /* 대상 판단은 앱과 같은 pendingVoters — 휴면·다른 코트장·이미 답한 사람은 빠진다.
+     요청서가 만들어진 뒤 답한 사람도 여기서 빠진다(답한 사람에게 보내지 않는다). */
+  const all = memberSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const tokens = pendingVoters(all, meeting)
+    .filter((m) => !wanted || wanted.has(m.id))
+    .map((m) => m.pushToken)
     .filter(Boolean);
 
-  if (!tokens.length) return 0;
+  const patch = {};
+  if (auto) patch['rsvpAsk.auto'] = auto;
+  /* 자동 발송은 보낼 사람이 없어도 "그 차례는 끝났다"고 적는다 — 안 적으면
+     30분마다 같은 차례를 다시 확인하며 헛돈다 */
+  if (autoKey) patch[`rsvpAsk.autoSent.${autoKey}`] = true;
+  if (!tokens.length) {
+    if (Object.keys(patch).length) await meetingRef.update(patch);
+    return 0;
+  }
 
   const club = (await clubRef.get()).data() || {};
-  const msg = askMessage(club.name, meeting);
+  const msg = askMessage(club.name, meeting, (club.settings || {}).rsvpAsk);
   await sendPush(tokens, msg.title, msg.body,
     { type: 'rsvpAsk', meetingId: meetingRef.id });
 
-  const patch = {
+  await meetingRef.update({
+    ...patch,
     'rsvpAsk.lastAt': new Date(),
     'rsvpAsk.count': FieldValue.increment(1),
     'rsvpAsk.lastTo': tokens.length,
-  };
-  if (auto) patch['rsvpAsk.auto'] = auto;
-  await meetingRef.update(patch);
+  });
   return tokens.length;
 }
 
@@ -430,6 +433,8 @@ exports.onPushJobCreated = onDocumentCreated(
 );
 
 /* 자동 — 30분마다 돌면서 "오늘이 그날인가"를 본다.
+   기본은 모임 6일 전·5일 전 정오 두 번, 알림에 마감(4일 전 정오)을 적는다.
+   클럽 설정(settings.rsvpAsk.sends / deadline)으로 바꾼다. 판단은 rsvpAsk.js.
 
    정각 한 번만 보는 방식이면 그 시각에 실행이 밀리거나 배포 중이면
    그날 발송이 통째로 사라진다. 예정 시각을 지났으면 같은 날 안에서는
@@ -446,14 +451,16 @@ exports.autoRsvpAsk = onSchedule(
       try {
         const cfg = normalizeAsk((club.data().settings || {}).rsvpAsk);
         if (!cfg.enabled) continue;
-        // 물어볼 날은 하루뿐이므로 그날 열리는 모임만 꺼내면 된다
-        const target = await club.ref.collection('meetings')
-          .where('date', '==', shiftDays(nowYmd, cfg.daysBefore)).get();
-        for (const mdoc of target.docs) {
-          const mt = mdoc.data();
-          if (!isAskDue(mt, cfg, nowYmd, nowHHMM)) continue;
-          const n = await sendRsvpAsk(club.ref, mdoc.ref, mt, null, { auto: nowYmd });
-          logger.info('rsvpAsk auto', club.id, mdoc.id, 'sent', n);
+        /* 발송일이 오늘인 모임만 꺼낸다 — 발송 차례마다 모임 날짜가 하나씩(6일 뒤, 5일 뒤 …) */
+        for (const date of askTargetDates(cfg, nowYmd)) {
+          const target = await club.ref.collection('meetings').where('date', '==', date).get();
+          for (const mdoc of target.docs) {
+            const mt = mdoc.data();
+            const key = dueAskKey(mt, cfg, nowYmd, nowHHMM);
+            if (!key) continue;
+            const n = await sendRsvpAsk(club.ref, mdoc.ref, mt, null, { autoKey: key });
+            logger.info('rsvpAsk auto', club.id, mdoc.id, key, 'sent', n);
+          }
         }
       } catch (e) {
         logger.error('autoRsvpAsk failed for club', club.id, e);
@@ -462,12 +469,6 @@ exports.autoRsvpAsk = onSchedule(
   },
 );
 
-/** 'YYYY-MM-DD' 에 일수를 더한다 (표준시 계산이라 시차를 타지 않는다) */
-function shiftDays(ymd, delta) {
-  const d = new Date(`${ymd}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + delta);
-  return d.toISOString().slice(0, 10);
-}
 
 /* ================= 클럽 교류전 =================
    초대를 보내도 상대가 앱을 열어 보지 않으면 아무 일도 안 일어난다.

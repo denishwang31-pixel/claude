@@ -22,7 +22,7 @@ import {
   AgendaControls, CalendarView, TournamentCard, GuestCard, DayList,
 } from '../../src/components/AgendaViews';
 import {
-  normalizeAsk, pendingVoters, askDateFor,
+  normalizeAsk, pendingVoters, askSchedule, deadlineFor, deadlinePassed, shortWhen,
 } from '../../src/lib/rsvpAsk';
 import {
   visibleMeetings, groupByMonth, membersForMeeting, canRsvpSelf,
@@ -49,6 +49,11 @@ import {
 import { C, S, R, F } from '../../src/lib/theme';
 
 const today = () => new Date().toISOString().slice(0, 10);
+/* 한국 시각 [YYYY-MM-DD, HH:MM] — 투표 마감이 지났는지 볼 때(서버와 같은 기준) */
+const kstNow = () => {
+  const k = new Date(Date.now() + 9 * 3600000).toISOString();
+  return [k.slice(0, 10), k.slice(11, 16)];
+};
 
 /* 명단 한 무리 — 제목(점 + 이름 + 인원) 아래에 이름 칩 */
 const RSVP_TONE = {
@@ -574,6 +579,22 @@ export default function Schedule() {
                       <Text style={{ fontSize: 11, color: C.faint, marginTop: 10 }}>{blocked}</Text>
                     )}
 
+                    {/* 투표 마감 안내 — 자동 요청 알림에 적힌 마감과 같은 값.
+                       마감은 안내다: 지나도 버튼은 막지 않는다(급한 변경은 운영진이 받는다). */}
+                    {askCfg.enabled && (() => {
+                      const dl = deadlineFor(mt, askCfg);
+                      if (!dl) return null;
+                      const [ny, nt] = kstNow();
+                      const passed = deadlinePassed(mt, askCfg, ny, nt);
+                      return (
+                        <Text style={{ fontSize: 11.5, marginTop: 8, fontWeight: '700', color: passed ? C.faint : '#B45309' }}>
+                          {passed
+                            ? `투표 마감 지남(${shortWhen(dl.ymd, dl.time)}) · 바꿀 일이 있으면 운영진에게 알려 주세요`
+                            : `투표 마감 ${shortWhen(dl.ymd, dl.time)}까지`}
+                        </Text>
+                      );
+                    })()}
+
                     {/* 현황 한 줄 — 명단을 안 그려도 상태를 안다 */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
                       <Chip tone="green">참석 {sum.going}</Chip>
@@ -623,8 +644,8 @@ export default function Schedule() {
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                               <View style={{ flex: 1 }}>
                                 <Text style={{ fontSize: 10.5, color: C.faint }}>
-                                  {askCfg.enabled && askDateFor(mt, askCfg)
-                                    ? `자동 요청 ${askDateFor(mt, askCfg)} ${askCfg.time}`
+                                  {askCfg.enabled && askSchedule(mt, askCfg).length
+                                    ? `자동 요청 ${askSchedule(mt, askCfg).map((x) => shortWhen(x.ymd, x.time)).join(' · ')}`
                                     : '자동 요청 꺼짐'}
                                   {mt.rsvpAsk?.count ? ` · ${mt.rsvpAsk.count}회 발송` : ''}
                                 </Text>

@@ -25,19 +25,38 @@ const eq = (name, got, want) => {
   console.error(`  ✗ ${name}\n      기대: ${b}\n      실제: ${a}`);
 };
 const section = (s) => console.log(`\n[${s}]`);
+const ok_ = (c, name) => eq(name, !!c, true);
 
 /* ---------- 설정 정리 ---------- */
-section('설정 정리');
-eq('빈 설정은 기본값', app.normalizeAsk(), { enabled: true, daysBefore: 3, time: '09:00' });
-eq('꺼짐 유지', app.normalizeAsk({ enabled: false }).enabled, false);
-eq('음수 일수는 0으로', app.normalizeAsk({ daysBefore: -5 }).daysBefore, 0);
-eq('과한 일수는 30으로', app.normalizeAsk({ daysBefore: 400 }).daysBefore, 30);
-eq('소수는 반올림', app.normalizeAsk({ daysBefore: 2.6 }).daysBefore, 3);
-eq('글자는 기본값', app.normalizeAsk({ daysBefore: '이틀' }).daysBefore, 3);
-eq('망가진 시각은 09:00', app.normalizeAsk({ time: '25:99' }).time, '09:00');
-eq('빈 시각은 09:00', app.normalizeAsk({ time: '' }).time, '09:00');
-eq('정상 시각 유지', app.normalizeAsk({ time: '20:30' }).time, '20:30');
-eq('한 자리 시각도 허용', app.normalizeAsk({ time: '9:05' }).time, '9:05');
+section('설정 정리 — 기본은 6일 전·5일 전 정오 두 번, 마감 4일 전 정오');
+const DEF = {
+  enabled: true,
+  sends: [{ daysBefore: 6, time: '12:00' }, { daysBefore: 5, time: '12:00' }],
+  deadline: { daysBefore: 4, time: '12:00' },
+};
+eq('빈 설정은 기본값', app.normalizeAsk(), DEF);
+eq('기본값 상수와 같다', app.normalizeAsk(app.DEFAULT_RSVP_ASK), DEF);
+/* 예전 모양({daysBefore, time})은 새 기본값으로 읽는다 — 앱 주인이 기본을 바꿨다 */
+eq('예전 모양은 새 기본값으로', app.normalizeAsk({ enabled: true, daysBefore: 3, time: '09:00' }), DEF);
+eq('예전 모양이어도 꺼짐은 유지', app.normalizeAsk({ enabled: false, daysBefore: 3 }).enabled, false);
+eq('발송은 이른 것부터 정렬',
+  app.normalizeAsk({ sends: [{ daysBefore: 2, time: '09:00' }, { daysBefore: 7, time: '20:00' }] }).sends,
+  [{ daysBefore: 7, time: '20:00' }, { daysBefore: 2, time: '09:00' }]);
+eq('같은 발송은 한 번만',
+  app.normalizeAsk({ sends: [{ daysBefore: 3, time: '12:00' }, { daysBefore: 3, time: '12:00' }] }).sends.length, 1);
+eq('최대 4번', app.normalizeAsk({ sends: [1, 2, 3, 4, 5, 6].map((d) => ({ daysBefore: d, time: '12:00' })) }).sends.length, 4);
+eq('망가진 발송은 버린다', app.normalizeAsk({ sends: [{ daysBefore: '이틀' }, { daysBefore: 3, time: '12:00' }] }).sends.length, 1);
+eq('과한 일수는 30으로', app.normalizeAsk({ sends: [{ daysBefore: 400, time: '12:00' }], deadline: null }).sends[0].daysBefore, 30);
+eq('망가진 시각은 12:00', app.normalizeAsk({ sends: [{ daysBefore: 3, time: '25:99' }] }).sends[0].time, '12:00');
+eq('한 자리 시각은 두 자리로', app.normalizeAsk({ sends: [{ daysBefore: 3, time: '9:05' }], deadline: null }).sends[0].time, '09:05');
+eq('발송을 다 빼면 빈 목록(자동 발송 없음)', app.normalizeAsk({ sends: [] }).sends, []);
+eq('마감 안내 안 함', app.normalizeAsk({ ...DEF, deadline: null }).deadline, null);
+eq('마감이 마지막 발송보다 앞이면 마지막 발송 시각으로',
+  app.normalizeAsk({ sends: [{ daysBefore: 3, time: '12:00' }], deadline: { daysBefore: 5, time: '12:00' } }).deadline,
+  { daysBefore: 3, time: '12:00' });
+eq('같은 날 더 이른 시각 마감도 맞춘다',
+  app.normalizeAsk({ sends: [{ daysBefore: 3, time: '18:00' }], deadline: { daysBefore: 3, time: '09:00' } }).deadline,
+  { daysBefore: 3, time: '18:00' });
 
 /* ---------- 날짜 계산 ---------- */
 section('날짜 계산');
@@ -46,33 +65,41 @@ eq('월 넘김', app.shiftYmd('2026-03-01', -1), '2026-02-28');
 eq('윤년 2월', app.shiftYmd('2028-03-01', -1), '2028-02-29');
 eq('연 넘김', app.shiftYmd('2026-01-01', -1), '2025-12-31');
 eq('망가진 날짜는 빈 문자열', app.shiftYmd('없음', -1), '');
-eq('모임의 발송 예정일', app.askDateFor({ date: '2026-03-10' }, { daysBefore: 3 }), '2026-03-07');
-eq('당일 발송 설정', app.askDateFor({ date: '2026-03-10' }, { daysBefore: 0 }), '2026-03-10');
+const mt = { date: '2026-03-10', time: '10:00', place: '염곡코트' };
+eq('발송 일정 — 6일 전·5일 전 정오',
+  app.askSchedule(mt).map((x) => [x.ymd, x.time]), [['2026-03-04', '12:00'], ['2026-03-05', '12:00']]);
+ok_(app.askSchedule(mt).every((x) => /^[A-Za-z0-9_]+$/.test(x.key)), '보낸 기록 열쇠는 영숫자·밑줄만(Firestore 필드 이름)');
+eq('첫 발송일(예전 화면 호환)', app.askDateFor(mt), '2026-03-04');
+eq('마감 — 4일 전 정오', app.deadlineFor(mt), { ymd: '2026-03-06', time: '12:00' });
+eq('마감 전', app.deadlinePassed(mt, undefined, '2026-03-06', '11:59'), false);
+eq('마감 시각부터 지남', app.deadlinePassed(mt, undefined, '2026-03-06', '12:00'), true);
+eq('다음 날은 지남', app.deadlinePassed(mt, undefined, '2026-03-07', '08:00'), true);
+eq('마감 안내 안 하면 안 지남', app.deadlinePassed(mt, { deadline: null }, '2026-03-09', '08:00'), false);
+eq('서버가 오늘 찾아볼 모임 날짜', app.askTargetDates(undefined, '2026-03-04'), ['2026-03-10', '2026-03-09']);
+eq('꺼져 있으면 찾지 않는다', app.askTargetDates({ enabled: false }, '2026-03-04'), []);
 
 /* ---------- 자동 발송 시점 ---------- */
-section('자동 발송 시점');
-const mt = { date: '2026-03-10', time: '10:00', place: '염곡코트' };
-const cfg = { enabled: true, daysBefore: 3, time: '09:00' };
-
-eq('예정일 예정시각 → 보낸다', app.isAskDue(mt, cfg, '2026-03-07', '09:00'), true);
-eq('예정일 이른 시각 → 아직', app.isAskDue(mt, cfg, '2026-03-07', '08:30'), false);
-eq('예정일 늦은 시각 → 늦게라도 보낸다',
-  app.isAskDue(mt, cfg, '2026-03-07', '14:00'), true);
-eq('하루 전날 → 아니다', app.isAskDue(mt, cfg, '2026-03-06', '09:00'), false);
-eq('하루 뒤 → 아니다', app.isAskDue(mt, cfg, '2026-03-08', '09:00'), false);
-eq('꺼져 있으면 안 보낸다',
-  app.isAskDue(mt, { ...cfg, enabled: false }, '2026-03-07', '09:00'), false);
-eq('취소된 모임은 안 보낸다',
-  app.isAskDue({ ...mt, canceled: true }, cfg, '2026-03-07', '09:00'), false);
-eq('지난 모임은 안 보낸다',
-  app.isAskDue({ ...mt, date: '2026-03-01' }, cfg, '2026-03-07', '09:00'), false);
-eq('오늘 이미 보냈으면 다시 안 보낸다',
-  app.isAskDue({ ...mt, rsvpAsk: { auto: '2026-03-07' } }, cfg, '2026-03-07', '10:00'), false);
-eq('다른 날 보낸 기록은 오늘을 막지 않는다',
-  app.isAskDue({ ...mt, rsvpAsk: { auto: '2026-03-01' } }, cfg, '2026-03-07', '10:00'), true);
-eq('날짜 없는 모임', app.isAskDue({ time: '10:00' }, cfg, '2026-03-07', '09:00'), false);
-eq('당일 설정이면 모임 당일에 보낸다',
-  app.isAskDue(mt, { ...cfg, daysBefore: 0 }, '2026-03-10', '09:00'), true);
+section('자동 발송 시점 — 차례마다 한 번씩');
+const k1 = app.askSchedule(mt)[0].key;
+const k2 = app.askSchedule(mt)[1].key;
+eq('1차: 6일 전 정오 → 보낸다', app.dueAskKey(mt, undefined, '2026-03-04', '12:00'), k1);
+eq('1차: 정오 전 → 아직', app.dueAskKey(mt, undefined, '2026-03-04', '11:30'), '');
+eq('1차: 늦은 시각 → 늦게라도 보낸다', app.dueAskKey(mt, undefined, '2026-03-04', '18:00'), k1);
+eq('1차를 보냈으면 그날 다시 안 보낸다',
+  app.dueAskKey({ ...mt, rsvpAsk: { autoSent: { [k1]: true } } }, undefined, '2026-03-04', '18:00'), '');
+eq('2차: 5일 전 정오 → 보낸다',
+  app.dueAskKey({ ...mt, rsvpAsk: { autoSent: { [k1]: true } } }, undefined, '2026-03-05', '12:30'), k2);
+eq('발송일이 아닌 날 → 아니다', app.dueAskKey(mt, undefined, '2026-03-06', '12:00'), '');
+eq('꺼져 있으면 안 보낸다', app.isAskDue(mt, { enabled: false }, '2026-03-04', '12:00'), false);
+eq('취소된 모임은 안 보낸다', app.isAskDue({ ...mt, canceled: true }, undefined, '2026-03-04', '12:00'), false);
+eq('지난 모임은 안 보낸다', app.isAskDue({ ...mt, date: '2026-03-01' }, undefined, '2026-03-04', '12:00'), false);
+eq('날짜 없는 모임', app.isAskDue({ time: '10:00' }, undefined, '2026-03-04', '12:00'), false);
+/* 바꾸는 날 — 예전 방식이 오늘 이미 보냈으면 겹쳐 보내지 않는다 */
+eq('예전 방식이 오늘 보낸 기록이 있으면 오늘은 쉰다',
+  app.isAskDue({ ...mt, rsvpAsk: { auto: '2026-03-04' } }, undefined, '2026-03-04', '12:00'), false);
+eq('당일 발송 설정',
+  app.isAskDue(mt, { sends: [{ daysBefore: 0, time: '07:00' }], deadline: null }, '2026-03-10', '07:00'), true);
+eq('시각 비교는 두 자리로 맞춰서', app.isAskDue(mt, undefined, '2026-03-04', '9:30'), false);
 
 /* ---------- 대상 고르기 ---------- */
 section('대상 — 답하지 않은 사람에게만');
@@ -105,6 +132,12 @@ eq('아무도 안 답했으면 활동 회원 전원',
 eq('rsvp 자체가 없어도 죽지 않는다',
   app.pendingVoters(members, null).length, 4);
 eq('회원이 없으면 빈 목록', app.pendingVoters(null, meeting), []);
+const vm = [
+  { id: 'v1', venueIds: ['A'] }, { id: 'v2', venueIds: ['B'] }, { id: 'v3', venueIds: [] }, { id: 'v4' },
+];
+eq('코트장 모임이면 그 코트장 사람(배정 안 된 사람 포함)에게만',
+  app.pendingVoters(vm, { venueId: 'A' }).map((m) => m.id), ['v1', 'v3', 'v4']);
+eq('코트장 없는 모임은 전원', app.pendingVoters(vm, {}).map((m) => m.id), ['v1', 'v2', 'v3', 'v4']);
 
 eq('응답 현황', app.askProgress(members, meeting), { total: 4, answered: 2, pending: 2 });
 eq('전원 응답', app.askProgress(
@@ -119,6 +152,12 @@ eq('본문에 날짜·요일·시간·장소',
   askMsg.body, '3월 10일(화) 10:00 염곡코트 — 참석 / 불참을 눌러 주세요.');
 eq('클럽 이름이 없어도 문장이 된다',
   app.askMessage('', mt).title, '클럽 참석 여부를 알려주세요');
+eq('설정을 주면 마감을 덧붙인다',
+  app.askMessage('염곡클럽', mt, {}).body, '3월 10일(화) 10:00 염곡코트 — 참석 / 불참을 눌러 주세요. 마감 3/6(금) 12:00까지');
+eq('마감 안내 안 함이면 붙이지 않는다',
+  app.askMessage('염곡클럽', mt, { deadline: null }).body, '3월 10일(화) 10:00 염곡코트 — 참석 / 불참을 눌러 주세요.');
+eq('설정 요약', app.askSummary(), '6일 전 12:00 · 5일 전 12:00에 보내고, 마감은 4일 전 12:00');
+eq('꺼짐 요약', app.askSummary({ enabled: false }), '자동 발송 꺼짐');
 
 const chMsg = app.changeMessage('염곡클럽', '김철수', 'yes', 'no', mt);
 eq('변경 알림 제목', chMsg.title, '염곡클럽 참석 변경');
@@ -195,37 +234,44 @@ section('앱 ↔ 서버 사본 대조');
 
 const CASES = {
   normalizeAsk: [
-    [undefined], [{}], [{ enabled: false }], [{ daysBefore: -5 }], [{ daysBefore: 400 }],
-    [{ daysBefore: 2.6 }], [{ daysBefore: '이틀' }], [{ time: '25:99' }], [{ time: '20:30' }],
-    [{ time: '9:05' }], [{ enabled: false, daysBefore: 7, time: '18:00' }],
+    [undefined], [{}], [{ enabled: false }], [{ daysBefore: 3, time: '09:00' }],
+    [{ sends: [{ daysBefore: 2, time: '9:00' }, { daysBefore: 7, time: '20:00' }] }],
+    [{ sends: [{ daysBefore: 400, time: '25:99' }], deadline: null }],
+    [{ sends: [], deadline: { daysBefore: 1, time: '10:00' } }],
+    [{ sends: [{ daysBefore: 3, time: '18:00' }], deadline: { daysBefore: 3, time: '09:00' } }],
+    [{ sends: [1, 2, 3, 4, 5, 6].map((d) => ({ daysBefore: d, time: '12:00' })) }],
   ],
   shiftYmd: [
     ['2026-03-10', -3], ['2026-03-01', -1], ['2028-03-01', -1],
     ['2026-01-01', -1], ['없음', -1], ['2026-12-31', 1],
   ],
-  askDateFor: [
-    [{ date: '2026-03-10' }, { daysBefore: 3 }], [{ date: '2026-03-10' }, { daysBefore: 0 }],
-    [{}, {}], [null, {}],
+  askSchedule: [[mt], [mt, { enabled: false }], [{}, {}], [null, {}], [mt, { sends: [{ daysBefore: 0, time: '07:00' }] }]],
+  askDateFor: [[mt], [{ date: '2026-03-10' }, { sends: [{ daysBefore: 0, time: '07:00' }] }], [{}, {}], [null, {}]],
+  deadlineFor: [[mt], [mt, { deadline: null }], [null], [mt, { sends: [{ daysBefore: 1, time: '12:00' }] }]],
+  deadlinePassed: [[mt, undefined, '2026-03-06', '11:59'], [mt, undefined, '2026-03-06', '12:00'], [mt, { deadline: null }, '2026-03-09', '08:00']],
+  askTargetDates: [[undefined, '2026-03-04'], [{ enabled: false }, '2026-03-04'], [{ sends: [{ daysBefore: 1, time: '12:00' }, { daysBefore: 1, time: '18:00' }] }, '2026-03-04']],
+  dueAskKey: [
+    [mt, undefined, '2026-03-04', '12:00'], [mt, undefined, '2026-03-04', '11:30'],
+    [mt, undefined, '2026-03-05', '9:00'], [mt, undefined, '2026-03-05', '13:00'],
+    [{ ...mt, rsvpAsk: { autoSent: { d2026_03_04_1200: true } } }, undefined, '2026-03-04', '18:00'],
+    [{ ...mt, rsvpAsk: { auto: '2026-03-04' } }, undefined, '2026-03-04', '12:00'],
+    [{ ...mt, canceled: true }, undefined, '2026-03-04', '12:00'], [null, undefined, '2026-03-04', '12:00'],
   ],
   isAskDue: [
-    [mt, cfg, '2026-03-07', '09:00'],
-    [mt, cfg, '2026-03-07', '08:30'],
-    [mt, cfg, '2026-03-07', '14:00'],
-    [mt, cfg, '2026-03-06', '09:00'],
-    [{ ...mt, canceled: true }, cfg, '2026-03-07', '09:00'],
-    [{ ...mt, rsvpAsk: { auto: '2026-03-07' } }, cfg, '2026-03-07', '10:00'],
-    [{ ...mt, rsvpAsk: { auto: '2026-03-01' } }, cfg, '2026-03-07', '10:00'],
-    [mt, { ...cfg, enabled: false }, '2026-03-07', '09:00'],
-    [mt, { ...cfg, daysBefore: 0 }, '2026-03-10', '09:00'],
-    [null, cfg, '2026-03-07', '09:00'],
+    [mt, undefined, '2026-03-04', '12:00'], [mt, { enabled: false }, '2026-03-04', '12:00'],
+    [mt, undefined, '2026-03-06', '12:00'], [null, undefined, '2026-03-04', '12:00'],
   ],
+  shortWhen: [['2026-03-06', '12:00'], ['2026-03-06', ''], ['', '12:00']],
+  askSummary: [[undefined], [{ enabled: false }], [{ sends: [{ daysBefore: 0, time: '07:00' }], deadline: null }], [{ sends: [] }]],
   pendingVoters: [
     [members, meeting], [members, {}], [members, null], [null, meeting],
     [members, { rsvp: { a: 'maybe' } }], [members, { rsvp: { a: '' } }],
     [members, { rsvp: { a: null } }],
+    [[{ id: 'v1', venueIds: ['A'] }, { id: 'v2', venueIds: ['B'] }, { id: 'v3' }], { venueId: 'A' }],
   ],
   askProgress: [[members, meeting], [members, {}], [[], {}]],
-  askMessage: [['염곡클럽', mt], ['', mt], ['클럽', {}], ['클럽', { date: '2026-12-25' }]],
+  askMessage: [['염곡클럽', mt], ['', mt], ['클럽', {}], ['클럽', { date: '2026-12-25' }],
+    ['염곡클럽', mt, {}], ['염곡클럽', mt, { deadline: null }], ['클럽', {}, {}]],
   changeMessage: [
     ['염곡클럽', '김철수', 'yes', 'no', mt],
     ['염곡클럽', '김철수', 'no', 'maybe', { ...mt, matches: [{ id: 1 }] }],
@@ -274,6 +320,7 @@ Object.entries(CASES).forEach(([fn, argSets]) => {
    기본으로 쓰면 "설정한 날에 안 왔다"가 된다 */
 eq('기본 설정값이 같다', app.DEFAULT_RSVP_ASK, srv.DEFAULT_RSVP_ASK);
 eq('선택지가 같다', app.RSVP_DAYS_BEFORE, srv.RSVP_DAYS_BEFORE);
+eq('최대 발송 수가 같다', app.RSVP_MAX_SENDS, srv.RSVP_MAX_SENDS);
 
 /* 내보내는 함수 목록 자체가 같아야 한쪽에만 새 함수가 생기는 일을 잡는다 */
 const names = (o) => Object.keys(o).filter((k) => typeof o[k] === 'function').sort();
