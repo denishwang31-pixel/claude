@@ -278,6 +278,31 @@ jobs:
           npx --yes firebase-tools@$FIREBASE_TOOLS deploy \
             --only hosting --project tennis-match-52b31 --non-interactive
 
+      # 카카오·네이버 로그인 서버(socialAuth)가 쓸 키를 functions/.env 로 넘긴다.
+      # ⚠️ 값은 찍지 않는다(있다/없다만). 빈 값은 적지 않는다 — 없으면 그 로그인만
+      #    "서버 설정 없음"으로 안내되고 다른 함수는 멀쩡히 올라간다.
+      # ⚠️ .env 는 저장소에 없다(.gitignore). 러너 안에서만 만들어 배포에 싣는다.
+      - name: 서버 함수 키 (카카오·네이버 로그인)
+        if: env.DO_FUNCTIONS == 'true'
+        env:
+          KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+        run: |
+          : > functions/.env.tmp
+          for k in KAKAO_REST_KEY KAKAO_CLIENT_SECRET NAVER_CLIENT_ID NAVER_CLIENT_SECRET; do
+            v="${!k}"
+            if [ -n "$v" ]; then
+              printf '%s=%s\n' "$k" "$v" >> functions/.env.tmp
+              echo "$k: 있음"
+            else
+              echo "$k: 없음"
+            fi
+          done
+          if [ -f functions/.env ]; then cat functions/.env >> functions/.env.tmp; fi
+          mv functions/.env.tmp functions/.env
+
       - name: Cloud Functions
         id: dep_functions
         if: env.DO_FUNCTIONS == 'true'
@@ -422,9 +447,7 @@ jobs:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
           KAKAO_NATIVE_KEY: ${{ secrets.KAKAO_NATIVE_KEY }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
-          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           APPLE_SERVICE_ID: ${{ secrets.APPLE_SERVICE_ID }}
-          SOCIAL_TOKEN_ENDPOINT: ${{ secrets.SOCIAL_TOKEN_ENDPOINT }}
         run: |
           if [ -z "$EXPO_TOKEN_RAW" ]; then
             echo "::error::EXPO_TOKEN 시크릿이 비어 있습니다."
