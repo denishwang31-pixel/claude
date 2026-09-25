@@ -27,31 +27,42 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const INK = '#1C2318';     // 시안의 진한 원
 export const CREAM = '#F6F4EC';   // 시안의 바탕
 
-/** 공 하나 — 중심 (cx,cy), 반지름 r.
-    솔기는 공 안쪽에서만 보이게 잘라 낸다(테두리 밖으로 삐져나오면 공이 아니라 기호처럼 보인다). */
+/** 공 하나 — 중심 (cx,cy), 바깥 반지름 r. (2026-09-25 시안에 맞춰 다시 그림)
+    시안: 두 솔기가 **왼쪽 테두리에서 시작해 가운데를 조금 지나 둥근 끝으로 열린 채 끝난다**
+    — 위는 살짝 처졌다가 위로, 아래는 그 거울. "Ɛ" 처럼 보인다.
+    예전 판은 솔기가 좌우 끝까지 가로질러 "Ξ" 처럼 보였다(앱 주인: 시안과 다르다).
+    솔기의 왼쪽 끝은 공 안쪽에서만 보이게 잘라 테두리와 이어 붙인다. */
 let clipSeq = 0;
 export function ball(cx, cy, r, color = '#FFFFFF') {
-  const w = r * 0.13;             // 테두리 굵기 (시안 비율)
+  const ring = r * 0.15;          // 테두리 굵기 (시안 비율)
+  const seam = r * 0.105;         // 솔기는 테두리보다 조금 가늘다
   const id = `in${clipSeq += 1}`;
-  const x0 = cx - r * 1.1;
-  const x1 = cx + r * 1.1;
+  const P = (x, y) => `${(cx + x * r).toFixed(1)} ${(cy + y * r).toFixed(1)}`;
+  const seamPath = (s) => `M ${P(-0.98, 0.40 * s)} Q ${P(-0.25, 0.18 * s)} ${P(0.21, 0.36 * s)}`;
   return `
-  <defs><clipPath id="${id}"><circle cx="${cx}" cy="${cy}" r="${r - w * 0.6}"/></clipPath></defs>
-  <circle cx="${cx}" cy="${cy}" r="${r - w / 2}" fill="none" stroke="${color}" stroke-width="${w}"/>
-  <g clip-path="url(#${id})">
-    <path d="M ${x0} ${cy - r * 0.34} Q ${cx} ${cy + r * 0.18} ${x1} ${cy - r * 0.34}" fill="none" stroke="${color}" stroke-width="${w}"/>
-    <path d="M ${x0} ${cy + r * 0.34} Q ${cx} ${cy - r * 0.18} ${x1} ${cy + r * 0.34}" fill="none" stroke="${color}" stroke-width="${w}"/>
+  <defs><clipPath id="${id}"><circle cx="${cx}" cy="${cy}" r="${r - ring * 0.5}"/></clipPath></defs>
+  <circle cx="${cx}" cy="${cy}" r="${r - ring / 2}" fill="none" stroke="${color}" stroke-width="${ring}"/>
+  <g clip-path="url(#${id})" fill="none" stroke="${color}" stroke-width="${seam}" stroke-linecap="round">
+    <path d="${seamPath(-1)}"/>
+    <path d="${seamPath(1)}"/>
   </g>`;
 }
 
 const svg = (w, h, body, bg = null) => `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${bg ? `<rect width="100%" height="100%" fill="${bg}"/>` : ''}${body}</svg>`;
 
 export const ICONS = {
-  'assets/icon.png': { w: 1024, h: 1024, svg: svg(1024, 1024, ball(512, 512, 230), INK) },
-  'assets/adaptive-icon.png': { w: 1024, h: 1024, svg: svg(1024, 1024, ball(512, 512, 215)) },
+  /* 시안 비율: 공 = 어두운 원 지름의 약 38% */
+  'assets/icon.png': { w: 1024, h: 1024, svg: svg(1024, 1024, ball(512, 512, 196), INK) },
+  /* 안드로이드 적응형 아이콘 — 바탕(INK)은 app.json 의 backgroundColor, 이건 앞 그림.
+     런처가 가운데 약 2/3 만 둥글게 보여 주므로 그 안에서 38% 가 되게 */
+  'assets/adaptive-icon.png': { w: 1024, h: 1024, svg: svg(1024, 1024, ball(512, 512, 132)) },
+  /* 시작 화면 — 시안 그대로: 크림 바탕, 진한 원 + 공, 아래 COURT */
   'assets/splash.png': {
     w: 1242, h: 1242,
-    svg: svg(1242, 1242, `<circle cx="621" cy="621" r="200" fill="${INK}"/>${ball(621, 621, 78)}`, CREAM),
+    svg: svg(1242, 1242, `<circle cx="621" cy="540" r="200" fill="${INK}"/>${ball(621, 540, 77)}
+      <text x="621" y="900" text-anchor="middle" fill="${INK}"
+        font-family="Liberation Sans, Arial, Helvetica, sans-serif" font-weight="700"
+        font-size="132" letter-spacing="6">COURT</text>`, CREAM),
   },
   /* 알림 아이콘 — 안드로이드는 흰색 윤곽만 쓴다(색은 시스템이 칠한다) */
   'assets/notification-icon.png': { w: 96, h: 96, svg: svg(96, 96, ball(48, 48, 40)) },
