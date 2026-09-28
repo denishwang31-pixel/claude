@@ -39,10 +39,20 @@ export function shiftMonth(key, delta) {
 }
 
 export const MONTH_STEP = 3;      // [더보기] 한 번에 늘어나는 개월 수
+export const SOON_DAYS = 14;      // 달이 바뀌어도 늘 보여 주는 앞으로의 날 수
+export const MIN_FIRST = 4;       // 달과 상관없이 늘 보여 주는 가장 가까운 일정 수
+
+/** 'YYYY-MM-DD' 에 일수를 더한다 (표준시 계산이라 시차를 타지 않는다) */
+function shiftDay(ymd, delta) {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setUTCDate(d.getUTCDate() + delta);
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
 
 /**
  * 지금 보여줄 범위.
- * months=1 이면 이번 달만. [더보기] 누를 때마다 3개월씩.
+ * months=1 이면 이번 달(+ 앞으로 2주·가장 가까운 4건). [더보기] 누를 때마다 3개월씩.
  */
 export function windowEnd(fromMonth, months) {
   return shiftMonth(fromMonth, Math.max(1, months));
@@ -73,9 +83,13 @@ export function visibleMeetings(all, {
 
   const from = monthKey(today);
   const end = windowEnd(from, months);
-  const items = inScope
-    .filter((m) => monthKey(m.date) < end)
+  const sorted = [...inScope]
     .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+  /* ⚠️ "이번 달만"으로 자르면 월말에 빈 화면이 된다 — 9/28 에 열었는데 다음 모임이
+        10/4 라서 "예정된 일정이 없습니다"가 떴다(앱 주인). 그래서 달과 상관없이
+        앞으로 2주 안의 일정과 가장 가까운 MIN_FIRST 건은 늘 보여 준다. */
+  const soon = shiftDay(today, SOON_DAYS);
+  const items = sorted.filter((m, i) => monthKey(m.date) < end || m.date <= soon || i < MIN_FIRST);
 
   return {
     items,

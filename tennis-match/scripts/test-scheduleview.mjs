@@ -59,10 +59,30 @@ const MEET = [
 
 {
   const r = visibleMeetings(MEET, { today: TODAY, months: 1 });
-  eq('이번 달 3건만', r.items.map((m) => m.id), ['a1', 'a2', 'a3']);
+  /* 이번 달 3건 + 가장 가까운 4건을 채우려고 9월 첫 모임까지 */
+  eq('이번 달 + 가까운 4건', r.items.map((m) => m.id), ['a1', 'a2', 'a3', 'b1']);
   eq('지난 모임은 아예 제외', r.total, 8);
-  eq('접힌 건수', r.hidden, 5);
+  eq('접힌 건수', r.hidden, 4);
   ok(r.hasMore, '더 있다고 알려준다');
+}
+{
+  /* 월말(9/28)에 이번 달 모임이 없어도 다음 달 첫 모임(10/4)은 바로 보인다 — 앱 주인 제보 */
+  const END = [
+    { id: 'o1', date: '2026-10-04' }, { id: 'o2', date: '2026-10-11' },
+    { id: 'o3', date: '2026-10-18' }, { id: 'o4', date: '2026-10-25' },
+    { id: 'o5', date: '2026-11-01' }, { id: 'o6', date: '2026-11-08' },
+  ];
+  const r = visibleMeetings(END, { today: '2026-09-28', months: 1 });
+  eq('월말에도 다가오는 모임이 먼저', r.items.map((m) => m.id), ['o1', 'o2', 'o3', 'o4']);
+  eq('나머지는 접힌다', r.hidden, 2);
+}
+{
+  /* 2주 안의 모임은 4건을 넘어도 다 보인다 */
+  const many = Array.from({ length: 6 }, (_, i) => ({ id: `w${i}`, date: `2026-09-${String(29 + (i % 2)).padStart(2, '0')}`, time: `0${i}:00` }))
+    .concat([{ id: 'x1', date: '2026-10-10' }, { id: 'x2', date: '2026-10-13' }]);
+  const r = visibleMeetings(many, { today: '2026-09-28', months: 1 });
+  eq('이번 달 6건 + 2주 안(10/10)', r.items.length, 7);
+  eq('2주 넘은 10/13은 접힌다', r.items.some((m) => m.id === 'x2'), false);
 }
 {
   /* 이번 달(8월) + 3개월 = 8·9·10·11월 */
