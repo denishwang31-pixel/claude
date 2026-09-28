@@ -47,6 +47,7 @@ import { LIVE_SOCIAL_CONFIG } from '../src/lib/socialConfig';
    실제로 한 번 그렇게 됐다. 검사가 이걸 막고 있다. */
 import { signInWithGoogle, signInWithSocialWeb } from '../src/lib/socialSignIn';
 import { MIN_PW, loginErrorText, signupProblems } from '../src/lib/loginText';
+import { MAIL_HINT } from '../src/lib/verify';
 import { TERMS, PRIVACY } from '../src/lib/legalText';
 import { C, S, R, F, SHADOW, TAP } from '../src/lib/theme';
 import { APP_NAME } from '../src/lib/constants';
@@ -133,7 +134,7 @@ export default function Login() {
     setBusy(false);
     /* ⚠️ 가입 안 된 주소여도 같은 문구를 보여 준다 — 남의 가입 여부를
        알아내는 통로가 되면 안 된다. auth.js 의 sendReset 머리말 참고. */
-    if (r.ok) setNote(`${email.trim()} 으로 비밀번호 재설정 메일을 보냈습니다.`);
+    if (r.ok) setNote(`${email.trim()} 으로 비밀번호 재설정 메일을 보냈습니다. ${MAIL_HINT}`);
     else setErr(r.reason);
   };
 

@@ -11,13 +11,51 @@ import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously,
   deleteUser, reauthenticateWithCredential, EmailAuthProvider,
   sendPasswordResetEmail,
+  sendEmailVerification,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig';
 
 /** 인증 상태 구독 → uid 반환(없으면 null) */
 export function subAuth(cb) {
-  return onAuthStateChanged(auth, (user) => cb(user ? user.uid : null));
+  return onAuthStateChanged(auth, (user) => cb(user ? user.uid : null, user ? authInfo(user) : null));
+}
+
+/** 이메일 인증 판단(verify.js)에 넘길 계정 정보 */
+export const authInfo = (user) => ({
+  isAnonymous: !!user?.isAnonymous,
+  emailVerified: !!user?.emailVerified,
+  providers: (user?.providerData || []).map((p) => p?.providerId).filter(Boolean),
+  createdAt: user?.metadata?.creationTime || 0,
+  email: user?.email || '',
+});
+
+/** 인증 메일 보내기 — 한국어 안내문으로 */
+export async function sendVerify() {
+  const user = auth.currentUser;
+  if (!user) return { ok: false, reason: '로그인 상태가 아닙니다' };
+  try {
+    auth.languageCode = 'ko';
+    await sendEmailVerification(user);
+    return { ok: true };
+  } catch (e) {
+    const code = e?.code || '';
+    if (code.includes('too-many-requests')) return { ok: false, reason: '잠시 후 다시 보내 주세요(너무 자주 보냈습니다)' };
+    return { ok: false, reason: '메일을 보내지 못했습니다. 잠시 후 다시 시도해 주세요' };
+  }
+}
+
+/** 메일의 링크를 눌렀는지 다시 확인 — 새 토큰도 받아 둔다(규칙이 인증 여부를 보게 될 때를 위해) */
+export async function refreshVerified() {
+  const user = auth.currentUser;
+  if (!user) return false;
+  try {
+    await user.reload();
+    if (auth.currentUser?.emailVerified) await auth.currentUser.getIdToken(true);
+    return !!auth.currentUser?.emailVerified;
+  } catch (e) {
+    return false;
+  }
 }
 
 /* ------------------------------------------------------------------
@@ -31,6 +69,8 @@ export function subAuth(cb) {
 /** 이메일 회원가입 → uid */
 export async function signUpEmail(email, password) {
   const res = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  /* 가입하자마자 인증 메일 — 실패해도 가입은 된 것이라 막지 않는다(인증 화면에서 다시 보낸다) */
+  try { auth.languageCode = 'ko'; await sendEmailVerification(res.user); } catch (e) { /* 무시 */ }
   return res.user.uid;
 }
 
@@ -55,6 +95,7 @@ export async function sendReset(email) {
   const to = String(email || '').trim();
   if (!to) return { ok: false, reason: '이메일을 입력해 주세요' };
   try {
+    auth.languageCode = 'ko';   // 메일 안내문을 한국어로(기본은 영어)
     await sendPasswordResetEmail(auth, to);
     return { ok: true };
   } catch (e) {

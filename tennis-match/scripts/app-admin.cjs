@@ -14,7 +14,7 @@
    ⚠️ 로그에는 이메일을 가려서 남긴다(de***@gmail.com). uid 도 뒤 4자만.
 
    입력(환경 변수)
-     ADMIN_ACTION  grant | revoke | list
+     ADMIN_ACTION  grant | revoke | list | info(로그인 방식·인증 상태 보기)
      ADMIN_TARGET  이메일 또는 uid
    ============================================================ */
 const path = require('path');
@@ -65,6 +65,18 @@ async function main() {
     await ref.set({ note: '앱 관리자', via: 'github-actions', grantedAt: FieldValue.serverTimestamp() }, { merge: true });
     console.log(`지정했습니다: ${mask(user.email)} ${tail(user.uid)}`);
     console.log('앱을 완전히 껐다 켜면 관리자 메뉴가 보입니다.');
+  } else if (action === 'info') {
+    /* 로그인이 안 되거나 메일이 안 올 때 원인 찾기 — 이 계정이 어떤 방식으로 로그인되나.
+       password 가 없으면 비밀번호 로그인·재설정이 그 계정에 아직 없는 것이다
+       (지메일로 구글 로그인을 하면 확인 안 된 비밀번호 방식이 떨어져 나간다). */
+    const providers = (user.providerData || []).map((p) => p.providerId);
+    console.log(`계정: ${mask(user.email)} ${tail(user.uid)}`);
+    console.log(`  로그인 방식: ${providers.join(', ') || '(없음 — 카카오·네이버·둘러보기)'}`);
+    console.log(`  비밀번호 로그인: ${providers.includes('password') ? '있음' : '없음'}`);
+    console.log(`  이메일 인증: ${user.emailVerified ? '됨' : '안 됨'}`);
+    console.log(`  사용 중지: ${user.disabled ? '예' : '아니오'}`);
+    console.log(`  가입: ${user.metadata.creationTime} · 마지막 로그인: ${user.metadata.lastSignInTime || '-'}`);
+    console.log(`  앱 관리자: ${(await ref.get()).exists ? '예' : '아니오'}`);
   } else if (action === 'revoke') {
     await ref.delete();
     console.log(`해제했습니다: ${mask(user.email)} ${tail(user.uid)}`);

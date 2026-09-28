@@ -3,6 +3,7 @@
 
    라우팅 규칙
      로그인 안 됨                  → /login
+     이메일 인증 전(새 비밀번호 계정) → /verify   (src/lib/verify.js)
      로그인됨 + 클럽 있음          → /(tabs)
      로그인됨 + 클럽 없음          → /onboarding
        단, "나중에 하기"를 누른 사용자는 클럽 없이도 /(tabs) 로 들어간다.
@@ -13,13 +14,14 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { subAuth, getMySession } from '../src/lib/auth';
+import { needsEmailVerify } from '../src/lib/verify';
 import { checkAppAdmin } from '../src/lib/firestore';
 import { C } from '../src/lib/theme';
 
 export const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
 
-const EMPTY = { uid: null, clubId: null, me: null, isAppAdmin: false, skipped: false, pendingClubId: null };
+const EMPTY = { uid: null, clubId: null, me: null, isAppAdmin: false, skipped: false, pendingClubId: null, needsVerify: false, email: '' };
 
 export default function RootLayout() {
   const [session, setSession] = useState(EMPTY);
@@ -46,8 +48,14 @@ export default function RootLayout() {
 
   // 인증 상태 구독 → uid, 소속 clubId 해석
   useEffect(() => {
-    const unsub = subAuth(async (uid) => {
+    const unsub = subAuth(async (uid, info) => {
       if (!uid) { setSession(EMPTY); setLoading(false); return; }
+      /* 이메일 인증 전이면 클럽 정보도 읽지 않는다 — 인증 화면만 보여 준다 */
+      if (needsEmailVerify(info)) {
+        setSession({ ...EMPTY, uid, me: uid, needsVerify: true, email: info?.email || '' });
+        setLoading(false);
+        return;
+      }
       const [s, appAdmin] = await Promise.all([getMySession(uid), checkAppAdmin(uid)]);
       setSession({
         uid, me: uid, // me(memberId) = uid
@@ -55,6 +63,8 @@ export default function RootLayout() {
         pendingClubId: s.pendingClubId,
         skipped: s.skipped,
         isAppAdmin: appAdmin,
+        needsVerify: false,
+        email: info?.email || '',
       });
       setLoading(false);
     });
@@ -73,6 +83,11 @@ export default function RootLayout() {
       if (root !== 'login') router.replace('/login');
       return;
     }
+    if (session.needsVerify) {
+      if (root !== 'verify') router.replace('/verify');
+      return;
+    }
+    if (root === 'verify') { router.replace('/'); return; }
     // 클럽이 없고, 둘러보기도 선택하지 않았으면 온보딩으로
     if (!session.clubId && !session.skipped) {
       if (root !== 'onboarding') router.replace('/onboarding');
@@ -99,6 +114,13 @@ export default function RootLayout() {
   const resetOnboarding = () => setSession((s) => ({ ...s, skipped: false }));
   /** 클럽이 있는 상태에서 클럽 찾기/만들기 화면을 여는 정식 통로 */
   const openOnboarding = () => setOnboardingIntent(true);
+  /** 인증을 마쳤다 — 클럽 정보를 읽어 원래 길로 */
+  const markVerified = async () => {
+    const [s, appAdmin] = await Promise.all([getMySession(session.uid), checkAppAdmin(session.uid)]);
+    setSession((x) => ({
+      ...x, needsVerify: false, clubId: s.clubId, pendingClubId: s.pendingClubId, skipped: s.skipped, isAppAdmin: appAdmin,
+    }));
+  };
 
   if (loading) {
     return (
@@ -111,9 +133,10 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AppCtx.Provider value={{ ...session, viewMode, setViewMode, venueId, setVenueId, switchClub, resetOnboarding, openOnboarding }}>
+        <AppCtx.Provider value={{ ...session, viewMode, setViewMode, venueId, setVenueId, switchClub, resetOnboarding, openOnboarding, markVerified }}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="login" />
+            <Stack.Screen name="verify" />
             <Stack.Screen name="onboarding" />
             <Stack.Screen name="join" />
             <Stack.Screen name="(tabs)" />
