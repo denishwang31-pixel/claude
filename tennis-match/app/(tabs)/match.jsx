@@ -90,7 +90,7 @@ export default function Match() {
   const router = useRouter();
   const {
     club, members, meetings, venues, rules, pairs, matchConfig,
-    isAdmin, scopeVenues, nameOf, genderOf,
+    isAdmin, scopeVenues, nameOf, genderOf, meVal,
   } = useClub(clubId, me, { viewMode });
   const { venueId, setVenueId } = useVenueScope(scopeVenues);
   const cfg = { ...DEFAULT_MATCH_CONFIG, ...(matchConfig || {}) };
@@ -141,9 +141,14 @@ export default function Match() {
   }, [venueId]);
 
   /* 선택된 모임 (없으면 가장 가까운 것) */
+  /* 일정 카드의 [대진] 으로 콕 집어 들어온 모임은 위 코트장 선택과 달라도 연다 —
+     "대진 짜기를 눌렀는데 다른 모임이 열렸다"가 되면 안 된다(내 범위 안의 모임만). */
   const meeting = useMemo(
-    () => candidates.find((m) => m.id === meetingId) || candidates[0] || null,
-    [candidates, meetingId],
+    () => candidates.find((m) => m.id === meetingId)
+      || meetings.find((m) => m.id === meetingId && !m.canceled && m.date >= today()
+        && (!m.venueId || scopeIds.includes(m.venueId)))
+      || candidates[0] || null,
+    [candidates, meetings, scopeIds, meetingId],
   );
 
   const attendees = useMemo(() => {
@@ -935,7 +940,7 @@ export default function Match() {
       {venues.length > 0 && (
         <View style={{ marginBottom: 10 }}>
           {/* 코트장을 바꾸면 고르던 모임이 바뀌므로 초안이 사라진다 — 먼저 물어본다 */}
-          <VenuePicker venues={scopeVenues} value={venueId}
+          <VenuePicker mineIds={meVal?.venueIds} venues={scopeVenues} value={venueId}
             onChange={(v) => guardDraft(() => setVenueId(v))} />
         </View>
       )}

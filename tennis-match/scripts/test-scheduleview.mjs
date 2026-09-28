@@ -11,6 +11,7 @@ import {
   monthKey, monthLabel, shiftMonth, MONTH_STEP, windowEnd, visibleMeetings,
   groupByMonth, belongsToVenue, membersForMeeting, canRsvpSelf,
   rsvpBlockReason, rsvpSummary, rsvpGroups, nextRsvp, meetingTie,
+  splitMine, splitByTie, meetingSlot, duplicateMeetings, clashingDates,
 } from '../src/lib/scheduleView.js';
 
 let pass = 0, fail = 0;
@@ -195,6 +196,56 @@ eq('코트장이 하나뿐인 클럽은 구분 없음', meetingTie(MEMBERS[0], {
 eq('취소된 모임은 구분 없음', meetingTie(MEMBERS[0], { venueId: 'v1', canceled: true }, 2), 'plain');
 eq('내 정보를 아직 못 읽었으면 구분 없음', meetingTie(null, { venueId: 'v2' }, 2), 'plain');
 eq('미배정 회원은 다 내 코트', meetingTie(MEMBERS[3], { venueId: 'v2' }, 2), 'mine');
+
+section('코트장 드롭다운 — 내 코트를 맨 위로');
+{
+  const VV = [{ id: 'v1', name: '염곡' }, { id: 'v2', name: '수도공고' }, { id: 'v3', name: '장충' }];
+  const r = splitMine(VV, ['v3', 'v2']);
+  eq('내 코트(원래 순서)', r.mine.map((v) => v.id), ['v2', 'v3']);
+  eq('나머지', r.others.map((v) => v.id), ['v1']);
+  eq('내 코트가 없으면 전부 나머지', splitMine(VV, undefined).others.length, 3);
+  eq('빈 목록', splitMine(null, ['v1']).mine.length, 0);
+}
+
+section('일정 목록 — 내 코트 먼저, 다른 코트장은 따로');
+{
+  const list = [
+    { id: 'x1', date: '2026-10-04', venueId: 'v1' }, { id: 'x2', date: '2026-10-04', venueId: 'v2' },
+    { id: 'x3', date: '2026-10-05', venueId: null }, { id: 'x4', date: '2026-10-06', venueId: 'v2', canceled: true },
+  ];
+  const r = splitByTie(list, MEMBERS[0], 2);
+  eq('내 코트 + 전체 모임 + 취소된 모임', r.mine.map((m) => m.id), ['x1', 'x3', 'x4']);
+  eq('다른 코트장', r.other.map((m) => m.id), ['x2']);
+  eq('코트장이 하나면 나누지 않는다', splitByTie(list, MEMBERS[0], 1).other.length, 0);
+}
+
+section('같은 모임이 두 번 — 하나만 남기기 (앱 주인 제보: 10/11 06:00 두 장)');
+{
+  const A = { id: 'a', date: '2026-10-11', time: '06:00', venueId: 'v1', rsvp: {} };
+  const B = { id: 'b', date: '2026-10-11', time: '06:00', venueId: 'v1', rsvp: { m1: 'yes' } };
+  const C2 = { id: 'c', date: '2026-10-11', time: '08:00', venueId: 'v1', rsvp: {} };
+  const D = { id: 'd', date: '2026-10-11', time: '06:00', venueId: 'v2', rsvp: {} };
+  eq('열쇠 = 날짜·시간·코트장', meetingSlot(A), meetingSlot(B));
+  ok(meetingSlot(A) !== meetingSlot(C2), '시간이 다르면 다른 모임');
+  ok(meetingSlot(A) !== meetingSlot(D), '코트장이 다르면 다른 모임');
+  const r = duplicateMeetings([A, B, C2, D], { from: '2026-09-28' });
+  eq('참석 기록이 있는 쪽을 남기고 빈 쪽을 지운다', r.remove, ['a']);
+  eq('중복 묶음 수', r.groups, 1);
+  const M1 = { ...A, id: 'm1', matches: [{}] };
+  eq('대진이 있는 쪽은 남긴다', duplicateMeetings([B, M1]).remove, ['b']);
+  eq('취소된 쪽을 지운다', duplicateMeetings([{ ...B, canceled: true }, A]).remove, ['b']);
+  eq('지난 모임은 건드리지 않는다', duplicateMeetings([A, B], { from: '2026-10-12' }).remove, []);
+  eq('셋이면 둘을 지운다', duplicateMeetings([A, B, { ...A, id: 'a2' }]).remove.length, 2);
+  eq('장소 이름만 있는 모임도 잡는다',
+    duplicateMeetings([{ id: 'p1', date: '2026-10-11', time: '07:00', place: '올팍 ' }, { id: 'p2', date: '2026-10-11', time: '07:00', place: '올팍' }]).remove.length, 1);
+}
+{
+  const have = [{ id: 'a', date: '2026-10-11', time: '06:00', venueId: 'v1' }, { id: 'z', date: '2026-10-25', time: '06:00', venueId: 'v1', canceled: true }];
+  const base = { time: '06:00', venueId: 'v1' };
+  eq('이미 있는 날짜만 골라낸다', clashingDates(have, base, ['2026-10-04', '2026-10-11', '2026-10-18']), ['2026-10-11']);
+  eq('취소된 모임 자리는 다시 만들 수 있다', clashingDates(have, base, ['2026-10-25']), []);
+  eq('시간이 다르면 겹치지 않는다', clashingDates(have, { ...base, time: '08:00' }, ['2026-10-11']), []);
+}
 
 /* ---------- 명단 나누기 ---------- */
 section('명단 — 참석 · 불참 · 미응답을 따로 (헷갈리지 않게)');

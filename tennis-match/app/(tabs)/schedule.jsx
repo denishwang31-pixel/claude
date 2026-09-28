@@ -1,7 +1,7 @@
 /* 일정 / RSVP — 캘린더·시간 선택, 정기 모임 반복 등록, 참석 체크 */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { View, Text, ScrollView, Pressable, Alert, Modal, Share } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useApp } from '../_layout';
 import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
@@ -26,6 +26,7 @@ import {
 } from '../../src/lib/rsvpAsk';
 import {
   visibleMeetings, groupByMonth, membersForMeeting, canRsvpSelf, meetingTie,
+  splitByTie, duplicateMeetings, clashingDates,
   rsvpBlockReason, rsvpSummary, rsvpGroups, nextRsvp, MONTH_STEP,
 } from '../../src/lib/scheduleView';
 import { AD_SLOTS } from '../../src/lib/ads';
@@ -157,21 +158,67 @@ export default function Schedule() {
      탭 화면은 한 번 열리면 살아 있어서, 예전에 내려 둔 스크롤·띠에서 고른 날짜·
      펼친 명단이 그대로 남았다. 그 사이 지난 일정이 목록에서 빠지면 전혀 다른 날짜가
      눈앞에 와 있었다(앱 주인: "임의의 날짜 일정이 보인다"). */
+  const [otherOpen, setOtherOpen] = useState(false);   // 다른 코트장 일정 펼침
+  const [otherMonths, setOtherMonths] = useState(1);
   const listRef = useRef(null);
+  /* 홈의 예정 일정을 눌러 들어오면 그 모임의 날짜만 보여 주고 명단을 펼친다 —
+     대진보다 먼저 "누가 오나"를 확인·확정하는 곳이 여기다(앱 주인).
+     파라미터는 한 번 쓰고 비운다(남겨 두면 탭으로 다시 들어올 때마다 그 모임이 열린다). */
+  const params = useLocalSearchParams();
+  const pendingFocus = useRef(null);
+  const keepFocusUntil = useRef(0);
+  const [focusTick, setFocusTick] = useState(0);
+  useEffect(() => {
+    if (!params?.meetingId) return;
+    pendingFocus.current = String(params.meetingId);
+    router.setParams({ meetingId: '' });
+    setFocusTick((t) => t + 1);
+  }, [params?.meetingId]);
+  useEffect(() => {
+    const id = pendingFocus.current;
+    if (!id) return;
+    const target = meetings.find((m) => m.id === id);
+    if (!target) return;                      // 아직 모임을 못 읽었다 — 읽히면 다시 온다
+    pendingFocus.current = null;
+    keepFocusUntil.current = Date.now() + 1500;
+    setView('list');
+    setPickedDate(target.date);
+    setExpanded(target.id);
+  }, [focusTick, meetings]);
+
   useFocusEffect(useCallback(() => {
-    setPickedDate(null);
-    setExpanded(null);
+    /* 방금 콕 집어 연 모임이면 되돌리지 않는다(탭 포커스가 파라미터보다 늦게 올 때가 있다) */
+    if (!pendingFocus.current && Date.now() > keepFocusUntil.current) {
+      setPickedDate(null);
+      setExpanded(null);
+    }
     setCalMonth(today().slice(0, 7));
     setMonths(1);
+    setOtherOpen(false);
+    setOtherMonths(1);
     requestAnimationFrame(() => listRef.current?.scrollTo?.({ y: 0, animated: false }));
   }, []));
-  const { items: upcoming, hidden, hasMore } = useMemo(
-    () => visibleMeetings(meetings, {
+
+  /* 내 코트 먼저, 다른 코트장은 아래에 접어 둔다.
+     운영진은 모든 코트장 일정을 보는데, 시간순으로 섞이면 내가 나가는 모임이
+     묻혔다(앱 주인). 코트장을 하나 골랐거나 코트장이 하나뿐이면 나누지 않는다. */
+  const splitOn = !venueId && venues.length > 1 && !!meVal;
+  const { mine: myMeetings, other: otherMeetings } = useMemo(
+    () => (splitOn ? splitByTie(meetings, meVal, venues.length) : { mine: meetings, other: [] }),
+    [splitOn, meetings, meVal, venues.length],
+  );
+  const { items: upcoming, hidden, hasMore, total: myTotal } = useMemo(
+    () => visibleMeetings(myMeetings, {
       today: today(), months, venueId, scopeIds,
     }),
-    [meetings, months, venueId, scopeIds],
+    [myMeetings, months, venueId, scopeIds],
   );
   const byMonth = useMemo(() => groupByMonth(upcoming), [upcoming]);
+  const otherView = useMemo(
+    () => visibleMeetings(otherMeetings, { today: today(), months: otherMonths, scopeIds }),
+    [otherMeetings, otherMonths, scopeIds],
+  );
+  const otherByMonth = useMemo(() => groupByMonth(otherView.items), [otherView.items]);
 
   /* 코트장을 바꾸면 다시 이번 달부터 — 다른 코트를 골랐는데 6개월치가
      펼쳐진 채로 있으면 그것대로 무겁다 */
@@ -263,17 +310,46 @@ export default function Schedule() {
     );
   };
 
+  /* 겹친 일정 정리 — 같은 날 · 같은 시간 · 같은 코트장 모임이 둘 이상이면 하나만 남긴다.
+     참석·대진 기록이 많은 쪽을 남긴다. 지난 일정은 건드리지 않는다(랭킹 기록). */
+  const cleanDuplicates = () => {
+    const scoped = venueId ? meetings.filter((m) => m.venueId === venueId) : meetings;
+    const { remove, groups } = duplicateMeetings(scoped, { from: today() });
+    if (!remove.length) return Alert.alert('겹친 일정 없음', '같은 날·같은 시간·같은 코트장에 두 번 등록된 예정 일정이 없습니다.');
+    return Alert.alert('겹친 일정 정리',
+      `같은 모임이 두 번 이상 등록된 곳이 ${groups}군데 있습니다.\n`
+      + `하나씩만 남기고 ${remove.length}건을 지웁니다.\n\n`
+      + '참석·대진 기록이 있는 쪽을 남깁니다. 지난 일정은 건드리지 않습니다.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: `${remove.length}건 정리`,
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await Promise.all(remove.map((id) => deleteMeeting(clubId, id)));
+              flash(`겹친 일정 ${remove.length}건을 정리했습니다`);
+            } catch (e) {
+              flash('정리에 실패했습니다');
+            }
+          },
+        },
+      ]);
+  };
+
   /* 일정 일괄 정리 — 잘못 만든 정기 일정 수십 건을 하나씩 지울 수는 없다.
      회원·회비·대회는 건드리지 않는다. */
   const bulkMenu = () => sheet.open({
     title: '일정 정리',
     options: [
+      { key: 'dup', label: '겹친 일정 정리 (같은 날·시간·코트장)', icon: '🧩' },
       { key: 'past', label: '지난 일정 삭제', icon: '🧹' },
       { key: 'future', label: '예정 일정 삭제', icon: '📅' },
       { key: 'all', label: '일정 전체 삭제', icon: '🗑', destructive: true },
     ],
-    destructiveIndex: 2,
+    destructiveIndex: 3,
     onSelect: (o) => {
+      if (o.key === 'dup') return cleanDuplicates();
       const label = { past: '지난 일정', future: '예정 일정', all: '모든 일정' }[o.key];
       const where = venueId ? (venues.find((v) => v.id === venueId)?.name || '') : '';
       Alert.alert(
@@ -495,6 +571,7 @@ export default function Schedule() {
   });
 
   /* 등록 — 반복이면 기한까지 한 번에 생성 */
+  const saving = useRef(false);
   const submit = () => {
     if (!nd.date) return flash('날짜를 선택하세요');
     const base = {
@@ -506,26 +583,55 @@ export default function Schedule() {
       endScore: nd.endScore || 6,
       ranked: nd.ranked !== false,
     };
+    /* ⚠️ 같은 날 · 같은 시간 · 같은 코트장 모임은 다시 만들지 않는다.
+          정기 일정을 두 번 등록해 10/11 06:00 이 두 장 생긴 적이 있다(앱 주인).
+          등록 버튼을 두 번 눌러도 한 번만 들어가게 saving 으로 막는다. */
+    if (saving.current) return;
     if (nd.repeat === 'none') {
-      addMeeting(clubId, { ...base, date: nd.date });
-      setNd(blank()); setOpen(false);
-      return flash('모임 등록 완료');
+      const add = () => {
+        saving.current = true;
+        Promise.resolve(addMeeting(clubId, { ...base, date: nd.date }))
+          .finally(() => { saving.current = false; });
+        setNd(blank()); setOpen(false);
+        flash('모임 등록 완료');
+      };
+      if (clashingDates(meetings, base, [nd.date]).length) {
+        return Alert.alert('같은 모임이 이미 있습니다',
+          `${nd.date} ${base.time}${venueNameOf(base) ? ` · ${venueNameOf(base)}` : ''} 모임이 이미 등록되어 있습니다.\n그래도 하나 더 만들까요?`,
+          [{ text: '취소', style: 'cancel' }, { text: '그래도 만들기', onPress: add }]);
+      }
+      return add();
     }
     if (!nd.until) return flash('반복 종료일(기한)을 선택하세요');
-    const dates = expandRecurrence(nd.date, nd.until, nd.repeat);
-    if (!dates.length) return flash('생성할 날짜가 없습니다. 기한을 확인하세요');
+    const all = expandRecurrence(nd.date, nd.until, nd.repeat);
+    if (!all.length) return flash('생성할 날짜가 없습니다. 기한을 확인하세요');
+    const clash = new Set(clashingDates(meetings, base, all));
+    const dates = all.filter((d) => !clash.has(d));
+    if (!dates.length) {
+      return Alert.alert('이미 모두 등록되어 있습니다',
+        `${all.length}개 날짜 모두 같은 시간·같은 코트장 모임이 이미 있습니다. 새로 만들 것이 없습니다.`);
+    }
     Alert.alert(
       '정기 모임 등록',
       `${REPEAT_TYPES.find((r) => r.key === nd.repeat)?.name} · ${dowName(nd.date)}요일 ${nd.time}\n`
-      + `${dates[0]} ~ ${dates[dates.length - 1]}\n\n총 ${dates.length}개의 모임을 한 번에 등록합니다.`,
+      + `${dates[0]} ~ ${dates[dates.length - 1]}\n\n총 ${dates.length}개의 모임을 한 번에 등록합니다.`
+      + (clash.size ? `\n이미 같은 모임이 있는 ${clash.size}개 날짜는 건너뜁니다.` : ''),
       [
         { text: '취소', style: 'cancel' },
         {
           text: `${dates.length}개 등록`,
           onPress: async () => {
-            await addMeetingsBatch(clubId, dates.map((d) => ({ ...base, date: d, recurring: nd.repeat })));
-            setNd(blank()); setOpen(false);
-            flash(`정기 모임 ${dates.length}개 등록 완료`);
+            if (saving.current) return;
+            saving.current = true;
+            try {
+              await addMeetingsBatch(clubId, dates.map((d) => ({ ...base, date: d, recurring: nd.repeat })));
+              setNd(blank()); setOpen(false);
+              flash(`정기 모임 ${dates.length}개 등록 완료`);
+            } catch (e) {
+              flash('등록에 실패했습니다');
+            } finally {
+              saving.current = false;
+            }
           },
         },
       ],
@@ -649,6 +755,23 @@ export default function Schedule() {
                         </Text>
                       </Pressable>
                     </View>
+
+                    {/* 대진으로 — 명단을 확인·확정한 다음 이 모임의 대진으로 바로 간다.
+                       예전엔 홈에서 모임을 누르면 명단 확인 없이 대진으로 넘어갔다(앱 주인). */}
+                    {(isAdmin || mt.matches?.length > 0) && (
+                      <Pressable
+                        onPress={() => router.push({ pathname: '/(tabs)/match', params: { meetingId: mt.id } })}
+                        style={({ pressed }) => ({
+                          flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                          marginTop: 10, paddingVertical: 10, borderRadius: 12,
+                          borderWidth: 1, borderColor: C.green, backgroundColor: pressed ? C.greenSoft : 'transparent',
+                        })}>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: C.green }}>
+                          {mt.matches?.length ? `대진표 보기 · ${mt.matches.length}경기` : '명단 확정 후 대진 짜기'}
+                        </Text>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: C.green }}>→</Text>
+                      </Pressable>
+                    )}
 
                     {/* 펼쳤을 때만 사람을 그린다.
                        예전에는 모임마다 회원 전원 칩을 그렸다. 모임 100건 ×
@@ -807,7 +930,7 @@ export default function Schedule() {
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScreenHeader
         title="일정"
-        subtitle={`${venueId ? (venues.find((v) => v.id === venueId)?.name || '') : club?.name || '테니스클럽'} · 예정 ${upcoming.length + hidden}건`}
+        subtitle={`${venueId ? (venues.find((v) => v.id === venueId)?.name || '') : club?.name || '테니스클럽'} · 예정 ${myTotal + otherView.total}건`}
         right={isAdmin ? (
           <Pressable onPress={bulkMenu} hitSlop={10}>
             <Text style={{ fontSize: 12.5, color: C.sub, fontWeight: '700' }}>정리</Text>
@@ -818,7 +941,7 @@ export default function Schedule() {
         {/* 코트장 필터 — 여러 곳을 운영하는 클럽 */}
         {scopeVenues.length > 1 && (
           <View style={{ marginBottom: S.md, zIndex: 20 }}>
-            <VenuePicker venues={scopeVenues} value={venueId} onChange={setVenueId} />
+            <VenuePicker mineIds={meVal?.venueIds} venues={scopeVenues} value={venueId} onChange={setVenueId} />
           </View>
         )}
 
@@ -938,13 +1061,60 @@ export default function Schedule() {
                 )}
                 {!hasMore && months > 1 && upcoming.length > 0 && (
                   <Text style={{ fontSize: 11, color: C.faint, textAlign: 'center', marginTop: 4 }}>
-                    예정된 일정을 모두 표시했습니다
+                    {splitOn ? '내 코트 일정을 모두 표시했습니다' : '예정된 일정을 모두 표시했습니다'}
                   </Text>
+                )}
+
+                {/* 다른 코트장 일정 — 눌러야 펼친다 */}
+                {splitOn && otherView.total > 0 && (
+                  <View style={{ marginTop: upcoming.length ? S.xl : S.md }}>
+                    {upcoming.length === 0 && (
+                      <Text style={{ fontSize: 13, color: C.sub, textAlign: 'center', marginBottom: S.md }}>
+                        내 코트에 예정된 일정이 없습니다
+                      </Text>
+                    )}
+                    <Pressable onPress={() => setOtherOpen(!otherOpen)}
+                      style={({ pressed }) => ({
+                        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        paddingVertical: 14, paddingHorizontal: 16, borderRadius: 14,
+                        backgroundColor: C.fill, borderWidth: 1, borderColor: C.border,
+                        opacity: pressed ? 0.7 : 1,
+                      })}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '800', color: C.text }}>
+                          다른 코트장 일정 {otherView.total}건
+                        </Text>
+                        <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 2 }}>
+                          내가 나가지 않는 코트장 모임입니다
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: C.green }}>
+                        {otherOpen ? '접기 ▲' : '펼치기 ▼'}
+                      </Text>
+                    </Pressable>
+                    {otherOpen && (
+                      <>
+                        {otherByMonth.map((grp) => (
+                          <View key={`o-${grp.key}`}>
+                            <SectionTitle right={
+                              <Text style={{ fontSize: 11, color: C.faint }}>{grp.items.length}건</Text>
+                            }>{grp.label}</SectionTitle>
+                            {grp.items.map(meetingCard)}
+                          </View>
+                        ))}
+                        {otherView.hasMore && (
+                          <Btn full tone="ghost" onPress={() => setOtherMonths(otherMonths + MONTH_STEP)}>
+                            {`다른 코트장 3개월 더 보기 (${otherView.hidden}건 더 있음)`}
+                          </Btn>
+                        )}
+                      </>
+                    )}
+                  </View>
                 )}
               </>
             )}
 
-            {upcoming.length === 0 && upcomingAgenda.length === 0 && (
+            {upcoming.length === 0 && upcomingAgenda.length === 0 && !(splitOn && otherView.total) && (
               <EmptyState
                 icon="📅"
                 title={venueId ? '이 코트장에 예정된 일정이 없습니다' : '예정된 일정이 없습니다'}

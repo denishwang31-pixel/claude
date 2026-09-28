@@ -218,13 +218,17 @@ export default function Home() {
         드롭다운이 있어서 거기서 바꿀 수 있다. */
   const goScoped = (path) => go(path);
 
-  /* 모임 하나를 콕 집어 대진으로.
+  /* 모임 하나를 콕 집어 일정으로.
 
-     코트 범위는 건드리지 않는다. 홈에서 고른 코트가 곧 대진 화면의 범위이고
-     (앱 상태를 공유하므로 그대로 따라간다), 홈이 '전체'면 대진도 전체다.
-     여기서 몰래 코트를 바꾸면 돌아왔을 때 홈의 선택이 달라져 있어 혼란스럽다. */
+     예전엔 대진으로 바로 갔다. 그런데 순서는 "누가 오나 확인·확정 → 대진"이다
+     (앱 주인). 그래서 일정 탭에서 그 모임의 날짜만 띄우고 명단을 펼친다.
+     대진은 일정 카드의 [대진] 버튼으로 간다.
+
+     코트 범위는 건드리지 않는다. 홈에서 고른 코트가 곧 일정 화면의 범위이고
+     (앱 상태를 공유하므로 그대로 따라간다), 여기서 몰래 바꾸면 돌아왔을 때
+     홈의 선택이 달라져 있어 혼란스럽다. */
   const goMeeting = (m) => (m
-    ? router.push({ pathname: '/(tabs)/match', params: { meetingId: m.id } })
+    ? router.push({ pathname: '/(tabs)/schedule', params: { meetingId: m.id } })
     : undefined);
 
   /* ---------- 클럽 없이 둘러보는 중 ---------- */
@@ -326,7 +330,7 @@ export default function Home() {
 
         {scopeVenues.length > 1 && (
           <View style={{ marginBottom: S.md, zIndex: 20 }}>
-            <VenuePicker venues={scopeVenues} value={venueId} onChange={setVenueId} />
+            <VenuePicker mineIds={meVal?.venueIds} venues={scopeVenues} value={venueId} onChange={setVenueId} />
             <Text style={[F.caption, { marginTop: 5 }]}>
               {venueId
                 ? '아래 일정·대진표도 이 코트만 보여줍니다.'
@@ -422,7 +426,7 @@ export default function Home() {
                     : '대진은 아직 짜이지 않았습니다'}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={{ color: C.lime, fontSize: 13, fontWeight: '700' }}>대진표 확인</Text>
+                  <Text style={{ color: C.lime, fontSize: 13, fontWeight: '700' }}>명단 확인</Text>
                   <Icon name="forward" size={14} color={C.lime} />
                 </View>
               </View>

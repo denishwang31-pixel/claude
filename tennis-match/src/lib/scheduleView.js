@@ -163,6 +163,71 @@ export function meetingTie(meVal, meeting, venueCount = 0) {
   return canRsvpSelf(meVal, meeting) ? 'mine' : 'other';
 }
 
+/**
+ * 코트장 목록을 내 코트 / 나머지로 나눈다(각각 원래 순서 유지).
+ * 드롭다운에서 내 코트를 맨 위에 두려고 쓴다.
+ */
+export function splitMine(venues, mineIds) {
+  const ids = new Set(Array.isArray(mineIds) ? mineIds : []);
+  const list = (venues || []).filter(Boolean);
+  return { mine: list.filter((v) => ids.has(v.id)), others: list.filter((v) => !ids.has(v.id)) };
+}
+
+/**
+ * 일정 목록을 "내 코트 먼저, 다른 코트장은 접어서" 보여 주려고 나눈다.
+ * 내 코트 쪽에는 코트장 미지정 모임·취소된 모임도 들어간다(meetingTie 가 'other' 가 아닌 것 전부).
+ */
+export function splitByTie(meetings, meVal, venueCount) {
+  const mine = []; const other = [];
+  (meetings || []).forEach((m) => (meetingTie(meVal, m, venueCount) === 'other' ? other : mine).push(m));
+  return { mine, other };
+}
+
+/* ---------- 같은 모임이 두 번 ---------- */
+
+/** 같은 모임인지 가르는 열쇠 — 날짜 · 시작 시간 · 코트장(없으면 장소 이름) */
+export function meetingSlot(m) {
+  if (!m || !m.date) return '';
+  const where = m.venueId ? `v:${m.venueId}` : `p:${String(m.place || '').trim()}`;
+  return `${m.date}|${m.time || ''}|${where}`;
+}
+
+/** 지우면 아까운 정도 — 대진·참석 기록이 많은 쪽을 남긴다 */
+function keepScore(m) {
+  const answered = Object.values(m.rsvp || {}).filter((v) => v === 'yes' || v === 'no').length;
+  return (m.canceled ? -1e6 : 0) + (m.matches?.length || 0) * 1000 + answered * 10 + (m.guests?.length || 0);
+}
+
+/**
+ * 같은 날 · 같은 시간 · 같은 코트장에 모임이 둘 이상이면 하나만 남기고 나머지를 고른다.
+ * 정기 일정을 두 번 등록하면 생긴다(앱 주인 화면에서 10/11 06:00 이 두 장).
+ * 지난 모임은 건드리지 않는다 — 대진·랭킹 기록이 걸려 있을 수 있다.
+ * @returns {{ remove: string[], groups: number }}
+ */
+export function duplicateMeetings(meetings, { from = '' } = {}) {
+  const bySlot = new Map();
+  (meetings || []).forEach((m) => {
+    if (!m || !m.id || !m.date || (from && m.date < from)) return;
+    const k = meetingSlot(m);
+    if (!bySlot.has(k)) bySlot.set(k, []);
+    bySlot.get(k).push(m);
+  });
+  const remove = []; let groups = 0;
+  bySlot.forEach((list) => {
+    if (list.length < 2) return;
+    groups += 1;
+    const ranked = [...list].sort((a, b) => keepScore(b) - keepScore(a) || String(a.id).localeCompare(String(b.id)));
+    ranked.slice(1).forEach((m) => remove.push(m.id));
+  });
+  return { remove, groups };
+}
+
+/** 새로 만들 날짜 중 같은 시간 · 같은 코트장 모임이 이미 있는 날짜 */
+export function clashingDates(meetings, base, dates) {
+  const taken = new Set((meetings || []).filter((m) => m && !m.canceled).map(meetingSlot));
+  return (dates || []).filter((d) => taken.has(meetingSlot({ ...base, date: d })));
+}
+
 /** 왜 못 누르는지 — 아무 설명 없이 버튼만 없으면 고장으로 보인다 */
 export function rsvpBlockReason(meVal, meeting, venueName) {
   if (!meeting || meeting.canceled) return '';
