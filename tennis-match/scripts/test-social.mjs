@@ -457,7 +457,7 @@ console.log('[로그인 문구 — 지메일 비밀번호 로그인이 구글 �
   ok(/계정과 기록은 그대로/.test(loginErrorText('auth/invalid-credential', 'me@gmail.com')), '기록이 사라지지 않았다고 안심시킨다');
   ok(!/구글/.test(loginErrorText('auth/invalid-credential', 'me@naver.com')), '다른 메일에는 구글 이야기를 하지 않는다');
   ok(/이미 가입된 지메일/.test(loginErrorText('auth/email-already-in-use', 'a@gmail.com')), '지메일 중복 가입 안내');
-  ok(loginErrorText('auth/weak-password').includes(String(MIN_PW)), '짧은 비밀번호');
+  ok(loginErrorText('auth/weak-password').includes('8자'), '약한 비밀번호는 새 규칙으로 안내');
   eq(signupProblems({ email: 'a@b.com', pw: 'abcdef', pw2: 'abcdeg' }).pw2, '비밀번호가 서로 다릅니다', '비밀번호 확인이 다르면 막는다');
   eq(signupProblems({ email: 'a@b.com', pw: 'abcdef', pw2: 'abcdef' }).pw2, '', '같으면 통과');
   eq(signupProblems({ email: 'a@b.com', pw: 'x' }).pw2, '', '로그인(확인 칸 없음)은 검사 안 함');
@@ -465,6 +465,27 @@ console.log('[로그인 문구 — 지메일 비밀번호 로그인이 구글 �
   const loginSrc = readFileSync(resolve(ROOT, 'app/login.jsx'), 'utf8');
   ok(/pw2 === pw/.test(loginSrc), '가입 버튼은 비밀번호 확인이 같아야 눌린다');
   ok(/loginErrorText\(e\?\.code, email\)/.test(loginSrc), '로그인 화면이 새 문구를 쓴다');
+}
+
+
+console.log('[새 비밀번호 규칙 — 가입할 때만, 기존 계정은 그대로]');
+{
+  const { pwChecks, pwPolicyOk, PW_RULES, MIN_PW, loginErrorText } = await import('../src/lib/loginText.js');
+  const keys = (pw) => pwChecks(pw).filter((c) => !c.ok).map((c) => c.key);
+  eq(PW_RULES.map((r) => r.key), ['len', 'upper', 'lower', 'digit', 'special', 'space'], '규칙 목록');
+  ok(pwPolicyOk('Tennis!2026'), '다 갖추면 통과');
+  eq(keys(''), ['len', 'upper', 'lower', 'digit', 'special', 'space'], '빈 칸은 전부 미충족');
+  eq(keys('tennis2026'), ['upper', 'special'], '대문자·특수기호 없음');
+  eq(keys('Ten!2'), ['len'], '짧으면 길이만');
+  eq(keys('TENNIS!2026'), ['lower'], '소문자 없음');
+  eq(keys('Tennis!abc'), ['digit'], '숫자 없음');
+  eq(keys('Ten nis!2026'), ['space'], '띄어쓰기는 안 된다');
+  ok(pwPolicyOk('한글Aa1!abcd'), '한글이 섞여도 규칙만 지키면 통과');
+  ok(MIN_PW === 6, '로그인은 예전처럼 6자 — 기존 계정이 막히지 않는다');
+  ok(/대문자·소문자·숫자·특수기호/.test(loginErrorText('auth/password-does-not-meet-requirements')), '서버 규칙에 걸려도 사람 말로');
+  const loginSrc = readFileSync(resolve(ROOT, 'app/login.jsx'), 'utf8');
+  ok(/signup \? pwPolicyOk\(pw\) : pw\.length >= MIN_PW/.test(loginSrc), '가입만 새 규칙, 로그인은 예전 기준');
+  ok(/pwChecks\(pw\)\.map/.test(loginSrc), '입력할 때마다 체크리스트를 그린다');
 }
 
 console.log(`\n소셜 로그인 테스트: ${pass} 통과 / ${fail} 실패`);

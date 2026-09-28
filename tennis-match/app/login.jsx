@@ -46,7 +46,7 @@ import { LIVE_SOCIAL_CONFIG } from '../src/lib/socialConfig';
    무심코 expo-auth-session 을 import 하면 앱이 시작도 못 하고 닫힌다.
    실제로 한 번 그렇게 됐다. 검사가 이걸 막고 있다. */
 import { signInWithGoogle, signInWithSocialWeb } from '../src/lib/socialSignIn';
-import { MIN_PW, loginErrorText, signupProblems } from '../src/lib/loginText';
+import { MIN_PW, loginErrorText, signupProblems, pwChecks, pwPolicyOk } from '../src/lib/loginText';
 import { MAIL_HINT } from '../src/lib/verify';
 import { TERMS, PRIVACY } from '../src/lib/legalText';
 import { C, S, R, F, SHADOW, TAP } from '../src/lib/theme';
@@ -93,8 +93,10 @@ export default function Login() {
   const emailBad = !!email && !EMAIL_RE.test(email.trim());
   const pwShort = !!pw && pw.length < MIN_PW;
   const probs = signupProblems({ email, pw, pw2: signup ? pw2 : undefined });
+  /* 가입은 새 규칙(8자·대소문자·숫자·특수기호), 로그인은 예전처럼 6자 — 기존 계정이 그대로 들어오게 */
   const canSubmit = EMAIL_RE.test(email.trim())
-    && pw.length >= MIN_PW && (!signup || (agree && pw2 === pw)) && !busy;
+    && (signup ? pwPolicyOk(pw) : pw.length >= MIN_PW)
+    && (!signup || (agree && pw2 === pw)) && !busy;
 
   const go = async (uid) => {
     if (inviteCode) { router.replace({ pathname: '/join', params: { code: inviteCode } }); return; }
@@ -400,7 +402,7 @@ export default function Login() {
 
                 <Text style={[F.label, { marginTop: S.lg, marginBottom: 7 }]}>비밀번호</Text>
                 <Field
-                  placeholder={`${MIN_PW}자 이상`}
+                  placeholder={signup ? '8자 이상 · 대소문자·숫자·특수기호' : '비밀번호'}
                   secureTextEntry={!showPw}
                   autoCapitalize="none"
                   autoComplete={signup ? 'new-password' : 'current-password'}
@@ -409,13 +411,31 @@ export default function Login() {
                   onSubmitEditing={submit}
                   value={pw}
                   onChangeText={(v) => { setPw(v); setErr(''); }}
-                  error={touched && pwShort ? `${MIN_PW}자 이상 입력해 주세요` : ''}
+                  error={!signup && touched && pwShort ? `${MIN_PW}자 이상 입력해 주세요` : ''}
                   suffix={
                     <Pressable onPress={() => setShowPw((v) => !v)} hitSlop={12}>
                       <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={21} color={C.faint} />
                     </Pressable>
                   }
                 />
+
+                {/* 새 비밀번호 체크리스트 — 입력할 때마다 하나씩 ✓ */}
+                {signup && (
+                  <View style={{ marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}
+                    accessibilityLabel="비밀번호 규칙">
+                    {pwChecks(pw).map((c) => (
+                      <View key={c.key} style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 4,
+                        paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999,
+                        backgroundColor: c.ok ? C.greenSoft : C.fill,
+                      }}>
+                        <Ionicons name={c.ok ? 'checkmark-circle' : 'ellipse-outline'} size={14}
+                          color={c.ok ? C.green : C.faint} />
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: c.ok ? C.green : C.sub }}>{c.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
 
                 {signup && (
                   <>

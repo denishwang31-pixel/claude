@@ -11,7 +11,29 @@
         · 비밀번호도 쓰고 싶으면 [비밀번호를 잊으셨나요?] 로 다시 만들면 둘 다 된다
    ============================================================ */
 
+/* 로그인에서 받는 최소 길이 — 기존 계정(6자로 가입한 사람)이 그대로 들어오게 6 을 유지한다 */
 export const MIN_PW = 6;
+
+/* ---------- 새 비밀번호 규칙 (2026-09-28, 가입할 때만) ----------
+   기존 계정은 건드리지 않는다 — 로그인은 예전처럼 6자 이상이면 시도한다.
+   입력할 때마다 칸 아래에 하나씩 ✓ 가 켜진다(체크리스트). */
+export const PW_RULES = [
+  { key: 'len', label: '8자 이상', test: (p) => p.length >= 8 },
+  { key: 'upper', label: '영문 대문자 (A-Z)', test: (p) => /[A-Z]/.test(p) },
+  { key: 'lower', label: '영문 소문자 (a-z)', test: (p) => /[a-z]/.test(p) },
+  { key: 'digit', label: '숫자 (0-9)', test: (p) => /[0-9]/.test(p) },
+  { key: 'special', label: '특수기호 (!@#$% 등)', test: (p) => /[^A-Za-z0-9\s]/.test(p) },
+  { key: 'space', label: '띄어쓰기 없음', test: (p) => p.length > 0 && !/\s/.test(p) },
+];
+
+/** 규칙마다 통과했는지 — 화면의 체크리스트 */
+export const pwChecks = (pw) => {
+  const p = String(pw || '');
+  return PW_RULES.map((r) => ({ key: r.key, label: r.label, ok: r.test(p) }));
+};
+
+/** 새 비밀번호가 규칙을 모두 지키는가 */
+export const pwPolicyOk = (pw) => pwChecks(pw).every((c) => c.ok);
 
 /** 구글이 주인을 보증하는 주소인가 — 이 주소들만 위 일이 생긴다 */
 export const isGoogleMail = (email) => /@(gmail|googlemail)\.com\s*$/i.test(String(email || '').trim());
@@ -33,7 +55,9 @@ export function loginErrorText(code, email = '') {
       ? '이미 가입된 지메일입니다. [로그인]하시거나 [구글로 시작하기]를 눌러 주세요.'
       : '이미 가입된 이메일입니다. 위에서 [로그인]을 눌러 주세요.';
   }
-  if (c.includes('weak-password')) return `비밀번호는 ${MIN_PW}자 이상이어야 합니다.`;
+  if (c.includes('weak-password') || c.includes('password-does-not-meet-requirements')) {
+    return '비밀번호가 규칙에 맞지 않습니다. 8자 이상, 대문자·소문자·숫자·특수기호를 모두 넣어 주세요.';
+  }
   if (c.includes('invalid-email')) return '이메일 형식을 확인해 주세요.';
   if (c.includes('too-many-requests')) return '시도가 너무 많습니다. 잠시 후 다시 해 주세요.';
   if (c.includes('operation-not-allowed')) return 'Firebase 콘솔에서 해당 로그인 방법을 사용 설정해 주세요.';
