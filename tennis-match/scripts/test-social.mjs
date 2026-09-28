@@ -447,5 +447,25 @@ eq(routeForIncoming('com.donghyun.tennismatch://oauth?token=x', true), '/', '그
 eq(routeForIncoming('/join?code=1', false), '/join?code=1', '다른 주소는 손대지 않는다');
 ok(existsSync(resolve(ROOT, 'app/+native-intent.js')), 'expo-router 연결 파일이 있다');
 
+
+console.log('[로그인 문구 — 지메일 비밀번호 로그인이 구글 로그인 뒤 막히는 경우]');
+{
+  const { loginErrorText, isGoogleMail, signupProblems, MIN_PW } = await import('../src/lib/loginText.js');
+  ok(isGoogleMail('me@gmail.com') && isGoogleMail(' Me@GoogleMail.com ') && !isGoogleMail('me@naver.com'), '지메일 판별');
+  ok(/구글로 시작하기/.test(loginErrorText('auth/invalid-credential', 'me@gmail.com')), '지메일이면 구글로 들어오라고 알려 준다');
+  ok(/비밀번호를 잊으셨나요/.test(loginErrorText('auth/invalid-credential', 'me@gmail.com')), '비밀번호를 다시 만드는 길도 알려 준다');
+  ok(/계정과 기록은 그대로/.test(loginErrorText('auth/invalid-credential', 'me@gmail.com')), '기록이 사라지지 않았다고 안심시킨다');
+  ok(!/구글/.test(loginErrorText('auth/invalid-credential', 'me@naver.com')), '다른 메일에는 구글 이야기를 하지 않는다');
+  ok(/이미 가입된 지메일/.test(loginErrorText('auth/email-already-in-use', 'a@gmail.com')), '지메일 중복 가입 안내');
+  ok(loginErrorText('auth/weak-password').includes(String(MIN_PW)), '짧은 비밀번호');
+  eq(signupProblems({ email: 'a@b.com', pw: 'abcdef', pw2: 'abcdeg' }).pw2, '비밀번호가 서로 다릅니다', '비밀번호 확인이 다르면 막는다');
+  eq(signupProblems({ email: 'a@b.com', pw: 'abcdef', pw2: 'abcdef' }).pw2, '', '같으면 통과');
+  eq(signupProblems({ email: 'a@b.com', pw: 'x' }).pw2, '', '로그인(확인 칸 없음)은 검사 안 함');
+  ok(!!signupProblems({ email: 'a@gmail.com', pw: '' }).gmailTip, '가입에 지메일을 넣으면 구글로 시작하기를 권한다');
+  const loginSrc = readFileSync(resolve(ROOT, 'app/login.jsx'), 'utf8');
+  ok(/pw2 === pw/.test(loginSrc), '가입 버튼은 비밀번호 확인이 같아야 눌린다');
+  ok(/loginErrorText\(e\?\.code, email\)/.test(loginSrc), '로그인 화면이 새 문구를 쓴다');
+}
+
 console.log(`\n소셜 로그인 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

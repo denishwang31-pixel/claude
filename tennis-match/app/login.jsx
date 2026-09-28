@@ -46,12 +46,12 @@ import { LIVE_SOCIAL_CONFIG } from '../src/lib/socialConfig';
    무심코 expo-auth-session 을 import 하면 앱이 시작도 못 하고 닫힌다.
    실제로 한 번 그렇게 됐다. 검사가 이걸 막고 있다. */
 import { signInWithGoogle, signInWithSocialWeb } from '../src/lib/socialSignIn';
+import { MIN_PW, loginErrorText, signupProblems } from '../src/lib/loginText';
 import { TERMS, PRIVACY } from '../src/lib/legalText';
 import { C, S, R, F, SHADOW, TAP } from '../src/lib/theme';
 import { APP_NAME } from '../src/lib/constants';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MIN_PW = 6;
 const FILL = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
 
 /* 접었다 펴는 동작. 없어도 되지만 있으면 훨씬 부드럽다.
@@ -79,6 +79,7 @@ export default function Login() {
   const [openEmail, setOpenEmail] = useState(socials.length === 0 || !!inviteCode);
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');   // 가입할 때만 — 오타로 만든 비밀번호는 재설정 말고는 되돌릴 길이 없다
   const [showPw, setShowPw] = useState(false);
   const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -90,8 +91,9 @@ export default function Login() {
   const signup = mode === 'signup';
   const emailBad = !!email && !EMAIL_RE.test(email.trim());
   const pwShort = !!pw && pw.length < MIN_PW;
+  const probs = signupProblems({ email, pw, pw2: signup ? pw2 : undefined });
   const canSubmit = EMAIL_RE.test(email.trim())
-    && pw.length >= MIN_PW && (!signup || agree) && !busy;
+    && pw.length >= MIN_PW && (!signup || (agree && pw2 === pw)) && !busy;
 
   const go = async (uid) => {
     if (inviteCode) { router.replace({ pathname: '/join', params: { code: inviteCode } }); return; }
@@ -99,18 +101,8 @@ export default function Login() {
     router.replace(s.clubId || s.skipped ? '/(tabs)' : '/onboarding');
   };
 
-  const messageOf = (e) => {
-    const code = e?.code || '';
-    if (code.includes('invalid-credential') || code.includes('wrong-password')) return '이메일 또는 비밀번호가 올바르지 않습니다.';
-    if (code.includes('user-not-found')) return '가입되지 않은 이메일입니다. 위에서 [회원가입]을 눌러 주세요.';
-    if (code.includes('email-already-in-use')) return '이미 가입된 이메일입니다. 위에서 [로그인]을 눌러 주세요.';
-    if (code.includes('weak-password')) return `비밀번호는 ${MIN_PW}자 이상이어야 합니다.`;
-    if (code.includes('invalid-email')) return '이메일 형식을 확인해 주세요.';
-    if (code.includes('too-many-requests')) return '시도가 너무 많습니다. 잠시 후 다시 해 주세요.';
-    if (code.includes('operation-not-allowed')) return 'Firebase 콘솔에서 해당 로그인 방법을 사용 설정해 주세요.';
-    if (code.includes('network')) return '네트워크 연결을 확인해 주세요.';
-    return '로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.';
-  };
+  const messageOf = (e) => loginErrorText(e?.code, email);
+
 
   const submit = async () => {
     setTouched(true);
@@ -376,7 +368,7 @@ export default function Login() {
                     const on = mode === k;
                     return (
                       <Pressable key={k}
-                        onPress={() => { setMode(k); setErr(''); setNote(''); setTouched(false); }}
+                        onPress={() => { setMode(k); setErr(''); setNote(''); setTouched(false); setPw2(''); }}
                         style={[{
                           flex: 1, alignItems: 'center', paddingVertical: 11,
                           borderRadius: R.sm + 2,
@@ -401,6 +393,9 @@ export default function Login() {
                   onChangeText={(v) => { setEmail(v); setErr(''); }}
                   error={touched && emailBad ? '이메일 형식을 확인해 주세요' : ''}
                 />
+                {signup && !!probs.gmailTip && socials.includes(PROVIDERS.GOOGLE) && (
+                  <Text style={{ fontSize: 12, color: C.green, marginTop: 6, lineHeight: 17 }}>{probs.gmailTip}</Text>
+                )}
 
                 <Text style={[F.label, { marginTop: S.lg, marginBottom: 7 }]}>비밀번호</Text>
                 <Field
@@ -420,6 +415,22 @@ export default function Login() {
                     </Pressable>
                   }
                 />
+
+                {signup && (
+                  <>
+                    <Text style={[F.label, { marginTop: S.lg, marginBottom: 7 }]}>비밀번호 확인</Text>
+                    <Field
+                      placeholder="한 번 더 입력"
+                      secureTextEntry={!showPw}
+                      autoCapitalize="none"
+                      autoComplete="new-password"
+                      textContentType="newPassword"
+                      value={pw2}
+                      onChangeText={(v) => { setPw2(v); setErr(''); }}
+                      error={(touched || pw2.length >= pw.length) && pw2 && probs.pw2 ? probs.pw2 : ''}
+                    />
+                  </>
+                )}
 
                 {signup && (
                   <View style={{ marginTop: S.lg }}>
