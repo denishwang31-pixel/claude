@@ -148,6 +148,21 @@ export function canRsvpSelf(meVal, meeting) {
   return belongsToVenue(meVal, meeting.venueId);
 }
 
+/**
+ * 모임 카드를 어떻게 구분해 그릴지.
+ *   'mine'  — 내가 나가는 코트장 모임(초록 띠 + 「내 코트」)
+ *   'other' — 같은 클럽이지만 다른 코트장 모임(띠 없이 납작하게 + 「다른 코트장」)
+ *   'plain' — 구분할 필요가 없다(코트장이 하나뿐 · 취소된 모임)
+ * 전체 일정에서 두 종류가 똑같이 보여 헷갈린다는 제보(앱 주인)로 나눴다.
+ * 흐리게 하지는 않는다 — 같은 클럽 일정이라 읽을 수는 있어야 한다.
+ */
+export function meetingTie(meVal, meeting, venueCount = 0) {
+  if (!meeting || meeting.canceled || venueCount < 2) return 'plain';
+  if (!meVal) return 'plain';                      // 내 정보를 아직 못 읽었으면 다 "다른 코트"로 보이면 안 된다
+  if (!meeting.venueId) return 'plain';            // 코트장 미지정 = 전체 모임
+  return canRsvpSelf(meVal, meeting) ? 'mine' : 'other';
+}
+
 /** 왜 못 누르는지 — 아무 설명 없이 버튼만 없으면 고장으로 보인다 */
 export function rsvpBlockReason(meVal, meeting, venueName) {
   if (!meeting || meeting.canceled) return '';

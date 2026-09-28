@@ -25,7 +25,7 @@ import {
   normalizeAsk, pendingVoters, askSchedule, deadlineFor, deadlinePassed, shortWhen,
 } from '../../src/lib/rsvpAsk';
 import {
-  visibleMeetings, groupByMonth, membersForMeeting, canRsvpSelf,
+  visibleMeetings, groupByMonth, membersForMeeting, canRsvpSelf, meetingTie,
   rsvpBlockReason, rsvpSummary, rsvpGroups, nextRsvp, MONTH_STEP,
 } from '../../src/lib/scheduleView';
 import { AD_SLOTS } from '../../src/lib/ads';
@@ -545,11 +545,32 @@ export default function Schedule() {
             const canMine = canRsvpSelf(meVal, mt);
             const blocked = rsvpBlockReason(meVal, mt, venueNameOf(mt));
             const isOpen = expanded === mt.id;
+            /* 내 코트 / 다른 코트 구분 — 전체 일정에서 둘이 똑같이 보여 헷갈렸다(앱 주인).
+               내 코트는 왼쪽 초록 띠, 다른 코트는 띠·그늘 없이 납작하게 + 이름표.
+               흐리게 하지는 않는다(같은 클럽 일정이라 읽을 수는 있어야 한다).
+               일반 회원에겐 다른 코트 모임의 투표 현황·명단도 접는다 — 할 일이 없다. */
+            const tie = meetingTie(meVal, mt, venues.length);
+            const other = tie === 'other';
+            const quiet = other && !isAdmin;
             return (
-              <Card key={mt.id} style={{ marginBottom: 10, opacity: mt.canceled ? 0.5 : 1 }}>
+              <Card key={mt.id} flat={other} style={{
+                marginBottom: 10, opacity: mt.canceled ? 0.5 : 1,
+                ...(tie === 'mine' ? { borderLeftWidth: 4, borderLeftColor: C.green } : null),
+                ...(quiet ? { paddingVertical: 12 } : null),
+              }}>
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: '700', fontSize: 15 }}>
+                    {tie !== 'plain' && (
+                      <Text style={{
+                        alignSelf: 'flex-start', fontSize: 10.5, fontWeight: '800', marginBottom: 4,
+                        paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, overflow: 'hidden',
+                        color: other ? C.sub : C.green,
+                        backgroundColor: other ? C.fill : C.greenSoft,
+                      }}>
+                        {other ? '다른 코트장' : '내 코트'}
+                      </Text>
+                    )}
+                    <Text style={{ fontWeight: '700', fontSize: 15, color: other ? C.sub : C.text }}>
                       {Number(mt.date.slice(5, 7))}/{Number(mt.date.slice(8, 10))}({dowName(mt.date)}) {mt.time}{mt.endTime ? `~${mt.endTime}` : ''}
                       {mt.canceled ? ' · 우천취소' : ''}
                     </Text>
@@ -592,10 +613,14 @@ export default function Schedule() {
                           </Pressable>
                         ))}
                       </View>
-                    ) : !!blocked && (
+                    ) : !!blocked && !other && (
                       <Text style={{ fontSize: 11, color: C.faint, marginTop: 10 }}>{blocked}</Text>
                     )}
+                    {quiet && (
+                      <Text style={{ fontSize: 11, color: C.faint, marginTop: 6 }}>내 참석 대상이 아닌 모임입니다</Text>
+                    )}
 
+                    {!quiet && (<>
                     {/* 투표 마감 안내 — 자동 요청 알림에 적힌 마감과 같은 값.
                        마감은 안내다: 지나도 버튼은 막지 않는다(급한 변경은 운영진이 받는다). */}
                     {askCfg.enabled && (() => {
@@ -755,6 +780,7 @@ export default function Schedule() {
                         )}
                       </View>
                     )}
+                    </>)}
                   </>
                 )}
               </Card>

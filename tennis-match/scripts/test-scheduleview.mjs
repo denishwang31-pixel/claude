@@ -10,7 +10,7 @@
 import {
   monthKey, monthLabel, shiftMonth, MONTH_STEP, windowEnd, visibleMeetings,
   groupByMonth, belongsToVenue, membersForMeeting, canRsvpSelf,
-  rsvpBlockReason, rsvpSummary, rsvpGroups, nextRsvp,
+  rsvpBlockReason, rsvpSummary, rsvpGroups, nextRsvp, meetingTie,
 } from '../src/lib/scheduleView.js';
 
 let pass = 0, fail = 0;
@@ -184,6 +184,17 @@ ok(!canRsvpSelf(PRESIDENT, { venueId: 'v2' }), '회장도 남의 코트는 못 �
 ok(rsvpBlockReason(PRESIDENT, { venueId: 'v2' }, '수도공고').includes('수도공고'),
   '왜 못 누르는지 코트장 이름과 함께 알려준다');
 eq('누를 수 있으면 설명 없음', rsvpBlockReason(PRESIDENT, { venueId: 'v1' }, '염곡'), '');
+
+/* ---------- 내 코트 / 다른 코트 구분 ---------- */
+section('전체 일정 — 내 코트와 다른 코트를 구분 (앱 주인 제보)');
+eq('내가 나가는 코트', meetingTie(MEMBERS[0], { venueId: 'v1' }, 2), 'mine');
+eq('같은 클럽 다른 코트', meetingTie(MEMBERS[0], { venueId: 'v2' }, 2), 'other');
+eq('운영진도 안 나가는 코트는 다른 코트', meetingTie(PRESIDENT, { venueId: 'v2' }, 3), 'other');
+eq('코트장 미지정 모임은 구분 없음', meetingTie(MEMBERS[0], { venueId: null }, 2), 'plain');
+eq('코트장이 하나뿐인 클럽은 구분 없음', meetingTie(MEMBERS[0], { venueId: 'v2' }, 1), 'plain');
+eq('취소된 모임은 구분 없음', meetingTie(MEMBERS[0], { venueId: 'v1', canceled: true }, 2), 'plain');
+eq('내 정보를 아직 못 읽었으면 구분 없음', meetingTie(null, { venueId: 'v2' }, 2), 'plain');
+eq('미배정 회원은 다 내 코트', meetingTie(MEMBERS[3], { venueId: 'v2' }, 2), 'mine');
 
 /* ---------- 명단 나누기 ---------- */
 section('명단 — 참석 · 불참 · 미응답을 따로 (헷갈리지 않게)');
