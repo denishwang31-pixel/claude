@@ -7,6 +7,7 @@ import { collection, doc, writeBatch, serverTimestamp } from 'firebase/firestore
 import { db } from '../../firebaseConfig';
 import { DEFAULT_RULES } from './matchmaking';
 import { ROLES } from './constants';
+import { todayYmd } from './today.js';
 
 const SEED_MEMBERS = [
   ['이서연', 'F', 'B'], ['박지훈', 'M', 'B'], ['최수아', 'F', 'A'], ['정도윤', 'M', 'C'],
@@ -70,7 +71,7 @@ export async function seedClub(clubId, withDemo = false) {
     const pref = doc(collection(db, 'clubs', clubId, 'posts'));
     batch.set(pref, {
       type: 'notice', title: '정기모임 안내', body: '이번 주 토요일 10시, 코트 2면 확보 완료!',
-      author: '총무', pinned: true, comments: [], date: new Date().toISOString().slice(0, 10),
+      author: '총무', pinned: true, comments: [], date: todayYmd(),
     });
   }
 

@@ -22,10 +22,11 @@ import {
 import { db } from '../../firebaseConfig';
 import { ROLES, GUEST_STATUS, JOIN_STATUS } from './constants';
 import { lineupOf, scoreOp } from './scoreReport';
+import { todayYmd } from './today.js';
 
 const C = (clubId, sub) => collection(db, 'clubs', clubId, sub);
 const D = (clubId, sub, id) => doc(db, 'clubs', clubId, sub, id);
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayYmd();
 
 /* ---- 실시간 구독 (unsubscribe 반환) ---- */
 export const subClub = (clubId, cb) =>

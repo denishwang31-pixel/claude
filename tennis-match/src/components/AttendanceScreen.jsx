@@ -7,8 +7,9 @@ import { setAttendance, bulkSetAttendance } from '../lib/firestore';
 import { RSVP } from '../lib/constants';
 import { Card, SectionTitle, Chip, Btn } from './ui';
 import { C } from '../lib/theme';
+import { todayYmd } from '../lib/today';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayYmd();
 
 /** 회원별 출석 통계: 지난 모임(오늘 이전, 미취소) 기준 */
 export function attendanceStats(members, meetings) {

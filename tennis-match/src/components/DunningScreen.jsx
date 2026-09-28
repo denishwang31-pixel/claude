@@ -24,8 +24,9 @@ import { BillingScopeTabs } from './ScopeControls';
 import { Label } from './pickers';
 import { Card, SectionTitle, Chip, Btn, Field, StatCard } from './ui';
 import { C, S, R, F } from '../lib/theme';
+import { todayYmd } from '../lib/today';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayYmd();
 const won = (n) => `${Number(n || 0).toLocaleString()}원`;
 
 export function Dunning({

@@ -24,6 +24,7 @@ import {
   normalizeRole, canSeeFees, canSeeAllVenues, VIEW_MODE_ROLE,
   memberRoles, primaryRole,
 } from '../lib/constants';
+import { todayYmd } from '../lib/today';
 
 const RULE_BY_KEY = Object.fromEntries(DEFAULT_RULES.map((r) => [r.key, r]));
 
@@ -59,7 +60,7 @@ export function useClub(clubId, me, opts = {}) {
         loadMeetingsRange 로 따로 읽고, 그렇다고 화면에 적어야 한다.
         말없이 자르면 재작년 랭킹이 조용히 0이 된다. */
   const meetingsFrom = useMemo(
-    () => windowStart(new Date().toISOString().slice(0, 10), WINDOW_MONTHS),
+    () => windowStart(todayYmd(), WINDOW_MONTHS),
     [],
   );
 

@@ -1,3 +1,4 @@
+import { todayYmd } from './today.js';
 /* ============================================================
    일회성 정산 — 대회 참가비·캠프·회식처럼 그때그때 생기는 돈.
 
@@ -227,7 +228,7 @@ export function memberBreakdown(group, memberId) {
 }
 
 /** 새 정산 기본값 */
-export const blankPool = (date = new Date().toISOString().slice(0, 10)) => ({
+export const blankPool = (date = todayYmd()) => ({
   title: '',
   groupId: '',      // 같은 이벤트의 다른 정산과 묶는 키 (비면 이 정산이 곧 이벤트)
   groupTitle: '',   // 이벤트 이름 (예: 가을 캠프)

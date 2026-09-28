@@ -1,7 +1,7 @@
 /* 일정 / RSVP — 캘린더·시간 선택, 정기 모임 반복 등록, 참석 체크 */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { View, Text, ScrollView, Pressable, Alert, Modal, Share } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useApp } from '../_layout';
 import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
@@ -47,8 +47,9 @@ import {
   Card, SectionTitle, Btn, Field, Avatar, Chip, CheckRow, EmptyState, WeekStrip,
 } from '../../src/components/ui';
 import { C, S, R, F } from '../../src/lib/theme';
+import { todayYmd } from '../../src/lib/today';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayYmd();
 /* 한국 시각 [YYYY-MM-DD, HH:MM] — 투표 마감이 지났는지 볼 때(서버와 같은 기준) */
 const kstNow = () => {
   const k = new Date(Date.now() + 9 * 3600000).toISOString();
@@ -75,7 +76,10 @@ function RsvpGroup({ tone, label, people, empty }) {
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
           {people.map((p) => (
             <View key={p.id} style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: t.bg }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: t.fg }}>{p.name}</Text>
+              {/* 여성 회원은 이름을 분홍(C.female)으로 — 다른 화면(대진·명단)과 같은 약속 */}
+              <Text style={{ fontSize: 12, fontWeight: '700', color: p.gender === 'F' ? C.female : t.fg }}>
+                {p.name}{p.guest ? ' (게스트)' : ''}
+              </Text>
             </View>
           ))}
         </View>
@@ -148,6 +152,19 @@ export default function Schedule() {
      예전에는 예정된 모임을 전부 그렸다. 일정이 100건 쌓이면 화면이
      열리는 데서 걸린다 — 스크롤이 아니라 첫 렌더가 문제였다. */
   const [months, setMonths] = useState(1);
+
+  /* 탭에 들어올 때마다 맨 위 = 가장 가까운 다가올 일정에서 시작한다.
+     탭 화면은 한 번 열리면 살아 있어서, 예전에 내려 둔 스크롤·띠에서 고른 날짜·
+     펼친 명단이 그대로 남았다. 그 사이 지난 일정이 목록에서 빠지면 전혀 다른 날짜가
+     눈앞에 와 있었다(앱 주인: "임의의 날짜 일정이 보인다"). */
+  const listRef = useRef(null);
+  useFocusEffect(useCallback(() => {
+    setPickedDate(null);
+    setExpanded(null);
+    setCalMonth(today().slice(0, 7));
+    setMonths(1);
+    requestAnimationFrame(() => listRef.current?.scrollTo?.({ y: 0, animated: false }));
+  }, []));
   const { items: upcoming, hidden, hasMore } = useMemo(
     () => visibleMeetings(meetings, {
       today: today(), months, venueId, scopeIds,
@@ -702,7 +719,10 @@ export default function Schedule() {
                                     }}>
                                     <Text style={{
                                       fontSize: 11, fontWeight: '700',
-                                      color: on ? '#fff' : v === RSVP.NO ? '#b91c1c' : C.sub,
+                                      /* 여성은 분홍 — 초록 바탕(참석)에서는 읽히게 연한 분홍 */
+                                      color: m.gender === 'F'
+                                        ? (on ? '#FFD3E0' : C.female)
+                                        : on ? '#fff' : v === RSVP.NO ? '#b91c1c' : C.sub,
                                     }}>
                                       {m.name}{on ? ' ✓' : ''}
                                       {/* 🔗 = 본인이 카톡 링크로 답함. 총무가 대신 누른 것과 구별된다 */}
@@ -768,7 +788,7 @@ export default function Schedule() {
           </Pressable>
         ) : undefined}
       />
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
+      <ScrollView ref={listRef} contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
         {/* 코트장 필터 — 여러 곳을 운영하는 클럽 */}
         {scopeVenues.length > 1 && (
           <View style={{ marginBottom: S.md, zIndex: 20 }}>

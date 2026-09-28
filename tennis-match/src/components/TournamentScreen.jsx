@@ -22,8 +22,9 @@ import { AppButton, Touchable, Segmented, useOptionSheet } from './native';
 import { TournamentSignup } from './TournamentSignup';
 import { Card, SectionTitle, Chip, Btn, Field, EmptyState, Divider } from './ui';
 import { C, S, R, F } from '../lib/theme';
+import { todayYmd } from '../lib/today';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayYmd();
 
 /** 목록·상세에 보여줄 형식 요약 */
 function formatLabel(t) {

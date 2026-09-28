@@ -51,8 +51,9 @@ import {
   Card, SectionTitle, Chip, Btn, Field, Avatar, CheckRow, HeroCard, HeroPill,
 } from '../../src/components/ui';
 import { C, S, R, F } from '../../src/lib/theme';
+import { todayYmd } from '../../src/lib/today';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayYmd();
 
 /* 표 아래 색 설명.
    색을 입혀 놓고 무슨 뜻인지 안 적으면 "왜 이 사람만 빨갛지"가 된다. */

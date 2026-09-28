@@ -33,9 +33,10 @@ import { Card, SectionTitle, Chip, Field, Btn, EmptyState, CheckRow, Divider } f
 import { Label, DateField, TimeField } from './pickers';
 import { Icon } from './Icon';
 import { C, S, R, F } from '../lib/theme';
+import { todayYmd } from '../lib/today';
 
 const rid = () => 'x' + Math.random().toString(36).slice(2, 8);
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayYmd();
 
 const STATUS_TONE = {
   [CM_STATUS.PENDING]: 'warn',

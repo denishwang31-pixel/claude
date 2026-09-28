@@ -29,8 +29,9 @@ import { DateField, Label } from './pickers';
 import { Card, SectionTitle, Chip, Btn, Field, EmptyState } from './ui';
 import { Icon } from './Icon';
 import { C, S, R, F } from '../lib/theme';
+import { todayYmd } from '../lib/today';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayYmd();
 const won = (n) => `${Number(n || 0).toLocaleString()}원`;
 
 const blank = () => ({

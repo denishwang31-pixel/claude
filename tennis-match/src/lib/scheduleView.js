@@ -188,14 +188,14 @@ export function rsvpGroups(members, meeting) {
   const rsvp = meeting?.rsvp || {};
   const out = { yes: [], no: [], none: [], guests: [] };
   membersForMeeting(members, meeting).forEach((m) => {
-    const row = { id: m.id, name: m.name || '이름 없음' };
+    const row = { id: m.id, name: m.name || '이름 없음', gender: m.gender || '' };
     const v = rsvp[m.id];
     if (v === 'yes') out.yes.push(row);
     else if (v === 'no') out.no.push(row);
     else out.none.push(row);
   });
   (meeting?.guests || []).forEach((g) => {
-    out.guests.push({ id: `g:${g.uid || g.name}`, name: g.name || '게스트' });
+    out.guests.push({ id: `g:${g.uid || g.name}`, name: g.name || '게스트', gender: g.gender || '', guest: true });
   });
   const byName = (a, b) => String(a.name).localeCompare(String(b.name), 'ko');
   out.yes.sort(byName); out.no.sort(byName); out.none.sort(byName);

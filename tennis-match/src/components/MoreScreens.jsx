@@ -26,8 +26,9 @@ import { publicCoaches, lessonSlotText } from '../lib/coach';
 import { useOptionSheet } from './native';
 import { Card, SectionTitle, Chip, Btn, Field, Avatar } from './ui';
 import { C, R, F } from '../lib/theme';
+import { todayYmd } from '../lib/today';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayYmd();
 const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 /* ---------------- 게시판 ----------------
@@ -808,7 +809,7 @@ export function Courts({ clubId, courts, me = '', isAdmin, flash }) {
 
   /* 목록이 오래되었으면 미리 말한다 — 틀릴 수 있다는 것을 모르는 것보다
      낫다. 최신이면 아무 말도 하지 않는다(멀쩡할 때 잔소리하지 않는다). */
-  const freshness = courtDataNote(new Date().toISOString().slice(0, 10));
+  const freshness = courtDataNote(todayYmd());
 
   return (
     <View>

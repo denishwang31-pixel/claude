@@ -180,6 +180,8 @@ section('명단 — 참석 · 불참 · 미응답을 따로 (헷갈리지 않게
   eq('숫자가 현황 한 줄과 같다', [g.yes.length, g.no.length, g.none.length, g.yes.length + g.guests.length],
     [s.yes, s.no, s.none, s.going]);
   eq('빈 모임도 버틴다', rsvpGroups([], null), { yes: [], no: [], none: [], guests: [] });
+  const gm = rsvpGroups([{ id: 'f1', name: '기쁨', gender: 'F' }, { id: 'm1', name: '준형', gender: 'M' }], { rsvp: { f1: 'yes' } });
+  eq('여성 표시가 명단까지 전달된다(이름 색)', [gm.yes[0].gender, gm.none[0].gender], ['F', 'M']);
 }
 
 section('운영진 대신 처리 — 미응답으로도 되돌린다');

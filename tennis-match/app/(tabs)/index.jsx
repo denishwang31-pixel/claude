@@ -38,8 +38,9 @@ import {
 } from '../../src/components/ui';
 import { C, S, R, F, SHADOW } from '../../src/lib/theme';
 import { APP_NAME } from '../../src/lib/constants';
+import { todayYmd } from '../../src/lib/today';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayYmd();
 
 /* 클럽 운영 — 홈에 바로 펼치는 것은 "자주 하는 일"만.
 

@@ -23,8 +23,9 @@ import { VenuePicker } from './VenuePicker';
 import { BillingScopeTabs } from './ScopeControls';
 import { Card, Chip, Btn, Field, HeroCard } from './ui';
 import { C, S } from '../lib/theme';
+import { todayYmd } from '../lib/today';
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => todayYmd();
 const monthKeyNow = () => new Date().toISOString().slice(0, 7);
 const yearKeyNow = () => new Date().toISOString().slice(0, 4);
 

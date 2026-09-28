@@ -23,8 +23,9 @@ import { DateField, Label } from './pickers';
 import { Segmented } from './native';
 import { Card, SectionTitle, Chip, Btn, Field, StatCard, EmptyState } from './ui';
 import { C, S, R, F } from '../lib/theme';
+import { todayYmd } from '../lib/today';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayYmd();
 
 export function DuesPools({ clubId, club, members, pools = [], isAdmin, flash }) {
   const [open, setOpen] = useState(false);
