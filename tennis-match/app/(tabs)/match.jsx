@@ -38,7 +38,7 @@ import { AdBanner } from '../../src/components/AdBanner';
 import { Icon } from '../../src/components/Icon';
 import { courtLabel } from '../../src/lib/courtNames';
 import { VenuePicker } from '../../src/components/VenuePicker';
-import { splitByTie, groupByDate } from '../../src/lib/scheduleView';
+import { splitByTie, groupByDate, groupByVenue } from '../../src/lib/scheduleView';
 import { MatchGrid, AttendanceGrid } from '../../src/components/MatchGrid';
 import { Segmented, useOptionSheet } from '../../src/components/native';
 import {
@@ -150,6 +150,7 @@ export default function Match() {
     [splitOn, candidates, meVal, venues.length],
   );
   const [otherOpen, setOtherOpen] = useState(false);
+  const otherVenues = useMemo(() => groupByVenue(otherCands, venues), [otherCands, venues]);
 
   /* 일정 카드의 [대진] 으로 콕 집어 들어온 모임은 위 코트장 선택과 달라도 연다 —
      "대진 짜기를 눌렀는데 다른 모임이 열렸다"가 되면 안 된다(내 범위 안의 모임만). */
@@ -160,6 +161,14 @@ export default function Match() {
       || myCands[0] || candidates[0] || null,
     [candidates, myCands, meetings, scopeIds, meetingId],
   );
+
+  /* 다른 코트장 모임을 보고 있으면 날짜 줄도 그 코트장 것으로 바꾸고 목록을 펼쳐 둔다 */
+  const viewingOther = splitOn && !!meeting && otherCands.some((m) => m.id === meeting.id);
+  const otherShowing = otherOpen || viewingOther;
+  const stripList = viewingOther ? otherCands.filter((m) => m.venueId === meeting.venueId) : myCands;
+  const stripLabel = viewingOther
+    ? `${venues.find((v) => v.id === meeting.venueId)?.name || '다른 코트장'} · 다른 코트장`
+    : splitOn ? '내 코트' : '';
 
   const attendees = useMemo(() => {
     if (!meeting) return [];
@@ -955,34 +964,61 @@ export default function Match() {
         </View>
       )}
 
-      {/* 모임 고르기 — 날짜 먼저, 그날 모임이 둘 이상이면 시간·코트장을 그다음 줄에서.
-         예전엔 모임마다 칩이 따로라 같은 날 06:00 · 08:00 이 흩어져 있었고
-         코트장 이름도 없었다(앱 주인). 내 코트 먼저, 다른 코트장은 접어 둔다. */}
-      {myCands.length > 0 && (
-        <MeetingStrip list={myCands} selected={meeting} venueOf={venueOf}
-          label={splitOn ? '내 코트' : ''} onPick={(id) => guardDraft(() => setMeetingId(id))} />
-      )}
-      {splitOn && otherCands.length > 0 && (
+      {/* 다른 코트장 — 코트장마다 한 줄씩 세로로. 누르면 그 코트장의 가장 가까운 모임이 열리고,
+         날짜는 아래 대진 카드 바로 위 줄에서 고른다.
+         예전엔 날짜 칩을 옆으로 넘기는 줄이라 코트장이 서너 곳이면 찾기 어렵고
+         어느 코트인지도 안 보였다(앱 주인). */}
+      {splitOn && otherVenues.length > 0 && (
         <View style={{ marginBottom: 10 }}>
-          {(() => {
-            /* 다른 코트장 모임을 보고 있으면 접지 않는다 — 고른 것이 안 보이면 헷갈린다 */
-            const showing = otherOpen || otherCands.some((m) => m.id === meeting?.id);
-            return (
-              <>
-                <Pressable onPress={() => setOtherOpen(!showing)} hitSlop={6}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 }}>
-                  <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.sub }}>
-                    다른 코트장 모임 {otherCands.length}건
-                  </Text>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: C.green }}>{showing ? '접기 ▲' : '펼치기 ▼'}</Text>
+          <Pressable onPress={() => setOtherOpen(!otherShowing)} hitSlop={6}
+            style={({ pressed }) => ({
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12,
+              backgroundColor: C.fill, borderWidth: 1, borderColor: C.border, opacity: pressed ? 0.7 : 1,
+            })}>
+            <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.sub }}>
+              다른 코트장 대진 보기 · {otherVenues.length}곳
+            </Text>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: C.green }}>{otherShowing ? '접기 ▲' : '펼치기 ▼'}</Text>
+          </Pressable>
+          {otherShowing && (
+            <View style={{
+              marginTop: 6, borderRadius: 12, borderWidth: 1, borderColor: C.border,
+              backgroundColor: '#fff', overflow: 'hidden',
+            }}>
+              {viewingOther && (
+                <Pressable onPress={() => myCands[0] && guardDraft(() => setMeetingId(myCands[0].id))}
+                  style={({ pressed }) => ({
+                    paddingVertical: 11, paddingHorizontal: 12, backgroundColor: pressed ? C.greenSoft : '#fff',
+                  })}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: C.green }}>← 내 코트로 돌아가기</Text>
                 </Pressable>
-                {showing && (
-                  <MeetingStrip list={otherCands} selected={meeting} venueOf={venueOf} muted
-                    onPick={(id) => guardDraft(() => setMeetingId(id))} />
-                )}
-              </>
-            );
-          })()}
+              )}
+              {otherVenues.map((g, i) => {
+                const on = viewingOther && meeting?.venueId === g.id;
+                const next = g.items[0];
+                return (
+                  <Pressable key={g.id} onPress={() => guardDraft(() => setMeetingId(next.id))}
+                    style={({ pressed }) => ({
+                      flexDirection: 'row', alignItems: 'center', gap: 8,
+                      paddingVertical: 11, paddingHorizontal: 12,
+                      borderTopWidth: i || viewingOther ? 1 : 0, borderTopColor: '#f1f5f9',
+                      backgroundColor: on ? C.greenSoft : pressed ? C.fill : '#fff',
+                      borderLeftWidth: on ? 4 : 0, borderLeftColor: C.green,
+                    })}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: on ? C.green : C.text }}>{g.name}</Text>
+                      <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 2 }}>
+                        다음 {Number(next.date.slice(5, 7))}/{Number(next.date.slice(8, 10))}({dowName(next.date)}) {next.time}
+                        {' · '}예정 {g.items.length}건
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: on ? C.green : C.faint }}>{on ? '보는 중' : '보기 ›'}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
         </View>
       )}
 
@@ -1001,6 +1037,13 @@ export default function Match() {
                 대진표는 <Text style={{ fontWeight: '700' }}>운영진이 편성</Text>합니다. 확정된 대진을 확인만 할 수 있어요.
               </Text>
             </Card>
+          )}
+
+          {/* 날짜 고르기 — 대진 카드 바로 위에 붙인다. 날짜를 고르면 바로 아래 대진이 바뀐다(앱 주인).
+             그날 모임이 둘 이상이면 시간·코트장을 그다음 줄에서 고른다. */}
+          {stripList.length > 0 && (
+            <MeetingStrip list={stripList} selected={meeting} venueOf={venueOf} label={stripLabel}
+              onPick={(id) => guardDraft(() => setMeetingId(id))} />
           )}
 
           <Card>

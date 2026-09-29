@@ -11,7 +11,7 @@ import {
   monthKey, monthLabel, shiftMonth, MONTH_STEP, windowEnd, visibleMeetings,
   groupByMonth, belongsToVenue, membersForMeeting, canRsvpSelf,
   rsvpBlockReason, rsvpSummary, rsvpGroups, nextRsvp, meetingTie,
-  splitMine, splitByTie, groupByDate, meetingSlot, duplicateMeetings, clashingDates,
+  splitMine, splitByTie, groupByDate, groupByVenue, meetingSlot, duplicateMeetings, clashingDates,
 } from '../src/lib/scheduleView.js';
 
 let pass = 0, fail = 0;
@@ -228,6 +228,19 @@ section('대진 선택 줄 — 날짜 먼저, 그날 시간은 그다음');
   eq('날짜 오름차순', g.map((d) => d.date), ['2026-10-04', '2026-10-11']);
   eq('같은 날은 한 칸, 시간순', g[1].items.map((m) => m.id), ['a', 'b']);
   eq('빈 입력', groupByDate(null), []);
+}
+
+section('다른 코트장 — 코트장별로 세로 목록');
+{
+  const VV = [{ id: 'v2', name: '염곡' }, { id: 'v3', name: '장충' }];
+  const g = groupByVenue([
+    { id: 'c', date: '2026-10-09', venueId: 'v3' }, { id: 'a2', date: '2026-10-08', venueId: 'v2' },
+    { id: 'a1', date: '2026-10-02', venueId: 'v2' }, { id: 'n', date: '2026-10-02', venueId: null },
+  ], VV);
+  eq('코트장 목록 순서', g.map((x) => x.name), ['염곡', '장충']);
+  eq('코트장 안은 날짜순', g[0].items.map((m) => m.id), ['a1', 'a2']);
+  eq('코트장 미지정은 빠진다', g.some((x) => x.items.some((m) => m.id === 'n')), false);
+  eq('모르는 코트장은 이름 대신 코트장', groupByVenue([{ id: 'z', date: '2026-10-02', venueId: 'vx' }], VV)[0].name, '코트장');
 }
 
 section('같은 모임이 두 번 — 하나만 남기기 (앱 주인 제보: 10/11 06:00 두 장)');

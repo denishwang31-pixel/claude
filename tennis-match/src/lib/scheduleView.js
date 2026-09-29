@@ -204,6 +204,29 @@ export function groupByDate(meetings) {
     }));
 }
 
+/**
+ * 코트장별로 묶는다 — 대진 화면의 "다른 코트장" 목록.
+ * 코트장이 서너 곳이면 날짜 칩을 옆으로 넘기며 찾기 어렵고 어느 코트인지도
+ * 안 보였다(앱 주인). 코트장 이름을 줄마다 세로로 세운다.
+ * @returns {{ id, name, items }[]} 코트장 목록 순서, 각 items 는 날짜·시간순
+ */
+export function groupByVenue(meetings, venues) {
+  const order = new Map((venues || []).map((v, i) => [v.id, i]));
+  const map = new Map();
+  (meetings || []).forEach((m) => {
+    if (!m || !m.date || !m.venueId) return;
+    if (!map.has(m.venueId)) map.set(m.venueId, []);
+    map.get(m.venueId).push(m);
+  });
+  return [...map.entries()]
+    .map(([id, items]) => ({
+      id,
+      name: (venues || []).find((v) => v.id === id)?.name || '코트장',
+      items: items.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || ''))),
+    }))
+    .sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9));
+}
+
 /* ---------- 같은 모임이 두 번 ---------- */
 
 /** 같은 모임인지 가르는 열쇠 — 날짜 · 시작 시간 · 코트장(없으면 장소 이름) */
