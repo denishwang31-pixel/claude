@@ -824,6 +824,81 @@ export default function Match() {
 
   const Header = (
     <View>
+      {/* 코트장 드롭다운 */}
+      {venues.length > 0 && (
+        <View style={{ marginBottom: 10 }}>
+          {/* 코트장을 바꾸면 고르던 모임이 바뀌므로 초안이 사라진다 — 먼저 물어본다 */}
+          <VenuePicker mineIds={meVal?.venueIds} venues={scopeVenues} value={venueId}
+            onChange={(v) => guardDraft(() => setVenueId(v))} />
+        </View>
+      )}
+
+      {/* 날짜 고르기 — 코트장 드롭다운 바로 아래. 날짜를 고르면 아래 내 경기·대진이 바뀐다.
+         고르는 줄은 전부 맨 위에 모은다: 코트장 → 날짜 → 다른 코트장 → 내 경기 → 대진(앱 주인).
+         그날 모임이 둘 이상이면 시간·코트장을 그다음 줄에서 고른다. */}
+      {stripList.length > 0 && (
+        <MeetingStrip list={stripList} selected={meeting} venueOf={venueOf} label={stripLabel}
+          onPick={(id) => guardDraft(() => setMeetingId(id))} />
+      )}
+
+      {/* 다른 코트장 — 코트장마다 한 줄씩 세로로. 누르면 그 코트장의 가장 가까운 모임이 열리고,
+         날짜는 아래 대진 카드 바로 위 줄에서 고른다.
+         예전엔 날짜 칩을 옆으로 넘기는 줄이라 코트장이 서너 곳이면 찾기 어렵고
+         어느 코트인지도 안 보였다(앱 주인). */}
+      {splitOn && otherVenues.length > 0 && (
+        <View style={{ marginBottom: 10 }}>
+          <Pressable onPress={() => setOtherOpen(!otherShowing)} hitSlop={6}
+            style={({ pressed }) => ({
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12,
+              backgroundColor: C.fill, borderWidth: 1, borderColor: C.border, opacity: pressed ? 0.7 : 1,
+            })}>
+            <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.sub }}>
+              다른 코트장 대진 보기 · {otherVenues.length}곳
+            </Text>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: C.green }}>{otherShowing ? '접기 ▲' : '펼치기 ▼'}</Text>
+          </Pressable>
+          {otherShowing && (
+            <View style={{
+              marginTop: 6, borderRadius: 12, borderWidth: 1, borderColor: C.border,
+              backgroundColor: '#fff', overflow: 'hidden',
+            }}>
+              {viewingOther && (
+                <Pressable onPress={() => myCands[0] && guardDraft(() => setMeetingId(myCands[0].id))}
+                  style={({ pressed }) => ({
+                    paddingVertical: 11, paddingHorizontal: 12, backgroundColor: pressed ? C.greenSoft : '#fff',
+                  })}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: C.green }}>← 내 코트로 돌아가기</Text>
+                </Pressable>
+              )}
+              {otherVenues.map((g, i) => {
+                const on = viewingOther && meeting?.venueId === g.id;
+                const next = g.items[0];
+                return (
+                  <Pressable key={g.id} onPress={() => guardDraft(() => setMeetingId(next.id))}
+                    style={({ pressed }) => ({
+                      flexDirection: 'row', alignItems: 'center', gap: 8,
+                      paddingVertical: 11, paddingHorizontal: 12,
+                      borderTopWidth: i || viewingOther ? 1 : 0, borderTopColor: '#f1f5f9',
+                      backgroundColor: on ? C.greenSoft : pressed ? C.fill : '#fff',
+                      borderLeftWidth: on ? 4 : 0, borderLeftColor: C.green,
+                    })}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: on ? C.green : C.text }}>{g.name}</Text>
+                      <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 2 }}>
+                        다음 {Number(next.date.slice(5, 7))}/{Number(next.date.slice(8, 10))}({dowName(next.date)}) {next.time}
+                        {' · '}예정 {g.items.length}건
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: on ? C.green : C.faint }}>{on ? '보는 중' : '보기 ›'}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      )}
+
       {/* ---------- 내 경기 ---------- */}
       {!!myNext && (
         <HeroCard style={{ marginBottom: S.md }}>
@@ -955,73 +1030,6 @@ export default function Match() {
         </Card>
       )}
 
-      {/* 코트장 드롭다운 */}
-      {venues.length > 0 && (
-        <View style={{ marginBottom: 10 }}>
-          {/* 코트장을 바꾸면 고르던 모임이 바뀌므로 초안이 사라진다 — 먼저 물어본다 */}
-          <VenuePicker mineIds={meVal?.venueIds} venues={scopeVenues} value={venueId}
-            onChange={(v) => guardDraft(() => setVenueId(v))} />
-        </View>
-      )}
-
-      {/* 다른 코트장 — 코트장마다 한 줄씩 세로로. 누르면 그 코트장의 가장 가까운 모임이 열리고,
-         날짜는 아래 대진 카드 바로 위 줄에서 고른다.
-         예전엔 날짜 칩을 옆으로 넘기는 줄이라 코트장이 서너 곳이면 찾기 어렵고
-         어느 코트인지도 안 보였다(앱 주인). */}
-      {splitOn && otherVenues.length > 0 && (
-        <View style={{ marginBottom: 10 }}>
-          <Pressable onPress={() => setOtherOpen(!otherShowing)} hitSlop={6}
-            style={({ pressed }) => ({
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12,
-              backgroundColor: C.fill, borderWidth: 1, borderColor: C.border, opacity: pressed ? 0.7 : 1,
-            })}>
-            <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.sub }}>
-              다른 코트장 대진 보기 · {otherVenues.length}곳
-            </Text>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: C.green }}>{otherShowing ? '접기 ▲' : '펼치기 ▼'}</Text>
-          </Pressable>
-          {otherShowing && (
-            <View style={{
-              marginTop: 6, borderRadius: 12, borderWidth: 1, borderColor: C.border,
-              backgroundColor: '#fff', overflow: 'hidden',
-            }}>
-              {viewingOther && (
-                <Pressable onPress={() => myCands[0] && guardDraft(() => setMeetingId(myCands[0].id))}
-                  style={({ pressed }) => ({
-                    paddingVertical: 11, paddingHorizontal: 12, backgroundColor: pressed ? C.greenSoft : '#fff',
-                  })}>
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: C.green }}>← 내 코트로 돌아가기</Text>
-                </Pressable>
-              )}
-              {otherVenues.map((g, i) => {
-                const on = viewingOther && meeting?.venueId === g.id;
-                const next = g.items[0];
-                return (
-                  <Pressable key={g.id} onPress={() => guardDraft(() => setMeetingId(next.id))}
-                    style={({ pressed }) => ({
-                      flexDirection: 'row', alignItems: 'center', gap: 8,
-                      paddingVertical: 11, paddingHorizontal: 12,
-                      borderTopWidth: i || viewingOther ? 1 : 0, borderTopColor: '#f1f5f9',
-                      backgroundColor: on ? C.greenSoft : pressed ? C.fill : '#fff',
-                      borderLeftWidth: on ? 4 : 0, borderLeftColor: C.green,
-                    })}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '800', color: on ? C.green : C.text }}>{g.name}</Text>
-                      <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 2 }}>
-                        다음 {Number(next.date.slice(5, 7))}/{Number(next.date.slice(8, 10))}({dowName(next.date)}) {next.time}
-                        {' · '}예정 {g.items.length}건
-                      </Text>
-                    </View>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: on ? C.green : C.faint }}>{on ? '보는 중' : '보기 ›'}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-        </View>
-      )}
-
       {!meeting ? (
         <Card>
           <Text style={{ color: C.sub, fontSize: 13 }}>
@@ -1037,13 +1045,6 @@ export default function Match() {
                 대진표는 <Text style={{ fontWeight: '700' }}>운영진이 편성</Text>합니다. 확정된 대진을 확인만 할 수 있어요.
               </Text>
             </Card>
-          )}
-
-          {/* 날짜 고르기 — 대진 카드 바로 위에 붙인다. 날짜를 고르면 바로 아래 대진이 바뀐다(앱 주인).
-             그날 모임이 둘 이상이면 시간·코트장을 그다음 줄에서 고른다. */}
-          {stripList.length > 0 && (
-            <MeetingStrip list={stripList} selected={meeting} venueOf={venueOf} label={stripLabel}
-              onPick={(id) => guardDraft(() => setMeetingId(id))} />
           )}
 
           <Card>
