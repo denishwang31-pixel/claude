@@ -38,6 +38,7 @@ import { AdBanner } from '../../src/components/AdBanner';
 import { Icon } from '../../src/components/Icon';
 import { courtLabel } from '../../src/lib/courtNames';
 import { VenuePicker } from '../../src/components/VenuePicker';
+import { splitByTie, groupByDate } from '../../src/lib/scheduleView';
 import { MatchGrid, AttendanceGrid } from '../../src/components/MatchGrid';
 import { Segmented, useOptionSheet } from '../../src/components/native';
 import {
@@ -141,14 +142,23 @@ export default function Match() {
   }, [venueId]);
 
   /* 선택된 모임 (없으면 가장 가까운 것) */
+  /* 내 코트 먼저, 다른 코트장은 아래에 접어 둔다(일정 탭과 같은 규칙).
+     코트장을 하나 골랐거나 코트장이 하나뿐이면 나누지 않는다. */
+  const splitOn = !venueId && venues.length > 1 && !!meVal;
+  const { mine: myCands, other: otherCands } = useMemo(
+    () => (splitOn ? splitByTie(candidates, meVal, venues.length) : { mine: candidates, other: [] }),
+    [splitOn, candidates, meVal, venues.length],
+  );
+  const [otherOpen, setOtherOpen] = useState(false);
+
   /* 일정 카드의 [대진] 으로 콕 집어 들어온 모임은 위 코트장 선택과 달라도 연다 —
      "대진 짜기를 눌렀는데 다른 모임이 열렸다"가 되면 안 된다(내 범위 안의 모임만). */
   const meeting = useMemo(
     () => candidates.find((m) => m.id === meetingId)
       || meetings.find((m) => m.id === meetingId && !m.canceled && m.date >= today()
         && (!m.venueId || scopeIds.includes(m.venueId)))
-      || candidates[0] || null,
-    [candidates, meetings, scopeIds, meetingId],
+      || myCands[0] || candidates[0] || null,
+    [candidates, myCands, meetings, scopeIds, meetingId],
   );
 
   const attendees = useMemo(() => {
@@ -945,31 +955,35 @@ export default function Match() {
         </View>
       )}
 
-      {/* 날짜 선택 — 여러 일정 중 원하는 회차를 고른다 */}
-      {candidates.length > 0 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            {candidates.slice(0, 12).map((m) => {
-              const on = meeting?.id === m.id;
-              const cnt = Object.values(m.rsvp || {}).filter((v) => v === RSVP.YES).length + (m.guests?.length || 0);
-              return (
-                <Pressable key={m.id} onPress={() => guardDraft(() => setMeetingId(m.id))}
-                  style={{
-                    paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10,
-                    backgroundColor: on ? C.green : '#fff',
-                    borderWidth: on ? 0 : 1, borderColor: C.border, alignItems: 'center', minWidth: 74,
-                  }}>
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: on ? '#fff' : C.ink }}>
-                    {m.date.slice(5)}({dowName(m.date)})
+      {/* 모임 고르기 — 날짜 먼저, 그날 모임이 둘 이상이면 시간·코트장을 그다음 줄에서.
+         예전엔 모임마다 칩이 따로라 같은 날 06:00 · 08:00 이 흩어져 있었고
+         코트장 이름도 없었다(앱 주인). 내 코트 먼저, 다른 코트장은 접어 둔다. */}
+      {myCands.length > 0 && (
+        <MeetingStrip list={myCands} selected={meeting} venueOf={venueOf}
+          label={splitOn ? '내 코트' : ''} onPick={(id) => guardDraft(() => setMeetingId(id))} />
+      )}
+      {splitOn && otherCands.length > 0 && (
+        <View style={{ marginBottom: 10 }}>
+          {(() => {
+            /* 다른 코트장 모임을 보고 있으면 접지 않는다 — 고른 것이 안 보이면 헷갈린다 */
+            const showing = otherOpen || otherCands.some((m) => m.id === meeting?.id);
+            return (
+              <>
+                <Pressable onPress={() => setOtherOpen(!showing)} hitSlop={6}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.sub }}>
+                    다른 코트장 모임 {otherCands.length}건
                   </Text>
-                  <Text style={{ fontSize: 9, color: on ? '#BFE3D3' : C.faint, marginTop: 1 }}>
-                    {m.time} · {cnt}명{m.matches?.length ? ' ✓' : ''}
-                  </Text>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: C.green }}>{showing ? '접기 ▲' : '펼치기 ▼'}</Text>
                 </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
+                {showing && (
+                  <MeetingStrip list={otherCands} selected={meeting} venueOf={venueOf} muted
+                    onPick={(id) => guardDraft(() => setMeetingId(id))} />
+                )}
+              </>
+            );
+          })()}
+        </View>
       )}
 
       {!meeting ? (
@@ -1699,6 +1713,68 @@ export default function Match() {
       {toast && (
         <View style={{ position: 'absolute', bottom: 20, alignSelf: 'center', backgroundColor: C.ink, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, maxWidth: 340 }}>
           <Text style={{ color: C.lime, fontSize: 12, fontWeight: '700', textAlign: 'center' }}>{toast}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/* ---------- 모임 고르기 줄 ----------
+   1줄: 날짜 칩(그날 모임이 여럿이면 "모임 2개"). 2줄: 고른 날의 시간 · 코트장 · 참석 수.
+   그날 모임이 하나면 2줄은 없다. */
+const goingOf = (m) => Object.values(m.rsvp || {}).filter((v) => v === RSVP.YES).length + (m.guests?.length || 0);
+
+function MeetingStrip({ list, selected, onPick, venueOf, label = '', muted = false }) {
+  const days = useMemo(() => groupByDate(list).slice(0, 14), [list]);
+  const selDay = days.find((d) => d.items.some((m) => m.id === selected?.id));
+  return (
+    <View style={{ marginBottom: 10 }}>
+      {!!label && (
+        <Text style={{ fontSize: 11.5, fontWeight: '800', color: C.green, marginBottom: 5 }}>{label}</Text>
+      )}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          {days.map((d) => {
+            const on = selDay?.date === d.date;
+            const one = d.items.length === 1 ? d.items[0] : null;
+            const done = d.items.every((m) => m.matches?.length);
+            return (
+              <Pressable key={d.date}
+                onPress={() => onPick((d.items.find((m) => m.id === selected?.id) || d.items[0]).id)}
+                style={{
+                  paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, alignItems: 'center', minWidth: 74,
+                  backgroundColor: on ? (muted ? C.sub : C.green) : '#fff',
+                  borderWidth: on ? 0 : 1, borderColor: C.border,
+                }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: on ? '#fff' : muted ? C.sub : C.ink }}>
+                  {d.date.slice(5).replace('-', '/')}({dowName(d.date)})
+                </Text>
+                <Text style={{ fontSize: 9.5, color: on ? '#E2F3EC' : C.faint, marginTop: 1 }}>
+                  {one ? `${one.time} · ${goingOf(one)}명` : `모임 ${d.items.length}개`}{done ? ' ✓' : ''}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
+      {selDay && selDay.items.length > 1 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {selDay.items.map((m) => {
+            const on = m.id === selected?.id;
+            const where = venueOf(m)?.name || m.place || '';
+            return (
+              <Pressable key={m.id} onPress={() => onPick(m.id)}
+                style={{
+                  paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999,
+                  backgroundColor: on ? C.greenSoft : '#fff',
+                  borderWidth: 1, borderColor: on ? C.green : C.border,
+                }}>
+                <Text style={{ fontSize: 12, fontWeight: on ? '800' : '600', color: on ? C.green : C.sub }}>
+                  {m.time}{where ? ` · ${where}` : ''} · {goingOf(m)}명{m.matches?.length ? ' ✓' : ''}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       )}
     </View>

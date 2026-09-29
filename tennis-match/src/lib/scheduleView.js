@@ -183,6 +183,27 @@ export function splitByTie(meetings, meVal, venueCount) {
   return { mine, other };
 }
 
+/**
+ * 날짜별로 묶는다 — 대진 화면 위 선택 줄.
+ * 같은 날 06:00 · 08:00 모임이 칩 두 개로 따로 늘어서 있으면 어느 날인지부터
+ * 헷갈린다(앱 주인). 날짜를 먼저 고르고, 그날 모임이 둘 이상이면 시간을 고른다.
+ * @returns {{ date, items }[]} 날짜 오름차순, items 는 시간 오름차순
+ */
+export function groupByDate(meetings) {
+  const map = new Map();
+  (meetings || []).forEach((m) => {
+    if (!m || !m.date) return;
+    if (!map.has(m.date)) map.set(m.date, []);
+    map.get(m.date).push(m);
+  });
+  return [...map.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, items]) => ({
+      date,
+      items: items.sort((a, b) => (a.time || '').localeCompare(b.time || '')),
+    }));
+}
+
 /* ---------- 같은 모임이 두 번 ---------- */
 
 /** 같은 모임인지 가르는 열쇠 — 날짜 · 시작 시간 · 코트장(없으면 장소 이름) */

@@ -11,7 +11,7 @@ import {
   monthKey, monthLabel, shiftMonth, MONTH_STEP, windowEnd, visibleMeetings,
   groupByMonth, belongsToVenue, membersForMeeting, canRsvpSelf,
   rsvpBlockReason, rsvpSummary, rsvpGroups, nextRsvp, meetingTie,
-  splitMine, splitByTie, meetingSlot, duplicateMeetings, clashingDates,
+  splitMine, splitByTie, groupByDate, meetingSlot, duplicateMeetings, clashingDates,
 } from '../src/lib/scheduleView.js';
 
 let pass = 0, fail = 0;
@@ -217,6 +217,17 @@ section('일정 목록 — 내 코트 먼저, 다른 코트장은 따로');
   eq('내 코트 + 전체 모임 + 취소된 모임', r.mine.map((m) => m.id), ['x1', 'x3', 'x4']);
   eq('다른 코트장', r.other.map((m) => m.id), ['x2']);
   eq('코트장이 하나면 나누지 않는다', splitByTie(list, MEMBERS[0], 1).other.length, 0);
+}
+
+section('대진 선택 줄 — 날짜 먼저, 그날 시간은 그다음');
+{
+  const g = groupByDate([
+    { id: 'b', date: '2026-10-11', time: '08:00' }, { id: 'a', date: '2026-10-11', time: '06:00' },
+    { id: 'c', date: '2026-10-04', time: '06:00' }, { id: 'x' },
+  ]);
+  eq('날짜 오름차순', g.map((d) => d.date), ['2026-10-04', '2026-10-11']);
+  eq('같은 날은 한 칸, 시간순', g[1].items.map((m) => m.id), ['a', 'b']);
+  eq('빈 입력', groupByDate(null), []);
 }
 
 section('같은 모임이 두 번 — 하나만 남기기 (앱 주인 제보: 10/11 06:00 두 장)');
