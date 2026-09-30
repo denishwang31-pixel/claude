@@ -457,6 +457,7 @@ console.log('[카카오톡을 거쳐 늦게 온 로그인 결과도 받는다]')
   ok(/savePending\(\{ provider, state/.test(signSrc), '로그인 창을 열기 전에 state 를 기억한다');
   ok(/export async function handleLateSocialUrl/.test(signSrc), '늦게 온 주소를 받는 곳이 있다');
   const layoutSrc = readFileSync(resolve(ROOT, 'app/_layout.jsx'), 'utf8');
+  const loginSrc2 = readFileSync(resolve(ROOT, 'app/login.jsx'), 'utf8');
   ok(/handleLateSocialUrl/.test(layoutSrc) && /getInitialURL/.test(layoutSrc), '앱 뿌리에서 늦게 온 주소를 받는다(앱이 새로 켜진 경우 포함)');
   const { socialResultUrl, HANDOFF_POLL_MS } = await import('../src/lib/social.js');
   eq(socialResultUrl('kakao.AB CD'), 'https://tennis-match-52b31.web.app/auth/result?state=kakao.AB%20CD', '서버에 맡긴 결과를 찾는 주소');
@@ -465,11 +466,20 @@ console.log('[카카오톡을 거쳐 늦게 온 로그인 결과도 받는다]')
   ok(/pollHandoff\(state, HANDOFF_POLL_MS\)/.test(signSrc), '앱 주소로 못 돌아오면 서버에 맡긴 결과를 찾는다');
   ok(/checkPendingSocial/.test(layoutSrc) && /AppState/.test(layoutSrc), '앱으로 돌아올 때 맡긴 결과를 한 번 더 찾는다');
   ok(/\[S12\]/.test(socialClosedHint('kakao')), '끝내 결과가 없으면 번호 붙은 안내');
-  /* 2026-09-30: 안드로이드 openAuthSessionAsync 는 앱이 잠깐 앞에 나오면 로그인 창을 강제로 닫는다
-     → 카카오 콜백이 서버에 한 번도 안 왔다. 안드로이드는 평범한 창 + 직접 기다리기. */
-  ok(/android\s*\n?\s*\?\s*await WebBrowser\.openBrowserAsync\(url/.test(signSrc), '안드로이드는 로그인 창을 강제로 닫지 않는 방식으로 연다');
-  ok(/waitForResult\(RN\.AppState, state/.test(signSrc), '안드로이드는 결과(앱 주소·맡긴 결과)를 직접 기다린다');
-  ok(/ACTIVE_GIVEUP_MS/.test(signSrc), '사용자가 창을 닫고 앱에 머물면 잠시 뒤 포기한다');
+  /* 2026-09-30: 안드로이드에서 카카오 로그인을 바깥 창으로 열면 [로그인]을 누르는 순간 창이 사라지고
+     서버에 카카오 콜백이 한 번도 안 왔다 → 카카오(안드로이드)는 앱 안 로그인 화면으로 */
+  ok(/inApp = typeof openInApp === 'function' && RN\.Platform\?\.OS === 'android' && provider === PROVIDERS\.KAKAO/.test(signSrc), '안드로이드 카카오는 앱 안 로그인 화면으로 연다');
+  ok(/openAuthSessionAsync\(url, returnUrl/.test(signSrc), '네이버·iOS 는 잘 되던 바깥 창 그대로');
+  ok(/openInApp,/.test(loginSrc2) && /<SocialLoginSheet/.test(loginSrc2), '로그인 화면이 앱 안 로그인 화면을 띄울 수 있다');
+  const { webLoginDecision, intentFallback } = await import('../src/lib/social.js');
+  const RET = 'com.donghyun.tennismatch://oauth';
+  eq(webLoginDecision(RET + '?token=t&state=s', RET), 'result', '앱 복귀 주소는 로그인 끝 — 화면을 닫고 결과를 읽는다');
+  eq(webLoginDecision('https://tennis-match-52b31.web.app/auth/kakao/callback?code=c', RET), 'load', '우리 서버 콜백은 그대로 연다(서버가 코드를 토큰으로 바꾼다)');
+  eq(webLoginDecision('https://accounts.kakao.com/login', RET), 'load', '카카오 로그인 화면은 그대로');
+  eq(webLoginDecision('intent://login#Intent;scheme=kakaokompassauth;package=com.kakao.talk;end', RET), 'external', '카카오톡 여는 주소는 휴대폰에 넘긴다');
+  eq(webLoginDecision('kakaotalk://x', RET), 'external', '카카오톡 주소도');
+  eq(intentFallback('intent://a#Intent;scheme=x;S.browser_fallback_url=https%3A%2F%2Faccounts.kakao.com%2Flogin;end'), 'https://accounts.kakao.com/login', '카카오톡이 없으면 갈 웹 주소');
+  eq(intentFallback('intent://a#Intent;S.browser_fallback_url=javascript%3Aalert(1);end'), '', 'https 가 아닌 대체 주소는 쓰지 않는다');
 }
 
 console.log('[로그인 복귀 주소는 화면 이동에서 뺀다]');

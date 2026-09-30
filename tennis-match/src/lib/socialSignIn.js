@@ -216,7 +216,7 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
  *
  * @returns {Promise<{ok: boolean, uid?: string, name?: string, error?: string, cancelled?: boolean}>}
  */
-export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFIG, onWaiting } = {}) {
+export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFIG, onWaiting, openInApp } = {}) {
   const clientId = String(
     provider === PROVIDERS.KAKAO ? config?.kakaoRestKey : provider === PROVIDERS.NAVER ? config?.naverClientId : '',
   ).trim();
@@ -268,53 +268,44 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
     candidates = browserCandidates(null);
   }
 
-  /* ⚠️ 안드로이드에서는 openAuthSessionAsync 를 쓰지 않는다.
-        그 함수는 로그인 중에 **우리 앱이 잠깐이라도 앞에 나오면** "사용자가 닫았다"로 보고
-        로그인 창을 강제로 닫는다(expo-web-browser 의 안드로이드 대체 구현).
-        카카오 로그인 화면은 로그인을 누를 때 그런 순간을 만들고, 창이 닫혀 카카오가 우리
-        서버로 결과를 보낼 기회가 없었다 — 서버 기록에 카카오 콜백이 한 번도 없었다(2026-09-30).
-        그래서 평범한 브라우저 창(openBrowserAsync)으로 열고, 결과는 우리가 기다린다:
-        앱 주소로 돌아오는 것(Linking) + 서버에 맡겨 둔 결과(handoff). iOS 는 그대로. */
+  /* ⚠️ 안드로이드 카카오는 **앱 안 로그인 화면**(components/SocialLoginSheet)으로 연다.
+        바깥 창(크롬 탭)으로 열면 [로그인]을 누르는 순간 창이 사라지고, 서버 기록에 카카오의
+        결과 요청이 한 번도 없었다(2026-09-30). 앱이 창을 닫지 않게 해도 같았다.
+        네이버·iOS 는 바깥 창으로 잘 된다 — 그대로 둔다. */
   const RN = await import('react-native');
-  const android = RN.Platform?.OS === 'android';
+  const inApp = typeof openInApp === 'function' && RN.Platform?.OS === 'android' && provider === PROVIDERS.KAKAO;
   let result = null;
   let lastErr = null;
-  for (const browserPackage of [...candidates, undefined]) {
-    try {
-      const opt = browserPackage ? { browserPackage } : undefined;
-      result = android
-        ? await WebBrowser.openBrowserAsync(url, opt)
-        : await WebBrowser.openAuthSessionAsync(url, returnUrl, opt);
-      lastErr = null;
-      break;
-    } catch (e) {
-      lastErr = e;
-      if (!isNoBrowserError(e)) break;
+  let backUrl = '';
+  let got = null;
+  if (inApp) {
+    backUrl = await openInApp({ url, returnUrl, title: '카카오 로그인' });
+    if (!backUrl) got = await fetchHandoff(state);     // 화면을 닫기 직전에 서버까지는 갔을 수도 있다
+    result = { type: backUrl ? 'success' : 'dismiss' };
+  } else {
+    for (const browserPackage of [...candidates, undefined]) {
+      try {
+        result = await WebBrowser.openAuthSessionAsync(url, returnUrl, browserPackage ? { browserPackage } : undefined);
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e;
+        if (!isNoBrowserError(e)) break;
+      }
+    }
+    backUrl = result?.type === 'success' ? result.url : '';
+    if (!lastErr && !backUrl) {
+      /* 창이 "닫혔다"고 먼저 알려도 결과 주소가 바로 뒤에 올 수 있다 — 조금 더 기다린다 */
+      for (let waited = 0; waited < LATE_WAIT_MS && !lateUrl; waited += 250) await sleep(250);
+      backUrl = lateUrl;
+      if (!backUrl) { onWaiting?.(); got = await pollHandoff(state, HANDOFF_POLL_MS); }
     }
   }
+  try { sub?.remove?.(); } catch (e) { /* 이미 떨어졌다 */ }
   if (lastErr) {
-    try { sub?.remove?.(); } catch (e) { /* 이미 떨어졌다 */ }
     await clearPending();
     return { ok: false, error: `[S10] 브라우저 창을 열지 못했습니다. ${googleErrorText(lastErr)}`.trim() };
   }
-
-  let backUrl = result?.type === 'success' ? result.url : '';
-  let got = null;
-  if (android) {
-    onWaiting?.();
-    const w = await waitForResult(RN.AppState, state, () => lateUrl);
-    backUrl = w.url || '';
-    got = w.handoff || (w.gone ? GONE : null);
-    if (backUrl || (got && got !== GONE)) {
-      try { WebBrowser.dismissBrowser?.(); } catch (e) { /* 이미 닫혔다 */ }
-    }
-  } else if (!backUrl) {
-    /* iOS — 창이 "닫혔다"고 먼저 알려도 결과 주소가 바로 뒤에 올 수 있다 */
-    for (let waited = 0; waited < LATE_WAIT_MS && !lateUrl; waited += 250) await sleep(250);
-    backUrl = lateUrl;
-    if (!backUrl) { onWaiting?.(); got = await pollHandoff(state, HANDOFF_POLL_MS); }
-  }
-  try { sub?.remove?.(); } catch (e) { /* 이미 떨어졌다 */ }
 
   if (!backUrl) {
     if (got === GONE) return { ok: false, cancelled: true, error: '' };   // 다른 곳(앱 뿌리)이 이미 받아 처리했다
@@ -322,6 +313,8 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
       await clearPending();
       return finishSocial(got, got.provider || provider);
     }
+    /* 앱 안 화면을 사용자가 닫은 것 — 조용히 */
+    if (inApp) { await clearPending(); return { ok: false, cancelled: true, error: '' }; }
     /* 끝내 없으면 기억은 남겨 둔다 — 나중에 앱으로 돌아올 때 checkPendingSocial 이 한 번 더 본다 */
     const hint = socialClosedHint(provider);
     const diag = `(창 ${result?.type || '없음'} · 들어온 주소 ${seen.length ? seen.join(', ') : '없음'})`;
@@ -334,47 +327,6 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
         남의 계정에 들어가게 만드는 공격을 막는다. */
   if (back.state !== state) return { ok: false, error: socialAuthErrorText('state', provider) };
   return finishSocial(back, provider);
-}
-
-/**
- * 안드로이드 — 로그인 창을 열어 둔 채 결과를 기다린다.
- * 끝나는 경우: 앱 주소로 결과가 옴(url) · 서버에 맡겨진 결과(handoff) · 다른 곳이 이미 처리(gone)
- *            · 사용자가 창을 닫고 앱에 머문 지 ACTIVE_GIVEUP_MS 지남 · 전체 WAIT_MAX_MS 지남.
- * 로그인 중 앱이 **잠깐** 앞에 나왔다 들어가는 것은 닫은 것으로 보지 않는다(그게 카카오 문제였다).
- */
-const ACTIVE_GIVEUP_MS = 15000;
-const WAIT_MAX_MS = 5 * 60 * 1000;
-async function waitForResult(AppState, state, getUrl) {
-  const started = Date.now();
-  let activeSince = AppState?.currentState === 'active' ? 0 : null;   // 막 연 직후 잠깐은 셈하지 않는다
-  let appSub = null;
-  try {
-    appSub = AppState?.addEventListener?.('change', (st) => {
-      activeSince = st === 'active' ? Date.now() : null;
-    });
-  } catch (e) { appSub = null; }
-  let lastPoll = 0;
-  try {
-    while (Date.now() - started < WAIT_MAX_MS) {
-      const u = getUrl();
-      if (u) return { url: u };
-      const p = await loadPending();
-      if (!p || p.state !== state) return { gone: true };
-      const now = Date.now();
-      const active = activeSince !== null;
-      /* 앱이 앞에 있으면 자주, 뒤에 있으면 가끔 서버를 본다 */
-      if (now - lastPoll > (active ? 1500 : 4000)) {
-        lastPoll = now;
-        const j = await fetchHandoff(state);
-        if (j) return { handoff: j };
-      }
-      if (activeSince && now - activeSince > ACTIVE_GIVEUP_MS) return {};
-      await sleep(300);
-    }
-    return {};
-  } finally {
-    try { appSub?.remove?.(); } catch (e) { /* 이미 떨어졌다 */ }
-  }
 }
 
 /* ---------------- 로그인 창 밖에서 도착한 결과 ---------------- */

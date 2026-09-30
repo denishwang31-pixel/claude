@@ -470,6 +470,33 @@ export function matchLateReturn(url, pending, now = Date.now()) {
   return { ...back, provider: back.provider || pending.provider || '' };
 }
 
+/* ---------------- 앱 안 로그인 화면(WebView) ---------------- */
+
+/**
+ * 앱 안 로그인 화면이 이 주소로 넘어가려 할 때 어떻게 할지.
+ *   'result'   — 우리 앱 복귀 주소: 로그인 끝. 화면을 닫고 결과를 읽는다
+ *   'external' — 다른 앱을 여는 주소(intent:, kakaotalk: 등): 휴대폰에 넘긴다
+ *   'load'     — 보통 웹 주소: 그대로 연다
+ */
+export function webLoginDecision(url, returnUrl) {
+  const u = String(url || '');
+  if (returnUrl && u.startsWith(returnUrl)) return 'result';
+  if (/^https?:\/\//i.test(u) || /^about:|^data:|^blob:/i.test(u)) return 'load';
+  return 'external';
+}
+
+/** intent: 주소에 적힌 대체 웹 주소(앱이 없을 때 갈 곳) */
+export function intentFallback(url) {
+  const m = String(url || '').match(/;S\.browser_fallback_url=([^;]+)/);
+  if (!m) return '';
+  try {
+    const f = decodeURIComponent(m[1]);
+    return /^https:\/\//i.test(f) ? f : '';
+  } catch (e) {
+    return '';
+  }
+}
+
 /** 로그인 창이 결과 없이 닫혔을 때 한 줄 안내(오류가 아니라 도움말). 카카오만 — 카카오톡으로 넘어가는 길이 있다 */
 export function socialClosedHint(provider) {
   if (provider !== PROVIDERS.KAKAO) return '';

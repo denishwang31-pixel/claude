@@ -39,6 +39,7 @@ import {
 } from '../src/lib/auth';
 import { Btn, Field, CheckRow } from '../src/components/ui';
 import { SocialButtons, OrDivider } from '../src/components/SocialButtons';
+import { SocialLoginSheet } from '../src/components/SocialLoginSheet';
 import { PROVIDER_SHORT, PROVIDERS, enabledProviders } from '../src/lib/social';
 import { LIVE_SOCIAL_CONFIG } from '../src/lib/socialConfig';
 /* ⚠️ 네이티브 모듈을 직접 부르지 않는다. socialSignIn 은 버튼을 눌렀을
@@ -140,6 +141,15 @@ export default function Login() {
     else setErr(r.reason);
   };
 
+  /* 앱 안 로그인 화면(카카오·안드로이드) — socialSignIn 이 열어 달라고 하면 띄우고, 끝나면 주소를 돌려준다 */
+  const [webLogin, setWebLogin] = useState(null);
+  const openInApp = (req) => new Promise((resolve) => setWebLogin({ ...req, resolve }));
+  const onWebLoginDone = (url) => {
+    const r = webLogin?.resolve;
+    setWebLogin(null);
+    r?.(url);
+  };
+
   const onSocial = async (p) => {
     setErr(''); setNote('');
     if (p === PROVIDERS.APPLE) {
@@ -149,6 +159,7 @@ export default function Login() {
     setBusy(true);
     const r = p === PROVIDERS.GOOGLE ? await signInWithGoogle() : await signInWithSocialWeb(p, {
       onWaiting: () => setNote(`${PROVIDER_SHORT[p]} 로그인 결과를 확인하는 중입니다… 잠시만 기다려 주세요.`),
+      openInApp,
     });
     setNote('');
     if (r.ok) { await go(r.uid); setBusy(false); return; }
@@ -557,6 +568,8 @@ export default function Login() {
           <ActivityIndicator size="large" color={C.green} />
         </View>
       )}
+
+      <SocialLoginSheet request={webLogin} onDone={onWebLoginDone} />
 
       <Modal visible={!!legal} animationType="slide" onRequestClose={() => setLegal(null)}>
         <View style={{ flex: 1, backgroundColor: C.surface, paddingTop: insets.top }}>
