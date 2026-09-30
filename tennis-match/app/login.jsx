@@ -144,10 +144,10 @@ export default function Login() {
   /* 앱 안 로그인 화면(카카오·안드로이드) — socialSignIn 이 열어 달라고 하면 띄우고, 끝나면 주소를 돌려준다 */
   const [webLogin, setWebLogin] = useState(null);
   const openInApp = (req) => new Promise((resolve) => setWebLogin({ ...req, resolve }));
-  const onWebLoginDone = (url) => {
+  const onWebLoginDone = (url, trail) => {
     const r = webLogin?.resolve;
     setWebLogin(null);
-    r?.(url);
+    r?.({ url, trail });
   };
 
   const onSocial = async (p) => {

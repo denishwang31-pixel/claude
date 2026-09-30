@@ -27,19 +27,21 @@ export function SocialLoginSheet({ request, onDone }) {
   const [loading, setLoading] = useState(true);
   const web = useRef(null);
   const finished = useRef(false);
+  const trail = useRef([]);        // 진단용 — 거쳐 간 주소(호스트·경로만, 값은 안 남김)
   const visible = !!request;
   /* 새 로그인을 열 때마다 처음부터 */
-  useEffect(() => { finished.current = false; setLoading(true); }, [request]);
+  useEffect(() => { finished.current = false; trail.current = []; setLoading(true); }, [request]);
 
   const finish = (url) => {
     if (finished.current) return;
     finished.current = true;
-    onDone?.(url || '');
+    onDone?.(url || '', trail.current.slice(-8).join(' → '));
   };
 
   const onRequest = (req) => {
     const url = String(req?.url || '');
     const what = webLoginDecision(url, request?.returnUrl);
+    trail.current.push(what === 'load' ? url.split('?')[0].replace(/^https?:\/\//, '').slice(0, 60) : `[${url.split(':')[0]}]`);
     if (what === 'result') { finish(url); return false; }
     if (what === 'external') {
       Linking.openURL(url).catch(() => {

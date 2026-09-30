@@ -278,8 +278,11 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
   let lastErr = null;
   let backUrl = '';
   let got = null;
+  let trail = '';
   if (inApp) {
-    backUrl = await openInApp({ url, returnUrl, title: '카카오 로그인' });
+    const r = await openInApp({ url, returnUrl, title: '카카오 로그인' });
+    backUrl = typeof r === 'string' ? r : (r?.url || '');
+    trail = typeof r === 'string' ? '' : (r?.trail || '');
     if (!backUrl) got = await fetchHandoff(state);     // 화면을 닫기 직전에 서버까지는 갔을 수도 있다
     result = { type: backUrl ? 'success' : 'dismiss' };
   } else {
@@ -313,8 +316,11 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
       await clearPending();
       return finishSocial(got, got.provider || provider);
     }
-    /* 앱 안 화면을 사용자가 닫은 것 — 조용히 */
-    if (inApp) { await clearPending(); return { ok: false, cancelled: true, error: '' }; }
+    /* 앱 안 화면을 사용자가 닫은 것 — 오류는 아니지만, 어디까지 갔는지 한 줄 남긴다(진단) */
+    if (inApp) {
+      await clearPending();
+      return { ok: false, cancelled: true, error: '', hint: trail ? `카카오 로그인을 마치지 않고 닫았습니다.\n(거쳐 간 곳: ${trail})` : '' };
+    }
     /* 끝내 없으면 기억은 남겨 둔다 — 나중에 앱으로 돌아올 때 checkPendingSocial 이 한 번 더 본다 */
     const hint = socialClosedHint(provider);
     const diag = `(창 ${result?.type || '없음'} · 들어온 주소 ${seen.length ? seen.join(', ') : '없음'})`;
