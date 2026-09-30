@@ -465,6 +465,11 @@ console.log('[카카오톡을 거쳐 늦게 온 로그인 결과도 받는다]')
   ok(/pollHandoff\(state, HANDOFF_POLL_MS\)/.test(signSrc), '앱 주소로 못 돌아오면 서버에 맡긴 결과를 찾는다');
   ok(/checkPendingSocial/.test(layoutSrc) && /AppState/.test(layoutSrc), '앱으로 돌아올 때 맡긴 결과를 한 번 더 찾는다');
   ok(/\[S12\]/.test(socialClosedHint('kakao')), '끝내 결과가 없으면 번호 붙은 안내');
+  /* 2026-09-30: 안드로이드 openAuthSessionAsync 는 앱이 잠깐 앞에 나오면 로그인 창을 강제로 닫는다
+     → 카카오 콜백이 서버에 한 번도 안 왔다. 안드로이드는 평범한 창 + 직접 기다리기. */
+  ok(/android\s*\n?\s*\?\s*await WebBrowser\.openBrowserAsync\(url/.test(signSrc), '안드로이드는 로그인 창을 강제로 닫지 않는 방식으로 연다');
+  ok(/waitForResult\(RN\.AppState, state/.test(signSrc), '안드로이드는 결과(앱 주소·맡긴 결과)를 직접 기다린다');
+  ok(/ACTIVE_GIVEUP_MS/.test(signSrc), '사용자가 창을 닫고 앱에 머물면 잠시 뒤 포기한다');
 }
 
 console.log('[로그인 복귀 주소는 화면 이동에서 뺀다]');
