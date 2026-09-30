@@ -278,20 +278,23 @@ jobs:
           npx --yes firebase-tools@$FIREBASE_TOOLS deploy \
             --only hosting --project tennis-match-52b31 --non-interactive
 
-      # 카카오·네이버 로그인 서버(socialAuth)가 쓸 키를 functions/.env 로 넘긴다.
+      # 카카오·네이버 로그인 서버(socialAuth)와 대회 [지금 찾기](onOpenSyncRequested)가
+      # 쓸 키를 functions/.env 로 넘긴다.
       # ⚠️ 값은 찍지 않는다(있다/없다만). 빈 값은 적지 않는다 — 없으면 그 로그인만
       #    "서버 설정 없음"으로 안내되고 다른 함수는 멀쩡히 올라간다.
       # ⚠️ .env 는 저장소에 없다(.gitignore). 러너 안에서만 만들어 배포에 싣는다.
-      - name: 서버 함수 키 (카카오·네이버 로그인)
+      - name: 서버 함수 키 (카카오·네이버 로그인 · 대회 찾기)
         if: env.DO_FUNCTIONS == 'true'
         env:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
           KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
         run: |
           : > functions/.env.tmp
-          for k in KAKAO_REST_KEY KAKAO_CLIENT_SECRET NAVER_CLIENT_ID NAVER_CLIENT_SECRET; do
+          for k in KAKAO_REST_KEY KAKAO_CLIENT_SECRET NAVER_CLIENT_ID NAVER_CLIENT_SECRET ANTHROPIC_API_KEY ANTHROPIC_WORKSPACE_ID; do
             v="${!k}"
             if [ -n "$v" ]; then
               printf '%s=%s\n' "$k" "$v" >> functions/.env.tmp

@@ -6,6 +6,8 @@
 #
 # 필요한 시크릿 (Settings → Secrets and variables → Actions)
 #   ANTHROPIC_API_KEY         Claude API 키 (새로 넣어야 함)
+#   ANTHROPIC_WORKSPACE_ID    (선택) 키가 워크스페이스에 속하지 않을 때만 — 워크스페이스를
+#                             골라 만든 키면 필요 없다
 #   FIREBASE_SERVICE_ACCOUNT  이미 배포에 쓰는 것
 #
 # ⚠️ 예약 실행(schedule)은 **기본 브랜치에 있는 이 파일**로만 돈다. 그래서
@@ -68,6 +70,7 @@ jobs:
       - name: 대회 모으기·반영
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
           GOOGLE_CLOUD_PROJECT: tennis-match-52b31
           # 예약 실행은 실제 반영, 손으로 누를 땐 기본이 시험 실행
