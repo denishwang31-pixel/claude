@@ -58,6 +58,7 @@ export function Attendance({ clubId, members, meetings, isAdmin, flash, venues =
   const otherVenues = useMemo(() => groupByVenue(other, venues), [other, venues]);
   const [openId, setOpenId] = useState(null);
   const [otherOpen, setOtherOpen] = useState(false);
+  const [doneOpen, setDoneOpen] = useState(false);   // 확정한 출석부 목록 펼침
   const mt = open.find((m) => m.id === openId) || mine[0] || open[0] || null;
   const viewingOther = !!mt && other.some((m) => m.id === mt.id);
   const venueName = (m) => venues.find((v) => v.id === m?.venueId)?.name || m?.place || '';
@@ -206,20 +207,35 @@ export function Attendance({ clubId, members, meetings, isAdmin, flash, venues =
             </>
           )}
 
-          {/* 잘못 확정했을 때 되돌릴 길 */}
+          {/* 잘못 확정했을 때 되돌릴 길 — 평소엔 한 줄로 접어 둔다(목록이 줄줄이 붙으면 지저분하다, 앱 주인) */}
           {isAdmin && confirmed.length > 0 && (
             <View style={{ marginTop: 14 }}>
-              <Text style={{ fontSize: 11.5, color: C.faint, marginBottom: 6 }}>최근 확정한 출석부</Text>
-              {confirmed.map((m) => (
-                <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 }}>
-                  <Text style={{ fontSize: 12.5, color: C.sub }}>
-                    {label(m)} {venueName(m)} · 출석 {Object.values(m.attendance || {}).filter(Boolean).length}명
-                  </Text>
-                  <Pressable hitSlop={8} onPress={() => { updateMeeting(clubId, m.id, { attendanceConfirmed: false }); setOpenId(m.id); flash?.('출석부를 다시 열었습니다'); }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: C.green }}>다시 열기</Text>
-                  </Pressable>
+              <Pressable onPress={() => setDoneOpen(!doneOpen)}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12,
+                  backgroundColor: C.fill, borderWidth: 1, borderColor: C.border,
+                }}>
+                <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.sub }}>확정한 출석부 · 최근 {confirmed.length}건</Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: C.green }}>{doneOpen ? '접기 ▲' : '펼치기 ▼'}</Text>
+              </Pressable>
+              {doneOpen && (
+                <View style={{ marginTop: 6, paddingHorizontal: 4 }}>
+                  {confirmed.map((m, i) => (
+                    <View key={m.id} style={{
+                      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8,
+                      borderTopWidth: i ? 1 : 0, borderTopColor: '#f1f5f9',
+                    }}>
+                      <Text style={{ fontSize: 12.5, color: C.sub, flex: 1 }}>
+                        {label(m)} {venueName(m)} · 출석 {Object.values(m.attendance || {}).filter(Boolean).length}명
+                      </Text>
+                      <Pressable hitSlop={8} onPress={() => { updateMeeting(clubId, m.id, { attendanceConfirmed: false }); setOpenId(m.id); setDoneOpen(false); flash?.('출석부를 다시 열었습니다'); }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: C.green }}>다시 열기</Text>
+                      </Pressable>
+                    </View>
+                  ))}
                 </View>
-              ))}
+              )}
             </View>
           )}
         </View>

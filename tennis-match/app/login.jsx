@@ -523,17 +523,22 @@ export default function Login() {
                    알림 실시간 빈자리"인데, 셋 다 이 앱에 없는 기능이다.
                    첫 화면에 없는 기능을 적으면 받은 사람이 그걸 기대하고
                    들어왔다가 못 찾는다. 실제로 있는 것 세 가지로 바꿨다. */}
+            {/* 2×2 — 클럽 운영 둘 + 클럽 밖 사람도 끌리는 둘(대회·코트).
+                ⚠️ 실제로 있는 기능만. 용품·코치는 아직 숨겨 둔 메뉴라 적지 않는다.
+                   대회 "매일 갱신"도 적지 않는다 — 자동 갱신 키가 없으면 멈춰 있다. */}
             <View style={[{
-              flexDirection: 'row', marginTop: S.xxl,
+              flexDirection: 'row', flexWrap: 'wrap', marginTop: S.xxl,
               backgroundColor: C.surface, borderRadius: R.lg,
               borderWidth: 1, borderColor: C.border,
-              paddingVertical: S.md, paddingHorizontal: S.sm,
+              paddingVertical: S.sm, paddingHorizontal: S.sm,
             }, SHADOW.sm]}>
               {[
                 ['schedule', '일정 · 참석 투표', '누르면 바로 반영'],
                 ['match', '대진 자동 편성', '출전 수까지 고르게'],
+                ['tournament', '대회 찾기', '협회·오픈 대회 한곳에'],
+                ['courts', '코트 찾기', '서울·경기 예약 바로가기'],
               ].map(([icon, title, sub]) => (
-                <View key={title} style={{ flex: 1, alignItems: 'center', paddingHorizontal: 3 }}>
+                <View key={title} style={{ width: '50%', alignItems: 'center', paddingHorizontal: 3, paddingVertical: S.sm }}>
                   <Icon name={icon} size={21} color={C.green} />
                   <Text numberOfLines={1} style={{
                     fontSize: 12, fontWeight: '700', color: C.text, marginTop: 6,
