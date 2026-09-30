@@ -9,7 +9,7 @@
 >
 > - 상태는 `[ ]` 미처리 / `[x]` 처리됨 으로만 표시한다.
 > - 처리된 항목은 지우지 않는다. 지우면 "이거 했었나?"를 다시 조사하게 된다.
-> - 마지막 갱신: 2026-09-25 (맨 위 「0. 출시 체크리스트」를 새로 정리 — 아래 A~E 는 기록)
+> - 마지막 갱신: 2026-09-30 (카카오·네이버 로그인 완료 — 네이버 검수만 남음)
 
 ---
 
@@ -72,10 +72,10 @@
   둘 다 새 빌드 없이 키만 넣으면 켜지므로 출시 전후 어느 때 켜도 된다.
 
 **카카오** (40~60대 회원에게 가장 중요)
-- [ ] [주인] developers.kakao.com 에서 애플리케이션 만들기 → **REST API 키**를 GitHub Secrets `KAKAO_REST_KEY` 에
-- [ ] [주인] 카카오 로그인 사용 켜기 · 리다이렉트 주소 등록: `https://tennis-match-52b31.web.app/auth/kakao/callback`
-- [ ] [주인] 동의 항목: 닉네임 필수, 프로필 사진·이메일 선택 (이메일 없어도 가입된다 — 이메일 필수는 비즈 앱 검수가 필요할 수 있다)
-- [ ] [주인] Client Secret 을 켰다면 `KAKAO_CLIENT_SECRET` 에 (안 켰으면 비워 둔다)
+- [x] [주인] developers.kakao.com 에서 애플리케이션 만들기 → **REST API 키**를 GitHub Secrets `KAKAO_REST_KEY` 에 (2026-09-30)
+- [x] [주인] 카카오 로그인 사용 켜기 · 리다이렉트 주소 등록: `https://tennis-match-52b31.web.app/auth/kakao/callback` (새 콘솔은 플랫폼 키 › REST API 키 안에 있다)
+- [ ] [주인] 동의 항목: 닉네임 필수, 프로필 사진·이메일 선택 — 새 콘솔에서 아직 못 찾음. 없어도 로그인은 되고 이름만 직접 입력한다
+- [x] [주인] Client Secret — 새 콘솔은 기본으로 켜져 있어 `KAKAO_CLIENT_SECRET` 에 넣었다 (2026-09-30)
 - [x] [코드] 앱 로그인 흐름 · 서버 함수 · 되돌아올 주소 처리 · 검사(서버 39건, 앱 쪽 포함)
 
 **네이버**
@@ -83,14 +83,15 @@
       → 받을 정보: 이름(또는 별명) 필수, 프로필 사진 선택
       → 웹 환경: 서비스 주소 `https://tennis-match-52b31.web.app`,
         콜백 주소 `https://tennis-match-52b31.web.app/auth/naver/callback`
-- [ ] [주인] `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` 을 GitHub Secrets 에 (Secret 은 **서버에만** 들어간다)
+- [x] [주인] `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` 을 GitHub Secrets 에 (2026-09-30, 로그인 확인)
 - [ ] [주인] ⚠️ **네이버 검수** — 받기 전에는 개발자 센터에 테스터로 등록한 아이디만 로그인된다. 며칠 걸린다.
 - [x] [코드] 카카오와 같은 서버 함수로 처리
 
 **카카오·네이버 공통 — 키를 넣은 뒤**
-- [ ] [주인] 서버 함수의 서비스 계정에 **서비스 계정 토큰 생성자**(`roles/iam.serviceAccountTokenCreator`) 역할
+- [x] [주인] 서버 함수의 서비스 계정(`-compute@`)에 **서비스 계정 토큰 생성자**(`roles/iam.serviceAccountTokenCreator`) 역할 (2026-09-30)
       — 없으면 로그인 마지막에 [S5] 가 뜬다
-- [ ] [주인] 「테니스매치 배포」를 손으로 한 번(**Cloud Functions 체크**) — 서버가 키를 받고, 앱 화면(OTA)에도 키가 실린다
+- [x] [주인] 「테니스매치 배포」를 손으로 한 번(**Cloud Functions 체크**) (2026-09-30)
+- [x] [코드] 안드로이드 카카오는 **앱 안 로그인 화면(WebView)** — 바깥 창은 [로그인] 순간 닫혀 카카오 콜백이 서버에 한 번도 오지 않았다(social-log 로 확인). 카카오톡으로 로그인도 됨(2026-09-30)
 
 **애플** — iOS 를 낼 때만 필요(안드로이드는 불필요)
 - [ ] [주인] Apple Developer Program 가입 — 연 99달러(개인은 D-U-N-S 불필요)
