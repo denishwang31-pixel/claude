@@ -18,11 +18,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, Linking, Alert } from 'react-native';
 import {
   subOpenTournaments, addOpenTournament, updateOpenTournament, deleteOpenTournament,
+  requestOpenSync, subLatestOpenSync,
 } from '../lib/firestore';
 import {
   OPEN_STATE, OPEN_STATE_LABEL, OPEN_STATE_TONE,
   openState, openStatusLine, periodText, regionText,
-  visibleOpen, sortOpen, openSidos, nearbyNote, validateOpen,
+  visibleOpen, sortOpen, openSidos, nearbyNote, validateOpen, syncRunView,
 } from '../lib/openTournament';
 import { SIDO_LIST } from '../lib/regions';
 import { DateField, Label } from './pickers';
@@ -53,6 +54,27 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
   const [draft, setDraft] = useState(blank());
 
   useEffect(() => subOpenTournaments(setAll), []);
+
+  /* [지금 찾기] — 매일 02시 갱신을 기다리지 않고 한 번 더 찾는다(앱 관리자만) */
+  const [syncRun, setSyncRun] = useState(null);
+  const [asking, setAsking] = useState(false);
+  useEffect(() => (isAppAdmin ? subLatestOpenSync(setSyncRun) : undefined), [isAppAdmin]);
+  const sync = syncRunView(syncRun);
+  const findNow = () => Alert.alert(
+    '지금 대회 찾기',
+    '협회·대회 사이트와 웹 검색으로 접수 중·예정 대회를 지금 찾아 목록에 반영합니다. 2~5분 걸리고, 한 번 돌 때마다 검색 비용이 듭니다.',
+    [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '찾기',
+        onPress: async () => {
+          setAsking(true);
+          try { await requestOpenSync(me); } catch (e) { flash(`요청하지 못했습니다: ${e?.message || e}`); }
+          setAsking(false);
+        },
+      },
+    ],
+  );
 
   const sidos = useMemo(() => openSidos(all), [all]);
 
@@ -264,6 +286,28 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
         </View>
       )}
 
+      {isAppAdmin && (
+        <Card style={{ marginTop: 10, paddingVertical: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={F.bodyBold}>자동 갱신 · 매일 새벽 2시</Text>
+              <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
+                오늘 새로 공지된 대회는 오른쪽 버튼으로 바로 찾을 수 있습니다
+              </Text>
+            </View>
+            <Btn small tone="primary" disabled={sync.busy || asking} onPress={findNow}>
+              {sync.busy || asking ? '찾는 중…' : '지금 찾기'}
+            </Btn>
+          </View>
+          {!!sync.text && (
+            <Text style={{
+              fontSize: 11.5, marginTop: 8, lineHeight: 16,
+              color: sync.tone === 'danger' ? C.danger : sync.tone === 'green' ? C.green2 : C.faint,
+            }}>{sync.text}</Text>
+          )}
+        </Card>
+      )}
+
       {/* 마감된 대회는 목록에서 사라진다. 정리할 사람(앱 관리자)만 따로 본다. */}
       {isAppAdmin && (
         <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
@@ -285,7 +329,7 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
           icon="🏆"
           title={showDone && isAppAdmin ? '마감·지난 대회가 없습니다' : '지금 접수 중이거나 곧 접수하는 대회가 없습니다'}
           body={isAppAdmin
-            ? '아래 [대회 등록]으로 요강을 옮겨 적으세요.'
+            ? '위 지금 찾기 버튼으로 바로 찾거나, 아래 [대회 등록]으로 요강을 옮겨 적으세요.'
             : '대회가 등록되면 여기에 표시됩니다. 지역을 바꿔서 찾아보세요.'}
         />
       ) : list.map((t) => {

@@ -32,3 +32,6 @@ design-review/
 # 만든다. 커밋해 두면 앱 안의 글을 고쳤을 때 웹 페이지만 예전 글로 남고,
 # 그 상태는 아무도 눈치채지 못한다. 배포할 때마다 새로 만든다.
 public/
+
+# 서버 함수용 공용 코드 사본 — 배포 직전에 scripts/copy-functions-shared.mjs 가 만든다
+functions/shared/

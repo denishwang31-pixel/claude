@@ -1099,3 +1099,76 @@ exports.socialAuth = onRequest({ ...REGION, cors: false, maxInstances: 5 }, asyn
   const url = await socialAuthLib.handle({ path: req.path, query: req.query }, deps);
   res.redirect(302, url);
 });
+
+/* ============================================================
+   대회 [지금 찾기] — 앱 관리자가 누르면 매일 02시 작업을 지금 한 번 돌린다
+
+   흐름: 앱이 openSyncRuns/{id} 를 status:'requested' 로 만든다(규칙: 앱 관리자만)
+         → 여기서 running → done / failed / skipped 로 바꾼다. 앱은 그 문서를 지켜본다.
+   찾는 코드는 src/lib/tournamentSearch.js 그대로(배포 때 functions/shared 로 복사됨).
+
+   ⚠️ 키는 functions/.env 의 ANTHROPIC_API_KEY(배포 workflow 가 GitHub Secrets 에서 씀).
+      없으면 이 요청만 failed 로 끝나고 다른 함수에는 영향이 없다.
+   ⚠️ 한 번에 하나만. 10분 안에 돌고 있는 것이 있으면 새 요청은 skipped.
+   ⚠️ 이벤트 함수는 최대 9분. 찾기가 그보다 길면 running 으로 남는데,
+      앱은 15분 넘은 running 을 "시간 초과"로 보여 준다.
+   ============================================================ */
+const OPEN_SYNC_RUNS = 'openSyncRuns';
+const OPEN_SYNC_BUSY_MS = 10 * 60 * 1000;
+
+exports.onOpenSyncRequested = onDocumentCreated(
+  { ...REGION, document: `${OPEN_SYNC_RUNS}/{runId}`, timeoutSeconds: 540, memory: '1GiB', maxInstances: 1 },
+  async (event) => {
+    const req = event.data?.data();
+    const ref = event.data?.ref;
+    if (!req || !ref || req.status !== 'requested') return;
+    const set = (patch) => ref.update(patch).catch((e) => logger.error('openSync status', e));
+
+    /* 규칙이 막지만 한 번 더 — 앱 관리자가 아니면 돌리지 않는다(돈이 드는 일) */
+    const admin = req.by ? await db.collection('appAdmins').doc(req.by).get() : null;
+    if (!admin?.exists) { await set({ status: 'failed', reason: '앱 관리자만 돌릴 수 있습니다.', doneAt: Date.now() }); return; }
+
+    /* 한 필드만 걸어 조회한다(두 필드면 복합 색인이 필요하다) */
+    const recent = await db.collection(OPEN_SYNC_RUNS)
+      .where('startedAt', '>', Date.now() - OPEN_SYNC_BUSY_MS).get();
+    if (recent.docs.some((d) => d.id !== ref.id && d.get('status') === 'running')) { await set({ status: 'skipped', reason: '이미 찾는 중입니다. 끝나면 목록에 반영됩니다.', doneAt: Date.now() }); return; }
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      await set({ status: 'failed', reason: '서버에 ANTHROPIC_API_KEY 가 없습니다. GitHub Secrets 에 넣고 배포(서버 함수 포함)를 다시 돌려 주세요.', doneAt: Date.now() });
+      return;
+    }
+
+    await set({ status: 'running', stage: 'fetch', startedAt: Date.now() });
+    try {
+      const [{ default: Anthropic }, search, sync] = await Promise.all([
+        import('@anthropic-ai/sdk'),
+        import('./shared/tournamentSearch.js'),
+        import('./shared/openSync.js'),
+      ]);
+      const client = new Anthropic(search.clientOptions(process.env));
+      const r = await search.runTournamentSync({
+        client, db, FieldValue,
+        today: sync.seoulToday(),
+        by: `manual:${req.by}`,
+        log: (...a) => logger.info('[openSync]', ...a),
+        onStage: (stage) => { set({ stage }); },
+      });
+      await set({
+        status: 'done',
+        stage: 'done',
+        found: r.found.length,
+        added: r.added,
+        updated: r.updated,
+        deleted: r.deletes.length,
+        skippedCount: r.skipped.length,
+        names: r.upserts.slice(0, 20).map(({ data }) => String(data.name || '').slice(0, 60)),
+        doneAt: Date.now(),
+      });
+    } catch (e) {
+      logger.error('openSync failed', e);
+      let reason = String(e?.message || e);
+      try { reason = (await import('./shared/tournamentSearch.js')).explainApiError(e); } catch { /* 그대로 */ }
+      await set({ status: 'failed', reason: reason.slice(0, 300), doneAt: Date.now() });
+    }
+  },
+);

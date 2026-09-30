@@ -2,6 +2,9 @@
 import {
   AUTO_SOURCE, normDate, normSido, nameKey, sameKey, autoId, cleanItem, planSync, seoulToday,
 } from '../src/lib/openSync.js';
+import { clientOptions, explainApiError, runTournamentSync, SOURCES } from '../src/lib/tournamentSearch.js';
+import { syncRunView } from '../src/lib/openTournament.js';
+import { readFileSync } from 'node:fs';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.log('  ✗', m); } };
@@ -93,6 +96,70 @@ console.log('[넣고 지울 것 정하기]');
 console.log('[한국 날짜]');
 eq(seoulToday(new Date('2026-09-24T17:00:00Z')), '2026-09-25', 'UTC 17시 = 한국 02시, 다음 날');
 eq(seoulToday(new Date('2026-09-24T14:59:00Z')), '2026-09-24', '한국 23:59 는 그날');
+
+console.log('[Claude 클라이언트 설정]');
+eq(clientOptions({ ANTHROPIC_API_KEY: 'k' }), { apiKey: 'k' }, '워크스페이스 ID 가 없으면 헤더를 붙이지 않는다');
+eq(clientOptions({ ANTHROPIC_API_KEY: 'k', ANTHROPIC_WORKSPACE_ID: ' wrkspc_1 ' }).defaultHeaders,
+  { 'anthropic-workspace-id': 'wrkspc_1' }, '있으면 헤더로');
+ok(/워크스페이스/.test(explainApiError({ status: 400, message: 'This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header' })),
+  '워크스페이스 오류는 사람 말로');
+ok(/401/.test(explainApiError({ status: 401, message: 'invalid x-api-key' })), '키가 틀리면 401 안내');
+ok(!SOURCES.some((s) => /m\.ikata\.org/.test(s.url)), '없어진 KATA 모바일 공지(404)는 뺐다');
+
+console.log('[공용 코드는 바깥 라이브러리를 부르지 않는다 — 서버 함수로 복사되므로]');
+for (const f of ['tournamentSearch.js', 'openSync.js', 'openTournament.js', 'regions.js']) {
+  const src = readFileSync(new URL(`../src/lib/${f}`, import.meta.url), 'utf8');
+  const bad = [...src.matchAll(/^import .* from ['"]([^'"]+)['"]/gm)].map((m) => m[1]).filter((x) => !/^\.\/(openSync|openTournament|regions)\.js$/.test(x));
+  eq(bad, [], `${f} 의 import`);
+}
+
+console.log('[찾기 한 번 — 가짜 Claude·가짜 Firestore]');
+{
+  const fakeClient = {
+    beta: { messages: {
+      stream: () => ({ finalMessage: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: '보고서' }], usage: {} }) }),
+      create: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ tournaments: [{
+        name: '가을 오픈', host: '', org: 'KATO', sido: '서울', gungu: '', place: '', startDate: '2026-10-20', endDate: '',
+        signupFrom: '2026-09-20', signupTo: '2026-10-10', signupFromTime: '', signupToTime: '', divisions: ['신인부'], fee: 50000,
+        link: 'https://example.com/a', sourceUrl: 'https://example.com', note: '' }] }) }] }),
+    } },
+  };
+  const writes = [];
+  const fakeDb = {
+    collection: () => ({ get: async () => ({ docs: [] }), doc: (id) => ({ id }) }),
+    batch: () => ({ set: (ref, data) => writes.push([ref.id, data.createdBy]), delete: () => {}, commit: async () => {} }),
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new TypeError('fetch failed'); };
+  const stages = [];
+  const r = await runTournamentSync({
+    client: fakeClient, db: fakeDb, FieldValue: { serverTimestamp: () => 'ts' }, today: TODAY,
+    by: 'manual:u1', onStage: (s) => stages.push(s),
+  });
+  globalThis.fetch = realFetch;
+  eq([r.found.length, r.added, r.updated], [1, 1, 0], '한 건 찾고 새로 넣음');
+  eq(writes.map((w) => w[1]), ['manual:u1'], '누가 돌렸는지 남긴다');
+  eq(stages, ['fetch', 'search', 'extract', 'write'], '단계 순서');
+  ok(r.pages.every((p) => !p.ok && /TypeError/.test(p.note)), '사이트를 못 열어도 계속한다');
+  const dry = [];
+  fakeDb.batch = () => ({ set: () => dry.push(1), delete: () => {}, commit: async () => {} });
+  globalThis.fetch = async () => { throw new TypeError('x'); };
+  await runTournamentSync({ client: fakeClient, db: fakeDb, FieldValue: { serverTimestamp: () => 'ts' }, today: TODAY, dryRun: true });
+  globalThis.fetch = realFetch;
+  eq(dry.length, 0, '시험 실행은 쓰지 않는다');
+}
+
+console.log('[지금 찾기 상태 한 줄]');
+{
+  const NOW = 1_000_000_000_000;
+  eq(syncRunView(null).text, '', '요청한 적 없으면 비움');
+  ok(syncRunView({ status: 'requested', at: NOW - 1000 }, NOW).busy, '막 요청 — 찾는 중');
+  ok(/웹에서/.test(syncRunView({ status: 'running', stage: 'search', startedAt: NOW - 60000 }, NOW).text), '단계 표시');
+  const stale = syncRunView({ status: 'running', startedAt: NOW - 20 * 60000 }, NOW);
+  ok(!stale.busy && /시간 초과/.test(stale.text), '15분 넘게 running 이면 끝난 것으로 — 버튼이 영영 잠기지 않게');
+  eq(syncRunView({ status: 'done', added: 2, updated: 3, deleted: 0 }, NOW).text, '찾기 완료 · 새로 2건 · 갱신 3건', '완료 요약');
+  ok(/실패 · 키/.test(syncRunView({ status: 'failed', reason: '키' }, NOW).text), '실패 이유');
+}
 
 console.log(`\n대회 자동 갱신 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

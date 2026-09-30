@@ -23,7 +23,7 @@ import {
 import { dowName } from '../../src/lib/schedule';
 import { ddayOf } from '../../src/lib/agenda';
 import { membersInScope } from '../../src/lib/scope';
-import { canRsvpSelf, rsvpBlockReason } from '../../src/lib/scheduleView';
+import { canRsvpSelf, rsvpBlockReason, splitByTie } from '../../src/lib/scheduleView';
 import {
   RSVP, isAnswered, viewModesFor, roleTone, JOIN_STATUS, screenRef,
 } from '../../src/lib/constants';
@@ -124,10 +124,17 @@ export default function Home() {
      홈이 느려지면 앱 전체가 느린 것처럼 느껴진다. 가까운 것만 보여주고
      나머지는 [일정] 탭으로 보낸다. */
   const HOME_LIMIT = 6;
-  const homeList = visible.slice(0, HOME_LIMIT);
-  const moreCount = visible.length - homeList.length;
+  /* 내 코트 모임이 먼저 — 운영진은 전 코트장 일정을 보지만, 맨 위 "다음 모임"
+     카드가 내가 나가지도 않는 코트의 06:00 모임이면 참석 버튼도 못 누르는
+     카드가 홈 한가운데를 차지한다. 일정·대진 화면과 같은 기준(meetingTie). */
+  const ordered = useMemo(() => {
+    const { mine, other } = splitByTie(visible, meVal, (venues || []).length);
+    return [...mine, ...other];
+  }, [visible, meVal, venues]);
+  const homeList = ordered.slice(0, HOME_LIMIT);
+  const moreCount = ordered.length - homeList.length;
 
-  const meeting = visible[0];
+  const meeting = ordered[0];
   const w = meeting ? weatherFor(meeting.date, meeting.forecast) : null;
 
   /* 다음 모임의 응답 현황.

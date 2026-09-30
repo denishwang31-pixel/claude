@@ -235,7 +235,39 @@ export function validateOpen(t) {
   return '';
 }
 
+/* ---------------- [지금 찾기] 진행 상태 ----------------
+   openSyncRuns 문서 하나를 화면 한 줄로. 서버 함수는 최대 9분이라,
+   15분이 넘도록 running/requested 인 것은 끝난 것(시간 초과)으로 본다. */
+export const SYNC_STALE_MS = 15 * 60 * 1000;
+const SYNC_STAGE = {
+  fetch: '협회 사이트 여는 중',
+  search: '웹에서 대회 찾는 중',
+  extract: '찾은 대회 정리 중',
+  write: '목록에 반영 중',
+};
+
+export function syncRunView(run, now = Date.now()) {
+  if (!run) return { busy: false, tone: 'faint', text: '' };
+  const since = run.startedAt || run.at || 0;
+  const stale = now - since > SYNC_STALE_MS;
+  if ((run.status === 'requested' || run.status === 'running') && !stale) {
+    const stage = run.status === 'requested' ? '요청 보냄' : (SYNC_STAGE[run.stage] || '찾는 중');
+    return { busy: true, tone: 'green', text: `${stage}… 보통 2~5분 걸립니다. 화면을 나가도 계속 찾습니다.` };
+  }
+  if (run.status === 'requested' || run.status === 'running') {
+    return { busy: false, tone: 'danger', text: '지난번 찾기가 끝나지 않았습니다(시간 초과). 다시 눌러 주세요.' };
+  }
+  if (run.status === 'done') {
+    const parts = [`새로 ${run.added || 0}건`, `갱신 ${run.updated || 0}건`];
+    if (run.deleted) parts.push(`끝나서 지움 ${run.deleted}건`);
+    return { busy: false, tone: 'green', text: `찾기 완료 · ${parts.join(' · ')}` };
+  }
+  if (run.status === 'skipped') return { busy: false, tone: 'faint', text: run.reason || '이미 찾는 중이었습니다.' };
+  return { busy: false, tone: 'danger', text: `찾기 실패 · ${run.reason || '알 수 없는 오류'}` };
+}
+
 export default {
+  syncRunView,
   OPEN_STATE, OPEN_STATE_LABEL, OPEN_STATE_TONE,
   lastDay, openState, openStatusLine, periodText, regionText,
   isOpenForSignup, visibleOpen, sortOpen, openSidos, nearbyNote, validateOpen,

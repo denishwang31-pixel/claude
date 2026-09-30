@@ -1074,6 +1074,19 @@ export const updateOpenTournament = (id, patch) =>
 
 export const deleteOpenTournament = (id) => deleteDoc(doc(db, 'openTournaments', id));
 
+/* 대회 [지금 찾기] — 앱 관리자가 요청 문서를 만들면 서버 함수(onOpenSyncRequested)가 찾는다.
+   상태(requested → running → done/failed/skipped)는 서버만 고친다. */
+export const requestOpenSync = (by) =>
+  addDoc(collection(db, 'openSyncRuns'), { status: 'requested', by, at: Date.now() });
+
+/** 가장 최근 요청 하나 — 앱 관리자만 읽을 수 있다 */
+export const subLatestOpenSync = (cb) =>
+  onSnapshot(
+    query(collection(db, 'openSyncRuns'), orderBy('at', 'desc'), limit(1)),
+    (s) => cb(s.docs[0] ? { id: s.docs[0].id, ...s.docs[0].data() } : null),
+    () => cb(null),
+  );
+
 /* ============================================================
    코트 정보 신고 — 링크가 죽었다, 없어진 코트다
 

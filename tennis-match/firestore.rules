@@ -454,6 +454,16 @@ service cloud.firestore {
       allow write: if isAppAdmin();
     }
 
+    /* 대회 [지금 찾기] 요청 — 앱 관리자가 만들고 서버 함수(onOpenSyncRequested)가 처리한다.
+       돈이 드는 일이라 앱 관리자만 만든다. 결과(상태)는 서버만 고친다. */
+    match /openSyncRuns/{runId} {
+      allow read: if isAppAdmin();
+      allow create: if isAppAdmin()
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.status == 'requested';
+      allow update, delete: if false;
+    }
+
     /* 코트 정보 신고 — "링크가 안 열린다"를 이용자가 알려 준다.
 
        코트 목록은 한 시점에 긁어 온 값이라 조용히 틀려진다. 수백 곳을
