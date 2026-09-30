@@ -24,7 +24,9 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { appendFileSync } from 'node:fs';
 import { planSync, seoulToday } from '../src/lib/openSync.js';
 
-const MODEL = process.env.TOURNAMENT_MODEL || 'claude-opus-5';
+/* 검색·정리는 Sonnet 으로 충분하다(앱 주인) — 매일 도는 일이라 비용이 Opus 의 절반 이하.
+   바꾸려면 워크플로 환경 변수 TOURNAMENT_MODEL 로. */
+const MODEL = process.env.TOURNAMENT_MODEL || 'claude-sonnet-5-5';
 const EFFORT = process.env.TOURNAMENT_EFFORT || 'high';
 const DRY_RUN = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
 const MAX_CONTINUATIONS = 5;
@@ -95,6 +97,7 @@ function researchPrompt(today, pages) {
     '- 대회 이름(요강 표기 그대로), 주최/주관, 소속 단체(KATO/KATA/KTA/지역협회/기타)',
     '- 시·도, 시·군·구, 경기장',
     '- 대회 기간(시작일·종료일), 접수 시작일·접수 마감일 — 날짜는 YYYY-MM-DD',
+    '- 접수 시작·마감 **시각**이 요강에 있으면 함께(예: 오전 9시 → 09:00). 없으면 적지 않는다',
     '- 종별(예: 신인부, 개나리부, 국화부, 오픈부), 참가비(원, 1팀 기준 숫자)',
     '- **참가 신청 페이지 주소**(있으면 꼭). 없으면 요강·공지 페이지 주소',
     '- 확인한 출처 주소',
@@ -164,13 +167,15 @@ const SCHEMA = {
         type: 'object',
         additionalProperties: false,
         required: ['name', 'host', 'org', 'sido', 'gungu', 'place', 'startDate', 'endDate',
-          'signupFrom', 'signupTo', 'divisions', 'fee', 'link', 'sourceUrl', 'note'],
+          'signupFrom', 'signupTo', 'signupFromTime', 'signupToTime', 'divisions', 'fee', 'link', 'sourceUrl', 'note'],
         properties: {
           name: S, host: S, org: S, sido: S, gungu: S, place: S,
           startDate: { type: 'string', description: 'YYYY-MM-DD, 모르면 빈 문자열' },
           endDate: { type: 'string', description: 'YYYY-MM-DD, 하루짜리거나 모르면 빈 문자열' },
           signupFrom: { type: 'string', description: 'YYYY-MM-DD, 모르면 빈 문자열' },
           signupTo: { type: 'string', description: 'YYYY-MM-DD, 모르면 빈 문자열' },
+          signupFromTime: { type: 'string', description: '접수 시작 시각 HH:MM(24시간, 한국시간). 요강에 없으면 빈 문자열' },
+          signupToTime: { type: 'string', description: '접수 마감 시각 HH:MM(24시간, 한국시간). 요강에 없으면 빈 문자열' },
           divisions: { type: 'array', items: S },
           fee: { type: 'integer', description: '참가비(원). 모르면 0' },
           link: { type: 'string', description: '참가 신청 페이지 주소. 없으면 요강 주소. 모르면 빈 문자열' },

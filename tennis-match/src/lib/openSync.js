@@ -21,7 +21,7 @@
       아예 새로 만들지 않는다(같은 대회가 두 줄로 보이지 않게).
    ============================================================ */
 import { SIDO_LIST } from './regions.js';
-import { openState, OPEN_STATE, validateOpen, lastDay } from './openTournament.js';
+import { openState, OPEN_STATE, validateOpen, lastDay, hm } from './openTournament.js';
 
 export const AUTO_SOURCE = 'auto';
 export const AUTO_PREFIX = 'auto_';
@@ -108,6 +108,9 @@ export function cleanItem(raw, today) {
     endDate,
     signupFrom: normDate(raw.signupFrom),
     signupTo: normDate(raw.signupTo),
+    /* 접수 시작·마감 시각(예: 09:00) — 알면 그 시각에 상태가 바뀐다 */
+    signupFromTime: hm(raw.signupFromTime),
+    signupToTime: hm(raw.signupToTime),
     divisions: (Array.isArray(raw.divisions) ? raw.divisions : String(raw.divisions || '').split(','))
       .map((x) => text(x, 30)).filter(Boolean).slice(0, 12),
     fee: Math.max(0, Math.round(Number(raw.fee) || 0)),

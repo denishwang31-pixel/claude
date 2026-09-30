@@ -58,6 +58,17 @@ console.log('\n[지금 어떤 단계인가]');
 
   eq(openState({ ...base, signupFrom: '2026-09-20' }, TODAY), OPEN_STATE.SOON,
     '접수 시작 전');
+  /* 접수 시각 — 오전 9시에 여는 대회가 0시부터 "접수 중"으로 보이지 않게 */
+  {
+    const t9 = { ...base, signupFrom: TODAY, signupFromTime: '09:00', signupTo: '2026-09-30', signupToTime: '18:00' };
+    eq(openState(t9, TODAY, '08:59'), OPEN_STATE.SOON, '오픈 당일 9시 전에는 접수 예정');
+    eq(openState(t9, TODAY, '09:00'), OPEN_STATE.SIGNUP, '9시 정각부터 접수 중');
+    eq(openState(t9, TODAY), OPEN_STATE.SIGNUP, '시각을 안 주면 예전처럼 날짜로만');
+    eq(openState({ ...t9, signupFrom: '2026-09-01' }, '2026-09-30', '18:00'), OPEN_STATE.CLOSED, '마감 당일 마감 시각이 지나면 마감');
+    eq(openState({ ...t9, signupFrom: '2026-09-01' }, '2026-09-30', '17:59'), OPEN_STATE.SIGNUP, '마감 시각 전에는 접수 중');
+    eq(openState({ ...t9, signupFromTime: '9시' }, TODAY, '08:00'), OPEN_STATE.SIGNUP, '모양이 틀린 시각은 무시');
+    ok(openStatusLine(t9, TODAY, '08:00').includes('09:00부터'), '안내 줄에 여는 시각');
+  }
   eq(openState({ ...base, signupFrom: '2026-09-01', signupTo: '2026-09-30' }, TODAY),
     OPEN_STATE.SIGNUP, '접수 기간 안');
   eq(openState({ ...base, signupTo: '2026-09-05' }, TODAY), OPEN_STATE.CLOSED,

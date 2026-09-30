@@ -66,7 +66,15 @@ export const lastDay = (t) => d(t?.endDate) || d(t?.startDate);
  * 판단 순서가 중요하다. 이미 끝난 대회는 접수 기간을 따지지 않고,
  * 대회 기간 중이면 접수가 열려 있든 말든 '진행 중'이다.
  */
-export function openState(t, today) {
+/** 'HH:MM' 만 받는다(모르면 '') */
+export const hm = (v) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v || '').trim()) ? String(v).trim() : '');
+
+/**
+ * 대회 상태. nowHm('HH:MM', 선택)을 주면 접수 **시작·마감 시각**까지 본다 —
+ * 오전 9시에 여는 대회가 0시부터 "접수 중"으로 보이지 않게, 오후 6시에 닫는 대회가
+ * 그날 밤까지 "접수 중"으로 남지 않게. 시각을 모르면 예전처럼 날짜로만.
+ */
+export function openState(t, today, nowHm = '') {
   if (!t) return OPEN_STATE.SOON;
   const start = d(t.startDate);
   const end = lastDay(t);
@@ -76,8 +84,11 @@ export function openState(t, today) {
 
   const from = d(t.signupFrom);
   const to = d(t.signupTo);
+  const now = hm(nowHm);
   if (to && today > to) return OPEN_STATE.CLOSED;
+  if (to && today === to && now && hm(t.signupToTime) && now >= hm(t.signupToTime)) return OPEN_STATE.CLOSED;
   if (from && today < from) return OPEN_STATE.SOON;
+  if (from && today === from && now && hm(t.signupFromTime) && now < hm(t.signupFromTime)) return OPEN_STATE.SOON;
   /* 접수 기간을 안 적은 대회가 흔하다(요강만 올라오고 날짜는 공지로).
      그때는 대회 전날까지 접수 중으로 본다 — "접수 예정"으로 두면
      영영 신청 못 하는 대회가 된다. */
@@ -86,15 +97,16 @@ export function openState(t, today) {
 }
 
 /** 카드에 붙일 한 줄 — 언제까지 신청해야 하는지가 제일 중요하다 */
-export function openStatusLine(t, today) {
-  const state = openState(t, today);
+export function openStatusLine(t, today, nowHm = '') {
+  const state = openState(t, today, nowHm);
   const to = d(t?.signupTo);
+  const at = (x) => (hm(x) ? ` ${hm(x)}` : '');
   if (state === OPEN_STATE.SIGNUP) {
-    return to ? `${to}까지 접수` : '접수 중 · 마감일은 요강 확인';
+    return to ? `${to}${at(t?.signupToTime)}까지 접수` : '접수 중 · 마감일은 요강 확인';
   }
   if (state === OPEN_STATE.SOON) {
     const from = d(t?.signupFrom);
-    return from ? `${from}부터 접수` : '접수 일정 미정';
+    return from ? `${from}${at(t?.signupFromTime)}부터 접수` : '접수 일정 미정';
   }
   if (state === OPEN_STATE.CLOSED) return '접수가 마감되었습니다';
   if (state === OPEN_STATE.LIVE) return '오늘 열리고 있습니다';

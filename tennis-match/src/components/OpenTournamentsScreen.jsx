@@ -32,6 +32,8 @@ import { C, S, R, F } from '../lib/theme';
 import { todayYmd } from '../lib/today';
 
 const today = () => todayYmd();
+/* 지금 시각 'HH:MM' — 접수 시작·마감 시각이 적힌 대회는 그 시각에 상태가 바뀐다 */
+const nowHm = () => { const n = new Date(); return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`; };
 const won = (n) => `${Number(n || 0).toLocaleString()}원`;
 
 const blank = () => ({
@@ -287,7 +289,7 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
             : '대회가 등록되면 여기에 표시됩니다. 지역을 바꿔서 찾아보세요.'}
         />
       ) : list.map((t) => {
-        const state = openState(t, today());
+        const state = openState(t, today(), nowHm());
         return (
           <Card key={t.id} style={{
             marginBottom: 10,
@@ -319,7 +321,7 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
               color: state === OPEN_STATE.SIGNUP ? C.green2
                 : state === OPEN_STATE.LIVE ? C.danger : C.sub,
             }}>
-              {openStatusLine(t, today())}
+              {openStatusLine(t, today(), nowHm())}
             </Text>
 
             {(t.divisions?.length > 0 || t.fee > 0) && (
