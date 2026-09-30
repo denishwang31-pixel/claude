@@ -46,7 +46,7 @@ const skillOf = (p, busuToNtrp) => {
   if (typeof p.ntrp === 'number' && p.ntrp > 0) return p.ntrp;
   const fromBusu = busuToNtrp ? busuToNtrp(p.busu) : null;
   if (fromBusu) return fromBusu;
-  return ({ A: 4.0, B: 3.5, C: 3.0, D: 2.5 })[p.grade] || 3.0;
+  return ({ A: 4.0, B: 3.5, C: 3.0, D: 2.5, E: 2.0, F: 1.5 })[p.grade] || 3.0;
 };
 
 /**

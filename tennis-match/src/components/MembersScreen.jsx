@@ -33,6 +33,8 @@ import {
 import { effectiveNtrp, careerText } from '../lib/ntrp';
 import { Label, MonthField } from './pickers';
 import { RegionPicker } from './RegionPicker';
+import { GradeRows } from './GradeRows';
+import { gradeCountFor, gradeSummary } from '../lib/grades';
 import { Segmented, AppButton, Touchable } from './native';
 import { Card, SectionTitle, Chip, Btn, Field, Divider } from './ui';
 import { C, S, R, F } from '../lib/theme';
@@ -45,6 +47,11 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
   const [adding, setAdding] = useState(false);
   const [bulkOn, setBulkOn] = useState(false);      // 코트장 일괄 배정 패널
   const [picked, setPicked] = useState({});
+  /* 조 배정 패널 — 한 줄에 한 사람, 누르면 바로 저장 */
+  const [gradeOn, setGradeOn] = useState(false);
+  const [gradeCount, setGradeCount] = useState(() => gradeCountFor(members.map((m) => m.grade)));
+  const [gradeVenue, setGradeVenue] = useState('');
+  const [gradeOnlyNone, setGradeOnlyNone] = useState(false);
   const [nm, setNm] = useState({
     name: '', gender: 'M', busu: '', grade: '', region: '', startedAt: '',
     role: ROLES.MEMBER, venueIds: [],
@@ -102,7 +109,7 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
       name: d.name.trim() || m.name,
       gender: d.gender,
       busu: d.busu,            // '' = 부수 미입력
-      grade: d.grade,          // '' = 조 선택 안함
+      ...(isAdmin ? { grade: d.grade } : {}),   // 조는 운영진만 정한다('' = 선택 안함)
       region: d.region || '',
       venueIds: d.venueIds,
       status: d.status,
@@ -315,6 +322,55 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
         </>
       )}
 
+      {/* 조(등급) 배정 — A 가 가장 높다. NTRP 가 없는 회원은 대진 실력 매칭에 이 값을 쓴다.
+         예전엔 회원 상세를 하나씩 열어야만 바꿀 수 있어서 "등급이 없다"로 보였다. */}
+      {isAdmin && (
+        <>
+          <SectionTitle right={
+            <Chip tone={gradeOn ? 'green' : 'outline'} onPress={() => setGradeOn(!gradeOn)}>
+              {gradeOn ? '닫기' : '열기'}
+            </Chip>
+          }>조(등급) 배정</SectionTitle>
+          {!gradeOn && (
+            <Text style={{ fontSize: 11.5, color: C.faint, marginTop: -4 }}>
+              {gradeSummary(members) || '아직 조를 매긴 회원이 없습니다'}
+            </Text>
+          )}
+          {gradeOn && (
+            <Card>
+              <Text style={{ fontSize: 11, color: C.sub, lineHeight: 16, marginBottom: 10 }}>
+                A 가 가장 높습니다. 누르면 바로 저장되고, 한 번 더 누르면 지워집니다.
+                NTRP 가 없는 회원은 대진을 짤 때 이 조를 실력으로 씁니다.
+                대회에서는 이 조와 따로 대회 등급을 매길 수 있습니다.
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
+                {venues.length > 0 && (
+                  <>
+                    <Chip tone={!gradeVenue ? 'green' : 'outline'} onPress={() => setGradeVenue('')}>전체</Chip>
+                    {venues.map((v) => (
+                      <Chip key={v.id} tone={gradeVenue === v.id ? 'green' : 'outline'} onPress={() => setGradeVenue(v.id)}>{v.name}</Chip>
+                    ))}
+                  </>
+                )}
+                <Chip tone={gradeOnlyNone ? 'green' : 'outline'} onPress={() => setGradeOnlyNone(!gradeOnlyNone)}>미배정만</Chip>
+              </View>
+              <GradeRows
+                people={members.filter((m) => (!gradeVenue || (m.venueIds || []).includes(gradeVenue))
+                  && (!gradeOnlyNone || !m.grade) && m.status !== '탈퇴')}
+                value={Object.fromEntries(members.map((m) => [m.id, m.grade || '']))}
+                onPick={(id, g) => updateMemberProfile(clubId, id, { grade: g }).catch(() => flash('저장하지 못했습니다'))}
+                count={gradeCount}
+                onCount={setGradeCount}
+                note={(m) => {
+                  const eff = effectiveNtrp(m);
+                  return [m.busu, eff.value != null ? `NTRP ${eff.value.toFixed(1)}` : ''].filter(Boolean).join(' · ');
+                }}
+              />
+            </Card>
+          )}
+        </>
+      )}
+
       {!!mergeJob && (
         <Card style={{ marginTop: 12, backgroundColor: mergeJob.status === 'failed' ? C.dangerBg : C.greenSoft }}>
           <Text style={{ fontSize: 14, fontWeight: '800', color: C.text }}>
@@ -376,12 +432,12 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                       <Text style={{ fontSize: 14, fontWeight: '700' }}>{m.name}</Text>
                       {isStaffRole(m.role) && <Chip tone={roleTone(m.role)}>{m.role}</Chip>}
+                      {!!m.grade && <Chip tone="lime">{m.grade}조</Chip>}
                       {!!m.busu && <Chip tone="soft">{m.busu}</Chip>}
                       {eff.value != null && <Chip tone="outline">NTRP {eff.value.toFixed(1)}</Chip>}
                     </View>
                     <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 2 }}>
                       {m.gender === 'M' ? '남' : '여'}
-                      {m.grade ? ` · ${m.grade}조` : ''}
                       {m.startedAt ? ` · 구력 ${careerText(m.startedAt)}` : ''}
                       {m.region ? ` · ${m.region}` : ''}
                       {m.status && m.status !== '활동' ? ` · ${m.status}` : ''}
@@ -422,6 +478,7 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                     )}
                   </View>
 
+                  {isAdmin && (
                   <View style={{ marginTop: S.md }}>
                     <Label hint="조를 쓰지 않는 클럽은 '선택 안함'">클럽 내부 조</Label>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
@@ -431,6 +488,7 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                       ))}
                     </View>
                   </View>
+                  )}
 
                   <View style={{ marginTop: S.md }}>
                     <Label hint="게스트 모집·클럽 검색에 쓰입니다">활동 지역</Label>

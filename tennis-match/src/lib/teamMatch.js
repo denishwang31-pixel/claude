@@ -23,7 +23,7 @@ function skillOf(p, busuToNtrp) {
   if (typeof p.ntrp === 'number' && p.ntrp > 0) return p.ntrp;
   const fromBusu = busuToNtrp ? busuToNtrp(p.busu) : null;
   if (fromBusu) return fromBusu;
-  const byGrade = { A: 4.0, B: 3.5, C: 3.0, D: 2.5 };
+  const byGrade = { A: 4.0, B: 3.5, C: 3.0, D: 2.5, E: 2.0, F: 1.5 };
   return byGrade[p.grade] || 3.0;
 }
 

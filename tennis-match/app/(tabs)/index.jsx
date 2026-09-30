@@ -297,10 +297,15 @@ export default function Home() {
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <Text style={F.h2} numberOfLines={1}>{club?.name || '테니스클럽'}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {/* 내 이름을 누르면 내 프로필 */}
+          <Pressable
+            accessibilityRole="button" accessibilityLabel="내 프로필"
+            hitSlop={8}
+            onPress={() => router.push({ pathname: '/(tabs)/more', params: { open: 'profile', from: 'home' } })}
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, opacity: pressed ? 0.6 : 1 })}>
             <Text style={{ fontSize: 12, color: C.sub }}>{meVal?.name}</Text>
             <Chip tone={roleTone(realRole)}>{realRole}</Chip>
-          </View>
+          </Pressable>
         </View>
 
         {/* 보기 모드 — 앱 운영자에게만 보인다.

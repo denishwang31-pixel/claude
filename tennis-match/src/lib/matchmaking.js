@@ -49,7 +49,7 @@ const shuffleArr = (arr) => {
 };
 
 /** 실력 값 — player.ntrp 우선, 없으면 등급(A/B/C)로 근사, 그것도 없으면 3.0 */
-const GRADE_NTRP = { A: 4.0, B: 3.5, C: 3.0, D: 2.5 };
+const GRADE_NTRP = { A: 4.0, B: 3.5, C: 3.0, D: 2.5, E: 2.0, F: 1.5 }; // constants.GRADE_SKILL 과 같게
 const skillOf = (p) =>
   (typeof p?.ntrp === 'number' ? p.ntrp : GRADE_NTRP[p?.grade]) ?? 3.0;
 

@@ -43,6 +43,7 @@ import { NotifyStatus } from '../../src/components/NotifyStatus';
 import { DeleteAccount } from '../../src/components/DeleteAccountScreen';
 import { AppOps } from '../../src/components/AppOpsScreen';
 import { Legal } from '../../src/components/LegalScreen';
+import { Profile } from '../../src/components/ProfileScreen';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card, SectionTitle, Chip, Btn, ListRow, Badge } from '../../src/components/ui';
 import { C, F } from '../../src/lib/theme';
@@ -74,6 +75,7 @@ const MENU_GROUPS = [
     title: '내 활동',
     staffOnly: false,
     items: [
+      ['profile', 'members', SCREEN.profile, '이름 · 성별 · 부수 · 지역 · 구력 보기와 고치기'],
       ['legal', 'settings', SCREEN.legal, '이용약관 · 개인정보처리방침'],
       ['myfees', 'fees', SCREEN.myfees, '납부 현황 확인 · 기록이 다르면 문의'],
       ['rank', 'rank', SCREEN.rank, null],
@@ -321,6 +323,7 @@ export default function More() {
       case 'courts': return <Courts {...{ clubId, courts, me, isAdmin, flash }} />;
       case 'coachreview': return <CoachReviewScreen {...{ uid: me, flash }} />;
       case 'appops': return <AppOps {...{ me, flash }} />;
+      case 'profile': return <Profile {...{ clubId, club, me, meVal, venues, flash }} onOpen={setSub} />;
       case 'legal': return <Legal />;
       case 'deleteaccount': return <DeleteAccount {...{ clubId, me, members, flash }} />;
       case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, myRole: realRole, flash }} />;

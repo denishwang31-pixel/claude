@@ -168,6 +168,13 @@ export async function linkUserToClub(uid, clubId, profile) {
   );
 }
 
+/** 내 프로필을 고치면 users/{uid} 의 이름·성별도 맞춘다(게스트 신청·클럽 없이 둘러볼 때 쓰는 값) */
+export async function saveMyProfile(uid, profile) {
+  const keep = {};
+  ['name', 'gender', 'busu', 'region', 'startedAt'].forEach((k) => { if (profile?.[k] !== undefined) keep[k] = profile[k]; });
+  await setDoc(doc(db, 'users', uid), { ...keep, updatedAt: serverTimestamp() }, { merge: true });
+}
+
 export const logout = () => signOut(auth);
 
 /* ============================================================
