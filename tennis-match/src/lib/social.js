@@ -485,6 +485,36 @@ export function webLoginDecision(url, returnUrl) {
   return 'external';
 }
 
+/**
+ * 안드로이드 intent: 주소 → 휴대폰이 열 수 있는 앱 주소.
+ *   intent://login?x=1#Intent;scheme=kakaokompassauth;package=com.kakao.talk;end
+ *   → kakaokompassauth://login?x=1
+ * 카카오 로그인 화면의 [카카오톡으로 로그인]이 이 모양으로 카카오톡을 연다. WebView 는
+ * 이 주소를 스스로 못 열어서 우리가 바꿔 넘긴다. 모양이 틀리면 ''.
+ */
+export function intentToScheme(url) {
+  const m = String(url || '').match(/^intent:\/\/([^#]*)#Intent;(.*)end$/i);
+  if (!m) return '';
+  const scheme = (m[2].match(/(?:^|;)scheme=([a-z][a-z0-9+.-]*)(?:;|$)/i) || [])[1];
+  if (!scheme || /^(javascript|file|content|data)$/i.test(scheme)) return '';
+  return `${scheme}://${m[1]}`;
+}
+
+/** intent: 주소의 앱 패키지 이름(없으면 '') — 앱이 없을 때 스토어로 안내하는 데 쓴다 */
+export function intentPackage(url) {
+  const m = String(url || '').match(/#Intent;.*?(?:^|;)package=([A-Za-z0-9_.]+)(?:;|$)/);
+  return m ? m[1] : '';
+}
+
+/**
+ * 앱 안 로그인 화면이 쓰는 브라우저 이름(User-Agent).
+ * WebView 기본값에는 "; wv" 가 붙어, 카카오가 앱 안 화면으로 알아보고 [카카오톡으로 로그인]을
+ * 숨긴다(앱 주인이 겪음). 휴대폰 크롬과 같은 모양으로 알린다 — 카카오톡을 여는 주소는
+ * 위 intentToScheme 로 우리가 직접 넘긴다.
+ */
+export const IN_APP_LOGIN_UA =
+  'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
+
 /** intent: 주소에 적힌 대체 웹 주소(앱이 없을 때 갈 곳) */
 export function intentFallback(url) {
   const m = String(url || '').match(/;S\.browser_fallback_url=([^;]+)/);

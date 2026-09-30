@@ -19,7 +19,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, Modal, Linking, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { webLoginDecision, intentFallback } from '../lib/social';
+import { webLoginDecision, intentFallback, intentToScheme, intentPackage, IN_APP_LOGIN_UA } from '../lib/social';
 import { C } from '../lib/theme';
 
 export function SocialLoginSheet({ request, onDone }) {
@@ -44,10 +44,15 @@ export function SocialLoginSheet({ request, onDone }) {
     trail.current.push(what === 'load' ? url.split('?')[0].replace(/^https?:\/\//, '').slice(0, 60) : `[${url.split(':')[0]}]`);
     if (what === 'result') { finish(url); return false; }
     if (what === 'external') {
-      Linking.openURL(url).catch(() => {
+      /* 카카오톡으로 로그인 — intent: 주소는 WebView 가 못 여니 앱 주소로 바꿔 휴대폰에 넘긴다.
+         카카오톡에서 확인하고 Court 로 돌아오면 이 화면이 이어서 로그인을 마친다. */
+      const target = /^intent:/i.test(url) ? (intentToScheme(url) || url) : url;
+      Linking.openURL(target).catch(() => {
         /* 그 앱이 없으면 대체 웹 주소로 이어 간다(카카오톡이 없는 휴대폰 등) */
         const fb = intentFallback(url);
-        if (fb) web.current?.injectJavaScript(`window.location.href=${JSON.stringify(fb)};true;`);
+        if (fb) { web.current?.injectJavaScript(`window.location.href=${JSON.stringify(fb)};true;`); return; }
+        const pkg = intentPackage(url);
+        if (pkg) Linking.openURL(`market://details?id=${pkg}`).catch(() => {});
       });
       return false;
     }
@@ -79,6 +84,7 @@ export function SocialLoginSheet({ request, onDone }) {
             sharedCookiesEnabled
             thirdPartyCookiesEnabled
             setSupportMultipleWindows={false}
+            userAgent={IN_APP_LOGIN_UA}
             style={{ flex: 1 }}
           />
           {loading && (

@@ -480,6 +480,14 @@ console.log('[카카오톡을 거쳐 늦게 온 로그인 결과도 받는다]')
   eq(webLoginDecision('kakaotalk://x', RET), 'external', '카카오톡 주소도');
   eq(intentFallback('intent://a#Intent;scheme=x;S.browser_fallback_url=https%3A%2F%2Faccounts.kakao.com%2Flogin;end'), 'https://accounts.kakao.com/login', '카카오톡이 없으면 갈 웹 주소');
   eq(intentFallback('intent://a#Intent;S.browser_fallback_url=javascript%3Aalert(1);end'), '', 'https 가 아닌 대체 주소는 쓰지 않는다');
+  const { intentToScheme, intentPackage, IN_APP_LOGIN_UA } = await import('../src/lib/social.js');
+  eq(intentToScheme('intent://login?k=1#Intent;scheme=kakaokompassauth;package=com.kakao.talk;end'), 'kakaokompassauth://login?k=1', '카카오톡으로 로그인 주소를 휴대폰이 여는 모양으로');
+  eq(intentPackage('intent://login#Intent;scheme=kakaokompassauth;package=com.kakao.talk;end'), 'com.kakao.talk', '앱이 없으면 스토어로 갈 패키지');
+  eq(intentToScheme('intent://x#Intent;scheme=javascript;end'), '', '위험한 주소로는 바꾸지 않는다');
+  eq(intentToScheme('https://a.com'), '', 'intent 가 아니면 빈 값');
+  ok(!/; wv\)/.test(IN_APP_LOGIN_UA) && /Chrome\/\d+/.test(IN_APP_LOGIN_UA), '앱 안 로그인 화면은 WebView 표시(wv) 없이 크롬으로 알린다 — 카카오톡 버튼이 숨지 않게');
+  const sheetSrc = readFileSync(resolve(ROOT, 'src/components/SocialLoginSheet.jsx'), 'utf8');
+  ok(/userAgent=\{IN_APP_LOGIN_UA\}/.test(sheetSrc) && /intentToScheme\(url\)/.test(sheetSrc), '로그인 화면이 그 이름을 쓰고 카카오톡 주소를 바꿔 넘긴다');
 }
 
 console.log('[로그인 복귀 주소는 화면 이동에서 뺀다]');
