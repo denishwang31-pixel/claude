@@ -9,7 +9,7 @@
        단, "나중에 하기"를 누른 사용자는 클럽 없이도 /(tabs) 로 들어간다.
      초대 링크(tennismatch://join?code=…) → /join 이 코드를 받아 처리 */
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { View, ActivityIndicator, Linking, Alert } from 'react-native';
+import { View, ActivityIndicator, Linking, Alert, AppState } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -17,7 +17,7 @@ import { subAuth, getMySession } from '../src/lib/auth';
 import { needsEmailVerify } from '../src/lib/verify';
 import { checkAppAdmin } from '../src/lib/firestore';
 import { C } from '../src/lib/theme';
-import { handleLateSocialUrl } from '../src/lib/socialSignIn';
+import { handleLateSocialUrl, checkPendingSocial } from '../src/lib/socialSignIn';
 
 export const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
@@ -84,7 +84,16 @@ export default function RootLayout() {
     };
     Linking.getInitialURL().then((u) => u && onUrl(u)).catch(() => {});
     const sub = Linking.addEventListener('url', (e) => onUrl(e?.url));
-    return () => sub?.remove?.();
+    /* 크롬에 멈춰 있다가 손으로 앱으로 돌아온 경우 — 서버에 맡겨 둔 결과를 한 번 찾는다 */
+    const onActive = async (st) => {
+      if (st !== 'active') return;
+      try {
+        const r = await checkPendingSocial();
+        if (r && !r.ok && r.error) Alert.alert('로그인', r.error);
+      } catch (e) { /* 다음에 다시 본다 */ }
+    };
+    const appSub = AppState.addEventListener('change', onActive);
+    return () => { sub?.remove?.(); appSub?.remove?.(); };
   }, []);
 
   // 라우팅 가드

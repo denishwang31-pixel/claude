@@ -108,5 +108,32 @@ eq(await err({ path: '/auth/kakao/callback', query: { code: 'C', state: STATE } 
   eq([q.provider, q.token, q.name], ['naver', 'CUSTOM.TOKEN', '박네이버'], '네이버도 같은 흐름');
 }
 
+/* ---------- 결과 맡겨 두기 — 카카오톡이 크롬에서 로그인을 마쳐 앱으로 못 돌아가는 경우 ---------- */
+{
+  const box = new Map();
+  const handoff = { put: async (k, v) => { box.set(k, v); }, take: async (k) => { const v = box.get(k) || null; box.delete(k); return v; } };
+  const { deps } = fakes();
+  const T = 1_800_000_000_000;
+  const d = { ...deps, handoff, now: () => T };
+  await S.handle({ path: '/auth/kakao/callback', query: { code: 'C', state: STATE } }, d);
+  eq(box.get(STATE)?.token, 'CUSTOM.TOKEN', '로그인 결과를 state 이름으로 맡겨 둔다');
+  ok(S.isResultPath('/auth/result') && !S.isResultPath('/auth/kakao/callback'), '결과 찾는 주소를 구분한다');
+  const r1 = await S.handleResult({ state: STATE }, d);
+  eq([r1.status, r1.body.token, r1.body.provider, r1.body.name], [200, 'CUSTOM.TOKEN', 'kakao', '김테니스'], '앱이 state 로 결과를 찾아간다');
+  eq((await S.handleResult({ state: STATE }, d)).body, { pending: true }, '한 번 꺼내면 지워진다(두 번 못 쓴다)');
+  eq((await S.handleResult({ state: 'kakao.OTHERSTATEOTHER123' }, d)).body, { pending: true }, '없는 state 는 아직 없음');
+  eq((await S.handleResult({ state: 'bad' }, d)).status, 400, '모양이 틀린 state 는 거절');
+  eq((await S.handleResult({ state: 'google.abcdefghijklmnopqrst' }, d)).status, 400, '카카오·네이버가 아니면 거절');
+  await S.handle({ path: '/auth/kakao/callback', query: { error: 'access_denied', state: STATE } }, d);
+  eq((await S.handleResult({ state: STATE }, d)).body.error, 'cancelled', '취소도 맡겨 둔다 — 앱이 조용히 멈춘다');
+  await S.handle({ path: '/auth/kakao/callback', query: { code: 'C', state: STATE } }, d);
+  eq((await S.handleResult({ state: STATE }, { ...d, now: () => T + S.HANDOFF_TTL_MS + 1 })).body.error, 'expired', '오래된 결과는 쓰지 않는다');
+  await S.handle({ path: '/auth/kakao/callback', query: { code: 'C', state: 'bad' } }, d);
+  ok(!box.has('bad'), 'state 가 틀린 요청은 맡기지 않는다');
+  const failing = { ...d, handoff: { put: async () => { throw new Error('db down'); }, take: async () => null } };
+  const q = qs(await S.handle({ path: '/auth/kakao/callback', query: { code: 'C', state: STATE } }, failing));
+  eq(q.token, 'CUSTOM.TOKEN', '맡기기에 실패해도 앱 주소로는 그대로 돌려보낸다');
+}
+
 console.log(`\n카카오·네이버 서버 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

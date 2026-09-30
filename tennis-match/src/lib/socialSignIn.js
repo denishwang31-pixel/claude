@@ -32,7 +32,7 @@ import {
   googleErrorText, googleRedirectUri, googleClientMixup, GOOGLE_SCOPES,
   browserCandidates, isNoBrowserError,
   PROVIDERS, makeState, authorizeUrl, socialReturnUrl, parseSocialReturn, socialAuthErrorText,
-  matchLateReturn, socialClosedHint, LATE_WAIT_MS,
+  matchLateReturn, socialClosedHint, LATE_WAIT_MS, HANDOFF_POLL_MS, PENDING_TTL_MS, socialResultUrl,
 } from './social';
 import { LIVE_SOCIAL_CONFIG } from './socialConfig';
 
@@ -216,7 +216,7 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
  *
  * @returns {Promise<{ok: boolean, uid?: string, name?: string, error?: string, cancelled?: boolean}>}
  */
-export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFIG } = {}) {
+export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFIG, onWaiting } = {}) {
   const clientId = String(
     provider === PROVIDERS.KAKAO ? config?.kakaoRestKey : provider === PROVIDERS.NAVER ? config?.naverClientId : '',
   ).trim();
@@ -290,8 +290,19 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
     await clearPending();
     return { ok: false, error: `[S10] 브라우저 창을 열지 못했습니다. ${googleErrorText(lastErr)}`.trim() };
   }
-  /* 끝내 안 왔으면 기억은 남겨 둔다 — 더 늦게 오면 handleLateSocialUrl 이 받는다 */
-  if (!backUrl) return { ok: false, cancelled: true, error: '', hint: socialClosedHint(provider) };
+  if (!backUrl) {
+    /* 앱 주소로 못 돌아왔으면 서버에 맡겨 둔 결과를 찾아간다 — 카카오톡이 로그인을 크롬에서
+       마치면 크롬이 앱으로 넘기는 것을 막는다(socialAuth.js 「결과 맡겨 두기」). */
+    onWaiting?.();
+    const got = await pollHandoff(state, HANDOFF_POLL_MS);
+    if (got === GONE) return { ok: false, cancelled: true, error: '' };   // 다른 곳(앱 뿌리)이 이미 받아 처리했다
+    if (got && got.error !== 'expired') {
+      await clearPending();
+      return finishSocial(got, got.provider || provider);
+    }
+    /* 끝내 없으면 기억은 남겨 둔다 — 나중에 앱으로 돌아올 때 checkPendingSocial 이 한 번 더 본다 */
+    return { ok: false, cancelled: true, error: '', hint: socialClosedHint(provider) };
+  }
   await clearPending();
 
   const back = parseSocialReturn(backUrl);
@@ -333,6 +344,51 @@ export async function handleLateSocialUrl(url, { delayMs = 1500 } = {}) {
   return finishSocial(back, back.provider);
 }
 
+const GONE = 'gone';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 서버에 맡겨 둔 결과 한 번 찾기. 아직 없으면 null */
+async function fetchHandoff(state) {
+  try {
+    const r = await fetch(socialResultUrl(state), { headers: { Accept: 'application/json' } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j && !j.pending ? j : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** 정해진 시간 동안 결과를 찾는다. 기억(pending)이 지워졌으면 GONE — 다른 곳이 받았다 */
+async function pollHandoff(state, totalMs) {
+  const until = Date.now() + totalMs;
+  while (Date.now() < until) {
+    const p = await loadPending();
+    if (!p || p.state !== state) return GONE;
+    const j = await fetchHandoff(state);
+    if (j) return j;
+    await sleep(1500);
+  }
+  return null;
+}
+
+/**
+ * 앱이 다시 앞에 나올 때(app/_layout.jsx) — 열어 둔 카카오·네이버 로그인이 있으면
+ * 서버에 맡겨진 결과를 한 번 찾아 로그인을 마친다. 크롬에 멈춰 있다가 손으로
+ * 앱으로 돌아온 경우를 받는다.
+ * @returns {Promise<null | {ok, uid?, error?}>}
+ */
+export async function checkPendingSocial() {
+  const p = await loadPending();
+  if (!p || !p.state) return null;
+  if (Date.now() - Number(p.at || 0) > PENDING_TTL_MS) { await clearPending(); return null; }
+  const j = await fetchHandoff(p.state);
+  if (!j) return null;
+  await clearPending();
+  if (j.error === 'expired') return null;
+  return finishSocial(j, j.provider || p.provider);
+}
+
 async function finishSocial(back, provider) {
   if (back.error) {
     const text = socialAuthErrorText(back.error, provider);
@@ -353,4 +409,4 @@ async function finishSocial(back, provider) {
   }
 }
 
-export default { signInWithGoogle, signInWithSocialWeb, handleLateSocialUrl };
+export default { signInWithGoogle, signInWithSocialWeb, handleLateSocialUrl, checkPendingSocial };

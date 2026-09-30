@@ -133,6 +133,48 @@ const form = (body) => Object.entries(body)
   .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v ?? ''))}`)
   .join('&');
 
+/* ---------------- 결과 맡겨 두기 (handoff) ----------------
+   카카오 로그인에서 카카오톡으로 넘어가면, 카카오톡은 로그인을 마친 뒤 우리 콜백을
+   앱의 로그인 창이 아니라 **따로 뜬 브라우저(크롬)** 에서 연다. 크롬은 그 페이지가
+   앱 주소(com.donghyun.tennismatch://)로 넘기는 것을 조용히 막는다 — 그래서 앱은
+   결과를 영영 못 받고 "카카오 로그인이 끝나지 않았습니다"가 떴다(앱 주인이 겪음).
+   그래서 결과를 state 이름으로 서버에 잠깐 맡겨 두고, 앱이 직접 찾아간다
+   (GET /auth/result?state=…). state 는 앱만 아는 무작위 값이라 열쇠 구실을 한다.
+   한 번 꺼내면 지운다. 오래된 것은 맡길 때마다 조금씩 치운다. */
+const HANDOFF_TTL_MS = 10 * 60 * 1000;
+
+/** /auth/result 인가 */
+function isResultPath(path) {
+  return /^\/auth\/result\/?$/.test(String(path || ''));
+}
+
+async function saveHandoff(deps, provider, state, params) {
+  if (!deps.handoff || !stateOk(provider, state)) return;
+  try {
+    await deps.handoff.put(state, {
+      provider, token: params.token || '', name: params.name || '', error: params.error || '',
+      at: (deps.now || Date.now)(),
+    });
+  } catch (e) {
+    (deps.log || (() => {}))('handoff-put', String(e?.message || e).slice(0, 120));
+  }
+}
+
+/**
+ * 앱이 맡겨 둔 결과를 찾으러 온 요청.
+ * @returns {{status:number, body:object}} body: {pending:true} | {provider, token, name, error}
+ */
+async function handleResult(query, deps) {
+  const state = str((query || {}).state, 80);
+  const provider = state.split('.')[0];
+  if (!PROVIDERS.includes(provider) || !stateOk(provider, state)) return { status: 400, body: { error: 'state' } };
+  if (!deps.handoff) return { status: 200, body: { pending: true } };
+  const h = await deps.handoff.take(state);
+  if (!h) return { status: 200, body: { pending: true } };
+  if ((deps.now || Date.now)() - Number(h.at || 0) > HANDOFF_TTL_MS) return { status: 200, body: { error: 'expired' } };
+  return { status: 200, body: { provider: h.provider || provider, token: h.token || '', name: h.name || '', error: h.error || '' } };
+}
+
 /**
  * 요청 하나 처리 — 결과는 언제나 앱으로 돌아가는 302 다(오류도 error= 로 알려 준다).
  * 브라우저 창에 우리 오류 페이지를 띄우면 사용자는 그 창을 스스로 닫아야 하고,
@@ -151,14 +193,16 @@ async function handle(req, deps) {
 
   if (!provider) return back({ error: 'path' });
   if (!stateOk(provider, state)) return back({ error: 'state' });
+  /* 여기부터는 결과를 맡겨 두고 돌려보낸다 — 앱이 브라우저를 거치지 않고도 받게 */
+  const done = async (params) => { await saveHandoff(deps, provider, state, params); return back(params); };
   if (query.error) {
     /* 사용자가 동의 화면에서 [취소]를 누른 것 — 조용히 돌아간다 */
     const cancelled = /access_denied|cancel/i.test(`${query.error} ${query.error_description || ''}`);
-    return back({ error: cancelled ? 'cancelled' : 'provider' });
+    return done({ error: cancelled ? 'cancelled' : 'provider' });
   }
   const code = str(query.code, 500);
-  if (!code) return back({ error: 'code' });
-  if (!configured(provider, env)) return back({ error: 'config' });
+  if (!code) return done({ error: 'code' });
+  if (!configured(provider, env)) return done({ error: 'config' });
 
   const redirectUri = `https://${env.AUTH_HOST || AUTH_HOST_DEFAULT}/auth/${provider}/callback`;
   let accessToken = '';
@@ -173,11 +217,11 @@ async function handle(req, deps) {
     accessToken = str(json.access_token, 2000);
     if (!res.ok || !accessToken) {
       log('token', provider, res.status, str(json.error || json.error_code, 60));
-      return back({ error: 'exchange' });
+      return done({ error: 'exchange' });
     }
   } catch (e) {
     log('token-throw', provider, String(e?.message || e).slice(0, 120));
-    return back({ error: 'exchange' });
+    return done({ error: 'exchange' });
   }
 
   let profile = null;
@@ -187,7 +231,7 @@ async function handle(req, deps) {
   } catch (e) {
     profile = null;
   }
-  if (!profile) return back({ error: 'profile' });
+  if (!profile) return done({ error: 'profile' });
 
   const uid = uidFor(provider, profile.id);
   /* 계정 이름·사진을 채워 둔다 — 온보딩이 이름 칸을 미리 채운다.
@@ -214,15 +258,16 @@ async function handle(req, deps) {
 
   try {
     const token = await auth.createCustomToken(uid, { provider });
-    return back({ token, name: profile.name });
+    return done({ token, name: profile.name });
   } catch (e) {
     const msg = String(e?.code || e?.message || e);
     log('custom-token', msg.slice(0, 160));
-    return back({ error: /signBlob|iam|permission/i.test(msg) ? 'permission' : 'server' });
+    return done({ error: /signBlob|iam|permission/i.test(msg) ? 'permission' : 'server' });
   }
 }
 
 module.exports = {
-  PROVIDERS, APP_RETURN_DEFAULT, AUTH_HOST_DEFAULT,
+  PROVIDERS, APP_RETURN_DEFAULT, AUTH_HOST_DEFAULT, HANDOFF_TTL_MS,
   providerFromPath, stateOk, configured, tokenRequest, profileUrl, profileFrom, uidFor, appRedirect, handle,
+  isResultPath, handleResult,
 };

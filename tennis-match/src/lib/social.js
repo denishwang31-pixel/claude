@@ -398,6 +398,10 @@ export function isNoBrowserError(e) {
 export const SOCIAL_AUTH_HOST = 'tennis-match-52b31.web.app';
 
 /** 카카오 「Redirect URI」·네이버 「Callback URL」 에 등록할 주소 */
+/** 서버에 맡겨 둔 로그인 결과를 찾는 주소 (functions/socialAuth.js 「결과 맡겨 두기」) */
+export const socialResultUrl = (state, host = SOCIAL_AUTH_HOST) =>
+  `https://${host}/auth/result?state=${encodeURIComponent(String(state || ''))}`;
+
 export const socialRedirectUri = (provider, host = SOCIAL_AUTH_HOST) =>
   `https://${host}/auth/${provider}/callback`;
 
@@ -450,6 +454,7 @@ export function parseSocialReturn(url) {
    맞으면 받아 준다. 남이 만든 주소로 들어오는 것은 state 가 막는다. */
 export const PENDING_TTL_MS = 10 * 60 * 1000;   // 로그인 창을 연 뒤 이 시간 안에 온 것만
 export const LATE_WAIT_MS = 4000;               // 창이 닫힌 뒤 결과를 더 기다리는 시간
+export const HANDOFF_POLL_MS = 20000;           // 그래도 없으면 서버에 맡겨 둔 결과를 찾는 시간
 
 /**
  * 늦게 온 주소가 우리가 연 로그인의 결과인가.
@@ -468,8 +473,8 @@ export function matchLateReturn(url, pending, now = Date.now()) {
 /** 로그인 창이 결과 없이 닫혔을 때 한 줄 안내(오류가 아니라 도움말). 카카오만 — 카카오톡으로 넘어가는 길이 있다 */
 export function socialClosedHint(provider) {
   if (provider !== PROVIDERS.KAKAO) return '';
-  return '카카오 로그인이 끝나지 않았습니다. 카카오톡으로 넘어갔다 왔다면 잠시 뒤 자동으로 로그인됩니다. '
-    + '계속 안 되면 카카오 로그인 창에서 카카오톡 대신 카카오 계정(이메일·비밀번호)으로 로그인해 주세요.';
+  return '[S12] 카카오에서 로그인 결과를 받지 못했습니다. 카카오 로그인 창에 오류 코드(KOE…)가 보였다면 알려 주세요. '
+    + '카카오톡 대신 카카오 계정(이메일·비밀번호)으로 로그인해 보세요.';
 }
 
 /** 서버 오류 코드 → 사람 말 ('' = 사용자가 닫음, 화면에 아무것도 안 띄움) */

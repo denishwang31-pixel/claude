@@ -433,7 +433,7 @@ console.log('[카카오·네이버 웹 로그인 주소]');
   ok(/signInWithCustomToken/.test(signSrc), '서버 토큰으로 Firebase 로그인');
   ok(!/client_secret|clientSecret/i.test(signSrc), '앱 코드에 시크릿이 없다');
   const loginSrc = readFileSync(resolve(ROOT, 'app/login.jsx'), 'utf8');
-  ok(/signInWithSocialWeb\(p\)/.test(loginSrc), '로그인 화면이 카카오·네이버 버튼을 웹 로그인에 잇는다');
+  ok(/signInWithSocialWeb\(p[,)]/.test(loginSrc), '로그인 화면이 카카오·네이버 버튼을 웹 로그인에 잇는다');
 }
 
 console.log('[카카오톡을 거쳐 늦게 온 로그인 결과도 받는다]');
@@ -458,6 +458,13 @@ console.log('[카카오톡을 거쳐 늦게 온 로그인 결과도 받는다]')
   ok(/export async function handleLateSocialUrl/.test(signSrc), '늦게 온 주소를 받는 곳이 있다');
   const layoutSrc = readFileSync(resolve(ROOT, 'app/_layout.jsx'), 'utf8');
   ok(/handleLateSocialUrl/.test(layoutSrc) && /getInitialURL/.test(layoutSrc), '앱 뿌리에서 늦게 온 주소를 받는다(앱이 새로 켜진 경우 포함)');
+  const { socialResultUrl, HANDOFF_POLL_MS } = await import('../src/lib/social.js');
+  eq(socialResultUrl('kakao.AB CD'), 'https://tennis-match-52b31.web.app/auth/result?state=kakao.AB%20CD', '서버에 맡긴 결과를 찾는 주소');
+  ok(srv.isResultPath(new URL(socialResultUrl('kakao.x')).pathname), '앱이 찾는 주소를 서버가 결과 요청으로 알아본다');
+  ok(HANDOFF_POLL_MS >= 10000 && HANDOFF_POLL_MS <= 30000, '맡긴 결과는 잠깐만 찾는다');
+  ok(/pollHandoff\(state, HANDOFF_POLL_MS\)/.test(signSrc), '앱 주소로 못 돌아오면 서버에 맡긴 결과를 찾는다');
+  ok(/checkPendingSocial/.test(layoutSrc) && /AppState/.test(layoutSrc), '앱으로 돌아올 때 맡긴 결과를 한 번 더 찾는다');
+  ok(/\[S12\]/.test(socialClosedHint('kakao')), '끝내 결과가 없으면 번호 붙은 안내');
 }
 
 console.log('[로그인 복귀 주소는 화면 이동에서 뺀다]');

@@ -1055,16 +1055,47 @@ exports.onMemberJobCreated = onDocumentCreated(
    호스팅의 /auth/** 가 여기로 온다(firebase.json rewrites). 판단은 socialAuth.js.
    비밀값은 functions/.env(배포 workflow 가 GitHub Secrets 에서 씀) 로만 들어온다.
    ============================================================ */
+/* 로그인 결과를 state 이름으로 잠깐 맡겨 두는 곳 — socialAuth.js 「결과 맡겨 두기」 참고.
+   ⚠️ 앱(클라이언트)은 이 컬렉션을 직접 읽지 못한다(규칙에 없음 = 거부). 서버만 쓴다. */
+const HANDOFF = 'authHandoff';
+const handoffStore = {
+  async put(state, data) {
+    await db.collection(HANDOFF).doc(state).set(data);
+    /* 꺼내 가지 않은 오래된 것 조금씩 치우기(앱이 로그인 창으로 바로 받은 경우 남는다) */
+    const old = await db.collection(HANDOFF)
+      .where('at', '<', Date.now() - socialAuthLib.HANDOFF_TTL_MS).limit(20).get();
+    await Promise.all(old.docs.map((d) => d.ref.delete()));
+  },
+  async take(state) {
+    const ref = db.collection(HANDOFF).doc(state);
+    return db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return null;
+      tx.delete(ref);
+      return snap.data();
+    });
+  },
+};
+
 exports.socialAuth = onRequest({ ...REGION, cors: false, maxInstances: 5 }, async (req, res) => {
-  const url = await socialAuthLib.handle(
-    { path: req.path, query: req.query },
-    {
-      fetch,
-      auth: getAuth(),
-      env: process.env,
-      log: (...a) => console.warn('[socialAuth]', ...a),
-    },
-  );
+  const deps = {
+    fetch,
+    auth: getAuth(),
+    env: process.env,
+    handoff: handoffStore,
+    log: (...a) => console.warn('[socialAuth]', ...a),
+  };
   res.set('Cache-Control', 'no-store');
+  if (socialAuthLib.isResultPath(req.path)) {
+    try {
+      const r = await socialAuthLib.handleResult(req.query || {}, deps);
+      res.status(r.status).json(r.body);
+    } catch (e) {
+      deps.log('result', String(e?.message || e).slice(0, 120));
+      res.status(200).json({ pending: true });
+    }
+    return;
+  }
+  const url = await socialAuthLib.handle({ path: req.path, query: req.query }, deps);
   res.redirect(302, url);
 });

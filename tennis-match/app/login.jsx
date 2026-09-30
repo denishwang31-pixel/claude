@@ -147,7 +147,10 @@ export default function Login() {
       return;
     }
     setBusy(true);
-    const r = p === PROVIDERS.GOOGLE ? await signInWithGoogle() : await signInWithSocialWeb(p);
+    const r = p === PROVIDERS.GOOGLE ? await signInWithGoogle() : await signInWithSocialWeb(p, {
+      onWaiting: () => setNote(`${PROVIDER_SHORT[p]} 로그인 결과를 확인하는 중입니다… 잠시만 기다려 주세요.`),
+    });
+    setNote('');
     if (r.ok) { await go(r.uid); setBusy(false); return; }
     setBusy(false);
     if (r.error) setErr(r.error);   // 빈 문자열이면 사용자가 창을 닫은 것
