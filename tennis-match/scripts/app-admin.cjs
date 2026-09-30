@@ -15,6 +15,7 @@
 
    입력(환경 변수)
      ADMIN_ACTION  grant | revoke | list | info(로그인 방식·인증 상태 보기)
+                   | social-log(카카오·네이버 로그인이 서버까지 왔는지 — 최근 요청·기록)
      ADMIN_TARGET  이메일 또는 uid
    ============================================================ */
 const path = require('path');
@@ -43,6 +44,51 @@ async function resolveUser(auth, target) {
   }
 }
 
+/* 카카오·네이버 로그인 진단 — "로그인 결과가 앱으로 안 온다"를 추측이 아니라 기록으로 본다.
+   ⚠️ 비밀값은 찍지 않는다: 요청 주소는 경로만(쿼리 = code·state 는 이름만),
+      토큰·code 값·이메일은 어디에도 남기지 않는다. */
+function redactUrl(u) {
+  try {
+    const x = new URL(u);
+    const keys = [...x.searchParams.keys()];
+    return `${x.pathname}${keys.length ? ` ?${keys.join(',')}` : ''}${x.searchParams.get('error') ? ` error=${x.searchParams.get('error')}` : ''}`;
+  } catch (e) { return '(주소 읽기 실패)'; }
+}
+
+async function socialLog(db) {
+  const { execFileSync } = require('child_process');
+  console.log('[1] 서버가 받은 요청 (최근 3시간, socialAuth)');
+  try {
+    execFileSync('gcloud', ['auth', 'activate-service-account', `--key-file=${process.env.GOOGLE_APPLICATION_CREDENTIALS}`, '--quiet'], { stdio: 'ignore' });
+    const out = execFileSync('gcloud', ['logging', 'read',
+      'resource.type="cloud_run_revision" AND resource.labels.service_name="socialauth"',
+      `--project=${process.env.GOOGLE_CLOUD_PROJECT}`, '--freshness=3h', '--limit=80', '--format=json'],
+    { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 });
+    const rows = JSON.parse(out || '[]').reverse();
+    if (!rows.length) console.log('  (요청 기록 없음 — 카카오·네이버가 우리 서버로 돌려보낸 적이 없다)');
+    rows.forEach((r) => {
+      const t = String(r.timestamp || '').replace('T', ' ').slice(5, 19);
+      if (r.httpRequest) {
+        const ua = String(r.httpRequest.userAgent || '');
+        const who = /KAKAOTALK/i.test(ua) ? '카카오톡' : /NAVER/i.test(ua) ? '네이버앱' : /wv\)/.test(ua) ? '웹뷰' : /Chrome/i.test(ua) ? '크롬' : /okhttp|Dalvik/i.test(ua) ? '앱' : '기타';
+        console.log(`  ${t}  ${r.httpRequest.status}  ${redactUrl(r.httpRequest.requestUrl)}  (${who})`);
+      } else if (r.textPayload && /socialAuth/.test(r.textPayload)) {
+        console.log(`  ${t}  기록: ${String(r.textPayload).slice(0, 160)}`);
+      }
+    });
+  } catch (e) {
+    console.log(`  요청 기록을 읽지 못했습니다(서비스 계정에 로그 보기 권한 roles/logging.viewer 필요): ${String(e.message || e).split('\n')[0].slice(0, 160)}`);
+  }
+
+  console.log('[2] 서버에 맡겨 둔 로그인 결과 (authHandoff — 값은 안 찍음)');
+  const hs = await db.collection('authHandoff').get();
+  if (!hs.size) console.log('  (없음)');
+  hs.docs.forEach((d) => {
+    const v = d.data();
+    console.log(`  ${new Date(v.at || 0).toISOString().slice(5, 19)}  ${v.provider || '?'}  ${v.token ? '토큰 있음' : `오류 ${v.error || '-'}`}`);
+  });
+}
+
 async function main() {
   initializeApp();
   const auth = getAuth();
@@ -58,6 +104,8 @@ async function main() {
     }
     return;
   }
+
+  if (action === 'social-log') { await socialLog(db); return; }
 
   const user = await resolveUser(auth, process.env.ADMIN_TARGET);
   const ref = db.collection('appAdmins').doc(user.uid);

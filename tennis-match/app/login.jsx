@@ -249,14 +249,15 @@ export default function Login() {
 
           {/* 로고 — 사진과 시트 경계에 걸친다 (시안의 엠블럼 자리) */}
           <View style={{ alignItems: 'center', marginTop: -36, zIndex: 5 }}>
+            {/* 앱 아이콘과 같은 그림(진한 네모 + 흰 공) — 흰 테두리를 둘러 사진 위에서도 또렷하게 */}
             <View style={[{
-              width: 72, height: 72, borderRadius: 22, padding: 6,
+              width: 72, height: 72, borderRadius: 22, padding: 3,
               backgroundColor: C.surface,
             }, SHADOW.md]}>
               <Image
                 source={require('../assets/brand/logo.png')}
-                style={{ width: '100%', height: '100%' }}
-                resizeMode="contain"
+                style={{ width: '100%', height: '100%', borderRadius: 19 }}
+                resizeMode="cover"
               />
             </View>
           </View>

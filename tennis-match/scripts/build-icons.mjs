@@ -88,6 +88,16 @@ async function partner() {
     await p.close();
     console.log('만듦', out);
   }
+  /* 로그인 첫 화면의 로고 배지(assets/brand/logo.png) — 예전엔 "TENNISMATCH" 글자 로고였다(앱 주인).
+     앱 아이콘과 같은 그림으로 바꾼다. OTA 로 바뀐다(앱 안 그림이라 새 빌드 불필요). */
+  {
+    const n = 512;
+    const p = await b.newPage({ viewport: { width: n, height: n }, deviceScaleFactor: 1 });
+    await p.setContent(`<html><body style="margin:0">${partnerSvg(n)}</body></html>`);
+    await p.screenshot({ path: resolve(ROOT, 'assets/brand/logo.png'), clip: { x: 0, y: 0, width: n, height: n } });
+    await p.close();
+    console.log('만듦', 'assets/brand/logo.png');
+  }
   await b.close();
 }
 

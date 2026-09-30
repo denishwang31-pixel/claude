@@ -250,9 +250,11 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
   await savePending({ provider, state, at: Date.now() });
   let lateUrl = '';
   let sub = null;
+  const seen = [];          // 진단용 — 들어온 주소의 앞부분만(값은 안 남김)
   try {
     const { Linking } = await import('react-native');
     sub = Linking.addEventListener('url', (e) => {
+      seen.push(String(e?.url || '').split('?')[0].slice(0, 40));
       if (parseSocialReturn(e?.url).state === state) lateUrl = e.url;
     });
   } catch (e) {
@@ -301,7 +303,9 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
       return finishSocial(got, got.provider || provider);
     }
     /* 끝내 없으면 기억은 남겨 둔다 — 나중에 앱으로 돌아올 때 checkPendingSocial 이 한 번 더 본다 */
-    return { ok: false, cancelled: true, error: '', hint: socialClosedHint(provider) };
+    const hint = socialClosedHint(provider);
+    const diag = `(창 ${result?.type || '없음'} · 들어온 주소 ${seen.length ? seen.join(', ') : '없음'})`;
+    return { ok: false, cancelled: true, error: '', hint: hint ? `${hint}\n${diag}` : '' };
   }
   await clearPending();
 
