@@ -151,6 +151,7 @@ export default function Login() {
     if (r.ok) { await go(r.uid); setBusy(false); return; }
     setBusy(false);
     if (r.error) setErr(r.error);   // 빈 문자열이면 사용자가 창을 닫은 것
+    else if (r.hint) setNote(r.hint);   // 결과 없이 닫힘 — 카카오톡을 거친 경우 안내(늦게 오면 자동 로그인)
   };
 
   /* 소셜 버튼이 하나도 없을 때 빠져나갈 길.

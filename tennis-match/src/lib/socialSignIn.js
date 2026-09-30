@@ -32,6 +32,7 @@ import {
   googleErrorText, googleRedirectUri, googleClientMixup, GOOGLE_SCOPES,
   browserCandidates, isNoBrowserError,
   PROVIDERS, makeState, authorizeUrl, socialReturnUrl, parseSocialReturn, socialAuthErrorText,
+  matchLateReturn, socialClosedHint, LATE_WAIT_MS,
 } from './social';
 import { LIVE_SOCIAL_CONFIG } from './socialConfig';
 
@@ -243,6 +244,21 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
   const state = makeState(provider, bytes);
   const url = authorizeUrl(provider, { clientId, state });
 
+  /* 늦게 도착하는 결과를 받을 준비 — social.js 의 matchLateReturn 머리말 참고.
+     기억은 파일에도 남긴다: 카카오톡에 가 있는 동안 휴대폰이 앱을 닫아 버리면
+     결과 주소가 앱을 새로 켜는데, 그때도 이어서 로그인하려고. */
+  await savePending({ provider, state, at: Date.now() });
+  let lateUrl = '';
+  let sub = null;
+  try {
+    const { Linking } = await import('react-native');
+    sub = Linking.addEventListener('url', (e) => {
+      if (parseSocialReturn(e?.url).state === state) lateUrl = e.url;
+    });
+  } catch (e) {
+    sub = null;
+  }
+
   let candidates = [];
   try {
     candidates = browserCandidates(await WebBrowser.getCustomTabsSupportingBrowsersAsync());
@@ -261,17 +277,67 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
       if (!isNoBrowserError(e)) break;
     }
   }
-  if (lastErr) return { ok: false, error: `[S10] 브라우저 창을 열지 못했습니다. ${googleErrorText(lastErr)}`.trim() };
-  if (!result || result.type !== 'success') return { ok: false, cancelled: true, error: '' };
+  let backUrl = result?.type === 'success' ? result.url : '';
+  if (!lastErr && !backUrl) {
+    /* 창이 "닫혔다"고 먼저 알려도 결과 주소가 바로 뒤에 올 수 있다 — 조금 더 기다린다 */
+    for (let waited = 0; waited < LATE_WAIT_MS && !lateUrl; waited += 250) {
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    backUrl = lateUrl;
+  }
+  try { sub?.remove?.(); } catch (e) { /* 이미 떨어졌다 */ }
+  if (lastErr) {
+    await clearPending();
+    return { ok: false, error: `[S10] 브라우저 창을 열지 못했습니다. ${googleErrorText(lastErr)}`.trim() };
+  }
+  /* 끝내 안 왔으면 기억은 남겨 둔다 — 더 늦게 오면 handleLateSocialUrl 이 받는다 */
+  if (!backUrl) return { ok: false, cancelled: true, error: '', hint: socialClosedHint(provider) };
+  await clearPending();
 
-  const back = parseSocialReturn(result.url);
+  const back = parseSocialReturn(backUrl);
+  /* ⚠️ 우리가 연 로그인에서 돌아온 것인지 확인한다 — 다른 곳에서 만든 주소로
+        남의 계정에 들어가게 만드는 공격을 막는다. */
+  if (back.state !== state) return { ok: false, error: socialAuthErrorText('state', provider) };
+  return finishSocial(back, provider);
+}
+
+/* ---------------- 로그인 창 밖에서 도착한 결과 ---------------- */
+
+const PENDING_KEY = 'socialPending';
+let pendingMem;          // undefined = 아직 파일을 안 읽음
+
+async function savePending(p) {
+  pendingMem = p;
+  try { const { setJSON } = await import('./deviceStore'); await setJSON(PENDING_KEY, p); } catch (e) { /* 기억만 못 남긴다 */ }
+}
+async function loadPending() {
+  if (pendingMem !== undefined) return pendingMem;
+  try { const { getJSON } = await import('./deviceStore'); pendingMem = await getJSON(PENDING_KEY, null); } catch (e) { pendingMem = null; }
+  return pendingMem;
+}
+async function clearPending() { await savePending(null); }
+
+/**
+ * 앱으로 들어온 주소가 우리가 열었던 카카오·네이버 로그인의 결과면 로그인을 마친다.
+ * app/_layout.jsx 가 앱을 켤 때와 주소가 들어올 때마다 부른다.
+ * 로그인 창이 제대로 받은 경우에는 그쪽이 먼저 기억을 지우므로 여기서는 아무것도 안 한다.
+ * @returns {Promise<null | {ok, uid?, error?}>} null = 우리 일이 아니다
+ */
+export async function handleLateSocialUrl(url, { delayMs = 1500 } = {}) {
+  if (!url || !matchLateReturn(url, { state: parseSocialReturn(url).state, at: Date.now() })) return null;
+  /* 로그인 창이 같은 주소를 받았다면 그쪽이 곧 기억을 지운다 — 두 번 로그인하지 않게 잠깐 기다린다 */
+  if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+  const back = matchLateReturn(url, await loadPending());
+  if (!back) return null;
+  await clearPending();
+  return finishSocial(back, back.provider);
+}
+
+async function finishSocial(back, provider) {
   if (back.error) {
     const text = socialAuthErrorText(back.error, provider);
     return text ? { ok: false, error: text } : { ok: false, cancelled: true, error: '' };
   }
-  /* ⚠️ 우리가 연 로그인에서 돌아온 것인지 확인한다 — 다른 곳에서 만든 주소로
-        남의 계정에 들어가게 만드는 공격을 막는다. */
-  if (back.state !== state) return { ok: false, error: socialAuthErrorText('state', provider) };
   if (!back.token) return { ok: false, error: socialAuthErrorText('server', provider) };
 
   try {
@@ -287,4 +353,4 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
   }
 }
 
-export default { signInWithGoogle, signInWithSocialWeb };
+export default { signInWithGoogle, signInWithSocialWeb, handleLateSocialUrl };

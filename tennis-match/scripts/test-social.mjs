@@ -436,6 +436,30 @@ console.log('[카카오·네이버 웹 로그인 주소]');
   ok(/signInWithSocialWeb\(p\)/.test(loginSrc), '로그인 화면이 카카오·네이버 버튼을 웹 로그인에 잇는다');
 }
 
+console.log('[카카오톡을 거쳐 늦게 온 로그인 결과도 받는다]');
+{
+  const { matchLateReturn, socialClosedHint, PENDING_TTL_MS, LATE_WAIT_MS } = await import('../src/lib/social.js');
+  const srv = createRequire(import.meta.url)('../functions/socialAuth.js');
+  const T = 1_800_000_000_000;
+  const pend = { provider: 'kakao', state: 'kakao.ABCDEFGHIJKLMNOP1234', at: T };
+  const url = srv.appRedirect({ provider: 'kakao', state: pend.state, token: 'tok', name: '김' });
+  eq(matchLateReturn(url, pend, T + 3000)?.token, 'tok', '창이 닫힌 뒤 온 결과도 우리 것이면 받는다');
+  eq(matchLateReturn(url, { ...pend, state: 'kakao.OTHEROTHEROTHER12' }, T + 3000), null, 'state 가 다르면 받지 않는다(남이 만든 주소)');
+  eq(matchLateReturn(url, pend, T + PENDING_TTL_MS + 1), null, '너무 늦으면 받지 않는다');
+  eq(matchLateReturn(url, null, T), null, '연 로그인이 없으면 무시');
+  eq(matchLateReturn('com.donghyun.tennismatch://join?state=' + pend.state, pend, T), null, '로그인 복귀 주소가 아니면 무시');
+  eq(matchLateReturn(srv.appRedirect({ state: pend.state, token: 't' }), pend, T)?.provider, 'kakao', '제공자가 빠져도 연 쪽 것으로 채운다');
+  eq(matchLateReturn(srv.appRedirect({ provider: 'kakao', state: pend.state, error: 'exchange' }), pend, T)?.error, 'exchange', '늦게 온 오류도 받아서 알린다');
+  ok(LATE_WAIT_MS >= 2000 && LATE_WAIT_MS <= 8000, '창이 닫힌 뒤 몇 초만 더 기다린다');
+  ok(/카카오 계정/.test(socialClosedHint('kakao')), '카카오는 결과 없이 닫히면 다른 로그인 방법을 안내');
+  eq(socialClosedHint('naver'), '', '네이버는 조용히(사용자가 닫은 것)');
+  const signSrc = readFileSync(resolve(ROOT, 'src/lib/socialSignIn.js'), 'utf8');
+  ok(/savePending\(\{ provider, state/.test(signSrc), '로그인 창을 열기 전에 state 를 기억한다');
+  ok(/export async function handleLateSocialUrl/.test(signSrc), '늦게 온 주소를 받는 곳이 있다');
+  const layoutSrc = readFileSync(resolve(ROOT, 'app/_layout.jsx'), 'utf8');
+  ok(/handleLateSocialUrl/.test(layoutSrc) && /getInitialURL/.test(layoutSrc), '앱 뿌리에서 늦게 온 주소를 받는다(앱이 새로 켜진 경우 포함)');
+}
+
 console.log('[로그인 복귀 주소는 화면 이동에서 뺀다]');
 ok(isAuthReturn('com.donghyun.tennismatch://oauth?token=x'), '카카오·네이버 복귀');
 ok(isAuthReturn('com.donghyun.tennismatch:/oauthredirect?code=1'), '구글 복귀');

@@ -441,6 +441,37 @@ export function parseSocialReturn(url) {
   return out;
 }
 
+/* ---------------- 늦게 도착한 로그인 결과 ----------------
+   카카오 로그인 창에서 카카오톡 앱으로 넘어갔다 돌아오면, 앱이 다시 앞에 나오는
+   순간 로그인 창(expo-web-browser)이 "사용자가 닫았다"로 먼저 끝나 버린다.
+   바로 뒤에 도착한 결과 주소는 받을 사람이 없어 버려지고, 화면은 아무 말 없이
+   로그인 화면으로 돌아간다(앱 주인이 겪음 — 네이버는 됐다).
+   그래서 연 로그인의 state 를 잠깐 기억해 두고, 늦게 온 주소도 그 state 와
+   맞으면 받아 준다. 남이 만든 주소로 들어오는 것은 state 가 막는다. */
+export const PENDING_TTL_MS = 10 * 60 * 1000;   // 로그인 창을 연 뒤 이 시간 안에 온 것만
+export const LATE_WAIT_MS = 4000;               // 창이 닫힌 뒤 결과를 더 기다리는 시간
+
+/**
+ * 늦게 온 주소가 우리가 연 로그인의 결과인가.
+ * @param pending {provider, state, at}
+ * @returns parseSocialReturn 결과 또는 null
+ */
+export function matchLateReturn(url, pending, now = Date.now()) {
+  if (!pending || !pending.state || !pending.at) return null;
+  if (now - pending.at > PENDING_TTL_MS || pending.at - now > 60 * 1000) return null;
+  if (!/:\/\/oauth(\/|\?|$)|^\/?oauth(\/|\?|$)/i.test(String(url || ''))) return null;
+  const back = parseSocialReturn(url);
+  if (!back.state || back.state !== pending.state) return null;
+  return { ...back, provider: back.provider || pending.provider || '' };
+}
+
+/** 로그인 창이 결과 없이 닫혔을 때 한 줄 안내(오류가 아니라 도움말). 카카오만 — 카카오톡으로 넘어가는 길이 있다 */
+export function socialClosedHint(provider) {
+  if (provider !== PROVIDERS.KAKAO) return '';
+  return '카카오 로그인이 끝나지 않았습니다. 카카오톡으로 넘어갔다 왔다면 잠시 뒤 자동으로 로그인됩니다. '
+    + '계속 안 되면 카카오 로그인 창에서 카카오톡 대신 카카오 계정(이메일·비밀번호)으로 로그인해 주세요.';
+}
+
 /** 서버 오류 코드 → 사람 말 ('' = 사용자가 닫음, 화면에 아무것도 안 띄움) */
 export function socialAuthErrorText(code, provider) {
   const who = PROVIDER_SHORT[provider] || '소셜';

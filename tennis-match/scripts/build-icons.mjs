@@ -69,6 +69,28 @@ export const ICONS = {
   'assets/favicon.png': { w: 48, h: 48, svg: svg(48, 48, `<circle cx="24" cy="24" r="24" fill="${INK}"/>${ball(24, 24, 11)}`) },
 };
 
+/* 카카오·네이버 개발자 콘솔에 올리는 앱 로고 — 앱 아이콘과 같은 그림(진한 네모 + 흰 공).
+   콘솔마다 원하는 크기가 달라 몇 가지를 같이 뽑는다. 평면 그림이라 모두 수십 KB 안쪽이다.
+   쓰는 법: node scripts/build-icons.mjs --partner */
+export const PARTNER_SIZES = [512, 256, 140, 128];
+export const PARTNER_DIR = 'assets/brand/partner-logo';
+const partnerSvg = (n) => svg(n, n, ball(n / 2, n / 2, n * (196 / 1024)), INK);
+
+async function partner() {
+  const { chromium } = await import(process.env.PW_CORE || 'playwright-core');
+  const b = await chromium.launch({ executablePath: process.env.PW_CHROME || undefined });
+  mkdirSync(resolve(ROOT, PARTNER_DIR), { recursive: true });
+  for (const n of PARTNER_SIZES) {
+    const p = await b.newPage({ viewport: { width: n, height: n }, deviceScaleFactor: 1 });
+    await p.setContent(`<html><body style="margin:0">${partnerSvg(n)}</body></html>`);
+    const out = `${PARTNER_DIR}/court-logo-${n}.png`;
+    await p.screenshot({ path: resolve(ROOT, out), clip: { x: 0, y: 0, width: n, height: n } });
+    await p.close();
+    console.log('만듦', out);
+  }
+  await b.close();
+}
+
 async function main() {
   const { chromium } = await import(process.env.PW_CORE || 'playwright-core');
   const b = await chromium.launch({ executablePath: process.env.PW_CHROME || undefined });
@@ -84,4 +106,4 @@ async function main() {
   }
   await b.close();
 }
-if (process.argv[1] && process.argv[1].endsWith('build-icons.mjs')) main();
+if (process.argv[1] && process.argv[1].endsWith('build-icons.mjs')) (process.argv.includes('--partner') ? partner() : main());

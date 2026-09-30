@@ -9,7 +9,7 @@
        단, "나중에 하기"를 누른 사용자는 클럽 없이도 /(tabs) 로 들어간다.
      초대 링크(tennismatch://join?code=…) → /join 이 코드를 받아 처리 */
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Linking, Alert } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -17,6 +17,7 @@ import { subAuth, getMySession } from '../src/lib/auth';
 import { needsEmailVerify } from '../src/lib/verify';
 import { checkAppAdmin } from '../src/lib/firestore';
 import { C } from '../src/lib/theme';
+import { handleLateSocialUrl } from '../src/lib/socialSignIn';
 
 export const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
@@ -69,6 +70,21 @@ export default function RootLayout() {
       setLoading(false);
     });
     return unsub;
+  }, []);
+
+  /* 카카오·네이버 로그인 결과가 로그인 창 밖으로 늦게 도착한 경우 — 여기서 로그인을 마친다.
+     (카카오톡으로 넘어갔다 오면 로그인 창이 먼저 닫힌다. social.js matchLateReturn 참고)
+     성공하면 위 인증 구독이 알아서 다음 화면으로 보낸다. 실패만 알린다. */
+  useEffect(() => {
+    const onUrl = async (url) => {
+      try {
+        const r = await handleLateSocialUrl(url);
+        if (r && !r.ok && r.error) Alert.alert('로그인', r.error);
+      } catch (e) { /* 로그인 화면에서 다시 시도하면 된다 */ }
+    };
+    Linking.getInitialURL().then((u) => u && onUrl(u)).catch(() => {});
+    const sub = Linking.addEventListener('url', (e) => onUrl(e?.url));
+    return () => sub?.remove?.();
   }, []);
 
   // 라우팅 가드
