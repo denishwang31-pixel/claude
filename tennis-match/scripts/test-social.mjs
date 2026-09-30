@@ -488,6 +488,7 @@ console.log('[카카오톡을 거쳐 늦게 온 로그인 결과도 받는다]')
   ok(!/; wv\)/.test(IN_APP_LOGIN_UA) && /Chrome\/\d+/.test(IN_APP_LOGIN_UA), '앱 안 로그인 화면은 WebView 표시(wv) 없이 크롬으로 알린다 — 카카오톡 버튼이 숨지 않게');
   const sheetSrc = readFileSync(resolve(ROOT, 'src/components/SocialLoginSheet.jsx'), 'utf8');
   ok(/userAgent=\{IN_APP_LOGIN_UA\}/.test(sheetSrc) && /intentToScheme\(url\)/.test(sheetSrc), '로그인 화면이 그 이름을 쓰고 카카오톡 주소를 바꿔 넘긴다');
+  ok(/\bincognito\b/.test(sheetSrc), '앱 안 로그인 화면은 매번 새로 — 예전 카카오 계정으로 저절로 넘어가지 않게');
 }
 
 console.log('[로그인 복귀 주소는 화면 이동에서 뺀다]');

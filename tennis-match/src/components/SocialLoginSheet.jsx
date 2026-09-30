@@ -81,8 +81,10 @@ export function SocialLoginSheet({ request, onDone }) {
             onLoadEnd={() => setLoading(false)}
             javaScriptEnabled
             domStorageEnabled
-            sharedCookiesEnabled
-            thirdPartyCookiesEnabled
+            /* 매번 새로 — 예전 카카오 로그인이 남아 있으면 로그인 화면 없이 그 계정으로
+               바로 넘어간다. 로그아웃하고 다른 계정으로 들어가려는 사람이 막히고,
+               화면을 확인할 수도 없었다(앱 주인). 창을 닫으면 기록도 사라진다. */
+            incognito
             setSupportMultipleWindows={false}
             userAgent={IN_APP_LOGIN_UA}
             style={{ flex: 1 }}

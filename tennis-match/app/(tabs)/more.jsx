@@ -259,7 +259,7 @@ export default function More() {
         />
       );
       case 'ntrp': return <Ntrp {...{ clubId, members, me, meVal, isAdmin, flash }} />;
-      case 'attendance': return <Attendance {...{ clubId, members, meetings, isAdmin, flash }} />;
+      case 'attendance': return <Attendance {...{ clubId, members, meetings, isAdmin, flash, venues, meVal }} />;
       case 'pairs': return <Pairs {...{ clubId, members, pairs, isAdmin, flash }} />;
       case 'settings': return (
         <ClubSettings

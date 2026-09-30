@@ -532,7 +532,6 @@ export default function Login() {
               {[
                 ['schedule', '일정 · 참석 투표', '누르면 바로 반영'],
                 ['match', '대진 자동 편성', '출전 수까지 고르게'],
-                ['fees', '회비 · 입금 대사', '단톡방 독촉 없이'],
               ].map(([icon, title, sub]) => (
                 <View key={title} style={{ flex: 1, alignItems: 'center', paddingHorizontal: 3 }}>
                   <Icon name={icon} size={21} color={C.green} />
