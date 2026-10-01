@@ -27,7 +27,7 @@ import {
 import {
   OPEN_STATE, OPEN_STATE_LABEL, OPEN_STATE_TONE,
   openState, regionText, gameDates, signupDates, refundText, dayText, openCalendarItems,
-  OPEN_SEARCH_BY, openOrgs, playsOn,
+  OPEN_SEARCH_BY, openOrgs, playsOn, spanDays, dayOfPeriod,
   visibleOpen, sortOpen, openSidos, nearbyNote, validateOpen, syncRunView,
 } from '../lib/openTournament';
 import { calendarGrid, monthLabel, shiftMonth } from '../lib/agenda';
@@ -107,11 +107,13 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
   const list = useMemo(() => sortOpen(
     date ? filtered.filter((t) => playsOn(t, date)) : filtered,
     today(),
-  ), [filtered, date, showDone, isAppAdmin]);
+  ).sort((a, b) => (date ? dayOfPeriod(a, date) - dayOfPeriod(b, date) : 0)), [filtered, date, showDone, isAppAdmin]);
   const weeks = useMemo(
     () => calendarGrid(monthKey, openCalendarItems(filtered), today()),
     [monthKey, filtered],
   );
+  /* 고른 날 열리는 대회들의 기간 — 달력에 옅은 띠로(고른 때만, 그래서 복잡해지지 않는다) */
+  const span = useMemo(() => spanDays(filtered, date), [filtered, date]);
   /* 그날 접수가 끝나는 대회 — 날짜를 눌렀을 때 아래에 따로 한 줄 */
   const closingOn = useMemo(
     () => (date ? filtered.filter((t) => String(t.signupTo || '').slice(0, 10) === date) : []),
@@ -316,28 +318,45 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
             {week.map((cell, ci) => {
               if (cell.blank) return <View key={`b${ci}`} style={{ flex: 1, height: 42 }} />;
               const on = date === cell.date;
-              const game = cell.items.some((it) => it.kind === 'game');
+              const starts = cell.items.filter((it) => it.kind === 'game').length;
               const deadline = cell.items.some((it) => it.kind === 'deadline');
+              /* 기간 띠 — 앞뒤 칸도 띠면 이어 붙이고, 끝이면 둥글게 */
+              const inSpan = span.has(cell.date);
+              const prev = week[ci - 1]; const next = week[ci + 1];
+              const joinL = inSpan && prev && !prev.blank && span.has(prev.date);
+              const joinR = inSpan && next && !next.blank && span.has(next.date);
               return (
                 <Pressable key={cell.date} onPress={() => setDate(on ? '' : cell.date)}
-                  accessibilityLabel={`${dayText(cell.date)}${game ? ', 대회 있음' : ''}${deadline ? ', 접수 마감' : ''}`}
-                  style={{
-                    flex: 1, height: 42, alignItems: 'center', justifyContent: 'center',
-                    borderRadius: R.sm, backgroundColor: on ? C.greenSoft : 'transparent',
-                  }}>
+                  accessibilityLabel={`${dayText(cell.date)}${starts ? `, 대회 ${starts}개 시작` : ''}${deadline ? ', 접수 마감' : ''}`}
+                  style={{ flex: 1, height: 46, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 3 }}>
+                  {inSpan && (
+                    <View style={{
+                      position: 'absolute', top: 3, height: 26, left: joinL ? 0 : 3, right: joinR ? 0 : 3,
+                      backgroundColor: C.greenSoft,
+                      borderTopLeftRadius: joinL ? 0 : 13, borderBottomLeftRadius: joinL ? 0 : 13,
+                      borderTopRightRadius: joinR ? 0 : 13, borderBottomRightRadius: joinR ? 0 : 13,
+                    }} />
+                  )}
                   <View style={{
-                    width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: cell.today ? C.green : 'transparent',
+                    width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: on ? C.green : 'transparent',
+                    borderWidth: cell.today && !on ? 1.5 : 0, borderColor: C.green,
                   }}>
                     <Text style={{
                       fontSize: 12.5, fontWeight: cell.today || on ? '800' : '500',
-                      color: cell.today ? '#fff' : cell.past ? C.faint
+                      color: on ? '#fff' : cell.today ? C.green : cell.past ? C.faint
                         : ci === 0 ? C.danger : ci === 6 ? C.info : C.text,
                     }}>{cell.day}</Text>
                   </View>
-                  <View style={{ flexDirection: 'row', gap: 2, height: 6, marginTop: 1 }}>
-                    {game && <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: C.green }} />}
-                    {deadline && <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: C.danger }} />}
+                  {/* 시작일 표시 — 1개는 점, 여러 개는 숫자 */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: 12, marginTop: 2 }}>
+                    {starts === 1 && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.green }} />}
+                    {starts > 1 && (
+                      <View style={{ minWidth: 14, height: 12, borderRadius: 6, paddingHorizontal: 3, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 8.5, fontWeight: '800', color: '#fff' }}>{starts}</Text>
+                      </View>
+                    )}
+                    {deadline && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.danger }} />}
                   </View>
                 </Pressable>
               );
@@ -348,12 +367,16 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
           flexDirection: 'row', gap: 14, marginTop: 8, paddingTop: 8,
           borderTopWidth: 1, borderTopColor: C.border, justifyContent: 'center',
         }}>
-          {[[C.green, '대회 날'], [C.danger, '접수 마감일']].map(([c, l]) => (
+          {[[C.green, '대회 시작(숫자=개수)'], [C.danger, '접수 마감일']].map(([c, l]) => (
             <View key={l} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c }} />
               <Text style={{ fontSize: 10.5, color: C.faint }}>{l}</Text>
             </View>
           ))}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View style={{ width: 14, height: 6, borderRadius: 3, backgroundColor: C.greenSoft, borderWidth: 1, borderColor: C.lime2 }} />
+            <Text style={{ fontSize: 10.5, color: C.faint }}>날짜를 누르면 대회 기간</Text>
+          </View>
         </View>
       </Card>
 
@@ -475,6 +498,8 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
               <Chip tone={OPEN_STATE_TONE[state]}>{OPEN_STATE_LABEL[state]}</Chip>
               {!!t.org && <Chip tone="soft">{t.org}</Chip>}
               {!!sg.dday && state === OPEN_STATE.SIGNUP && <Chip tone="red">{sg.dday}</Chip>}
+              {!!date && dayOfPeriod(t, date) === 1 && <Chip tone="green">이날 시작</Chip>}
+              {!!date && dayOfPeriod(t, date) > 1 && <Chip tone="outline">{`진행 ${dayOfPeriod(t, date)}일째`}</Chip>}
             </View>
 
             <Text style={[F.bodyBold, { marginTop: 7, fontSize: 14.5 }]}>{t.name}</Text>

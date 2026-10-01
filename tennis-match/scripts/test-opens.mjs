@@ -10,6 +10,7 @@ import {
   lastDay, openState, openStatusLine, periodText, regionText,
   visibleOpen, sortOpen, openSidos, nearbyNote, validateOpen,
   areaOf, dayText, gameDates, signupDates, refundText, playsOn, openCalendarItems, searchHay, openOrgs,
+  periodDays, spanDays, dayOfPeriod,
 } from '../src/lib/openTournament.js';
 import { guessRegion } from '../src/lib/regions.js';
 import { KIND, KINDS, buildAgenda } from '../src/lib/agenda.js';
@@ -260,17 +261,22 @@ console.log('\n[달력 — 날짜를 누르면 그날 열리는 대회만]');
   eq(visibleOpen([t], { today: TODAY, date: '2026-10-03' }).length, 1, '목록 거르기에 날짜');
   eq(visibleOpen([t], { today: TODAY, date: '2026-10-06' }).length, 0, '그날 없으면 빈 목록');
   const dots = openCalendarItems([t]);
-  eq(dots.filter((x) => x.kind === 'game').map((x) => x.date), ['2026-10-02', '2026-10-03', '2026-10-04'], '대회 날마다 점');
+  eq(dots.filter((x) => x.kind === 'game').map((x) => x.date), ['2026-10-02'], '대회는 시작일에만 표시 — 기간 전체에 찍으면 대회 수가 부풀어 보인다');
   eq(dots.filter((x) => x.kind === 'deadline').map((x) => x.date), ['2026-09-25'], '접수 마감일 점');
-  eq(openCalendarItems([{ id: 'z', startDate: '2026-10-01', endDate: '2027-03-01' }]).length, 31,
+  eq(periodDays({ startDate: '2026-10-01', endDate: '2027-03-01' }).length, 31,
     '잘못 적힌 긴 기간이 달력을 덮지 않는다');
+  const u = { id: 'u', startDate: '2026-10-04', endDate: '2026-10-06' };
+  eq([...spanDays([t, u], '2026-10-04')].sort(), ['2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06'],
+    '고른 날 열리는 대회들의 기간을 합쳐 띠로');
+  eq(spanDays([t, u], '').size, 0, '날짜를 안 고르면 띠 없음');
+  eq([dayOfPeriod(t, '2026-10-02'), dayOfPeriod(t, '2026-10-04'), dayOfPeriod(t, '2026-10-09')], [1, 3, 0], '며칠째');
   ok(!playsOn({ id: 'n' }, '2026-10-01'), '날짜 없는 대회는 어느 날에도 안 걸린다');
 }
 
 console.log('\n[카드 일정 두 줄 — 대회 일정 / 접수 일정]');
 {
   eq(dayText('2026-10-02'), '10.2(금)', '날짜 + 요일');
-  eq(gameDates({ startDate: '2026-10-02', endDate: '2026-10-04' }), '10.2(금) ~ 10.4(일)', '여러 날');
+  eq(gameDates({ startDate: '2026-10-02', endDate: '2026-10-04' }), '10.2(금) ~ 10.4(일) · 3일간', '여러 날 — 며칠간인지');
   eq(gameDates({ startDate: '2026-10-02' }), '10.2(금)', '하루');
   eq(gameDates({}), '날짜 미정 · 요강 확인', '날짜 모름');
   eq(signupDates({ signupFrom: '2026-09-01', signupTo: '2026-09-12', signupToTime: '18:00' }, TODAY),

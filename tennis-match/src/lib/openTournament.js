@@ -164,7 +164,8 @@ export function gameDates(t) {
   const e = d(t?.endDate);
   if (!s) return '날짜 미정 · 요강 확인';
   if (!e || e === s) return dayText(s);
-  return `${dayText(s)} ~ ${dayText(e)}`;
+  const n = periodLength(t);
+  return `${dayText(s)} ~ ${dayText(e)}${n > 1 ? ` · ${n}일간` : ''}`;
 }
 
 /**
@@ -200,24 +201,54 @@ export function playsOn(t, date) {
   return s <= date && date <= lastDay(t);
 }
 
-/** 달력 점 — 대회 날마다 'game', 접수 마감일에 'deadline' (calendarGrid 가 받는 모양) */
+/** 대회 기간의 날짜들 — ['2026-10-02', '2026-10-03', …]
+    한 달 넘는 대회는 없다 — 잘못 적힌 날짜가 달력을 덮지 않게 31일에서 자른다. */
+export function periodDays(t) {
+  const s = d(t?.startDate);
+  const e = lastDay(t);
+  if (!s || !e || e < s) return [];
+  const out = [];
+  const cur = new Date(`${s}T00:00:00`);
+  for (let i = 0; i < 31; i += 1) {
+    const y = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+    if (y > e) break;
+    out.push(y);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+
+/** 며칠짜리 대회인가 */
+export const periodLength = (t) => periodDays(t).length;
+
+/**
+ * 달력 표시 — 대회는 **시작일에만** 'game', 접수 마감일에 'deadline' (calendarGrid 가 받는 모양).
+ *
+ * 왜 시작일만인가: 5일짜리 대회를 5칸 모두에 찍으면 대회 수가 부풀어 보이고,
+ * 대회가 열 개만 넘어도 거의 모든 칸에 점이 생겨 달력이 쓸모없어진다.
+ * 기간은 날짜를 눌렀을 때 그날 대회들의 기간만 옅게 칠해 보여 준다(spanDays).
+ */
 export function openCalendarItems(list) {
   const out = [];
   (list || []).forEach((t) => {
-    const s = d(t?.startDate);
-    const e = lastDay(t);
-    if (s && e && e >= s) {
-      const cur = new Date(`${s}T00:00:00`);
-      for (let i = 0; i < 31; i += 1) {   // 한 달 넘는 대회는 없다 — 잘못 적힌 날짜가 달력을 덮지 않게
-        const y = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
-        if (y > e) break;
-        out.push({ date: y, kind: 'game' });
-        cur.setDate(cur.getDate() + 1);
-      }
-    }
+    if (d(t?.startDate)) out.push({ date: d(t.startDate), kind: 'game' });
     if (d(t?.signupTo)) out.push({ date: d(t.signupTo), kind: 'deadline' });
   });
   return out;
+}
+
+/** 고른 날 열리는 대회들의 기간을 합친 날짜 묶음 — 달력에 옅은 띠로 칠한다 */
+export function spanDays(list, date) {
+  const set = new Set();
+  if (!date) return set;
+  (list || []).filter((t) => playsOn(t, date)).forEach((t) => periodDays(t).forEach((x) => set.add(x)));
+  return set;
+}
+
+/** 고른 날 기준으로 며칠째인가 — 첫날이면 1 */
+export function dayOfPeriod(t, date) {
+  const i = periodDays(t).indexOf(date);
+  return i < 0 ? 0 : i + 1;
 }
 
 /* ---------------- 고르기 ---------------- */
@@ -390,6 +421,7 @@ export default {
   OPEN_STATE, OPEN_STATE_LABEL, OPEN_STATE_TONE,
   lastDay, openState, openStatusLine, periodText, regionText, areaOf,
   dayText, daysLeft, gameDates, signupDates, refundText, playsOn, openCalendarItems,
+  periodDays, periodLength, spanDays, dayOfPeriod,
   OPEN_SEARCH_BY, searchHay, openOrgs,
   isOpenForSignup, visibleOpen, sortOpen, openSidos, nearbyNote, validateOpen,
 };

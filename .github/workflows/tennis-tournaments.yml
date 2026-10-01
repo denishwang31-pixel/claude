@@ -27,6 +27,8 @@ on:
       - 'tennis-match/src/lib/tournamentSearch.js'
       - 'tennis-match/src/lib/openSync.js'
       - 'tennis-match/src/lib/openParse.js'
+      - 'tennis-match/src/lib/openTournament.js'   # 상태·검증 규칙 — 무엇을 넣고 빼는지가 바뀐다
+      - 'tennis-match/src/lib/regions.js'          # 지역 짐작
       - '.github/workflows/tennis-tournaments.yml'
   workflow_dispatch:
     inputs:
