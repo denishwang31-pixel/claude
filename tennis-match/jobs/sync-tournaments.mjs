@@ -62,7 +62,7 @@ async function main() {
     summary('건너뜀');
     skipped.forEach((s) => summary(`- ${s.name}: ${s.reason}`));
   }
-  upserts.forEach(({ data: t }) => log(`  + ${t.name} (${t.startDate}, 접수 ~${t.signupTo || '?'})`));
+  upserts.forEach(({ data: t }) => log(`  + ${t.name} (${t.startDate} · 접수 ${t.signupFrom || '?'}~${t.signupTo || '?'} · 환불 ~${t.refundTo || '-'} · ${t.sido || '지역?'} · ${t.place ? '장소 있음' : '장소 없음'})`));
   skipped.forEach((s) => log(`  - ${s.name}: ${s.reason}`));
   log(DRY_RUN ? '시험 실행이라 쓰지 않았습니다.' : `반영: 넣기/갱신 ${upserts.length} · 지움 ${deletes.length}`);
 }
