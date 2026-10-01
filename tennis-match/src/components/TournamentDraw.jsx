@@ -11,6 +11,10 @@
    (개설 화면에서 미리 짜게 하면 "거기서 꼭 짜야 하는 줄" 알게 된다 — 앱 주인).
 
    남복·여복을 함께 고르면 남자부·여자부가 따로 돌고 따로 시상한다.
+
+   진행 방식 두 가지
+     · 팀 고정 조별리그 — 조 안에서 풀리그, 또는 「팀당 N경기」(원형 순서로 N라운드, 같은 팀과 두 번 붙지 않음)
+     · KDK 개인전       — 매 경기 파트너가 바뀌고 모두 같은 경기 수, 개인 순위로 끝(남복·여복·자유 복식만)
    계산은 src/lib/groupLeague.js (테스트: scripts/test-groupleague.mjs).
    ============================================================ */
 import React, { useMemo, useState } from 'react';
@@ -19,8 +23,10 @@ import { updateTournament } from '../lib/firestore';
 import {
   normRules, RULE_LABELS, RANK_RULE_TEXT, TEAM_MODE, GROUP_METHOD, PLAY,
   EVENTS, eventOf, eligible, drawAll, redrawDivision, schedule, playersOfFn, addTeam, removeTeam,
-  leagueQualifiers, nameLookup, progress,
+  leagueQualifiers, nameLookup, progress, KDK_RANK_TEXT,
 } from '../lib/groupLeague';
+import { drawKdkAll, kdkOk } from '../lib/tournamentKdk';
+import { KdkDivView } from './KdkDivView';
 import { buildBracket, applyResult, championOf, orderBySeed } from '../lib/tournament';
 import { normalizeCourtNames } from '../lib/courtNames';
 import { GroupLeagueView } from './GroupLeagueView';
@@ -99,12 +105,19 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
   const courts = Math.max(1, Number(t.courts) || 2);
   const courtNames = normalizeCourtNames(t.courtNames, courts);
   const rules = normRules(t.rules);
-  const drawn = entries.length > 0;
+  const kdk = t.kdk || {};
+  const kdkDivs = events.filter((k) => kdk[k]?.matches?.length);
+  const isKdk = kdkDivs.length > 0;                    // 지금 저장된 대진이 KDK 인가
+  const drawn = entries.length > 0 || isKdk;
+  const kdkAble = events.length > 0 && events.every(kdkOk);
+  const showKdk = isKdk || (!drawn && rules.format === 'kdk' && kdkAble);   // 위 요약 줄
   const nameOfPlayer = useMemo(() => nameLookup(members, t.guests || []), [members, t.guests]);
   const nameOfEntry = (id) => entries.find((e) => e.id === id)?.name || '?';
-  const hasResults = groups.some((g) => (g.matches || []).some((m) => m.score)) || Object.values(t.ko || {}).some((k) => k?.bracket);
+  const hasResults = groups.some((g) => (g.matches || []).some((m) => m.score)) || Object.values(t.ko || {}).some((k) => k?.bracket)
+    || kdkDivs.some((k) => kdk[k].matches.some((m) => m.score));
 
-  const myDiv = events.find((k) => entries.some((e) => e.div === k && (e.players || []).includes(me)));
+  const myDiv = events.find((k) => entries.some((e) => e.div === k && (e.players || []).includes(me))
+    || (kdk[k]?.players || []).some((p) => p.id === me));
   const [div, setDiv] = useState(myDiv || events[0]);
   const [setupOpen, setSetupOpen] = useState(!drawn && isAdmin);
   const [editOpen, setEditOpen] = useState(false);
@@ -116,6 +129,8 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
     games: String(rules.games),
     groupCount: String(rules.groupCount),
     advance: String(rules.advance),
+    perTeam: String(rules.perTeam),
+    format: rules.format === 'kdk' && kdkAble ? 'kdk' : 'league',
     courts: String(courts),
     courtNames,
   }));
@@ -132,7 +147,9 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
   const critRules = () => normRules({
     ...rules, teamMode: crit.teamMode, groupMethod: crit.groupMethod,
     games: crit.games, groupCount: crit.groupCount, advance: crit.advance,
+    perTeam: crit.perTeam, format: crit.format === 'kdk' && kdkAble ? 'kdk' : 'league',
   });
+  const critKdk = crit.format === 'kdk' && kdkAble;
   const critCourts = () => Math.max(1, Math.min(20, Number(crit.courts) || 1));
 
   const save = async (patch, msg) => {
@@ -148,12 +165,19 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
     const names = normalizeCourtNames(crit.courtNames, n);
     setBusy(true);
     try {
-      if (scope === 'all') {
+      if (r.format === 'kdk') {
+        const d = drawKdkAll(roster, r, events, { courts: n, excluded: t.excluded || {} });
+        if (!Object.keys(d.kdk).length) { flash(d.problems[0] || 'KDK 대진을 짤 사람이 부족합니다(부마다 4명 이상)'); return; }
+        await updateTournament(clubId, t.id, {
+          rules: r, courts: n, courtNames: names, kdk: d.kdk, entries: [], groups: [], ko: {}, drawNotes: d.problems,
+        });
+        flash(d.problems.length ? `KDK 대진을 작성했습니다 — 확인할 것 ${d.problems.length}건` : 'KDK 대진을 작성했습니다');
+      } else if (scope === 'all') {
         const d = drawAll(roster, r, events, { courts: n, excluded: t.excluded || {}, useGroups });
         if (!d.entries.length) { flash(d.problems[0] || '대진을 짤 사람이 부족합니다'); return; }
         const ko = useGroups ? {} : Object.fromEntries(events.map((k) => [k, koFor(d.entries.filter((e) => e.div === k))]).filter(([, v]) => v.bracket?.rounds?.length));
         await updateTournament(clubId, t.id, {
-          rules: r, courts: n, courtNames: names, entries: d.entries, groups: d.groups, ko, drawNotes: d.problems,
+          rules: r, courts: n, courtNames: names, entries: d.entries, groups: d.groups, ko, drawNotes: d.problems, kdk: null,
         });
         flash(d.problems.length ? `대진을 작성했습니다 — 확인할 것 ${d.problems.length}건` : '대진을 작성했습니다');
       } else {
@@ -166,7 +190,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         }
         await updateTournament(clubId, t.id, {
           rules: r, courts: n, courtNames: names, entries: d.entries, groups: d.groups, ko,
-          drawNotes: d.problem ? [d.problem] : [],
+          drawNotes: d.problem ? [d.problem] : [], kdk: null,
         });
         flash(d.problem || `${ev.name} 대진을 다시 작성했습니다`);
       }
@@ -179,7 +203,8 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
     if (!drawn) { runDraw('all'); return; }
     const warn = hasResults ? '\n\n⚠️ 입력한 결과가 함께 지워집니다.' : '';
     const opts = [{ text: '취소', style: 'cancel' }];
-    if (events.length > 1) opts.push({ text: `${ev.name}만`, onPress: () => runDraw(div) });
+    /* 한 부만 다시 — 팀 고정 조별리그끼리일 때만(KDK 는 모든 부를 한 시간표로 함께 짠다) */
+    if (events.length > 1 && !isKdk && !critKdk) opts.push({ text: `${ev.name}만`, onPress: () => runDraw(div) });
     opts.push({ text: events.length > 1 ? '전체 부' : '다시 작성', style: hasResults ? 'destructive' : 'default', onPress: () => runDraw('all') });
     Alert.alert('대진 다시 작성', `지금 기준으로 다시 짭니다.${warn}`, opts);
   };
@@ -187,7 +212,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
     const n = critCourts();
     const next = { rules: critRules(), courts: n, courtNames: normalizeCourtNames(crit.courtNames, n) };
     /* 면수가 바뀌었으면 시간표만 다시(대진·결과는 그대로) */
-    if (drawn && n !== courts) next.groups = schedule(groups, n, { playersOf: playersOfFn(entries) });
+    if (entries.length && n !== courts) next.groups = schedule(groups, n, { playersOf: playersOfFn(entries) });
     save(next, '작성 기준을 저장했습니다');
   };
 
@@ -241,13 +266,22 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
     save({ ko: next, ...(allDone ? { status: 'finished' } : {}) }, k.championId ? `🏆 ${ev.name} 우승: ${nameOfEntry(k.championId)}` : '');
   };
 
+  /* KDK 결과 저장 — 모든 부의 모든 경기가 끝나면 대회도 끝 */
+  const saveKdk = (next, msg) => {
+    const allDone = Object.values(next).every((d) => (d?.matches || []).every((m) => m.score));
+    save({ kdk: next, ...(allDone ? { status: 'finished' } : {}) }, msg || '');
+  };
+
   /* 전체 시간표 — 모든 부를 한 표에 (코트 운영용) */
-  const allGrid = () => groups.flatMap((g) => (g.matches || []).map((m) => ({
-    ...m,
-    teamA: entries.find((e) => e.id === m.a)?.players || [],
-    teamB: entries.find((e) => e.id === m.b)?.players || [],
-    type: `${eventOf(g.div).short} ${g.name}`,
-  })));
+  const allGrid = () => [
+    ...groups.flatMap((g) => (g.matches || []).map((m) => ({
+      ...m,
+      teamA: entries.find((e) => e.id === m.a)?.players || [],
+      teamB: entries.find((e) => e.id === m.b)?.players || [],
+      type: `${eventOf(g.div).short} ${g.name}`,
+    }))),
+    ...kdkDivs.flatMap((k) => kdk[k].matches.map((m) => ({ ...m, type: `${eventOf(k).short} KDK` }))),
+  ];
   const [tabAll, setTabAll] = useState(false);
 
   return (
@@ -259,11 +293,12 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
             {events.map((k) => <Chip key={k} tone="soft">{EVENTS[k].short}</Chip>)}
             <Chip tone="outline">코트 {courts}면</Chip>
             <Chip tone="outline">참가 {roster.length}명</Chip>
-            <Chip tone="outline">{useGroups ? `조별리그 → 본선 ${rules.advance}팀씩` : '토너먼트만'}</Chip>
+            <Chip tone="outline">{showKdk ? 'KDK 개인전' : useGroups ? `조별리그 → 본선 ${rules.advance}팀씩` : '토너먼트만'}</Chip>
           </View>
           <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 8, lineHeight: 17 }}>
-            {RULE_LABELS.teamMode[rules.teamMode] || ''} · {RULE_LABELS.groupMethod[rules.groupMethod]} · {rules.games}게임 선승
-            {useGroups ? ` · 부마다 ${rules.groupCount}개 조` : ''}
+            {showKdk
+              ? `매 경기 파트너 교체 · 모두 같은 경기 수 · ${rules.games}게임 선승 · 개인 순위`
+              : `${RULE_LABELS.teamMode[rules.teamMode] || ''} · ${RULE_LABELS.groupMethod[rules.groupMethod]} · ${rules.games}게임 선승${useGroups ? ` · 부마다 ${rules.groupCount}개 조 · ${rules.perTeam ? `팀당 ${rules.perTeam}경기` : '조 안 모두 한 번씩'}` : ''}`}
           </Text>
           {events.length > 1 && events.some((k) => EVENTS[k].gender === 'M') && events.some((k) => EVENTS[k].gender === 'F') && (
             <Text style={{ fontSize: 11, color: C.green, marginTop: 4 }}>남자부·여자부를 따로 운영하고 따로 시상합니다.</Text>
@@ -271,12 +306,12 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
             <Btn disabled={busy} onPress={askDraw}>{busy ? '작성 중…' : drawn ? '대진 다시 작성' : '자동 대진 작성'}</Btn>
             <Btn tone="ghost" onPress={() => setSetupOpen(!setupOpen)}>{setupOpen ? '기준 닫기' : '작성 기준 설정'}</Btn>
-            {drawn && useGroups && <Btn tone="ghost" onPress={() => setEditOpen(!editOpen)}>{editOpen ? '수정 닫기' : '수기 수정'}</Btn>}
+            {entries.length > 0 && useGroups && <Btn tone="ghost" onPress={() => setEditOpen(!editOpen)}>{editOpen ? '수정 닫기' : '수기 수정'}</Btn>}
           </View>
           {(t.drawNotes || []).length > 0 && (
             <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: C.warnBg }}>
               {(t.drawNotes || []).map((x) => <Text key={x} style={{ fontSize: 11.5, color: C.warn, lineHeight: 17 }}>· {x}</Text>)}
-              <Text style={{ fontSize: 10.5, color: C.warn, marginTop: 4 }}>빠진 사람은 「수기 수정」에서 짝을 지어 조에 넣을 수 있습니다.</Text>
+              {!isKdk && <Text style={{ fontSize: 10.5, color: C.warn, marginTop: 4 }}>빠진 사람은 「수기 수정」에서 짝을 지어 조에 넣을 수 있습니다.</Text>}
             </View>
           )}
         </Card>
@@ -286,36 +321,64 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         <>
           <SectionTitle hint="대회 전체에 적용됩니다. 저장하거나 「자동 대진 작성」을 누를 때 반영됩니다.">작성 기준</SectionTitle>
           <Card>
-            {events.some((k) => EVENTS[k].play === PLAY.DOUBLES) && (
+            {useGroups && (
+              <>
+                <ChoiceRow label="진행 방식" options={[['league', '팀 고정 조별리그'], ...(kdkAble ? [['kdk', 'KDK 개인전 (파트너 교체)']] : [])]}
+                  value={critKdk ? 'kdk' : 'league'} onChange={(v) => setCrit({ ...crit, format: v })} />
+                <Text style={{ fontSize: 11, color: C.faint, marginTop: -6, marginBottom: 12, lineHeight: 16 }}>
+                  {critKdk
+                    ? 'KDK — 짝을 고정하지 않고 매 경기 파트너가 바뀝니다. 실력순으로 4~8명씩 조를 나누고, 모두 같은 경기 수를 치른 뒤 개인 승수로 순위를 냅니다. 본선 없이 개인 순위로 끝납니다.'
+                    : kdkAble
+                      ? '조별리그 — 짝을 지은 팀이 조 안에서 경기합니다. 짝 없이 매번 파트너를 바꾸려면 KDK 를 고르세요.'
+                      : '혼합 복식·단식이 있으면 KDK 를 고를 수 없습니다(KDK 는 남복·여복·자유 복식만).'}
+                </Text>
+              </>
+            )}
+            {!critKdk && events.some((k) => EVENTS[k].play === PLAY.DOUBLES) && (
               <ChoiceRow label="짝 짓기 (복식)" options={[[TEAM_MODE.BALANCED, '실력 균등'], [TEAM_MODE.RANDOM, '무작위']]}
                 value={crit.teamMode} onChange={(v) => setCrit({ ...crit, teamMode: v })} />
             )}
-            {useGroups && (
+            {useGroups && !critKdk && (
               <ChoiceRow label="조 나누기" options={Object.entries(RULE_LABELS.groupMethod)}
                 value={crit.groupMethod} onChange={(v) => setCrit({ ...crit, groupMethod: v })} />
+            )}
+            {useGroups && !critKdk && (
+              <>
+                <ChoiceRow label="조 안 경기 수"
+                  options={[['0', '모두 한 번씩'], ['2', '팀당 2경기'], ['3', '팀당 3경기'], ['4', '팀당 4경기'], ['5', '팀당 5경기']]}
+                  value={String(Number(crit.perTeam) || 0)} onChange={(v) => setCrit({ ...crit, perTeam: v })} />
+                <Text style={{ fontSize: 11, color: C.faint, marginTop: -6, marginBottom: 12, lineHeight: 16 }}>
+                  {Number(crit.perTeam) > 0
+                    ? `팀마다 ${crit.perTeam}경기만 — 원형 순서(1번↔끝번 …)로 ${crit.perTeam}라운드를 돌려 같은 팀과는 두 번 붙지 않습니다. 조 팀 수가 홀수면 한 팀이 한 경기 적을 수 있고, 그때 순위는 승률로 냅니다. 조 인원보다 많이 정하면 모두 한 번씩과 같습니다.`
+                    : '조 안의 모든 팀과 한 번씩(풀리그) — 5팀 조면 팀당 4경기, 조 전체 10경기.'}
+                </Text>
+              </>
             )}
             <ChoiceRow label="한 경기" options={[['4', '4게임'], ['6', '6게임'], ['8', '8게임']]}
               value={crit.games} onChange={(v) => setCrit({ ...crit, games: v })} />
             {useGroups && (
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-                {crit.groupMethod !== GROUP_METHOD.GRADE && (
+                {(critKdk || crit.groupMethod !== GROUP_METHOD.GRADE) && (
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>조 개수 (부마다)</Text>
+                    <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>{critKdk ? '조 개수 (1이면 인원에 맞춰 자동)' : '조 개수 (부마다)'}</Text>
                     <Field keyboardType="number-pad" value={crit.groupCount} onChangeText={(v) => setCrit({ ...crit, groupCount: v })} />
                   </View>
                 )}
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>조별 본선 진출</Text>
-                  <Field keyboardType="number-pad" value={crit.advance} onChangeText={(v) => setCrit({ ...crit, advance: v })} suffix="팀" />
-                </View>
+                {!critKdk && (
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>조별 본선 진출</Text>
+                    <Field keyboardType="number-pad" value={crit.advance} onChangeText={(v) => setCrit({ ...crit, advance: v })} suffix="팀" />
+                  </View>
+                )}
               </View>
             )}
             <Text style={{ fontSize: 11.5, color: C.sub, fontWeight: '700', marginBottom: 6 }}>코트</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={{ width: 104 }}>
-                <Field keyboardType="number-pad" value={crit.courts} suffix="면"
+              <View style={{ width: 74 }}>
+                <Field keyboardType="number-pad" value={crit.courts}
                   onChangeText={(v) => setCrit({ ...crit, courts: v, courtNames: normalizeCourtNames(crit.courtNames, Math.max(1, Math.min(20, Number(v) || 1))) })} />
               </View>
+              <Text style={{ fontSize: 13, color: C.sub, fontWeight: '600' }}>면</Text>
               <Text style={{ flex: 1, fontSize: 11, color: C.faint }}>코트장에서 부르는 이름으로 바꿀 수 있습니다(예: A·B, 9·10)</Text>
             </View>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
@@ -330,7 +393,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
                 </View>
               ))}
             </View>
-            <Text style={{ fontSize: 11, color: C.faint, marginTop: 10, lineHeight: 16 }}>순위: {RANK_RULE_TEXT}</Text>
+            <Text style={{ fontSize: 11, color: C.faint, marginTop: 10, lineHeight: 16 }}>순위: {critKdk ? KDK_RANK_TEXT : RANK_RULE_TEXT}</Text>
             <View style={{ marginTop: 10 }}>
               <Btn small tone="ghost" onPress={saveCrit}>기준만 저장</Btn>
             </View>
@@ -386,7 +449,16 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         </>
       )}
 
-      {drawn && !tabAll && (
+      {drawn && !tabAll && isKdk && (
+        kdk[div]?.matches?.length ? (
+          <KdkDivView kdk={kdk} div={div} games={rules.games} venue={{ courts, courtNames }} nameOf={nameOfPlayer}
+            me={me} canEdit={isAdmin} onSave={saveKdk} title={events.length > 1 ? `${ev.name} ` : ''} />
+        ) : (
+          <EmptyState icon="🎾" title={`${ev.name} 대진이 없습니다`} body={isAdmin ? '참가자가 4명보다 적었을 수 있습니다. 위 안내를 확인하세요.' : '운영진이 작성하면 표시됩니다.'} />
+        )
+      )}
+
+      {drawn && !tabAll && !isKdk && (
         <>
           <DivKnockout ko={divKo} nameOfEntry={nameOfEntry} canEdit={isAdmin} onSave={saveKo} title={events.length > 1 ? ev.name : ''} />
           {useGroups && divGroups.length > 0 && (

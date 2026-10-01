@@ -41,6 +41,8 @@ export const DEFAULT_RULES = {
   groupCount: 4,
   advance: 2,
   games: 6,           // 한 경기 게임 수(6게임 단세트가 기본)
+  perTeam: 0,         // 조 안 팀당 경기 수 — 0 이면 풀리그(모두 한 번씩)
+  format: 'league',   // league(팀 고정 조별리그) | kdk(개인전, 매 경기 파트너 교체)
 };
 
 export const RULE_LABELS = {
@@ -62,6 +64,8 @@ export function normRules(r = {}) {
   x.groupCount = Math.max(1, Math.round(Number(x.groupCount) || 1));
   x.advance = Math.max(0, Math.round(Number(x.advance) || 0));
   x.games = Math.min(9, Math.max(1, Math.round(Number(x.games) || 6)));
+  x.perTeam = Math.max(0, Math.min(20, Math.round(Number(x.perTeam) || 0)));   // 0 = 풀리그
+  x.format = x.format === 'kdk' ? 'kdk' : 'league';                              // 팀 고정 조별리그 / KDK
   return x;
 }
 
@@ -168,18 +172,65 @@ export function roundRobin(ids) {
 
 const pairKey = (a, b) => [a, b].sort().join('|');
 
-/** 조의 경기를 (다시) 만든다 — 이미 결과가 있는 짝은 결과를 그대로 살린다 */
-export function buildGroupMatches(group, old = []) {
-  const keep = new Map((old || []).filter((m) => m.score).map((m) => [pairKey(m.a, m.b), m]));
+/**
+ * 팀당 경기 수를 정한 조 경기 짝 — 부분 리그(partial round robin).
+ *
+ * 한 조 5팀 풀리그면 팀마다 4경기, 6팀이면 5경기라 시간이 모자라기 쉽다. 그래서
+ * 「팀당 k경기」로 줄인다. 무작위로 고르지 않고 원형 돌리기 순서(1↔꼴찌, 2↔꼴찌-1 …)
+ * 를 앞에서 k라운드만 쓴다 — 조 안이 실력순이라 첫 라운드는 강약이 섞이고, 라운드가
+ * 지날수록 상대가 고르게 바뀐다. 홀수 조처럼 쉬는 팀이 생겨 k경기를 못 채운 팀은
+ * 아직 안 만난 팀 중 경기 수가 적은 팀과 이어 준다(같은 짝 두 번은 없다).
+ * forced: 이미 결과가 있는 짝 — 다시 짜도 빠지지 않게 먼저 넣는다.
+ * @returns [[a,b,라운드번호], …]
+ */
+export function partialPairs(ids, k, forced = []) {
+  const n = ids.length;
+  const games = Object.fromEntries(ids.map((id) => [id, 0]));
+  const used = new Set();
   const out = [];
-  roundRobin(group.entryIds).forEach((pairs, ri) => pairs.forEach(([a, b]) => {
-    const prev = keep.get(pairKey(a, b));
-    out.push({
-      id: prev?.id || uid('gm'), groupId: group.id, a, b, rr: ri + 1,
-      score: prev ? (prev.a === a ? prev.score : { a: prev.score.b, b: prev.score.a }) : null,
-    });
+  const add = (a, b, rr) => {
+    const key = pairKey(a, b);
+    if (a === b || used.has(key) || !(a in games) || !(b in games)) return false;
+    used.add(key); games[a] += 1; games[b] += 1; out.push([a, b, rr]);
+    return true;
+  };
+  forced.forEach(([a, b]) => add(a, b, 1));
+  if (!k || k >= n - 1) {
+    roundRobin(ids).forEach((pairs, ri) => pairs.forEach(([a, b]) => add(a, b, ri + 1)));
+    return out;
+  }
+  roundRobin(ids).forEach((pairs, ri) => pairs.forEach(([a, b]) => {
+    if (games[a] < k && games[b] < k) add(a, b, ri + 1);
   }));
+  /* 못 채운 팀 — 아직 안 만난, 경기가 적은 팀끼리 */
+  let guard = 0;
+  for (;;) {
+    const short = ids.filter((id) => games[id] < k).sort((a, b) => games[a] - games[b]);
+    if (!short.length || guard++ > n * k) break;
+    const a = short[0];
+    const cand = ids.filter((b) => b !== a && !used.has(pairKey(a, b)))
+      .sort((x, y) => (games[x] < k ? 0 : 1) - (games[y] < k ? 0 : 1) || games[x] - games[y]);
+    /* 짝이 없거나(모두 만났거나) 홀수라 혼자 남으면 그 팀만 하나 모자란 채로 둔다 */
+    const b = cand.find((x) => games[x] < k) || (short.length === 1 ? null : cand[0]);
+    if (!b) break;
+    add(a, b, k + 1);
+  }
   return out;
+}
+
+/** 조의 경기를 (다시) 만든다 — 이미 결과가 있는 짝은 결과를 그대로 살린다.
+    group.perTeam 이 있으면 팀당 그 경기 수(부분 리그), 없으면 풀리그 */
+export function buildGroupMatches(group, old = []) {
+  const scored = (old || []).filter((m) => m.score && group.entryIds.includes(m.a) && group.entryIds.includes(m.b));
+  const keep = new Map(scored.map((m) => [pairKey(m.a, m.b), m]));
+  const k = Number(group.perTeam) || 0;
+  return partialPairs(group.entryIds, k, scored.map((m) => [m.a, m.b])).map(([a, b, rr]) => {
+    const prev = keep.get(pairKey(a, b));
+    return {
+      id: prev?.id || uid('gm'), groupId: group.id, a, b, rr,
+      score: prev ? (prev.a === a ? prev.score : { a: prev.score.b, b: prev.score.a }) : null,
+    };
+  });
 }
 
 /* ---------------- 시간표 (타임 × 코트) ----------------
@@ -238,7 +289,10 @@ export function buildLeague(players, rulesIn, { courts = 2, pairs = [], seeds = 
   const rules = normRules(rulesIn);
   const entries = makeEntries(players, { play: rules.play, teamMode: rules.teamMode, pairs }, rnd)
     .map((e) => ({ ...e, seed: seeds[e.players.join('+')] || null }));
-  const groups = assignGroups(entries, rules, rnd).map((g) => ({ ...g, matches: buildGroupMatches(g) }));
+  const groups = assignGroups(entries, rules, rnd).map((g) => {
+    const ng = rules.perTeam ? { ...g, perTeam: rules.perTeam } : g;
+    return { ...ng, matches: buildGroupMatches(ng) };
+  });
   return { rules, entries, groups: schedule(groups, courts) };
 }
 
@@ -361,11 +415,19 @@ export function standings(group) {
   const ids = group?.entryIds || [];
   const matches = group?.matches || [];
   const rec = tally(ids, matches);
-  /* 승수로 먼저 묶고, 같은 승수끼리는 그 팀들끼리 경기만으로 승자승을 따진다 */
+  /* 팀마다 잡힌 경기 수가 다르면(홀수 조 부분 리그) 승수 대신 승률로 — 한 경기 더 친 팀이
+     승수만으로 앞서지 않게. 같으면 승수 그대로 */
+  const sched = {};
+  ids.forEach((id) => { sched[id] = 0; });
+  matches.forEach((m) => { if (m.a in sched) sched[m.a]++; if (m.b in sched) sched[m.b]++; });
+  const uneven = new Set(Object.values(sched)).size > 1;
+  const keyOf = (r) => (uneven ? (sched[r.id] ? Math.round((r.w / sched[r.id]) * 1000) : 0) : r.w);
+  /* 승수(승률)로 먼저 묶고, 같은 것끼리는 그 팀들끼리 경기만으로 승자승을 따진다 */
   const byWins = new Map();
   Object.values(rec).forEach((r) => {
-    if (!byWins.has(r.w)) byWins.set(r.w, []);
-    byWins.get(r.w).push(r);
+    const k = keyOf(r);
+    if (!byWins.has(k)) byWins.set(k, []);
+    byWins.get(k).push(r);
   });
   const ordered = [];
   [...byWins.keys()].sort((a, b) => b - a).forEach((w) => {
@@ -377,7 +439,7 @@ export function standings(group) {
       .sort((x, y) => y.h2h - x.h2h || y.diff - x.diff || y.gf - x.gf)
       .forEach((r) => ordered.push(r));
   });
-  const same = (x, y) => x.w === y.w && x.h2h === y.h2h && x.diff === y.diff && x.gf === y.gf;
+  const same = (x, y) => keyOf(x) === keyOf(y) && x.h2h === y.h2h && x.diff === y.diff && x.gf === y.gf;
   let rank = 0;
   return ordered.map((r, i) => {
     if (i === 0 || !same(ordered[i - 1], r)) rank = i + 1;
@@ -485,7 +547,7 @@ export function drawDivision(players, rulesIn, evKey, { excluded = [], useGroups
   if (entries.length < 2) return { entries: [], groups: [], problem: `${ev.name} 팀이 2팀 이상이어야 합니다`, notice };
   if (!useGroups) return { entries, groups: [], problem: '', notice };
   const groups = assignGroups(entries, rules, rnd).map((g) => {
-    const ng = { ...g, div: ev.key };
+    const ng = { ...g, div: ev.key, ...(rules.perTeam ? { perTeam: rules.perTeam } : {}) };
     return { ...ng, matches: buildGroupMatches(ng).map((m) => ({ ...m, div: ev.key })) };
   });
   return { entries, groups, problem: '', notice };
@@ -524,6 +586,55 @@ export function redrawDivision(t, evKey, roster, rulesIn, { courts = 2, excluded
   return { entries, groups: schedule(groups, courts, { playersOf: playersOfFn(entries) }), problem: [r.problem, r.notice].filter(Boolean).join(' · ') };
 }
 
+/* ---------------- KDK 부 (개인전) ----------------
+   t.kdk[부] = { players:[{id,name,gender}], matches:[{id,round,court,group,teamA,teamB,score}] }
+   만드는 쪽은 src/lib/tournamentKdk.js. 순위 계산만 여기 두는 이유: 외부 공개 함수도 써야 해서.
+   순위 — 승수 → 게임 득실차 → 득게임 (KDK 는 파트너가 바뀌어 승자승을 따질 수 없다) */
+export function kdkTables(d) {
+  const players = d?.players || [];
+  const matches = d?.matches || [];
+  const gOf = {};
+  matches.forEach((m) => [...(m.teamA || []), ...(m.teamB || [])].forEach((id) => { gOf[id] = Number(m.group) || 0; }));
+  const gis = [...new Set(Object.values(gOf))].sort((a, b) => a - b);
+  return gis.map((gi) => {
+    const ms = matches.filter((m) => (Number(m.group) || 0) === gi);
+    const rec = {};
+    players.filter((p) => gOf[p.id] === gi).forEach((p) => { rec[p.id] = { id: p.id, name: p.name, played: 0, w: 0, l: 0, gf: 0, ga: 0 }; });
+    ms.forEach((m) => {
+      if (!m.score) return;
+      [[m.teamA, m.score.a, m.score.b], [m.teamB, m.score.b, m.score.a]].forEach(([team, f, a]) => (team || []).forEach((id) => {
+        const r = rec[id];
+        if (!r) return;
+        r.played++; r.gf += f; r.ga += a;
+        if (f > a) r.w++; else r.l++;
+      }));
+    });
+    const rows = Object.values(rec).map((r) => ({ ...r, diff: r.gf - r.ga }))
+      .sort((x, y) => y.w - x.w || y.diff - x.diff || y.gf - x.gf);
+    const same = (x, y) => x.w === y.w && x.diff === y.diff && x.gf === y.gf;
+    let rank = 0;
+    return {
+      gi,
+      name: gis.length > 1 ? groupName(gi) : '',
+      matches: ms,
+      progress: { done: ms.filter((m) => m.score).length, total: ms.length, finished: ms.length > 0 && ms.every((m) => m.score) },
+      standings: rows.map((r, i) => {
+        if (i === 0 || !same(rows[i - 1], r)) rank = i + 1;
+        const tie = (i > 0 && same(rows[i - 1], r)) || (i < rows.length - 1 && same(rows[i + 1], r));
+        return { ...r, rank, tie: tie && r.played > 0 };
+      }),
+    };
+  });
+}
+export const KDK_RANK_TEXT = '개인 승수 → 게임 득실차 → 득게임 순';
+
+/** KDK 경기 결과 바꾸기 */
+export function setKdkScore(kdk, div, matchId, score) {
+  const d = kdk?.[div];
+  if (!d) return kdk;
+  return { ...kdk, [div]: { ...d, matches: d.matches.map((m) => (m.id === matchId ? { ...m, score: score || null } : m)) } };
+}
+
 /* ---------------- 외부 공개 보기 ----------------
    앱이 없는 사람에게 보여 줄 것만 — 이름·조·시간표·결과·순위·본선.
    회원 id·전화·신청자 목록·등급 같은 것은 내보내지 않는다(서버 함수 liveTournament 가 쓴다). */
@@ -542,6 +653,20 @@ export function liveView(t, clubName = '') {
     matches: (g.matches || []).map((m) => ({ round: m.round, court: m.court, a: nameOf(m.a), b: nameOf(m.b), score: m.score || null }))
       .sort((x, y) => x.round - y.round || x.court - y.court),
   }));
+  /* KDK 부 — 개인 순위를 같은 모양으로(팀 이름 자리에 "갑·을") */
+  Object.entries(t.kdk || {}).forEach(([div, d]) => {
+    const pn = (id) => (d.players || []).find((p) => p.id === id)?.name || '';
+    const team = (ids) => (ids || []).map(pn).join('·');
+    kdkTables(d).forEach((g) => groups.push({
+      name: [div !== LEGACY ? eventOf(div).name : '', g.name, 'KDK 개인전'].filter(Boolean).join(' '),
+      progress: g.progress,
+      standings: g.standings.map((r) => ({
+        rank: r.rank, tie: r.tie, name: r.name, played: r.played, w: r.w, l: r.l, gf: r.gf, ga: r.ga, diff: r.diff,
+      })),
+      matches: g.matches.map((m) => ({ round: m.round, court: m.court, a: team(m.teamA), b: team(m.teamB), score: m.score || null }))
+        .sort((x, y) => x.round - y.round || x.court - y.court),
+    }));
+  });
   /* 본선 — 예전 대회는 t.bracket 하나, 부가 있는 대회는 부마다 t.ko[부] */
   const kos = [
     ...(t.bracket?.rounds?.length ? [{ div: '', bracket: t.bracket, championId: t.championId }] : []),
@@ -569,6 +694,6 @@ export default {
   PLAY, TEAM_MODE, GROUP_METHOD, DEFAULT_RULES, RULE_LABELS, RANK_RULE_TEXT,
   normRules, makeGuest, makeEntries, assignGroups, roundRobin, buildGroupMatches, schedule, buildLeague,
   moveEntry, swapPlayers, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
-  scoreChoices, nameLookup, groupName, liveView,
+  scoreChoices, nameLookup, groupName, liveView, partialPairs, kdkTables, setKdkScore, KDK_RANK_TEXT,
   EVENTS, EVENT_KEYS, LEGACY, eventOf, eligible, drawDivision, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam,
 };

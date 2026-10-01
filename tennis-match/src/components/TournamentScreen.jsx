@@ -50,7 +50,9 @@ function formatLabel(t) {
   if (t.stage === 'skillGroups' || t.mode === 'skillGroups') return `${t.skillGroups?.length || 0}개 실력 그룹`;
   if (t.stage === 'draw') {
     const evs = (t.events || []).map((k) => EVENTS[k]?.short).filter(Boolean).join('·');
-    return `${evs || '복식'} · ${(t.roster || []).length}명 · ${t.useGroupStage === false ? '토너먼트' : '예선 + 토너먼트'}${(t.entries || []).length ? '' : ' · 대진 작성 전'}`;
+    const kdkOn = Object.keys(t.kdk || {}).length > 0 || t.rules?.format === 'kdk';
+    const drawn = (t.entries || []).length || Object.keys(t.kdk || {}).length;
+    return `${evs || '복식'} · ${(t.roster || []).length}명 · ${kdkOn ? 'KDK 개인전' : t.useGroupStage === false ? '토너먼트' : '예선 + 토너먼트'}${drawn ? '' : ' · 대진 작성 전'}`;
   }
   return `${t.entries?.length || 0}팀 · ${t.useGroupStage ? '예선 + 토너먼트' : '토너먼트'}`;
 }
@@ -86,9 +88,14 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
   const [gGender, setGGender] = useState('M');
 
   const pickedList = members.filter((m) => picked[m.id]);
+  /* 대회 등급을 매길 사람 — 고른 회원 + 외부 참가자(외부 참가자도 등급이 있어야 조를 고르게 짠다) */
+  const gradePeople = [
+    ...pickedList,
+    ...guests.map((g) => ({ id: g.id, name: g.club ? `${g.name}(${g.club})` : g.name, gender: g.gender, guest: true })),
+  ];
   /* 고른 사람의 대회 등급만 — 참가에서 뺀 사람 값은 버린다 */
   const tgKeys = schemeOf(tgScheme).keys;
-  const tg = Object.fromEntries(pickedList.filter((m) => tgKeys.includes(tgrades[m.id])).map((m) => [m.id, tgrades[m.id]]));
+  const tg = Object.fromEntries(gradePeople.filter((m) => tgKeys.includes(tgrades[m.id])).map((m) => [m.id, tgrades[m.id]]));
   const hasTg = Object.keys(tg).length > 0;
   /** 이 대회에서 쓸 실력 — 대회 등급 > NTRP > 3.0 */
   const skillIn = (m) => tournamentSkill(tg[m.id], effectiveNtrp(m).value, tgScheme) ?? 3.0;
@@ -121,7 +128,10 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
     ...pickedList.map((m) => ({
       id: m.id, name: m.name, gender: m.gender || '', skill: skillIn(m), ...(tg[m.id] ? { tgrade: tg[m.id] } : {}),
     })),
-    ...guests.map((g) => ({ id: g.id, name: g.club ? `${g.name}(${g.club})` : g.name, gender: g.gender || '', skill: 3 })),
+    ...guests.map((g) => ({
+      id: g.id, name: g.club ? `${g.name}(${g.club})` : g.name, gender: g.gender || '',
+      skill: tournamentSkill(tg[g.id], null, tgScheme) ?? 3.0, ...(tg[g.id] ? { tgrade: tg[g.id] } : {}),
+    })),
   ];
   const playerCount = pickedList.length + guests.length;
   const toggleEvent = (k) => {
@@ -472,8 +482,8 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
         </>
       )}
 
-      {/* 대회 등급 — 이 대회에만 쓰는 등급. 클럽 조와 따로 매긴다. */}
-      {pickedList.length > 0 && (
+      {/* 대회 등급 — 이 대회에만 쓰는 등급. 클럽 조와 따로 매긴다. 외부 참가자도 함께 */}
+      {gradePeople.length > 0 && (
         <>
           <SectionTitle right={
             <Chip tone={tgOpen ? 'green' : 'outline'} onPress={() => {
@@ -484,7 +494,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
           <Card>
             {!tgOpen && (
               <Text style={{ fontSize: 11.5, color: C.sub, lineHeight: 17 }}>
-                {hasTg ? gradeSummary(pickedList, (m) => tg[m.id], tgScheme) : '매기지 않으면 NTRP(없으면 클럽 조·부수)로 팀과 그룹을 짭니다.'}
+                {hasTg ? gradeSummary(gradePeople, (m) => tg[m.id], tgScheme) : '매기지 않으면 NTRP(없으면 클럽 조·부수)로 팀과 그룹을 짭니다.'}
               </Text>
             )}
             {tgOpen && (
@@ -510,13 +520,13 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
                   <Btn small tone="ghost" onPress={() => setTgrades({})}>모두 지우기</Btn>
                 </View>
                 <GradeRows
-                  people={pickedList}
+                  people={gradePeople}
                   value={tg}
                   onPick={(id, g) => setTgrades({ ...tgrades, [id]: g })}
                   count={tgCount}
                   onCount={setTgCount}
                   scheme={tgScheme}
-                  note={(m) => [m.busu ? `클럽 ${m.busu}` : '', m.grade ? `${m.grade}조` : '', effectiveNtrp(m).value != null ? `NTRP ${effectiveNtrp(m).value.toFixed(1)}` : ''].filter(Boolean).join(' · ')}
+                  note={(m) => (m.guest ? '외부 참가자' : [m.busu ? `클럽 ${m.busu}` : '', m.grade ? `${m.grade}조` : '', effectiveNtrp(m).value != null ? `NTRP ${effectiveNtrp(m).value.toFixed(1)}` : ''].filter(Boolean).join(' · '))}
                 />
               </>
             )}

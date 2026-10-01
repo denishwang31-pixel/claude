@@ -8,8 +8,8 @@
 import {
   normRules, makeGuest, makeEntries, assignGroups, roundRobin, buildGroupMatches, schedule, buildLeague,
   moveEntry, swapPlayers, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
-  scoreChoices, nameLookup, liveView,
-  eligible, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam,
+  scoreChoices, nameLookup, liveView, kdkTables, setKdkScore,
+  eligible, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam, partialPairs,
 } from '../src/lib/groupLeague.js';
 
 let pass = 0; let fail = 0;
@@ -209,6 +209,78 @@ console.log('[종목(부) — 남복·여복 따로, 혼복은 남녀 한 명씩
 
   const v = liveView({ name: 'x', entries: d.entries, groups: d.groups, events: ['MD', 'WD'], ko: {} });
   ok(v.groups.some((g) => g.name.startsWith('남자복식 ')) && v.groups.some((g) => g.name.startsWith('여자복식 ')), '외부 공개에도 부 이름');
+}
+
+console.log('[팀당 경기 수 — 부분 리그]');
+{
+  const cnt = (pairs, ids) => ids.map((id) => pairs.filter(([a, b]) => a === id || b === id).length);
+  const ids6 = ['a', 'b', 'c', 'd', 'e', 'f'];
+  const p6 = partialPairs(ids6, 3);
+  eq(cnt(p6, ids6), [3, 3, 3, 3, 3, 3], '6팀 팀당 3경기 — 모두 3경기');
+  eq(new Set(p6.map(([a, b]) => [a, b].sort().join())).size, p6.length, '같은 짝 두 번 없음');
+  ok(p6.some(([a, b]) => [a, b].sort().join() === 'a,f'), '첫 라운드는 1위 ↔ 꼴찌(실력순 조에서 강약이 섞인다)');
+  const ids5 = ['a', 'b', 'c', 'd', 'e'];
+  const c5 = cnt(partialPairs(ids5, 3), ids5);
+  ok(c5.filter((x) => x === 3).length >= 4 && c5.every((x) => x >= 2 && x <= 4), '5팀 팀당 3경기 — 홀수라 한 팀만 하나 다르다(15÷2 불가)');
+  const ids8 = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  eq(cnt(partialPairs(ids8, 3), ids8), [3, 3, 3, 3, 3, 3, 3, 3], '8팀 팀당 3경기');
+  eq(partialPairs(ids5, 0).length, 10, '0 이면 풀리그(5팀 10경기)');
+  eq(partialPairs(ids5, 9).length, 10, '팀 수보다 크면 풀리그');
+  ok(partialPairs(ids6, 2, [['b', 'e']]).some(([a, b]) => [a, b].sort().join() === 'b,e'), '이미 친 짝은 다시 짜도 남는다');
+
+  const g = { id: 'g', entryIds: ids6, perTeam: 3 };
+  eq(buildGroupMatches(g).length, 9, '조에 perTeam 3 → 6팀 9경기');
+  const lg = buildLeague(P(12), { groupCount: 1, perTeam: 3 }, { courts: 2 }, rnd);
+  eq(lg.groups[0].matches.length, 9, '기준에 팀당 3경기 → 그대로 반영');
+  const mv = moveEntry([{ ...lg.groups[0] }, { id: 'g2', name: 'B조', entryIds: [], matches: [], perTeam: 3 }], lg.groups[0].entryIds[0], 'g2', 2);
+  eq(mv.groups[0].matches.length, 7, '조를 옮겨 다시 짜도 팀당 경기 수 유지(5팀 × 3 ÷ 2 → 7경기, 한 팀만 2경기)');
+
+  const un = { id: 'u', entryIds: ['a', 'b', 'c'], matches: [
+    { id: '1', a: 'a', b: 'b', score: { a: 6, b: 1 } }, { id: '2', a: 'a', b: 'c', score: { a: 1, b: 6 } },
+    { id: '3', a: 'b', b: 'c', score: null }, { id: '4', a: 'c', b: 'x', score: null },
+  ] };
+  ok(standings(un).length === 3, '경기 수가 다른 조도 순위를 낸다(승률)');
+}
+
+console.log('[KDK 방식 — 부별, 파트너가 매 경기 바뀜]');
+{
+  const { drawKdkAll, kdkOk } = await import('../src/lib/tournamentKdk.js');
+  const R2 = [
+    ...Array.from({ length: 8 }, (_, i) => ({ id: `m${i}`, name: `남${i}`, gender: 'M', skill: 4 - i * 0.1 })),
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `f${i}`, name: `여${i}`, gender: 'F', skill: 3.5 - i * 0.1 })),
+  ];
+  eq([kdkOk('MD'), kdkOk('OD'), kdkOk('XD'), kdkOk('MS')], [true, true, false, false], 'KDK 는 남복·여복·자유 복식만');
+  const r = drawKdkAll(R2, { groupCount: 1 }, ['MD', 'WD'], { courts: 4 });
+  ok(r.kdk.MD.matches.length > 0 && r.kdk.WD.matches.length > 0, '남복·여복 각각 KDK 대진');
+  const per = (ms, id) => ms.filter((m) => [...m.teamA, ...m.teamB].includes(id)).length;
+  const mdGames = r.kdk.MD.players.map((p) => per(r.kdk.MD.matches, p.id));
+  ok(new Set(mdGames).size === 1, '한 부 안 전원 같은 경기 수');
+  ok(r.kdk.MD.matches.every((m) => m.court <= 2) && r.kdk.WD.matches.every((m) => m.court >= 3), '겹치는 사람이 없으면 부마다 코트를 나눠 동시에');
+  const all = [...r.kdk.MD.matches, ...r.kdk.WD.matches];
+  eq(new Set(all.map((m) => m.id)).size, all.length, '경기 id 가 부끼리 겹치지 않는다');
+  const r2 = drawKdkAll(R2, {}, ['MD', 'OD'], { courts: 4 });
+  const mdMax = Math.max(...r2.kdk.MD.matches.map((m) => m.round));
+  ok(r2.kdk.OD.matches.every((m) => m.round > mdMax), '여러 부에 함께 나가는 사람이 있으면 부마다 차례로');
+  ok(r2.problems.some((x) => /차례로/.test(x)), '차례로 진행한다고 알린다');
+  ok(/KDK 는 남복/.test(drawKdkAll(R2, {}, ['XD']).problems[0]), '혼복은 KDK 안 됨 안내');
+
+  /* 개인 순위 — 이긴 쪽 두 사람 모두 1승 */
+  const m0 = r.kdk.MD.matches[0];
+  const k2 = setKdkScore(r.kdk, 'MD', m0.id, { a: 6, b: 2 });
+  eq(r.kdk.MD.matches[0].score, null, '결과 넣기는 원본을 바꾸지 않는다');
+  const tb = kdkTables(k2.MD);
+  const rowOf = (id) => tb.flatMap((g) => g.standings).find((x) => x.id === id);
+  ok(m0.teamA.every((id) => rowOf(id).w === 1 && rowOf(id).diff === 4), '이긴 두 사람 1승 +4');
+  ok(m0.teamB.every((id) => rowOf(id).l === 1 && rowOf(id).diff === -4), '진 두 사람 1패 -4');
+  eq(tb.flatMap((g) => g.standings)[0].rank, 1, '1위부터');
+  eq(tb.reduce((s, g) => s + g.progress.done, 0), 1, '진행 1경기');
+  const g2 = kdkTables(drawKdkAll(R2, { groupCount: 2 }, ['MD'], { courts: 2 }).kdk.MD);
+  eq(g2.map((g) => g.name), ['A조', 'B조'], '조 두 개면 A조·B조');
+  /* 외부 공개 보기에 KDK 순위 — 이름만, id 없이 */
+  const lv = liveView({ name: '대회', kdk: k2, events: ['MD', 'WD'] });
+  ok(lv.groups.some((g) => /KDK/.test(g.name) && g.standings.length > 0), '공개 보기에 KDK 순위');
+  ok(!JSON.stringify(lv).includes('"m0"'), '공개 보기에 회원 id 없음');
+  ok(lv.groups[0].matches[0].a.includes('·'), '공개 시간표 — 두 사람 이름');
 }
 
 console.log(`\n조별리그 테스트: ${pass} 통과 / ${fail} 실패`);
