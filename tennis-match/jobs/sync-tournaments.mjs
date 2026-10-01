@@ -41,8 +41,23 @@ async function main() {
     const pages = await Promise.all(SOURCES.map(fetchSource));
     pages.forEach((p) => {
       log(`\n===== ${p.name} (${p.url}) — ${p.note}`);
-      if (p.text) log(p.text.slice(0, 9000));
+      if (p.text) log(p.text.slice(0, 2500));
     });
+    /* 사이트 모양 점검 — KATO 대회일정 페이지 글과, 첫 페이지 원문 HTML 일부 */
+    for (const url of ['https://kato.kr/openList', 'https://kato.kr/']) {
+      try {
+        const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (tennis-match tournament sync)' } });
+        const html = await res.text();
+        const i = Math.max(0, html.indexOf('접수중인 대회'));
+        log(`\n===== RAW ${url} (${res.status}, ${html.length}자, '접수중인 대회' 위치 ${i})`);
+        log(html.slice(i, i + 7000));
+        if (url.endsWith('openList')) {
+          const { htmlToText } = await import('../src/lib/tournamentSearch.js');
+          log(`\n===== TEXT ${url}`);
+          log(htmlToText(html).slice(0, 7000));
+        }
+      } catch (e) { log(`RAW ${url} 실패 ${e?.message}`); }
+    }
   }
 
   const client = new Anthropic(clientOptions(process.env));
