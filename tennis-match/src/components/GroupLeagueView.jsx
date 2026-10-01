@@ -241,7 +241,7 @@ export function GroupLeagueView({
           ))}
         </View>
       </ScrollView>
-      {!!myGroup && <MineLegend text="내가 속한 조 · 순위표와 경기에서 내 팀도 같은 색" />}
+      {!!myGroup && <MineLegend text="내가 속한 조 · 순위표의 내 팀도 같은 색 (시간표에서 내 경기는 초록 테두리)" />}
 
       {tab === ALL && groups.map((g) => (
         <Card key={g.id} style={{ marginTop: S.md }}>
@@ -272,51 +272,40 @@ export function GroupLeagueView({
             <StandingTable group={shown} nameOfEntry={nameOfEntry} advance={advanceOf(rules, shown)} myEntryId={myEntryId} />
           </Card>
 
-          <SectionTitle hint={canEdit ? '경기를 누르면 결과를 넣습니다' : undefined}>{shown.name} 경기</SectionTitle>
-          <Card style={{ paddingVertical: 4 }}>
-            {[...(shown.matches || [])].sort((a, b) => a.round - b.round || a.court - b.court).map((m, i) => {
-              const aWin = m.score && m.score.a > m.score.b;
-              const bWin = m.score && m.score.b > m.score.a;
-              const mine = m.a === myEntryId || m.b === myEntryId;
-              return (
-                <View key={m.id} style={{ borderTopWidth: i ? 1 : 0, borderTopColor: C.fill }}>
-                  <Pressable disabled={!canEdit} onPress={() => record(m)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, backgroundColor: mine ? MINE.bg : 'transparent' }}>
-                    <View style={{ width: 52 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: C.green }}>{m.round}타임</Text>
-                      <Text style={{ fontSize: 10.5, color: C.faint }}>코트 {cn(m.court)}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 12.5, fontWeight: aWin ? '800' : '500', color: aWin ? C.green : C.text }}>{nameOfEntry(m.a)}</Text>
-                      <Text style={{ fontSize: 12.5, fontWeight: bWin ? '800' : '500', color: bWin ? C.green : C.text, marginTop: 2 }}>{nameOfEntry(m.b)}</Text>
-                    </View>
-                    {m.score ? (
-                      <Text style={{ fontSize: 15, fontWeight: '800', color: C.text }}>{m.score.a} : {m.score.b}</Text>
-                    ) : (
-                      <Text style={{ fontSize: 11.5, color: canEdit ? C.green2 : C.faint, fontWeight: '700' }}>{canEdit ? '입력' : '경기 전'}</Text>
-                    )}
-                  </Pressable>
-                  {typed?.id === m.id && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingBottom: 10 }}>
-                      <Field keyboardType="number-pad" placeholder="위 팀" value={typed.a} onChangeText={(v) => setTyped({ ...typed, a: v })} style={{ flex: 1 }} />
-                      <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
-                      <Field keyboardType="number-pad" placeholder="아래 팀" value={typed.b} onChangeText={(v) => setTyped({ ...typed, b: v })} style={{ flex: 1 }} />
-                      <Btn small onPress={saveTyped}>저장</Btn>
-                      <Btn small tone="ghost" onPress={() => setTyped(null)}>취소</Btn>
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-          </Card>
-
-          <SectionTitle>{shown.name} 시간표</SectionTitle>
+          {/* 경기 목록은 따로 두지 않는다 — 시간표 칸을 눌러 결과를 넣는다(앱 주인: 같은 경기가 두 번 나와 헷갈림) */}
+          <SectionTitle hint={canEdit ? '칸을 누르면 결과를 넣습니다 · 결과가 들어간 칸에 점수가 보입니다' : '내 경기는 초록 테두리로 보입니다'}>
+            {shown.name} 경기 · 시간표
+          </SectionTitle>
+          {canEdit && (
+            <Text style={{ fontSize: 11.5, color: C.sub, marginTop: -4, marginBottom: 8, lineHeight: 17 }}>
+              👆 경기 칸을 누르면 「6 : 0」 같은 빠른 버튼이 뜹니다. 점수가 다르면 「직접 입력」, 잘못 넣었으면 「결과 지우기」.
+            </Text>
+          )}
           <Card style={{ padding: 10 }}>
             <MatchGrid matches={gridMatches([shown])} nameOf={nameOfPlayer} genderOf={genderOf} me={me} venue={venue}
               onPressMatch={canEdit ? (gm) => record(gm) : undefined} />
           </Card>
         </>
       )}
+
+      {/* 직접 입력 — 시간표에서 「직접 입력」을 고르면 여기에 */}
+      {typed && (() => {
+        const m = groups.flatMap((g) => g.matches || []).find((x) => x.id === typed.id);
+        if (!m) return null;
+        return (
+          <Card style={{ marginTop: 8, borderColor: C.green, borderWidth: 1.5 }}>
+            <Text style={F.bodyBold}>{m.round}타임 · 코트 {cn(m.court)} — 점수 직접 입력</Text>
+            <Text style={{ fontSize: 12, color: C.sub, marginTop: 4 }}>{nameOfEntry(m.a)}  vs  {nameOfEntry(m.b)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+              <Field keyboardType="number-pad" placeholder="위 팀" value={typed.a} onChangeText={(v) => setTyped({ ...typed, a: v })} style={{ flex: 1 }} />
+              <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
+              <Field keyboardType="number-pad" placeholder="아래 팀" value={typed.b} onChangeText={(v) => setTyped({ ...typed, b: v })} style={{ flex: 1 }} />
+              <Btn small onPress={saveTyped}>저장</Btn>
+              <Btn small tone="ghost" onPress={() => setTyped(null)}>취소</Btn>
+            </View>
+          </Card>
+        );
+      })()}
 
       {/* 편성 수정 — 운영진 */}
       {canEdit && (
