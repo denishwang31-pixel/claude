@@ -334,6 +334,21 @@ export function swapPlayers(entries, groups, p1, p2, nameOf = (id) => id) {
   return { entries: entries.map((e) => (e.id === e1.id || e.id === e2.id ? fix(e) : e)), error: '' };
 }
 
+/** 선수 바꾸기 — to 가 이 부의 다른 팀에 있으면 두 사람을 맞바꾸고, 대진 밖 사람이면 그 자리에 넣는다.
+    경기를 한 팀은 바꿀 수 없다(결과가 다른 사람 것이 된다). entries 는 한 부의 팀만 넘긴다. */
+export function replacePlayer(entries, groups, from, to, nameOf = (id) => id) {
+  if (!from || !to || from === to) return { entries, error: '' };
+  const e1 = entries.find((e) => e.players.includes(from));
+  if (!e1) return { entries, error: '바꿀 선수를 찾지 못했습니다' };
+  if (e1.players.includes(to)) return { entries, error: '같은 팀 안의 두 사람입니다' };
+  const e2 = entries.find((e) => e.players.includes(to));
+  if (e2) return swapPlayers(entries, groups, from, to, nameOf);
+  const played = groups.some((g) => (g.matches || []).some((m) => m.score && (m.a === e1.id || m.b === e1.id)));
+  if (played) return { entries, error: '이미 경기를 한 팀은 선수를 바꿀 수 없습니다' };
+  const players = e1.players.map((p) => (p === from ? to : p));
+  return { entries: entries.map((e) => (e.id === e1.id ? { ...e, players, name: players.map(nameOf).join(' / ') } : e)), error: '' };
+}
+
 /** 팀을 손으로 넣기 — 대진에서 빠진 사람(짝 없음·늦게 온 사람)을 짝지어 조에 넣는다 */
 export function addTeam(entries, groups, { div = '', players = [], groupId, nameOf = (id) => id }) {
   const ps = [...new Set(players)].filter(Boolean);
@@ -704,7 +719,7 @@ export function liveView(t, clubName = '') {
 export default {
   PLAY, TEAM_MODE, GROUP_METHOD, DEFAULT_RULES, RULE_LABELS, RANK_RULE_TEXT,
   normRules, makeGuest, makeEntries, assignGroups, roundRobin, buildGroupMatches, schedule, buildLeague,
-  moveEntry, swapPlayers, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
+  moveEntry, swapPlayers, replacePlayer, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
   scoreChoices, nameLookup, groupName, liveView, partialPairs, kdkTables, setKdkScore, KDK_RANK_TEXT,
   EVENTS, EVENT_KEYS, LEGACY, eventOf, eligible, drawDivision, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam,
 };

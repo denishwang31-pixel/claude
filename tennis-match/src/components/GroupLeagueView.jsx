@@ -15,7 +15,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import {
   normRules, RULE_LABELS, RANK_RULE_TEXT, standings, progress, ensureSchedule, setScore,
-  moveEntry, swapPlayers, setGroupCourts, schedule, scoreChoices, nameLookup,
+  moveEntry, swapPlayers, replacePlayer, setGroupCourts, schedule, scoreChoices, nameLookup,
 } from '../lib/groupLeague';
 import { MatchGrid } from './MatchGrid';
 import { useOptionSheet } from './native';
@@ -89,7 +89,10 @@ function StandingTable({ group, nameOfEntry, advance, myEntryId, compact }) {
 export function GroupLeagueView({
   t, members = [], isAdmin, me = '', flash = () => {}, onUpdate, onKnockout,
   courtNames = [], label = '', editOpen, onRemoveTeam, extraEdit = null, hideRules = false,
+  candidates = null, sameGender = false,
 }) {
+  /* candidates — 이 부에 나갈 수 있는 사람 [{id,name,gender}]. 있으면 선수를 누를 때
+     "누구로 바꿀까요?" 목록이 뜬다(대진 밖 사람으로 바꾸기 포함). sameGender — 혼복: 남↔남, 여↔여만 */
   const rules = normRules({ ...(t.rules || {}), advance: t.rules?.advance ?? t.advancePerGroup ?? 2 });
   const courts = Math.max(1, Number(t.courts) || 2);
   const groups = useMemo(() => ensureSchedule(t.groups || [], courts), [t.groups, courts]);
@@ -158,7 +161,33 @@ export function GroupLeagueView({
       },
     });
   };
+  const groupOfEntry = (eid) => groups.find((g) => g.entryIds.includes(eid));
+  const changePlayer = (pid) => {
+    const me0 = candidates.find((p) => p.id === pid);
+    const myEntry = entries.find((e) => e.players.includes(pid));
+    const inDraw = new Map(entries.flatMap((e) => e.players.map((p) => [p, e])));
+    const ok = (p) => p.id !== pid && !(myEntry?.players || []).includes(p.id)
+      && (!sameGender || !me0?.gender || p.gender === me0.gender);
+    const nm = (p) => (nameOfPlayer(p.id) !== '?' ? nameOfPlayer(p.id) : p.name);
+    const outside = candidates.filter((p) => ok(p) && !inDraw.has(p.id));
+    const inside = candidates.filter((p) => ok(p) && inDraw.has(p.id));
+    const options = [
+      ...outside.map((p) => ({ key: p.id, label: `${nm(p)} 선수 넣기 · 지금 대진 밖` })),
+      ...inside.map((p) => ({ key: p.id, label: `${nm(p)} 선수와 맞바꾸기 · ${groupOfEntry(inDraw.get(p.id).id)?.name || ''}` })),
+    ];
+    if (!options.length) { flash('바꿀 수 있는 사람이 없습니다'); return; }
+    sheet.open({
+      title: `${nameOfPlayer(pid)} 자리에 누구를?${sameGender ? ' (혼복 — 같은 성별만)' : ''}`,
+      options,
+      onSelect: (o) => {
+        const r = replacePlayer(entries, groups, pid, o.key, nameOfPlayer);
+        if (r.error) { flash(r.error); return; }
+        save({ entries: r.entries }, inDraw.has(o.key) ? '두 사람을 맞바꿨습니다' : '선수를 바꿨습니다');
+      },
+    });
+  };
   const tapPlayer = (pid) => {
+    if (candidates) { changePlayer(pid); return; }
     if (!pickPlayer) { setPickPlayer(pid); return; }
     if (pickPlayer === pid) { setPickPlayer(null); return; }
     const r = swapPlayers(entries, groups, pickPlayer, pid, nameOfPlayer);
@@ -304,9 +333,9 @@ export function GroupLeagueView({
           {editing && (
             <Card>
               <Text style={{ fontSize: 11.5, color: C.sub, lineHeight: 17 }}>
+                · 선수 이름을 누르면 {candidates ? '다른 사람으로 바꿉니다 — 대진 밖 사람을 넣거나, 다른 팀 선수와 맞바꿉니다' : '그다음 누른 사람과 맞바꿉니다'}(경기 전 팀만).{'\n'}
                 · 팀 오른쪽 「조 이동」으로 다른 조에 보냅니다(경기한 팀은 못 옮김).{'\n'}
-                · 선수 이름 두 개를 차례로 누르면 두 사람을 맞바꿉니다(경기 전 팀만).{'\n'}
-                · 코트 번호를 누르면 그 조는 그 코트에서만 돕니다. 아무것도 안 고르면 함께 씁니다.
+                · 「이 조 전용 코트」 — 조마다 쓸 코트를 정합니다. 예) A조는 1·2번, B조는 3·4번 코트에서만. 아무것도 안 고르면 모든 조가 빈 코트를 나눠 씁니다.
               </Text>
               {pickPlayer && (
                 <Text style={{ fontSize: 12, color: C.green, fontWeight: '700', marginTop: 8 }}>
@@ -317,7 +346,7 @@ export function GroupLeagueView({
                 <View key={g.id} style={{ marginTop: 14, padding: 10, borderRadius: R.md, backgroundColor: C.fill }}>
                   <Text style={F.bodyBold}>{g.name} · {g.entryIds.length}팀</Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 6 }}>
-                    <Text style={{ fontSize: 11, color: C.faint }}>코트</Text>
+                    <Text style={{ fontSize: 11, color: C.faint }}>이 조 전용 코트{(g.courts || []).length ? '' : ' (지금: 모든 코트 함께)'}</Text>
                     {Array.from({ length: courts }, (_, i) => i + 1).map((c) => (
                       <Chip key={c} tone={(g.courts || []).map(Number).includes(c) ? 'green' : 'outline'} onPress={() => toggleCourt(g, c)}>{cn(c)}</Chip>
                     ))}

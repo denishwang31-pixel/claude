@@ -9,7 +9,7 @@ import {
   normRules, makeGuest, makeEntries, assignGroups, roundRobin, buildGroupMatches, schedule, buildLeague,
   moveEntry, swapPlayers, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
   scoreChoices, nameLookup, liveView, kdkTables, setKdkScore,
-  eligible, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam, partialPairs,
+  eligible, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam, partialPairs, replacePlayer,
 } from '../src/lib/groupLeague.js';
 
 let pass = 0; let fail = 0;
@@ -291,6 +291,20 @@ console.log('[KDK 방식 — 부별, 파트너가 매 경기 바뀜]');
   ok(lv.groups.some((g) => /KDK/.test(g.name) && g.standings.length > 0), '공개 보기에 KDK 순위');
   ok(!JSON.stringify(lv).includes('"m0"'), '공개 보기에 회원 id 없음');
   ok(lv.groups[0].matches[0].a.includes('·'), '공개 시간표 — 두 사람 이름');
+}
+
+console.log('[선수 바꾸기 — 대진 밖 사람 넣기 · 다른 팀과 맞바꾸기]');
+{
+  const es = [{ id: 'e1', players: ['a', 'b'], name: 'a / b' }, { id: 'e2', players: ['c', 'd'], name: 'c / d' }];
+  const gs = [{ id: 'g1', entryIds: ['e1', 'e2'], matches: [{ id: 'm1', a: 'e1', b: 'e2', score: null }] }];
+  const r1 = replacePlayer(es, gs, 'b', 'x');
+  eq(r1.entries[0].players, ['a', 'x'], '대진 밖 사람으로 바꾸기');
+  eq(r1.entries[0].name, 'a / x', '팀 이름도 바뀐다');
+  const r2 = replacePlayer(es, gs, 'b', 'c');
+  eq([r2.entries[0].players, r2.entries[1].players], [['a', 'c'], ['b', 'd']], '다른 팀 선수와 맞바꾸기');
+  ok(/같은 팀/.test(replacePlayer(es, gs, 'a', 'b').error), '같은 팀끼리는 안내');
+  const played = [{ ...gs[0], matches: [{ id: 'm1', a: 'e1', b: 'e2', score: { a: 6, b: 3 } }] }];
+  ok(/경기를 한 팀/.test(replacePlayer(es, played, 'b', 'x').error), '경기한 팀은 못 바꾼다');
 }
 
 console.log(`\n조별리그 테스트: ${pass} 통과 / ${fail} 실패`);
