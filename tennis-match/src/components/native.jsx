@@ -239,7 +239,9 @@ export function useOptionSheet() {
                   {sheet.title}
                 </Text>
               )}
-              <ScrollView>
+              {/* flexGrow 0 — 시트 높이가 정해지지 않은 상태에서 ScrollView 가 늘어나려다
+                  0 으로 접혀 첫 줄만 보이는 일이 있었다(선택지 두 개인데 하나만 보임) */}
+              <ScrollView style={{ flexGrow: 0 }}>
                 {sheet?.options.map((o) => (
                   <Touchable key={String(o.key ?? o.label)}
                     onPress={() => { setSheet(null); sheet.onSelect(o); }}

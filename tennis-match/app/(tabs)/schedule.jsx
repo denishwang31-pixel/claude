@@ -468,20 +468,17 @@ export default function Schedule() {
     setNd({ ...blank(), venueId: venueId || null });
     setOpen(true);
   };
-  const pickNew = () => sheet.open({
-    title: '무엇을 등록할까요?',
-    options: [
-      { key: 'meeting', icon: '📅', label: '모임 (정기·번개)' },
-      { key: 'tournament', icon: '🏆', label: '클럽 대회 (조별리그·KDK·청백전 …)' },
-    ],
-    onSelect: (o) => {
-      if (o.key === 'tournament') {
-        router.push({ pathname: '/(tabs)/more', params: { open: 'tournament', from: 'schedule', create: '1' } });
-        return;
-      }
-      newMeeting();
-    },
-  });
+  /* 고를 것이 두 개뿐이라 목록 시트 대신 큰 카드 두 장을 한 화면에 */
+  const [chooser, setChooser] = useState(false);
+  const pickNew = () => setChooser(true);
+  const choose = (k) => {
+    setChooser(false);
+    if (k === 'tournament') {
+      router.push({ pathname: '/(tabs)/more', params: { open: 'tournament', from: 'schedule', create: '1' } });
+      return;
+    }
+    newMeeting();
+  };
   const openGuest = () => router.push({
     pathname: '/(tabs)/more', params: { open: 'guest', from: 'schedule' },
   });
@@ -1366,6 +1363,41 @@ export default function Schedule() {
       )}
 
       {sheet.node}
+
+      {/* [＋ 새 모임] — 모임 / 클럽 대회 고르기 */}
+      <Modal visible={chooser} transparent animationType="fade" onRequestClose={() => setChooser(false)}>
+        <Pressable onPress={() => setChooser(false)}
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', padding: 20 }}>
+          <Pressable onPress={(e) => e.stopPropagation?.()}
+            style={{ backgroundColor: C.surface, borderRadius: R.lg, padding: 18 }}>
+            <Text style={[F.h3, { marginBottom: 4 }]}>무엇을 등록할까요?</Text>
+            <Text style={{ fontSize: 12, color: C.faint, marginBottom: 14 }}>
+              협회·오픈 같은 큰 대회는 [대회 찾기]에서 앱 관리자가 등록합니다
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              {[
+                ['meeting', '📅', '모임', '정기 · 번개 모임\n참석 투표 → 대진'],
+                ['tournament', '🏆', '클럽 대회', '조별리그 · KDK\n청백전 · 팀 리그'],
+              ].map(([k, icon, title, desc]) => (
+                <Pressable key={k} onPress={() => choose(k)} accessibilityRole="button" accessibilityLabel={title}
+                  style={({ pressed }) => ({
+                    flex: 1, alignItems: 'center', paddingVertical: 20, paddingHorizontal: 8,
+                    borderRadius: R.md, borderWidth: 1.5,
+                    borderColor: pressed ? C.green : C.border,
+                    backgroundColor: pressed ? C.greenSoft : C.fill,
+                  })}>
+                  <Text style={{ fontSize: 30 }}>{icon}</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: C.text, marginTop: 8 }}>{title}</Text>
+                  <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 4, textAlign: 'center', lineHeight: 16 }}>{desc}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable onPress={() => setChooser(false)} style={{ alignSelf: 'center', marginTop: 14, padding: 6 }}>
+              <Text style={{ fontSize: 13, color: C.sub }}>취소</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {toast && (
         <View style={{
