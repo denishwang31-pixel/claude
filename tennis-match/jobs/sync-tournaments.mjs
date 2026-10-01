@@ -36,6 +36,15 @@ async function main() {
   }
   log(`워크스페이스 ID: ${process.env.ANTHROPIC_WORKSPACE_ID ? '있음' : '없음(키에 워크스페이스가 붙어 있어야 함)'}`);
 
+  if (process.env.DUMP_SOURCES === '1') {
+    const { SOURCES, fetchSource } = await import('../src/lib/tournamentSearch.js');
+    const pages = await Promise.all(SOURCES.map(fetchSource));
+    pages.forEach((p) => {
+      log(`\n===== ${p.name} (${p.url}) — ${p.note}`);
+      if (p.text) log(p.text.slice(0, 9000));
+    });
+  }
+
   const client = new Anthropic(clientOptions(process.env));
   initializeApp();
   const db = getFirestore();
