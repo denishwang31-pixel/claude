@@ -11,20 +11,26 @@
        다음 주 대회"가 "다음 달 접수 중인 대회"보다 위에 온다.
      · 끝난 대회는 기본으로 감춘다. 지난 요강을 찾는 사람보다 이번 달에
        나갈 대회를 찾는 사람이 훨씬 많다.
-     · 등록은 앱 운영자만. 아무나 올리면 광고판이 되고, 요강이 틀린
-       대회에 헛걸음한 사람이 앱을 탓한다.
+     · 등록·[지금 찾기]는 앱 운영자만. 아무나 올리면 광고판이 되고, 요강이
+       틀린 대회에 헛걸음한 사람이 앱을 탓한다. 회원은 모아 둔 것 안에서 찾는다.
+     · 달력이 맨 위. 처음엔 전체를 보여 주고, 날짜를 누르면 그날 열리는
+       대회만. [전체 보기]로 되돌린다.
+     · 카드에는 「대회 일정」「접수 일정」을 두 줄로 따로 — 한 줄에 섞으면
+       대회 날짜를 접수 마감으로 잘못 읽는다.
    ============================================================ */
 import React, { useState, useMemo, useEffect } from 'react';
-import { View, Text, Linking, Alert } from 'react-native';
+import { View, Text, Linking, Alert, Pressable } from 'react-native';
 import {
   subOpenTournaments, addOpenTournament, updateOpenTournament, deleteOpenTournament,
   requestOpenSync, subLatestOpenSync,
 } from '../lib/firestore';
 import {
   OPEN_STATE, OPEN_STATE_LABEL, OPEN_STATE_TONE,
-  openState, openStatusLine, periodText, regionText,
+  openState, regionText, gameDates, signupDates, refundText, dayText, openCalendarItems,
+  OPEN_SEARCH_BY, openOrgs, playsOn,
   visibleOpen, sortOpen, openSidos, nearbyNote, validateOpen, syncRunView,
 } from '../lib/openTournament';
+import { calendarGrid, monthLabel, shiftMonth } from '../lib/agenda';
 import { SIDO_LIST } from '../lib/regions';
 import { DateField, Label } from './pickers';
 import { Card, SectionTitle, Chip, Btn, Field, EmptyState } from './ui';
@@ -35,6 +41,7 @@ import { todayYmd } from '../lib/today';
 const today = () => todayYmd();
 /* 지금 시각 'HH:MM' — 접수 시작·마감 시각이 적힌 대회는 그 시각에 상태가 바뀐다 */
 const nowHm = () => { const n = new Date(); return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`; };
+const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 const won = (n) => `${Number(n || 0).toLocaleString()}원`;
 
 const blank = () => ({
@@ -49,6 +56,9 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
   const [all, setAll] = useState([]);
   const [region, setRegion] = useState(null);
   const [kw, setKw] = useState('');
+  const [by, setBy] = useState('all');              // 찾는 기준 — OPEN_SEARCH_BY
+  const [date, setDate] = useState('');             // '' = 전체 보기
+  const [monthKey, setMonthKey] = useState(() => today().slice(0, 7));
   const [showDone, setShowDone] = useState(false);
   const [editing, setEditing] = useState(null);   // null | 'new' | id
   const [draft, setDraft] = useState(blank());
@@ -77,6 +87,12 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
   );
 
   const sidos = useMemo(() => openSidos(all), [all]);
+  const orgs = useMemo(() => openOrgs(all), [all]);
+  const pickBy = (k) => {
+    setBy(k);
+    /* 지역 칩은 「지역」 기준에서만 보인다 — 숨은 채로 걸러지지 않게 비운다 */
+    if (k !== 'region') setRegion(null);
+  };
 
   /* 이 달에 뭐가 있는지 한 줄. 목록을 다 훑기 전에 "이번 달은 볼 게
      있나 없나"부터 알려 준다. */
@@ -84,15 +100,24 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
     () => nearbyNote(all, { today: today(), monthKey: today().slice(0, 7), region }),
     [all, region],
   );
+  /* 날짜만 빼고 거른 것 — 달력 점은 이것으로 찍는다(검색·지역이 달력에도 걸린다) */
+  const filtered = useMemo(() => visibleOpen(all, {
+    today: today(), region, kw, by, past: showDone && !!isAppAdmin,
+  }), [all, region, kw, by, showDone, isAppAdmin]);
   const list = useMemo(() => sortOpen(
-    visibleOpen(all, {
-      today: today(),
-      region,
-      kw,
-      past: showDone && !!isAppAdmin,
-    }),
+    date ? filtered.filter((t) => playsOn(t, date)) : filtered,
     today(),
-  ), [all, region, kw, showDone]);
+  ), [filtered, date, showDone, isAppAdmin]);
+  const weeks = useMemo(
+    () => calendarGrid(monthKey, openCalendarItems(filtered), today()),
+    [monthKey, filtered],
+  );
+  /* 그날 접수가 끝나는 대회 — 날짜를 눌렀을 때 아래에 따로 한 줄 */
+  const closingOn = useMemo(
+    () => (date ? filtered.filter((t) => String(t.signupTo || '').slice(0, 10) === date) : []),
+    [filtered, date],
+  );
+  const hint = (OPEN_SEARCH_BY.find((x) => x.key === by) || OPEN_SEARCH_BY[0]).hint;
 
   const openLink = (t) => {
     const url = String(t.link || '').trim();
@@ -261,27 +286,113 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
         </Text>
       </Card>
 
-      {!!near && (
+      {/* 달력 — 처음엔 전체, 날짜를 누르면 그날 열리는 대회만 */}
+      <Card style={{ marginTop: 10, paddingHorizontal: 6, paddingVertical: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, marginBottom: 8 }}>
+          <Pressable onPress={() => setMonthKey(shiftMonth(monthKey, -1))} hitSlop={10}
+            accessibilityLabel="이전 달" style={{ paddingHorizontal: 6 }}>
+            <Text style={{ fontSize: 18, color: C.sub }}>‹</Text>
+          </Pressable>
+          <Text style={[F.h3, { minWidth: 96, textAlign: 'center' }]}>{monthLabel(monthKey)}</Text>
+          <Pressable onPress={() => setMonthKey(shiftMonth(monthKey, 1))} hitSlop={10}
+            accessibilityLabel="다음 달" style={{ paddingHorizontal: 6 }}>
+            <Text style={{ fontSize: 18, color: C.sub }}>›</Text>
+          </Pressable>
+          <View style={{ flex: 1 }} />
+          <Chip tone={!date ? 'green' : 'outline'}
+            onPress={() => { setDate(''); setMonthKey(today().slice(0, 7)); }}>전체 보기</Chip>
+        </View>
+
+        <View style={{ flexDirection: 'row' }}>
+          {WEEK.map((w, i) => (
+            <Text key={w} style={{
+              flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', marginBottom: 4,
+              color: i === 0 ? C.danger : i === 6 ? C.info : C.faint,
+            }}>{w}</Text>
+          ))}
+        </View>
+        {weeks.map((week, wi) => (
+          <View key={wi} style={{ flexDirection: 'row' }}>
+            {week.map((cell, ci) => {
+              if (cell.blank) return <View key={`b${ci}`} style={{ flex: 1, height: 42 }} />;
+              const on = date === cell.date;
+              const game = cell.items.some((it) => it.kind === 'game');
+              const deadline = cell.items.some((it) => it.kind === 'deadline');
+              return (
+                <Pressable key={cell.date} onPress={() => setDate(on ? '' : cell.date)}
+                  accessibilityLabel={`${dayText(cell.date)}${game ? ', 대회 있음' : ''}${deadline ? ', 접수 마감' : ''}`}
+                  style={{
+                    flex: 1, height: 42, alignItems: 'center', justifyContent: 'center',
+                    borderRadius: R.sm, backgroundColor: on ? C.greenSoft : 'transparent',
+                  }}>
+                  <View style={{
+                    width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: cell.today ? C.green : 'transparent',
+                  }}>
+                    <Text style={{
+                      fontSize: 12.5, fontWeight: cell.today || on ? '800' : '500',
+                      color: cell.today ? '#fff' : cell.past ? C.faint
+                        : ci === 0 ? C.danger : ci === 6 ? C.info : C.text,
+                    }}>{cell.day}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 2, height: 6, marginTop: 1 }}>
+                    {game && <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: C.green }} />}
+                    {deadline && <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: C.danger }} />}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
+        <View style={{
+          flexDirection: 'row', gap: 14, marginTop: 8, paddingTop: 8,
+          borderTopWidth: 1, borderTopColor: C.border, justifyContent: 'center',
+        }}>
+          {[[C.green, '대회 날'], [C.danger, '접수 마감일']].map(([c, l]) => (
+            <View key={l} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c }} />
+              <Text style={{ fontSize: 10.5, color: C.faint }}>{l}</Text>
+            </View>
+          ))}
+        </View>
+      </Card>
+
+      {!!near && !date && (
         <Card style={{ marginTop: 10, borderColor: C.green, borderWidth: 1 }}>
           <Text style={{ fontSize: 12.5, color: C.text, fontWeight: '700' }}>{near.text}</Text>
           {near.signup > 0 && (
-            <Text style={{ fontSize: 11, color: C.green2, marginTop: 3 }}>
-              접수 마감일을 놓치면 그걸로 끝입니다 — 아래에서 확인하세요
+            <Text style={{ fontSize: 11.5, color: C.green2, marginTop: 3, lineHeight: 16 }}>
+              신청 전에 접수 마감일을 꼭 확인하세요. 대회마다 접수 일정을 아래에 적어 두었습니다.
             </Text>
           )}
         </Card>
       )}
 
-      <View style={{ marginTop: 12 }}>
-        <Field placeholder="대회 이름·주최로 찾기" value={kw} onChangeText={setKw} />
+      {/* 찾기 — 기준을 고르고 검색 */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+        {OPEN_SEARCH_BY.map((x) => (
+          <Chip key={x.key} tone={by === x.key ? 'green' : 'outline'} onPress={() => pickBy(x.key)}>
+            {x.label}
+          </Chip>
+        ))}
       </View>
-
-      {sidos.length > 0 && (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+      <View style={{ marginTop: 8 }}>
+        <Field placeholder={hint} value={kw} onChangeText={setKw} />
+      </View>
+      {by === 'region' && sidos.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
           <Chip tone={!region ? 'green' : 'outline'} onPress={() => setRegion(null)}>전국</Chip>
-          {sidos.map((s) => (
-            <Chip key={s} tone={region === s ? 'green' : 'outline'}
-              onPress={() => setRegion(region === s ? null : s)}>{s}</Chip>
+          {sidos.map((x) => (
+            <Chip key={x} tone={region === x ? 'green' : 'outline'}
+              onPress={() => setRegion(region === x ? null : x)}>{x}</Chip>
+          ))}
+        </View>
+      )}
+      {by === 'host' && orgs.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {orgs.map((o) => (
+            <Chip key={o} tone={kw === o ? 'green' : 'outline'}
+              onPress={() => setKw(kw === o ? '' : o)}>{o}</Chip>
           ))}
         </View>
       )}
@@ -292,7 +403,7 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
             <View style={{ flex: 1 }}>
               <Text style={F.bodyBold}>자동 갱신 · 매일 새벽 2시</Text>
               <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
-                오늘 새로 공지된 대회는 오른쪽 버튼으로 바로 찾을 수 있습니다
+                앱 관리자에게만 보입니다 · 오늘 새로 공지된 대회는 오른쪽 버튼으로 바로 찾습니다
               </Text>
             </View>
             <Btn small tone="primary" disabled={sync.busy || asking} onPress={findNow}>
@@ -322,18 +433,37 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
 
       <SectionTitle right={
         <Text style={{ fontSize: 11, color: C.faint }}>{list.length}건</Text>
-      }>{showDone && isAppAdmin ? '마감·지난 대회' : '접수 중·접수 예정 대회'}</SectionTitle>
+      }>{date ? `${dayText(date)} 열리는 대회`
+        : showDone && isAppAdmin ? '마감·지난 대회' : '접수 중·접수 예정 대회'}</SectionTitle>
+
+      {closingOn.length > 0 && (
+        <Card style={{ marginBottom: 10, backgroundColor: C.dangerBg, borderColor: C.dangerBg }}>
+          <Text style={{ fontSize: 12, color: C.danger, fontWeight: '700' }}>
+            이날 접수 마감 {closingOn.length}건
+          </Text>
+          <Text style={{ fontSize: 11.5, color: C.text, marginTop: 3, lineHeight: 17 }}>
+            {closingOn.map((t) => t.name).join('\n')}
+          </Text>
+        </Card>
+      )}
 
       {list.length === 0 ? (
         <EmptyState
           icon="🏆"
-          title={showDone && isAppAdmin ? '마감·지난 대회가 없습니다' : '지금 접수 중이거나 곧 접수하는 대회가 없습니다'}
-          body={isAppAdmin
-            ? '위 지금 찾기 버튼으로 바로 찾거나, 아래 [대회 등록]으로 요강을 옮겨 적으세요.'
-            : '대회가 등록되면 여기에 표시됩니다. 지역을 바꿔서 찾아보세요.'}
+          title={date ? '이 날 열리는 대회가 없습니다'
+            : showDone && isAppAdmin ? '마감·지난 대회가 없습니다'
+              : kw || region ? '찾는 조건에 맞는 대회가 없습니다'
+                : '지금 접수 중이거나 곧 접수하는 대회가 없습니다'}
+          body={date ? '달력 오른쪽 위 「전체 보기」를 누르면 모든 대회를 봅니다.'
+            : kw || region ? '검색어를 줄이거나 찾는 기준을 바꿔 보세요.'
+              : isAppAdmin
+                ? '위 지금 찾기 버튼으로 바로 찾거나, 아래 [대회 등록]으로 요강을 옮겨 적으세요.'
+                : '대회가 올라오면 여기에 표시됩니다.'}
         />
       ) : list.map((t) => {
         const state = openState(t, today(), nowHm());
+        const sg = signupDates(t, today());
+        const signupColor = state === OPEN_STATE.SIGNUP ? C.green2 : state === OPEN_STATE.CLOSED ? C.faint : C.text;
         return (
           <Card key={t.id} style={{
             marginBottom: 10,
@@ -344,7 +474,7 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <Chip tone={OPEN_STATE_TONE[state]}>{OPEN_STATE_LABEL[state]}</Chip>
               {!!t.org && <Chip tone="soft">{t.org}</Chip>}
-              <Text style={{ fontSize: 11, color: C.faint }}>{periodText(t)}</Text>
+              {!!sg.dday && state === OPEN_STATE.SIGNUP && <Chip tone="red">{sg.dday}</Chip>}
             </View>
 
             <Text style={[F.bodyBold, { marginTop: 7, fontSize: 14.5 }]}>{t.name}</Text>
@@ -354,19 +484,32 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
             {!!t.host && (
               <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>주최 {t.host}</Text>
             )}
+
+            {/* 일정 두 줄 — 대회 일정 / 접수 일정 */}
+            <View style={{ marginTop: 9, padding: 10, borderRadius: R.md, backgroundColor: C.fill, gap: 6 }}>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <Text style={{ width: 54, fontSize: 11.5, color: C.faint, fontWeight: '700' }}>대회 일정</Text>
+                <Text style={{ flex: 1, fontSize: 12.5, color: C.text, fontWeight: '600' }}>{gameDates(t)}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <Text style={{ width: 54, fontSize: 11.5, color: C.faint, fontWeight: '700' }}>접수 일정</Text>
+                <Text style={{ flex: 1, fontSize: 12.5, color: signupColor, fontWeight: '600' }}>
+                  {state === OPEN_STATE.CLOSED ? `${sg.text} (마감됨)` : sg.text}
+                </Text>
+              </View>
+              {!!refundText(t) && (
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <Text style={{ width: 54, fontSize: 11.5, color: C.faint, fontWeight: '700' }}>취소·환불</Text>
+                  <Text style={{ flex: 1, fontSize: 12, color: C.sub }}>{refundText(t)}</Text>
+                </View>
+              )}
+            </View>
+
             {isAppAdmin && t.source === 'auto' && (
-              <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 2 }}>
+              <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>
                 {t.locked ? '자동 수집 · 고친 뒤 잠김(자동 갱신이 덮어쓰지 않음)' : '자동 수집 · 매일 새벽 2시 갱신'}
               </Text>
             )}
-
-            <Text style={{
-              fontSize: 12, marginTop: 6, fontWeight: '600',
-              color: state === OPEN_STATE.SIGNUP ? C.green2
-                : state === OPEN_STATE.LIVE ? C.danger : C.sub,
-            }}>
-              {openStatusLine(t, today(), nowHm())}
-            </Text>
 
             {(t.divisions?.length > 0 || t.fee > 0) && (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>

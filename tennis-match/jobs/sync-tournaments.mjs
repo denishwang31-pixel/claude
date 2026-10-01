@@ -14,7 +14,6 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { appendFileSync } from 'node:fs';
 import { seoulToday } from '../src/lib/openSync.js';
-import { fetchKatoList } from '../src/lib/openParse.js';
 import {
   DEFAULT_MODEL, clientOptions, explainApiError, runTournamentSync,
 } from '../src/lib/tournamentSearch.js';
@@ -36,27 +35,6 @@ async function main() {
     throw new Error('ANTHROPIC_API_KEY 시크릿이 없습니다. GitHub 저장소 Settings → Secrets 에 넣어 주세요.');
   }
   log(`워크스페이스 ID: ${process.env.ANTHROPIC_WORKSPACE_ID ? '있음' : '없음(키에 워크스페이스가 붙어 있어야 함)'}`);
-
-  /* 임시: KATO 대회 상세 페이지 모양 점검(접수 기간·장소 읽는 법) — 확인 뒤 지운다 */
-  const kato = (await fetchKatoList()).items;
-  const ids = [kato.find((t) => !t.signupStatus), kato.find((t) => t.signupStatus === 'soon')]
-    .filter(Boolean).map((t) => t.link.split('/').pop());
-  for (const id of ids) {
-    try {
-      const html = await (await fetch(`https://kato.kr/openGame/${id}`, { signal: AbortSignal.timeout(20000) })).text();
-      const body = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ');
-      const i = Math.max(0, body.indexOf('competition-title'));
-      const part = body.slice(i, i + 30000)
-        .replace(/<\/(td|th|li|dt|dd|p|div|tr|h\d)>/gi, ' | ')
-        .replace(/<br\s*\/?>/gi, ' / ')
-        .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').replace(/(\s*\|\s*)+/g, ' | ');
-      log(`===== KATO openGame ${id} (${html.length}자)`);
-      log(part.slice(0, 6000));
-      const j = body.search(/접수기간|신청기간|참가신청기간|접수 기간/);
-      log(`----- 원문(접수 칸 주변, 위치 ${j})`);
-      if (j > 0) log(body.slice(j - 1200, j + 1500).replace(/\s+/g, ' '));
-    } catch (e) { log(`KATO openGame ${id} 실패: ${e?.message || e}`); }
-  }
 
   const client = new Anthropic(clientOptions(process.env));
   initializeApp();

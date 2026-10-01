@@ -3,13 +3,15 @@
    여기서 지키려는 것
      · **클럽 대회와 절대 섞이지 않을 것** — 이게 제일 중요하다
      · 지금 신청할 수 있는 것이 맨 위에 올 것
-     · 접수 마감일이 눈에 띌 것 (놓치면 그걸로 끝이다)
+     · 접수 마감일이 눈에 띌 것 (지나면 신청할 길이 없다)
      · 요강이 이상하면 등록 단계에서 막을 것 */
 import {
   OPEN_STATE, OPEN_STATE_LABEL,
   lastDay, openState, openStatusLine, periodText, regionText,
   visibleOpen, sortOpen, openSidos, nearbyNote, validateOpen,
+  areaOf, dayText, gameDates, signupDates, refundText, playsOn, openCalendarItems, searchHay, openOrgs,
 } from '../src/lib/openTournament.js';
+import { guessRegion } from '../src/lib/regions.js';
 import { KIND, KINDS, buildAgenda } from '../src/lib/agenda.js';
 
 let pass = 0; let fail = 0;
@@ -216,6 +218,71 @@ console.log('\n[이름표]');
   eq(Object.keys(OPEN_STATE_LABEL).length, Object.keys(OPEN_STATE).length,
     '모든 상태에 이름이 있다 — 없으면 화면에 undefined 가 뜬다');
   ok(Object.values(OPEN_STATE_LABEL).every((v) => v && v.trim()), '빈 이름이 없다');
+}
+
+console.log('\n[지역 — 협회 목록이 지역 칸을 안 줄 때 이름에서]');
+{
+  eq(guessRegion('제 20 회 원주시장배 전국동호인테니스대회'), { sido: '강원', gungu: '원주시' }, '원주시장배 → 강원 원주시');
+  eq(guessRegion('제2회 충남한마음배'), { sido: '충남', gungu: '' }, '시·도 약칭');
+  eq(guessRegion('제27회 수원화성배'), { sido: '경기', gungu: '수원시' }, '두 곳이 걸리면 먼저 나온 것(수원 > 화성)');
+  eq(guessRegion('남양주 오픈'), { sido: '경기', gungu: '남양주시' }, '남양주를 양주로 읽지 않는다');
+  eq(guessRegion('광주광역시장배'), { sido: '광주', gungu: '' }, '광주는 광역시로');
+  eq(guessRegion('제 4회 남동오픈'), { sido: '인천', gungu: '남동구' }, '구 이름도 두 글자 이상이면');
+  eq(guessRegion('제1회 위닝컵 전국동호인테니스대회'), { sido: '', gungu: '' }, '지역이 없으면 짐작하지 않는다');
+  eq(guessRegion('고성 공룡배'), { sido: '', gungu: '' }, '두 시·도에 같은 이름(고성)은 짐작하지 않는다');
+  eq(areaOf({ name: '이천쌀배', sido: '서울' }).sido, '서울', '지역 칸이 있으면 그것이 먼저');
+  eq(regionText({ name: '제14회 임실N치즈배' }), '전북 임실군', '카드 지역 줄도 짐작한 값으로');
+  eq(openSidos([{ id: 'a', name: '구미 금오산배' }, { id: 'b', name: '문경 에이스배' }]), ['경북'], '지역 칩도 짐작한 값으로');
+}
+
+console.log('\n[찾는 기준 — 이름·지역·주최]');
+{
+  const list = [
+    { id: 'a', name: '원주시장배', host: '한국테니스발전협의회(KATO)', org: 'KATO', startDate: '2026-09-20' },
+    { id: 'b', name: 'KATA 서울오픈', host: '한국동호인테니스협회', org: 'KATA', sido: '서울', startDate: '2026-09-21' },
+  ];
+  const ids = (o) => visibleOpen(list, { today: TODAY, ...o }).map((t) => t.id);
+  eq(ids({ kw: '원주' }), ['a'], '전체: 이름으로');
+  eq(ids({ kw: '강원', by: 'region' }), ['a'], '지역: 짐작한 시·도로도 찾는다');
+  eq(ids({ kw: '원주', by: 'host' }), [], '주최 기준이면 이름은 안 본다');
+  eq(ids({ kw: 'kato', by: 'host' }), ['a'], '주최: 약칭·대소문자 무시');
+  eq(ids({ kw: 'KATA', by: 'name' }), ['b'], '이름 기준: 이름에 든 글자만');
+  eq(ids({ kw: '강원 원주', by: 'region' }), ['a'], '띄어쓰기 달라도 찾는다');
+  ok(searchHay(list[1], 'region').includes('서울'), '지역 글에 시·도');
+  eq(openOrgs(list), ['KATA', 'KATO'], '주최 칩');
+}
+
+console.log('\n[달력 — 날짜를 누르면 그날 열리는 대회만]');
+{
+  const t = { id: 'a', name: 'x', startDate: '2026-10-02', endDate: '2026-10-04', signupTo: '2026-09-25' };
+  ok(playsOn(t, '2026-10-02') && playsOn(t, '2026-10-04'), '대회 기간 처음·끝 날 모두');
+  ok(!playsOn(t, '2026-10-05') && !playsOn(t, '2026-09-25'), '기간 밖·접수 마감일은 대회 날이 아니다');
+  eq(visibleOpen([t], { today: TODAY, date: '2026-10-03' }).length, 1, '목록 거르기에 날짜');
+  eq(visibleOpen([t], { today: TODAY, date: '2026-10-06' }).length, 0, '그날 없으면 빈 목록');
+  const dots = openCalendarItems([t]);
+  eq(dots.filter((x) => x.kind === 'game').map((x) => x.date), ['2026-10-02', '2026-10-03', '2026-10-04'], '대회 날마다 점');
+  eq(dots.filter((x) => x.kind === 'deadline').map((x) => x.date), ['2026-09-25'], '접수 마감일 점');
+  eq(openCalendarItems([{ id: 'z', startDate: '2026-10-01', endDate: '2027-03-01' }]).length, 31,
+    '잘못 적힌 긴 기간이 달력을 덮지 않는다');
+  ok(!playsOn({ id: 'n' }, '2026-10-01'), '날짜 없는 대회는 어느 날에도 안 걸린다');
+}
+
+console.log('\n[카드 일정 두 줄 — 대회 일정 / 접수 일정]');
+{
+  eq(dayText('2026-10-02'), '10.2(금)', '날짜 + 요일');
+  eq(gameDates({ startDate: '2026-10-02', endDate: '2026-10-04' }), '10.2(금) ~ 10.4(일)', '여러 날');
+  eq(gameDates({ startDate: '2026-10-02' }), '10.2(금)', '하루');
+  eq(gameDates({}), '날짜 미정 · 요강 확인', '날짜 모름');
+  eq(signupDates({ signupFrom: '2026-09-01', signupTo: '2026-09-12', signupToTime: '18:00' }, TODAY),
+    { text: '9.1(화) ~ 9.12(토) 18:00', dday: '마감 D-2' }, '접수 기간 + 마감 시각 + D-day');
+  eq(signupDates({ signupTo: '2026-09-10' }, TODAY), { text: '9.10(목) 마감', dday: '오늘 마감' }, '오늘 마감');
+  eq(signupDates({ signupStatus: 'soon' }, TODAY).text, '접수 예정 · 날짜는 주최 측 공지 확인', '접수 예정만 알 때');
+  eq(signupDates({}, TODAY).text, '접수 중 · 마감일은 요강 확인', '날짜를 모를 때');
+  eq(signupDates({ signupTo: '2026-09-01' }, TODAY).dday, '', '지난 마감에는 D-day 없음');
+  eq(signupDates({ signupFrom: '2026-10-08', signupFromTime: '12:00', refundTo: '2026-10-21' }, TODAY).text,
+    '10.8(목) 12:00부터 · 정원이 차면 마감', 'KATO 처럼 접수 마감일 없이 환불 마감만 있을 때');
+  eq(refundText({ refundTo: '2026-10-21', refundToTime: '15:00' }), '10.21(수) 15:00까지', '취소·환불 마감 한 줄');
+  eq(refundText({}), '', '없으면 빈 줄');
 }
 
 console.log(`\n공개 대회 테스트: ${pass} 통과 / ${fail} 실패`);

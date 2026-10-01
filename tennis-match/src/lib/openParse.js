@@ -12,6 +12,9 @@
      https://kato.kr/          카드: 상태 띠(접수중·부분접수중) · 이름(줄임) · 부서 · 대회 기간
                                카드를 누르면 /openGame/번호 로 간다(onClick)
      https://kato.kr/openList  1년 목록: <a href="/openGame/번호">온전한 이름</a>
+     https://kato.kr/openGame/번호  요강: 장소·주최·접수 개시일·취소/환불 마감일·참가비·부서별 접수 상태
+                               ⚠️ KATO 는 「접수 마감일」을 따로 적지 않는다(부서별 정원이 차면 마감).
+                                  그래서 접수 시작일과 취소·환불 마감일을 같이 보여 준다.
    ⚠️ 사이트 모양이 바뀌면 0건이 나온다 — 그때는 조용히 넘어가고 Claude 결과만 쓴다.
    ============================================================ */
 
@@ -75,6 +78,102 @@ export function parseKatoHome(homeHtml, names = {}) {
   return items;
 }
 
+/* 요강 표를 글로 — 칸 경계는 ' | ' (예: "| 장 소 | 만석공원테니스장 외 |") */
+const cells = (html) => String(html || '')
+  .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ')
+  .replace(/<\/(td|th|li|dt|dd|p|div|tr|h\d)>/gi, ' | ')
+  .replace(/<br\s*\/?>/gi, ' / ')
+  .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/\s+/g, ' ')
+  .replace(/(\s*\|\s*)+/g, ' | ');
+
+const pad = (n) => String(n).padStart(2, '0');
+const ymd = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+/** 칸 이름 다음 칸의 글 — 이름 글자 사이 띄어쓰기("장 소")는 무시 */
+const field = (text, label) => {
+  const re = new RegExp(`\\|\\s*${label.split('').join('\\s*')}\\s*\\|\\s*([^|]*)\\|`);
+  const m = re.exec(text);
+  return m ? m[1].trim() : '';
+};
+/** '2026년 10월 8일 ... 12시' 들 → [{date, hour}] */
+const datesIn = (seg) => {
+  const out = [];
+  const re = /(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(?:\([^)]*\))?([^년]*?)(?=\d{4}\s*년|$)/g;
+  let m;
+  while ((m = re.exec(seg))) {
+    const h = /(\d{1,2})\s*시/.exec(m[4]);
+    out.push({ date: ymd(m[1], m[2], m[3]), hour: h ? Number(h[1]) : null, tail: m[4] });
+  }
+  return out;
+};
+const hourText = (h) => (h !== null && h >= 0 && h < 24 ? `${pad(h)}:00` : '');
+
+/**
+ * 대회 요강 페이지 → 목록 카드에 더할 것
+ * @returns { place, host, signupFrom, signupFromTime, refundTo, refundToTime, fee, closedDivisions }
+ */
+export function parseKatoGame(html) {
+  const text = cells(html);
+  const out = {};
+  const place = field(text, '장소').replace(/[▣◈◎※]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (place && place !== '.') out.place = place.slice(0, 80);
+  const host = field(text, '주최');
+  if (host && host !== '.') out.host = host.slice(0, 80);
+
+  /* 「접수개시 및 환불마감」 칸: "▣ 접수 개시일 : 2026년 10월 8일 ·여자부서-12시 ·남자부서-13시 / ▣ 취소 및 환불 마감일 : …" */
+  const openAt = text.search(/접수\s*개시일/);
+  if (openAt >= 0) {
+    const seg = text.slice(openAt).split(/▣|\|/)[0];
+    const [first] = datesIn(seg);
+    if (first) {
+      out.signupFrom = first.date;
+      /* 부서마다 여는 시각이 다르면 가장 이른 시각 — 그때부터 누군가는 신청할 수 있다 */
+      const hours = [...first.tail.matchAll(/(\d{1,2})\s*시/g)].map((x) => Number(x[1]));
+      if (hours.length) out.signupFromTime = hourText(Math.min(...hours));
+    }
+  }
+  const refundAt = text.search(/환불\s*마감일/);
+  if (refundAt >= 0) {
+    const seg = text.slice(refundAt).split(/▣|\|/)[0];
+    /* 부서마다 다르면("개나리부 9월 11일 … 마스터스부 10월 2일") 가장 늦은 날 — 아직 열린 부서 기준 */
+    const all = datesIn(seg).sort((a, b) => a.date.localeCompare(b.date));
+    const last = all[all.length - 1];
+    if (last) {
+      out.refundTo = last.date;
+      if (last.hour !== null) out.refundToTime = hourText(last.hour);
+    }
+  }
+  const fee = /([\d,]{4,})\s*원/.exec(field(text, '참가비'));
+  if (fee) out.fee = Number(fee[1].replace(/,/g, '')) || 0;
+
+  /* 대회일정목록: "| 개나리부 | 2026년 09월 15일 (화) 09:00 | 화성 볼리테니스장 외 | 접수마감 참가목록 151 / 96 |" */
+  const listAt = text.indexOf('대회일정목록');
+  if (listAt >= 0) {
+    const closed = [];
+    const re = /\|\s*([^|]+?)\s*\|\s*\d{4}년\s*\d{1,2}월\s*\d{1,2}일[^|]*\|\s*[^|]*\|\s*(접수마감|참가신청|접수예정|접수대기)/g;
+    let m;
+    const tail = text.slice(listAt);
+    while ((m = re.exec(tail))) if (m[2] === '접수마감' && !closed.includes(m[1])) closed.push(m[1]);
+    out.closedDivisions = closed;
+  }
+  return out;
+}
+
+/** 목록 카드에 요강 내용을 더한다 */
+export function withKatoGame(item, game) {
+  if (!game) return item;
+  const next = { ...item };
+  ['place', 'host', 'signupFrom', 'signupFromTime', 'refundTo', 'refundToTime'].forEach((k) => {
+    if (game[k]) next[k] = game[k];
+  });
+  if (game.fee > 0) next.fee = game.fee;
+  /* 접수 시작일을 알면 '접수 예정' 표시는 날짜가 대신한다 */
+  if (game.signupFrom) next.signupStatus = '';
+  const closed = game.closedDivisions || [];
+  if (closed.length && !item.signupStatus) next.note = `접수 마감된 부서: ${closed.join(', ')} — 나머지 부서는 신청 가능`;
+  return next;
+}
+
 /** 두 페이지를 열어 목록을 만든다(실패하면 빈 목록) */
 export async function fetchKatoList(fetchImpl = fetch) {
   const get = async (url) => {
@@ -87,10 +186,20 @@ export async function fetchKatoList(fetchImpl = fetch) {
   };
   try {
     const [home, list] = await Promise.all([get(KATO_HOME), get(KATO_LIST).catch(() => '')]);
-    return { items: parseKatoHome(home, katoNames(list)), note: '' };
+    const items = parseKatoHome(home, katoNames(list));
+    /* 대회마다 요강을 열어 장소·접수 일정을 더한다 — 넷씩 나눠서(사이트에 부담 주지 않게).
+       요강을 못 읽은 대회는 목록 카드 내용만으로 둔다. */
+    const out = [];
+    for (let i = 0; i < items.length; i += 4) {
+      const chunk = items.slice(i, i + 4);
+      // eslint-disable-next-line no-await-in-loop
+      const games = await Promise.all(chunk.map((t) => get(t.link).then(parseKatoGame).catch(() => null)));
+      chunk.forEach((t, k) => out.push(withKatoGame(t, games[k])));
+    }
+    return { items: out, note: '' };
   } catch (e) {
     return { items: [], note: String(e?.message || e) };
   }
 }
 
-export default { katoNames, parseKatoHome, fetchKatoList, katoGameUrl };
+export default { katoNames, parseKatoHome, parseKatoGame, withKatoGame, fetchKatoList, katoGameUrl };

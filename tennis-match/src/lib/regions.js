@@ -49,6 +49,49 @@ export function parseRegion(text) {
   return { sido, gungu };
 }
 
+/* ---------------- 글에서 지역 짐작하기 ----------------
+   대회 이름에는 대개 지역이 들어 있다("원주시장배", "이천쌀배", "충남한마음배").
+   협회 목록이 지역 칸을 따로 주지 않을 때 이름에서 시·도를 짐작한다.
+
+   · 시·군·구는 끝 글자(시·군·구)를 뗀 두 글자 이상만 본다 — "중구"의 "중",
+     "동구"의 "동"은 아무 글에나 들어 있다.
+   · 두 시·도에 같은 이름이 있으면(강서구·고성군·중구 …) 짐작하지 않는다.
+   · 시·도 이름과 같은 것(광주시 ↔ 광주광역시)은 시·도로 본다.
+   · 여러 개가 걸리면 글에서 먼저 나온 것 — "수원화성"은 수원이다. */
+const SIDO_ALIAS = [
+  ['서울특별시', '서울'], ['인천광역시', '인천'], ['부산광역시', '부산'], ['대구광역시', '대구'],
+  ['광주광역시', '광주'], ['대전광역시', '대전'], ['울산광역시', '울산'], ['세종특별자치시', '세종'],
+  ['경기도', '경기'], ['강원특별자치도', '강원'], ['강원도', '강원'],
+  ['충청북도', '충북'], ['충청남도', '충남'], ['전북특별자치도', '전북'], ['전라북도', '전북'],
+  ['전라남도', '전남'], ['경상북도', '경북'], ['경상남도', '경남'],
+  ['제주특별자치도', '제주'], ['제주도', '제주'],
+  ...SIDO_LIST.map((s) => [s, s]),
+];
+const STEMS = (() => {
+  const seen = new Map();   // 줄기 → [{sido, gungu}]
+  Object.entries(REGIONS).forEach(([sido, list]) => list.forEach((gungu) => {
+    const stem = gungu.replace(/[시군구]$/, '');
+    if (stem.length < 2 || SIDO_LIST.includes(stem)) return;
+    if (!seen.has(stem)) seen.set(stem, []);
+    seen.get(stem).push({ sido, gungu });
+  }));
+  return [...seen.entries()].filter(([, v]) => v.length === 1).map(([stem, [v]]) => ({ stem, ...v }));
+})();
+
+/** 글에서 지역을 짐작한다 → { sido, gungu } (모르면 빈 값) */
+export function guessRegion(text) {
+  const s = String(text || '');
+  if (!s) return { sido: '', gungu: '' };
+  let best = null;
+  const take = (at, len, v) => {
+    if (at < 0) return;
+    if (!best || at < best.at || (at === best.at && len > best.len)) best = { at, len, ...v };
+  };
+  STEMS.forEach(({ stem, sido, gungu }) => take(s.indexOf(stem), stem.length, { sido, gungu }));
+  SIDO_ALIAS.forEach(([word, sido]) => take(s.indexOf(word), word.length, { sido, gungu: '' }));
+  return best ? { sido: best.sido, gungu: best.gungu } : { sido: '', gungu: '' };
+}
+
 /** 같은 지역인지 — 시/도만 같아도 "가깝다"로 본다 */
 export function sameArea(a, b, { strict = false } = {}) {
   const x = parseRegion(a); const y = parseRegion(b);

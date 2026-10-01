@@ -20,7 +20,7 @@
       운영자가 손으로 넣은 대회(source 없음)와 이름·날짜가 같은 것은
       아예 새로 만들지 않는다(같은 대회가 두 줄로 보이지 않게).
    ============================================================ */
-import { SIDO_LIST } from './regions.js';
+import { SIDO_LIST, guessRegion } from './regions.js';
 import { openState, OPEN_STATE, validateOpen, lastDay, hm } from './openTournament.js';
 
 export const AUTO_SOURCE = 'auto';
@@ -111,6 +111,9 @@ export function cleanItem(raw, today) {
     /* 접수 시작·마감 시각(예: 09:00) — 알면 그 시각에 상태가 바뀐다 */
     signupFromTime: hm(raw.signupFromTime),
     signupToTime: hm(raw.signupToTime),
+    /* 취소·환불 마감(KATO 처럼 접수 마감일을 따로 안 적는 곳) — 카드에 한 줄로 */
+    refundTo: normDate(raw.refundTo),
+    refundToTime: hm(raw.refundToTime),
     /* 날짜 없이 "접수 예정"만 알 때 — openState 가 접수 중으로 잘못 보지 않게 */
     signupStatus: raw.signupStatus === 'soon' ? 'soon' : '',
     divisions: (Array.isArray(raw.divisions) ? raw.divisions : String(raw.divisions || '').split(','))
@@ -121,6 +124,12 @@ export function cleanItem(raw, today) {
     sourceUrl: httpUrl(raw.sourceUrl) || httpUrl(raw.link),
     note: text(raw.note, 200),
   };
+  /* 지역 칸을 안 준 목록(KATO 등) — 장소·이름에서 짐작해 넣어 둔다(지역으로 찾기) */
+  if (!doc.sido) {
+    const g = guessRegion(`${doc.place} ${doc.name}`);
+    doc.sido = g.sido;
+    if (!doc.gungu) doc.gungu = g.gungu;
+  }
   const err = validateOpen(doc);
   if (err) return { doc: null, reason: err };
   const st = openState(doc, today);

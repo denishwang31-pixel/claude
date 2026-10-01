@@ -252,7 +252,11 @@ export default function More() {
 
   const renderSub = () => {
     switch (sub) {
-      case 'opens': return <OpenTournaments {...{ me, isAppAdmin, flash }} />;
+      /* 대회 등록·[지금 찾기]는 앱 관리자만. 「회원 모드」로 보면 회원 화면 그대로 */
+      case 'opens': return (
+        <OpenTournaments me={me} flash={flash}
+          isAppAdmin={!!isAppAdmin && viewMode !== 'member' && viewMode !== 'lead'} />
+      );
       case 'tournament': return (
         <Tournaments {...{ clubId, members, venues, tournaments, isAdmin, me, meVal, flash }} />
       );

@@ -29,6 +29,7 @@
      화면에는 광고를 늘리지 않는다 — 매일 쓰는 화면이 광고판이 되면
      앱을 안 쓰게 된다.
    ============================================================ */
+import { guessRegion } from './regions.js';
 
 /** 대회가 지금 어떤 단계인가 — "지금 내가 뭘 할 수 있나"로 나눈다 */
 export const OPEN_STATE = {
@@ -125,9 +126,99 @@ export function periodText(t) {
   return `${short(s)}~${short(e)}`;
 }
 
+/** 대회 지역. 지역 칸이 비었으면(협회 목록이 안 준 경우) 장소·이름에서 짐작한다. */
+export function areaOf(t) {
+  if (t?.sido) return { sido: t.sido, gungu: t.gungu || '' };
+  return guessRegion(`${t?.place || ''} ${t?.name || ''}`);
+}
+
 /** 지역 한 줄 */
-export const regionText = (t) =>
-  [t?.sido, t?.gungu].filter(Boolean).join(' ') || '지역 미정';
+export const regionText = (t) => {
+  const a = areaOf(t);
+  return [a.sido, a.gungu].filter(Boolean).join(' ') || '지역 미정';
+};
+
+/* ---------------- 일정 표기 ----------------
+   카드에 「대회 일정」「접수 일정」 두 줄을 따로 적는다. 한 줄로 섞어 두면
+   대회 날짜를 접수 마감으로 잘못 읽는다. */
+const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+/** '2026-10-02' → '10.2(금)' */
+export function dayText(v) {
+  const s = d(v);
+  if (s.length < 10) return s;
+  const dow = DOW[new Date(`${s}T00:00:00`).getDay()];
+  return `${Number(s.slice(5, 7))}.${Number(s.slice(8, 10))}(${dow})`;
+}
+
+/** 며칠 남았나 — 지났으면 null */
+export function daysLeft(date, today) {
+  const s = d(date);
+  if (!s || !today) return null;
+  const n = Math.round((new Date(`${s}T00:00:00`) - new Date(`${d(today)}T00:00:00`)) / 86400000);
+  return Number.isNaN(n) || n < 0 ? null : n;
+}
+
+/** 대회 일정 한 줄 — '10.2(금) ~ 10.4(일)' */
+export function gameDates(t) {
+  const s = d(t?.startDate);
+  const e = d(t?.endDate);
+  if (!s) return '날짜 미정 · 요강 확인';
+  if (!e || e === s) return dayText(s);
+  return `${dayText(s)} ~ ${dayText(e)}`;
+}
+
+/**
+ * 접수 일정 한 줄과 마감 D-day.
+ * @returns { text, dday }  dday 는 '오늘 마감' · 'D-3' · ''
+ */
+export function signupDates(t, today) {
+  const from = d(t?.signupFrom);
+  const to = d(t?.signupTo);
+  const at = (x) => (hm(x) ? ` ${hm(x)}` : '');
+  let text;
+  if (from && to) text = `${dayText(from)}${at(t?.signupFromTime)} ~ ${dayText(to)}${at(t?.signupToTime)}`;
+  else if (to) text = `${dayText(to)}${at(t?.signupToTime)} 마감`;
+  /* 취소·환불 마감만 적는 곳(KATO)은 부서별 정원이 차면 접수를 닫는다 */
+  else if (from) text = `${dayText(from)}${at(t?.signupFromTime)}부터 · ${d(t?.refundTo) ? '정원이 차면 마감' : '마감일은 요강 확인'}`;
+  else if (t?.signupStatus === 'soon') text = '접수 예정 · 날짜는 주최 측 공지 확인';
+  else text = '접수 중 · 마감일은 요강 확인';
+  const left = to ? daysLeft(to, today) : null;
+  const dday = left === null ? '' : left === 0 ? '오늘 마감' : `마감 D-${left}`;
+  return { text, dday };
+}
+
+/** 취소·환불 마감 한 줄 — 없으면 '' */
+export function refundText(t) {
+  const r = d(t?.refundTo);
+  return r ? `${dayText(r)}${hm(t?.refundToTime) ? ` ${hm(t.refundToTime)}` : ''}까지` : '';
+}
+
+/** 그 날짜에 열리는 대회인가(대회 기간 안) */
+export function playsOn(t, date) {
+  const s = d(t?.startDate);
+  if (!s || !date) return false;
+  return s <= date && date <= lastDay(t);
+}
+
+/** 달력 점 — 대회 날마다 'game', 접수 마감일에 'deadline' (calendarGrid 가 받는 모양) */
+export function openCalendarItems(list) {
+  const out = [];
+  (list || []).forEach((t) => {
+    const s = d(t?.startDate);
+    const e = lastDay(t);
+    if (s && e && e >= s) {
+      const cur = new Date(`${s}T00:00:00`);
+      for (let i = 0; i < 31; i += 1) {   // 한 달 넘는 대회는 없다 — 잘못 적힌 날짜가 달력을 덮지 않게
+        const y = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+        if (y > e) break;
+        out.push({ date: y, kind: 'game' });
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+    if (d(t?.signupTo)) out.push({ date: d(t.signupTo), kind: 'deadline' });
+  });
+  return out;
+}
 
 /* ---------------- 고르기 ---------------- */
 
@@ -147,8 +238,31 @@ export const isOpenForSignup = (t, today) => {
  * past: true  → 반대로 마감·진행 중·끝난 대회만(앱 관리자가 정리할 때)
  * state       → 그 단계만 정확히
  */
-export function visibleOpen(list, { today, region = null, state = null, past = false, kw = '' } = {}) {
-  const q = String(kw || '').trim().toLowerCase();
+/** 찾는 기준 — 검색창 위 칸 */
+export const OPEN_SEARCH_BY = [
+  { key: 'all', label: '전체', hint: '대회 이름·지역·주최로 찾기' },
+  { key: 'name', label: '대회 이름', hint: '예: 원주, 임실N치즈배' },
+  { key: 'region', label: '지역', hint: '예: 경기, 충남 서산' },
+  { key: 'host', label: '주최', hint: '예: KATO, 테니스협회' },
+];
+
+/** 검색어가 걸리는 글 — 기준별로 */
+export function searchHay(t, by = 'all') {
+  const name = `${t?.name || ''}`;
+  const region = `${regionText(t)} ${t?.place || ''}`;
+  const host = `${t?.host || ''} ${t?.org || ''}`;
+  if (by === 'name') return name;
+  if (by === 'region') return region;
+  if (by === 'host') return host;
+  return `${name} ${region} ${host}`;
+}
+
+export function visibleOpen(list, {
+  today, region = null, state = null, past = false, kw = '', by = 'all', date = '',
+} = {}) {
+  /* 띄어쓰기는 무시한다 — "충남 서산"과 "충남서산"을 같은 말로 */
+  const squash = (x) => String(x || '').toLowerCase().replace(/\s+/g, '');
+  const q = squash(kw);
   return (list || []).filter((t) => {
     if (!t || !t.id) return false;
     /* 관리자가 뺀 자동 수집 대회 — 기본 목록엔 없고 관리자 「마감·지난」에서만 보인다 */
@@ -160,11 +274,9 @@ export function visibleOpen(list, { today, region = null, state = null, past = f
     } else if (past ? isOpenForSignup(t, today) : !isOpenForSignup(t, today)) {
       return false;
     }
-    if (region && t.sido !== region) return false;
-    if (q) {
-      const hay = `${t.name || ''} ${t.host || ''} ${t.org || ''} ${regionText(t)}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
+    if (region && areaOf(t).sido !== region) return false;
+    if (date && !playsOn(t, date)) return false;
+    if (q && !squash(searchHay(t, by)).includes(q)) return false;
     return true;
   });
 }
@@ -190,7 +302,11 @@ export function sortOpen(list, today) {
 
 /** 목록에 있는 시도들 — 지역 필터 칩 */
 export const openSidos = (list) =>
-  [...new Set((list || []).map((t) => t?.sido).filter(Boolean))].sort();
+  [...new Set((list || []).map((t) => areaOf(t).sido).filter(Boolean))].sort();
+
+/** 목록에 있는 주최 약칭들 — 주최 기준으로 찾을 때 바로 누르는 칩 */
+export const openOrgs = (list) =>
+  [...new Set((list || []).map((t) => String(t?.org || '').trim()).filter(Boolean))].sort();
 
 /**
  * 일정 화면에 띄울 한 줄.
@@ -202,7 +318,7 @@ export const openSidos = (list) =>
 export function nearbyNote(list, { today, monthKey, region = null } = {}) {
   const near = (list || []).filter((t) => {
     if (t?.hidden) return false;
-    if (region && t?.sido !== region) return false;
+    if (region && areaOf(t).sido !== region) return false;
     /* 목록과 같은 기준 — 마감된 대회를 세면 눌러 봐도 목록에 없다 */
     if (!isOpenForSignup(t, today)) return false;
     return d(t?.startDate).slice(0, 7) === monthKey;
@@ -272,6 +388,8 @@ export function syncRunView(run, now = Date.now()) {
 export default {
   syncRunView,
   OPEN_STATE, OPEN_STATE_LABEL, OPEN_STATE_TONE,
-  lastDay, openState, openStatusLine, periodText, regionText,
+  lastDay, openState, openStatusLine, periodText, regionText, areaOf,
+  dayText, daysLeft, gameDates, signupDates, refundText, playsOn, openCalendarItems,
+  OPEN_SEARCH_BY, searchHay, openOrgs,
   isOpenForSignup, visibleOpen, sortOpen, openSidos, nearbyNote, validateOpen,
 };
