@@ -92,6 +92,8 @@ export function openState(t, today, nowHm = '') {
   /* 접수 기간을 안 적은 대회가 흔하다(요강만 올라오고 날짜는 공지로).
      그때는 대회 전날까지 접수 중으로 본다 — "접수 예정"으로 두면
      영영 신청 못 하는 대회가 된다. */
+  /* 주최 측 목록이 "접수 예정"이라고만 하고 날짜를 안 준 경우(KATO 첫 화면 등) */
+  if (!from && !to && t.signupStatus === 'soon') return OPEN_STATE.SOON;
   if (!from && !to) return start ? OPEN_STATE.SIGNUP : OPEN_STATE.SOON;
   return OPEN_STATE.SIGNUP;
 }
@@ -106,7 +108,7 @@ export function openStatusLine(t, today, nowHm = '') {
   }
   if (state === OPEN_STATE.SOON) {
     const from = d(t?.signupFrom);
-    return from ? `${from}${at(t?.signupFromTime)}부터 접수` : '접수 일정 미정';
+    return from ? `${from}${at(t?.signupFromTime)}부터 접수` : '접수 예정 · 시작 일정은 주최 측 공지 확인';
   }
   if (state === OPEN_STATE.CLOSED) return '접수가 마감되었습니다';
   if (state === OPEN_STATE.LIVE) return '오늘 열리고 있습니다';

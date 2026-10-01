@@ -111,6 +111,8 @@ export function cleanItem(raw, today) {
     /* 접수 시작·마감 시각(예: 09:00) — 알면 그 시각에 상태가 바뀐다 */
     signupFromTime: hm(raw.signupFromTime),
     signupToTime: hm(raw.signupToTime),
+    /* 날짜 없이 "접수 예정"만 알 때 — openState 가 접수 중으로 잘못 보지 않게 */
+    signupStatus: raw.signupStatus === 'soon' ? 'soon' : '',
     divisions: (Array.isArray(raw.divisions) ? raw.divisions : String(raw.divisions || '').split(','))
       .map((x) => text(x, 30)).filter(Boolean).slice(0, 12),
     fee: Math.max(0, Math.round(Number(raw.fee) || 0)),
