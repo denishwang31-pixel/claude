@@ -28,7 +28,31 @@ import { fetchKatoList } from './openParse.js';
 
 /* 검색·정리는 Sonnet 으로 충분하다(앱 주인) — 매일 도는 일이라 비용이 Opus 의 절반 이하 */
 export const DEFAULT_MODEL = 'claude-sonnet-5-5';
-const MAX_CONTINUATIONS = 5;
+
+/* ---------------- 비용 한도 ----------------
+   ⚠️ 2026-10-01 첫 실행 한 번에 약 $5 가 들었다(크레딧 소진). 원인은 페이지 열기 20회 ×
+   한 번에 최대 3만 토큰. 웹 도구는 서버 안에서 여러 번 돌면서 그때마다 **쌓인 대화 전체를
+   다시 읽어** 입력 토큰이 눈덩이처럼 커진다. 그래서 횟수·분량을 작게 묶는다.
+     · KATO 는 openParse 가 무료로 읽으니 AI 에게 맡기지 않는다
+     · 미리 연 페이지는 앞부분만(PAGE_CHARS)
+     · 이어하기(pause_turn)도 한 번까지 */
+export const AI_LIMITS = {
+  searches: 4,          // 웹 검색 횟수
+  fetches: 5,           // 웹 페이지 열기 횟수
+  fetchTokens: 6000,    // 페이지 하나에서 읽을 최대 토큰
+  pageChars: 6000,      // 미리 연 사이트 본문을 프롬프트에 넣는 길이
+  continuations: 1,     // pause_turn 이어하기 횟수
+  effort: 'medium',
+};
+const MAX_CONTINUATIONS = AI_LIMITS.continuations;
+/* 토큰 단가(USD / 100만 토큰) — 로그에 대략의 비용을 남기려는 용도 */
+const PRICE = { 'claude-sonnet-5-5': [2, 10], 'claude-opus-5-5': [4, 20], 'claude-haiku-4-5': [1, 5] };
+export function costOf(model, usage = {}) {
+  const [i, o] = PRICE[model] || PRICE[DEFAULT_MODEL];
+  const input = (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) * 1.25
+    + (usage.cache_read_input_tokens || 0) * 0.1;
+  return (input * i + (usage.output_tokens || 0) * o) / 1e6;
+}
 /* 거절(refusal) 때 서버가 알아서 다른 모델로 이어 가게 한다 */
 const FALLBACK = { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' };
 
@@ -102,14 +126,18 @@ export async function fetchSource(src) {
 }
 
 /* ---------------- 2. 찾기 (웹 검색·열기) ---------------- */
+const isKato = (p) => /kato\.kr/.test(p.url);
 export function researchPrompt(today, pages) {
-  const got = pages.filter((p) => p.ok);
-  const missed = pages.filter((p) => !p.ok);
+  /* KATO 는 openParse 가 따로 읽는다 — AI 에게 다시 찾게 하면 돈만 든다 */
+  const got = pages.filter((p) => p.ok && !isKato(p));
+  const missed = pages.filter((p) => !p.ok && !isKato(p));
   return [
     `오늘은 ${today} (한국 시간)입니다.`,
     '한국 테니스 동호인(생활체육) 대회 중 **지금 참가 신청을 받고 있거나, 앞으로 신청을 받을 예정인** 대회를 빠짐없이 찾아 주세요.',
     '대상: KATO·KATA·KTA(대한테니스협회) 생활체육 대회, 시·도/시·군·구 테니스협회 대회, 기업·스폰서 오픈대회(예: 던롭·요넥스·바볼랏 등 이름이 붙은 오픈).',
     '제외: 프로·주니어·엘리트 선수 대회, 접수 마감일이 오늘 이전인 대회, 이미 끝난 대회, 클럽 내부 행사.',
+    '제외: KATO(한국테니스발전협의회, kato.kr) 대회 — 이미 따로 모았습니다. KATO 사이트는 열지 마세요.',
+    `검색은 ${AI_LIMITS.searches}번, 페이지 열기는 ${AI_LIMITS.fetches}번까지만 쓸 수 있습니다. 대회 목록이 모여 있는 페이지를 우선 여세요.`,
     '',
     '각 대회마다 확인할 것:',
     '- 대회 이름(요강 표기 그대로), 주최/주관, 소속 단체(KATO/KATA/KTA/지역협회/기타)',
@@ -127,23 +155,23 @@ export function researchPrompt(today, pages) {
     '- 마지막에 대회별로 위 항목을 정리한 목록을 한국어로 적어 주세요.',
     '',
     '확인할 사이트:',
-    ...SOURCES.map((s) => `- ${s.name}: ${s.url}`),
+    ...SOURCES.filter((x) => !isKato(x)).map((x) => `- ${x.name}: ${x.url}`),
     '',
     ...(missed.length ? [`(미리 못 연 곳: ${missed.map((m) => `${m.url} — ${m.note}`).join(', ')}. 필요하면 직접 열어 보세요.)`, ''] : []),
     ...got.flatMap((p) => [
       `<page source="${p.url}">`,
-      p.text,
+      String(p.text || '').slice(0, AI_LIMITS.pageChars),
       '</page>',
       '',
     ]),
   ].join('\n');
 }
 
-async function research(client, { today, pages, model, effort, log }) {
+async function research(client, { today, pages, model, effort, log, spend }) {
   const messages = [{ role: 'user', content: researchPrompt(today, pages) }];
   const tools = [
-    { type: 'web_search_20260209', name: 'web_search', max_uses: 10, user_location: { type: 'approximate', country: 'KR', timezone: 'Asia/Seoul' } },
-    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 20, max_content_tokens: 30000 },
+    { type: 'web_search_20260209', name: 'web_search', max_uses: AI_LIMITS.searches, user_location: { type: 'approximate', country: 'KR', timezone: 'Asia/Seoul' } },
+    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: AI_LIMITS.fetches, max_content_tokens: AI_LIMITS.fetchTokens },
   ];
   let msg = null;
   const parts = [];
@@ -158,6 +186,7 @@ async function research(client, { today, pages, model, effort, log }) {
       ...FALLBACK,
     });
     msg = await stream.finalMessage();
+    spend(msg.usage);
     parts.push(...msg.content.filter((b) => b.type === 'text').map((b) => b.text));
     if (msg.stop_reason !== 'pause_turn') break;
     /* 서버 쪽 도구 반복이 한도에 닿아 멈췄다 — 받은 내용을 그대로 붙여
@@ -204,7 +233,7 @@ export const SCHEMA = {
   },
 };
 
-async function extract(client, { today, report, model }) {
+async function extract(client, { today, report, model, spend }) {
   const msg = await client.beta.messages.create({
     model,
     max_tokens: 16000,
@@ -215,6 +244,7 @@ async function extract(client, { today, report, model }) {
     }],
     ...FALLBACK,
   });
+  spend(msg.usage);
   if (msg.stop_reason === 'refusal') throw new Error('정리 단계가 거절됨');
   if (msg.stop_reason === 'max_tokens') throw new Error('정리 단계 출력이 잘렸습니다(max_tokens)');
   const text = msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
@@ -226,7 +256,7 @@ async function extract(client, { today, report, model }) {
    ('auto-sync' = 매일 작업, 'manual:<uid>' = 앱의 [지금 찾기]). */
 export async function runTournamentSync({
   client, db, FieldValue, today, dryRun = false,
-  model = DEFAULT_MODEL, effort = 'high', by = 'auto-sync',
+  model = DEFAULT_MODEL, effort = AI_LIMITS.effort, by = 'auto-sync', useAi = true,
   log = () => {}, onStage = () => {},
 }) {
   onStage('fetch');
@@ -239,15 +269,22 @@ export async function runTournamentSync({
   /* 2) Claude 가 웹을 찾아 더한다. 실패해도 KATO 것은 반영한다 */
   let aiFound = [];
   let aiError = null;
-  try {
-    onStage('search');
-    const report = await research(client, { today, pages, model, effort, log });
-    if (!report) throw new Error('찾기 단계가 빈 결과를 냈습니다');
-    onStage('extract');
-    aiFound = await extract(client, { today, report, model });
-  } catch (e) {
-    aiError = e;
-    log(`⚠️ AI 찾기 실패 — KATO 목록만 반영합니다: ${explainApiError(e)}`);
+  let aiCost = 0;
+  const spend = (usage) => { aiCost += costOf(model, usage); };
+  if (useAi) {
+    try {
+      onStage('search');
+      const report = await research(client, { today, pages, model, effort, log, spend });
+      if (!report) throw new Error('찾기 단계가 빈 결과를 냈습니다');
+      onStage('extract');
+      aiFound = await extract(client, { today, report, model, spend });
+    } catch (e) {
+      aiError = e;
+      log(`⚠️ AI 찾기 실패 — KATO 목록만 반영합니다: ${explainApiError(e)}`);
+    }
+    log(`AI 토큰 비용(대략): $${aiCost.toFixed(2)} — 웹 검색 요금은 따로`);
+  } else {
+    log('AI 찾기는 오늘 쉽니다(비용 때문에 주 1회) — KATO 목록만 갱신');
   }
   if (aiError && !kato.items.length) throw aiError;
   const found = [...kato.items, ...aiFound];
@@ -274,9 +311,9 @@ export async function runTournamentSync({
   }
   return {
     found, ...plan, added, updated: upserts.length - added, pages,
-    katoCount: kato.items.length, aiCount: aiFound.length,
+    katoCount: kato.items.length, aiCount: aiFound.length, aiCost, aiUsed: useAi,
     aiError: aiError ? explainApiError(aiError) : '',
   };
 }
 
-export default { SOURCES, DEFAULT_MODEL, clientOptions, explainApiError, runTournamentSync };
+export default { SOURCES, DEFAULT_MODEL, AI_LIMITS, costOf, clientOptions, explainApiError, runTournamentSync };

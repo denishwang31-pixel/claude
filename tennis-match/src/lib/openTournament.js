@@ -409,6 +409,7 @@ export function syncRunView(run, now = Date.now()) {
   if (run.status === 'done') {
     const parts = [`새로 ${run.added || 0}건`, `갱신 ${run.updated || 0}건`];
     if (run.deleted) parts.push(`끝나서 지움 ${run.deleted}건`);
+    if (run.cost > 0) parts.push(`AI 비용 약 $${Number(run.cost).toFixed(2)}`);
     if (run.warn) return { busy: false, tone: 'danger', text: `찾기 일부 완료 · ${parts.join(' · ')} · ${run.warn}` };
     return { busy: false, tone: 'green', text: `찾기 완료 · ${parts.join(' · ')}` };
   }

@@ -72,7 +72,7 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
   const sync = syncRunView(syncRun);
   const findNow = () => Alert.alert(
     '지금 대회 찾기',
-    '협회·대회 사이트와 웹 검색으로 접수 중·예정 대회를 지금 찾아 목록에 반영합니다. 2~5분 걸리고, 한 번 돌 때마다 검색 비용이 듭니다.',
+    '협회·대회 사이트와 웹 검색으로 접수 중·예정 대회를 지금 찾아 목록에 반영합니다. 2~5분 걸리고, 누를 때마다 Anthropic API 비용이 듭니다(결과 줄에 대략의 비용 표시). KATO 대회는 매일 새벽 무료로 갱신되니, 꼭 필요할 때만 눌러 주세요.',
     [
       { text: '취소', style: 'cancel' },
       {
@@ -426,7 +426,7 @@ export function OpenTournaments({ me, isAppAdmin, flash }) {
             <View style={{ flex: 1 }}>
               <Text style={F.bodyBold}>자동 갱신 · 매일 새벽 2시</Text>
               <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
-                앱 관리자에게만 보입니다 · 오늘 새로 공지된 대회는 오른쪽 버튼으로 바로 찾습니다
+                앱 관리자에게만 보입니다 · KATO 는 매일, AI 찾기는 매주 월요일 · 버튼은 누를 때마다 비용
               </Text>
             </View>
             <Btn small tone="primary" disabled={sync.busy || asking} onPress={findNow}>

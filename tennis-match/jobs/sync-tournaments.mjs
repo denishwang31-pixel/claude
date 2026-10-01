@@ -23,7 +23,19 @@ import {
 
 /* 바꾸려면 워크플로 환경 변수 TOURNAMENT_MODEL 로 */
 const MODEL = process.env.TOURNAMENT_MODEL || DEFAULT_MODEL;
-const EFFORT = process.env.TOURNAMENT_EFFORT || 'high';
+const EFFORT = process.env.TOURNAMENT_EFFORT || undefined;   // 비우면 tournamentSearch.AI_LIMITS.effort
+/* AI 찾기는 돈이 든다 — KATO 는 매일(무료), AI 는 주 1회(월요일 새벽)만.
+   손으로 돌릴 때(workflow_dispatch)는 돌리고, 코드 올릴 때(push)는 돌리지 않는다.
+   TOURNAMENT_AI=always 면 매번, never 면 끈다. */
+function aiToday(today) {
+  const mode = process.env.TOURNAMENT_AI || '';
+  if (mode === 'always') return true;
+  if (mode === 'never') return false;
+  const ev = process.env.GITHUB_EVENT_NAME || '';
+  if (ev === 'workflow_dispatch') return true;
+  if (ev === 'schedule') return new Date(`${today}T00:00:00Z`).getUTCDay() === 1;
+  return false;
+}
 const DRY_RUN = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
 
 const log = (...a) => console.log(...a);
@@ -43,7 +55,9 @@ async function main() {
   initializeApp();
   const db = getFirestore();
   const r = await runTournamentSync({
-    client, db, FieldValue, today, dryRun: DRY_RUN, model: MODEL, effort: EFFORT, log,
+    client, db, FieldValue, today, dryRun: DRY_RUN, model: MODEL, log,
+    ...(EFFORT ? { effort: EFFORT } : {}),
+    useAi: aiToday(today),
   });
   const { found, upserts, deletes, skipped } = r;
   if (r.aiError) {
@@ -54,6 +68,7 @@ async function main() {
 
   summary(`## 대회 자동 갱신 ${today}${DRY_RUN ? ' (시험)' : ''}`);
   summary(`- 모음 ${found.length} · 넣기/갱신 ${upserts.length} · 끝나서 지움 ${deletes.length} · 건너뜀 ${skipped.length}`);
+  summary(r.aiUsed ? `- AI 찾기 ${r.aiCount}건 · 토큰 비용 약 $${(r.aiCost || 0).toFixed(2)}` : '- AI 찾기: 오늘은 쉼(주 1회)');
   summary('');
   summary('| 대회 | 기간 | 접수 | 지역 | 링크 |');
   summary('|---|---|---|---|---|');

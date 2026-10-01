@@ -2,7 +2,7 @@
 import {
   AUTO_SOURCE, normDate, normSido, nameKey, sameKey, autoId, cleanItem, planSync, seoulToday,
 } from '../src/lib/openSync.js';
-import { clientOptions, explainApiError, runTournamentSync, SOURCES } from '../src/lib/tournamentSearch.js';
+import { clientOptions, explainApiError, runTournamentSync, SOURCES, AI_LIMITS, costOf, researchPrompt } from '../src/lib/tournamentSearch.js';
 import { syncRunView } from '../src/lib/openTournament.js';
 import { readFileSync } from 'node:fs';
 
@@ -149,6 +149,28 @@ console.log('[찾기 한 번 — 가짜 Claude·가짜 Firestore]');
   eq(dry.length, 0, '시험 실행은 쓰지 않는다');
 }
 
+console.log('[AI 비용 한도 — 첫 실행 한 번에 $5 가 들었다]');
+{
+  ok(AI_LIMITS.fetches <= 6 && AI_LIMITS.fetchTokens <= 8000 && AI_LIMITS.searches <= 5, '페이지 열기·검색 횟수와 분량을 작게');
+  ok(AI_LIMITS.continuations <= 1, '이어하기는 한 번까지');
+  eq(Math.round(costOf('claude-sonnet-5-5', { input_tokens: 1e6, output_tokens: 1e5 }) * 100) / 100, 3, '비용 계산(입력 $2 + 출력 $1)');
+  eq(costOf('claude-sonnet-5-5', undefined), 0, '사용량이 없으면 0');
+  const prompt = researchPrompt('2026-10-01', [
+    { name: 'KATO', url: 'https://kato.kr/', ok: true, text: 'KATO 본문' },
+    { name: 'KTA', url: 'https://join.kortennis.or.kr/x', ok: true, text: '가'.repeat(50000) },
+  ]);
+  ok(!prompt.includes('KATO 본문') && !prompt.includes('- KATO 한국테니스발전협의회'), 'KATO 는 따로 읽으니 AI 에 넘기지 않는다');
+  ok(prompt.length < 50000 && prompt.includes('가'.repeat(100)), '미리 연 페이지는 앞부분만');
+
+  const fake = { beta: { messages: { stream: () => { throw new Error('부르면 안 됨'); }, create: () => { throw new Error('부르면 안 됨'); } } } };
+  const db = { collection: () => ({ get: async () => ({ docs: [] }), doc: (id) => ({ id }) }), batch: () => ({ set() {}, delete() {}, commit: async () => {} }) };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new TypeError('x'); };
+  const r = await runTournamentSync({ client: fake, db, FieldValue: { serverTimestamp: () => 'ts' }, today: TODAY, useAi: false }).catch((e) => ({ err: e }));
+  globalThis.fetch = realFetch;
+  ok(!r.err || !/부르면 안 됨/.test(String(r.err?.message)), 'AI 를 끄면 Claude 를 부르지 않는다');
+}
+
 console.log('[지금 찾기 상태 한 줄]');
 {
   const NOW = 1_000_000_000_000;
@@ -158,6 +180,7 @@ console.log('[지금 찾기 상태 한 줄]');
   const stale = syncRunView({ status: 'running', startedAt: NOW - 20 * 60000 }, NOW);
   ok(!stale.busy && /시간 초과/.test(stale.text), '15분 넘게 running 이면 끝난 것으로 — 버튼이 영영 잠기지 않게');
   eq(syncRunView({ status: 'done', added: 2, updated: 3, deleted: 0 }, NOW).text, '찾기 완료 · 새로 2건 · 갱신 3건', '완료 요약');
+  ok(/AI 비용 약 \$0\.42/.test(syncRunView({ status: 'done', added: 1, updated: 0, cost: 0.42 }, NOW).text), '지금 찾기 결과에 대략의 비용');
   ok(/실패 · 키/.test(syncRunView({ status: 'failed', reason: '키' }, NOW).text), '실패 이유');
   ok(/KATO/.test(syncRunView({ status: 'done', added: 3, updated: 0, warn: 'AI 찾기 실패 — KATO 목록만 반영(키)' }, NOW).text), 'AI 가 막혀 KATO 만 반영한 경우도 알린다');
 }
