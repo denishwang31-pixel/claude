@@ -11,7 +11,7 @@ import {
 } from '../lib/tournament';
 import { generateKdk, kdkStandingsByGroup, splitKdkGroups } from '../lib/kdk';
 import {
-  TOURNAMENT_FORMAT, TOURNAMENT_FORMATS, BUSU_KEYS, busuToNtrp, screenRef,
+  TOURNAMENT_FORMAT, TOURNAMENT_FORMATS, BUSU_KEYS, busuToNtrp, screenRef, memberRoles, ROLES,
 } from '../lib/constants';
 import { effectiveNtrp } from '../lib/ntrp';
 import { fillFromClub, tournamentSkill, groupsByGrade, gradeCountFor, gradeSummary, schemeOf } from '../lib/grades';
@@ -917,6 +917,7 @@ export function Tournaments({
            예전에는 운영진이 단톡방에서 받아 적어 명단에 넣었다. */}
         <TournamentSignup
           clubId={clubId} t={t} me={me} meVal={meVal} isAdmin={isAdmin} flash={flash}
+          members={members} canReset={memberRoles(meVal || {}).includes(ROLES.PRESIDENT)}
         />
 
         {isAdmin && (

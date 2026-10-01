@@ -615,6 +615,8 @@ export const saveTournamentSignup = (clubId, id, signup) =>
       deadline: signup.deadline || '',
       fee: Math.max(0, Number(signup.fee) || 0),
       note: signup.note || '',
+      /* 연령 확인 — 켜면 출생 연도가 없는 회원에게 신청 때 한 번 묻는다(lib/birthYear.js) */
+      needBirthYear: !!signup.needBirthYear,
     },
   });
 
@@ -625,6 +627,7 @@ export const applyToTournament = (clubId, id, uid, who = {}) =>
       name: who.name || '',
       gender: who.gender || '',
       grade: who.grade || '',
+      ...(Number(who.birthYear) > 0 ? { birthYear: Number(who.birthYear) } : {}),
       at: new Date().toISOString(),
     },
   });

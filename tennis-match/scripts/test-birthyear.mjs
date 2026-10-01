@@ -1,0 +1,24 @@
+/* 출생 연도 — 대회 신청 때만, 잠금 + 운영진 확인 (src/lib/birthYear.js) */
+import { checkBirthYear, yearAge, birthYearStatus, needsBirthYear, mustAskBirthYear, checkPatch, resetPatch } from '../src/lib/birthYear.js';
+let pass = 0, fail = 0;
+const eq = (a, b, m) => { if (JSON.stringify(a) === JSON.stringify(b)) pass++; else { fail++; console.log('  ✗', m, '— 기대', JSON.stringify(b), '/ 실제', JSON.stringify(a)); } };
+const Y = 2026;
+eq(checkBirthYear('1978', Y), { year: 1978 }, '네 자리');
+eq(checkBirthYear(' 1978 ', Y), { year: 1978 }, '앞뒤 공백');
+eq(!!checkBirthYear('78', Y).error, true, '두 자리는 안 받는다');
+eq(!!checkBirthYear('1929', Y).error, true, '너무 이른 해');
+eq(!!checkBirthYear('2020', Y).error, true, '열 살 미만은 입력 실수');
+eq(checkBirthYear('2016', Y), { year: 2016 }, '열 살은 된다');
+eq(yearAge(1978, Y), 48, '연 나이');
+eq(birthYearStatus({}, Y).text, '미입력', '없음');
+eq(birthYearStatus({ birthYear: 1978 }, Y).text, '1978년생 (올해 48세) · 확인 전', '확인 전');
+eq(birthYearStatus({ birthYear: 1978, birthYearCheckedAt: 'x' }, Y).checked, true, '운영진 확인');
+eq(needsBirthYear({ signup: { needBirthYear: true } }), true, '대회가 요구함');
+eq(needsBirthYear({ signup: {} }), false, '요구 안 함');
+eq(mustAskBirthYear({ signup: { needBirthYear: true } }, {}), true, '없으면 묻는다');
+eq(mustAskBirthYear({ signup: { needBirthYear: true } }, { birthYear: 1980 }), false, '있으면 안 묻는다');
+eq(mustAskBirthYear({ signup: {} }, {}), false, '요구 안 하면 안 묻는다');
+eq(checkPatch('u1', 'T'), { birthYearCheckedBy: 'u1', birthYearCheckedAt: 'T' }, '확인 표시');
+eq(resetPatch(), { birthYear: 0, birthYearCheckedBy: '', birthYearCheckedAt: '' }, '초기화는 확인 표시까지 지운다');
+console.log(`\n출생 연도 테스트: ${pass} 통과 / ${fail} 실패`);
+if (fail) process.exit(1);

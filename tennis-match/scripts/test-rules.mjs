@@ -550,6 +550,17 @@ await T('본인이 자기 부수 올리기 거부',
   assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { busu: '1부' })));
 await T('운영진의 회원 부수·조 배정 허용',
   assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem1'), { busu: '3부', grade: 'A' })));
+/* 출생 연도 — 비어 있을 때 본인이 한 번, 그 뒤로는 회장만. 확인 표시는 운영진만 */
+await T('본인의 출생 연도 처음 입력 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { birthYear: 1980 })));
+await T('본인의 출생 연도 바꾸기 거부(잠금)',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { birthYear: 1990 })));
+await T('본인이 자기 출생 연도에 확인 표시 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { birthYearCheckedBy: 'mem1', birthYearCheckedAt: 'x' })));
+await T('운영진의 출생 연도 확인 표시 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem1'), { birthYearCheckedBy: 'owner1', birthYearCheckedAt: 'x' })));
+await T('회장의 출생 연도 초기화 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem1'), { birthYear: 0, birthYearCheckedBy: '', birthYearCheckedAt: '' })));
 await T('운영진의 회원 삭제 허용',
   assertSucceeds(deleteDoc(doc(owner, 'clubs', CLUB, 'members', 'local:abc'))));
 await T('회장의 지출 등록 허용',

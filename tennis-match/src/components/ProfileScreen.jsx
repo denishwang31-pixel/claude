@@ -14,6 +14,7 @@ import { auth } from '../../firebaseConfig';
 import { BUSU, memberRoles, isStaffRole } from '../lib/constants';
 import { effectiveNtrp, careerText } from '../lib/ntrp';
 import { loginMethodOf, profilePatch } from '../lib/profile';
+import { birthYearStatus } from '../lib/birthYear';
 import { Label, MonthField } from './pickers';
 import { RegionPicker } from './RegionPicker';
 import { Segmented } from './native';
@@ -94,6 +95,7 @@ export function Profile({ clubId, club, me, meVal, venues = [], flash, onOpen })
             <Row k="성별" v={m.gender === 'F' ? '여' : m.gender === 'M' ? '남' : ''} />
             <Row k="활동 지역" v={m.region} />
             <Row k="구력" v={m.startedAt ? `${m.startedAt.slice(0, 7)} 시작 · ${careerText(m.startedAt)}` : '미입력'} />
+            <Row k="출생 연도" v={birthYearStatus(m).year ? birthYearStatus(m).text : '연령 확인 대회에 신청할 때 받습니다'} />
           </Card>
 
           <SectionTitle hint="운영진이 정합니다">클럽에서</SectionTitle>
