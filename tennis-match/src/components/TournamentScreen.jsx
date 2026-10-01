@@ -1,6 +1,6 @@
 /* 대회 — 조별+토너먼트 · KDK · 청백전 · 팀 리그 개설 · 진행 · 기록 보관
    (클럽 교류전은 두 클럽이 같이 보는 문서라 [클럽 교류전] 화면에 따로 있다) */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, Share } from 'react-native';
 import {
   addTournament, updateTournament, deleteTournament,
@@ -814,12 +814,14 @@ function KdkView({ clubId, t, isAdmin, flash }) {
 
 export function Tournaments({
   clubId, members, venues = [], tournaments, isAdmin, me = '', meVal = null, flash,
-  startCreate = false, startOpenId = null,
+  startCreate = false, startOpenId = null, onScreenChange,
 }) {
   /* 일정의 [＋ 새 모임 › 클럽 대회]로 오면 바로 개설 화면, 일정의 대회 카드로 오면 그 대회 */
   const [view, setView] = useState(startCreate && isAdmin ? 'create' : startOpenId ? 'detail' : 'list'); // list | create | detail
   const [openId, setOpenId] = useState(startOpenId || null);
   const [showGroups, setShowGroups] = useState(false);
+  /* 목록 ↔ 개설 ↔ 대회를 오갈 때 맨 위부터 보이게(부모 스크롤을 올린다) */
+  useEffect(() => { onScreenChange?.(); }, [view, openId]);
 
   const t = tournaments.find((x) => x.id === openId);
   const nameOfEntry = (entryId) => {

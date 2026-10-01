@@ -1,7 +1,7 @@
 /* 더보기 허브 — 메뉴 진입 + 초대/가입신청/새 클럽/로그아웃
    회비·대진설정 등 운영 메뉴는 운영진에게만 보입니다.
    서브화면을 열면 안드로이드 뒤로가기와 화면 안 [‹ 뒤로] 가 같은 동작을 합니다. */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useApp } from '../_layout';
@@ -14,7 +14,7 @@ import {
   subJoinRequests, subFeeAliases, subDunningLog, subExpenses,
   subHandoverHistory, loadAllFees, subFeeClaims, subDuesPools,
 } from '../../src/lib/firestore';
-import { JOIN_STATUS, normalizeRole, SCREEN } from '../../src/lib/constants';
+import { JOIN_STATUS, normalizeRole, SCREEN, VIEW_MODES } from '../../src/lib/constants';
 import { feeRule } from '../../src/lib/scope';
 import { Board, Guest, Courts } from '../../src/components/MoreScreens';
 import { Members } from '../../src/components/MembersScreen';
@@ -158,6 +158,11 @@ export default function More() {
   const [cameFrom, setCameFrom] = useState(null);
   /* 일정에서 클럽 대회로 올 때 — 바로 개설(create=1) 또는 그 대회(tid) */
   const [tourStart, setTourStart] = useState({ create: false, id: null, n: 0 });
+  /* 화면을 바꾸면 맨 위부터 — 앞 화면에서 내려 둔 스크롤이 남아 새 화면이 맨 아래로 열리던 문제
+     (일정 [＋ 새 모임 › 클럽 대회]로 오면 대회 개설 화면이 맨 아래에서 열렸다) */
+  const scrollRef = useRef(null);
+  const scrollTop = () => scrollRef.current?.scrollTo?.({ y: 0, animated: false });
+  useEffect(() => { scrollTop(); }, [sub, tourStart.n]);
 
   useEffect(() => {
     if (!params?.open) return;
@@ -261,7 +266,7 @@ export default function More() {
       case 'opens': return <OpenTournaments me={me} flash={flash} isAppAdmin={!!isAppAdmin} />;
       case 'tournament': return (
         <Tournaments key={`tour-${tourStart.n}`} {...{ clubId, members, venues, tournaments, isAdmin, me, meVal, flash }}
-          startCreate={tourStart.create} startOpenId={tourStart.id} />
+          startCreate={tourStart.create} startOpenId={tourStart.id} onScreenChange={scrollTop} />
       );
       case 'clubmatch': return (
         <ClubMatchScreen
@@ -434,12 +439,12 @@ export default function More() {
         backLabel={FROM_LABELS[cameFrom] || '더보기'}
         right={!sub && viewMode ? (
           <Chip tone="soft">
-            {viewMode === 'staff' ? '운영진 모드' : viewMode === 'lead' ? '리드 모드' : '회원 모드'}
+            {`${VIEW_MODES.find((v) => v.key === viewMode)?.label || '회원'} 모드`}
           </Chip>
         ) : null}
       />
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
+      <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
         {!sub ? (
           <>
             {MENU_GROUPS
