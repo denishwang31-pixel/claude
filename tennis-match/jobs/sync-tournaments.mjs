@@ -7,6 +7,9 @@
    필요한 비밀값 (GitHub Secrets — 채팅에 붙여 넣지 말 것)
      ANTHROPIC_API_KEY          Claude API 키
      ANTHROPIC_WORKSPACE_ID     (선택) 키가 워크스페이스에 속하지 않을 때만
+                                콘솔에서 키를 만들 때 범위를 「조직」으로 두면 이 값이 꼭 필요하다
+                                (wrkspc_ 로 시작). 범위를 워크스페이스 하나로 고르면 필요 없다.
+                                키 만료일이 지나면 401 — 만료 기간을 넉넉히 잡을 것.
      FIREBASE_SERVICE_ACCOUNT   이미 배포에 쓰고 있는 서비스 계정(워크플로가 파일로 넘김)
    ============================================================ */
 import Anthropic from '@anthropic-ai/sdk';

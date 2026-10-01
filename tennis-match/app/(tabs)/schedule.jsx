@@ -962,23 +962,38 @@ export default function Schedule() {
            회원이 매일 여는 곳이라, 여기에 루트 컬렉션 구독을 하나 더
            붙이면 읽기 비용이 사람 수만큼 곱해진다. 건수는 넘어간
            화면에서 센다. */}
-        <Card flat style={{ marginBottom: S.md }}
+        {/* 디자인: 옅은 초록 바탕 + 왼쪽 초록 띠 + 동그란 아이콘. 글씨는 크게,
+           색은 앱의 초록 하나만 — 광고처럼 번쩍이지 않으면서 일정 카드들 사이에서
+           「이건 다른 곳으로 가는 문」으로 읽히게. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="협회·오픈 대회 찾아보기"
           onPress={() => router.push({
             pathname: '/(tabs)/more', params: { open: 'opens', from: 'schedule' },
+          })}
+          style={({ pressed }) => ({
+            marginBottom: S.md, opacity: pressed ? 0.85 : 1,
+            flexDirection: 'row', alignItems: 'center', gap: 12,
+            paddingVertical: 14, paddingHorizontal: 14,
+            borderRadius: R.lg, backgroundColor: C.greenSoft,
+            borderWidth: 1, borderColor: C.lime2, borderLeftWidth: 4, borderLeftColor: C.green,
           })}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Icon name="tournament" size={17} color={C.sub} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.text }}>
-                협회·오픈 대회 찾아보기
-              </Text>
-              <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
-                KTA·시도협회·기업 대회 — 우리 클럽 일정과는 따로 봅니다
-              </Text>
-            </View>
-            <Icon name="forward" size={14} color={C.faint} />
+          <View style={{
+            width: 40, height: 40, borderRadius: 20, backgroundColor: C.green,
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Icon name="tournament" size={20} color="#fff" />
           </View>
-        </Card>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: C.green, letterSpacing: -0.2 }}>
+              협회·오픈 대회 찾아보기
+            </Text>
+            <Text style={{ fontSize: 12.5, color: C.sub, marginTop: 3, lineHeight: 17 }}>
+              전국 대회 일정·접수 마감을 한눈에 — 우리 클럽 일정과는 따로 봅니다
+            </Text>
+          </View>
+          <Icon name="forward" size={18} color={C.green} />
+        </Pressable>
 
         {/* 보기 전환(목록/달력)과 종류 거르기 */}
         <AgendaControls
