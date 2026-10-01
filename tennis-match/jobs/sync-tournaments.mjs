@@ -36,30 +36,6 @@ async function main() {
   }
   log(`워크스페이스 ID: ${process.env.ANTHROPIC_WORKSPACE_ID ? '있음' : '없음(키에 워크스페이스가 붙어 있어야 함)'}`);
 
-  if (process.env.DUMP_SOURCES === '1') {
-    const { SOURCES, fetchSource } = await import('../src/lib/tournamentSearch.js');
-    const pages = await Promise.all(SOURCES.map(fetchSource));
-    pages.forEach((p) => {
-      log(`\n===== ${p.name} (${p.url}) — ${p.note}`);
-      if (p.text) log(p.text.slice(0, 2500));
-    });
-    /* 사이트 모양 점검 — KATO 대회일정 페이지 글과, 첫 페이지 원문 HTML 일부 */
-    for (const url of ['https://kato.kr/openList', 'https://kato.kr/']) {
-      try {
-        const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (tennis-match tournament sync)' } });
-        const html = await res.text();
-        const i = Math.max(0, html.indexOf('접수중인 대회'));
-        log(`\n===== RAW ${url} (${res.status}, ${html.length}자, '접수중인 대회' 위치 ${i})`);
-        log(html.slice(i, i + 7000));
-        if (url.endsWith('openList')) {
-          const { htmlToText } = await import('../src/lib/tournamentSearch.js');
-          log(`\n===== TEXT ${url}`);
-          log(htmlToText(html).slice(0, 7000));
-        }
-      } catch (e) { log(`RAW ${url} 실패 ${e?.message}`); }
-    }
-  }
-
   const client = new Anthropic(clientOptions(process.env));
   initializeApp();
   const db = getFirestore();
@@ -67,6 +43,11 @@ async function main() {
     client, db, FieldValue, today, dryRun: DRY_RUN, model: MODEL, effort: EFFORT, log,
   });
   const { found, upserts, deletes, skipped } = r;
+  if (r.aiError) {
+    /* KATO 만이라도 반영했으면 작업은 성공으로 끝내되, 눈에 띄게 남긴다 */
+    console.log(`::warning::AI 찾기는 실패해서 KATO 목록(${r.katoCount}건)만 반영했습니다 — ${r.aiError}`);
+    summary(`> ⚠️ AI 찾기 실패 — KATO 목록만 반영. ${r.aiError}`);
+  }
 
   summary(`## 대회 자동 갱신 ${today}${DRY_RUN ? ' (시험)' : ''}`);
   summary(`- 모음 ${found.length} · 넣기/갱신 ${upserts.length} · 끝나서 지움 ${deletes.length} · 건너뜀 ${skipped.length}`);

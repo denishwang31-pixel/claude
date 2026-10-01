@@ -1,0 +1,48 @@
+/* KATO 대회 목록 읽기 (src/lib/openParse.js) — 실제 사이트 모양(2026-10-01)을 줄여 옮긴 견본 */
+import { katoNames, parseKatoHome } from '../src/lib/openParse.js';
+import { planSync } from '../src/lib/openSync.js';
+let pass = 0, fail = 0;
+const eq = (a, b, m) => { if (JSON.stringify(a) === JSON.stringify(b)) pass++; else { fail++; console.log('  ✗', m, '— 기대', JSON.stringify(b), '/ 실제', JSON.stringify(a)); } };
+
+const card = (id, ribbon, name, div, dates) => `
+  <div class="col-md-6 col-sm-6 service-wrap">
+   <div class="service" onClick="location.href='/openGame/${id}'">
+    ${ribbon ? `<div class="ribbon-wrapper ribbon-lg"><div class="ribbon bg-mixed text-lg">${ribbon}</div></div>` : ''}
+    <div class="row"><div class="col-md-2 col-xs-2"><img src="/x.png" class="emblem" /></div>
+     <div class="col-md-10 col-xs-10">
+      <h3>${name}</h3>
+      <div class="align-left lh">${div}</div>
+      <div class="align-left lh">${dates}</div>
+     </div></div></div></div>`;
+const HOME = `<h2>경기중인 대회</h2>${card('0200', '경기중', '지난 대회..', '개나리부', '2026. 09. 01 ~ 2026. 09. 02')}
+<h2 class="title">접수중인 대회</h2>
+${card('0322', '부분접수중', '제1회 위닝컵 전국동호인테니스대회..', '개나리부, 마스터스부, 챌린저부', '2026. 09. 15 ~ 2026. 10. 09')}
+${card('0330', '접수중', '제23회 서산시장배 서산6쪽마늘 전국동..', '개나리부, 국화부, 마스터스부', '2026. 10. 10 ~ 2026. 10. 17')}
+${card('0331', '접수마감', '마감된 대회..', '개나리부', '2026. 10. 12 ~ 2026. 10. 12')}
+<h2 class="title">접수예정 대회</h2>
+${card('0340', '', '제27회 수원화성배 전국동호인테니스대회..', '개나리부, 국화부', '2026. 10. 28 ~ 2026. 11. 01')}`;
+const LIST = `<a href="/openGame/0330">제23회 서산시장배 서산6쪽마늘 전국동호인테니스대회</a>
+<a href="/openGame/0330">제23회 서산시장배 서산6쪽마늘 전국동...</a><a href="/openGame/0330">대회접수중</a>
+<a href="/openGame/0340">제27회 수원화성배 전국동호인테니스대회</a>`;
+
+const names = katoNames(LIST);
+eq(names['0330'], '제23회 서산시장배 서산6쪽마늘 전국동호인테니스대회', '온전한 이름(줄인 이름·버튼 글자는 버림)');
+const items = parseKatoHome(HOME, names);
+eq(items.map((x) => x.link.split('/').pop()), ['0322', '0330', '0340'], '경기중 칸·마감 띠는 빼고 접수중·예정만');
+eq(items[1].name, '제23회 서산시장배 서산6쪽마늘 전국동호인테니스대회', '1년 목록의 온전한 이름');
+eq(items[0].name, '제1회 위닝컵 전국동호인테니스대회', '온전한 이름이 없으면 줄임표만 떼고');
+eq([items[1].startDate, items[1].endDate], ['2026. 10. 10', '2026. 10. 17'], '대회 기간');
+eq(items[1].divisions, ['개나리부', '국화부', '마스터스부'], '부서');
+eq([items[1].signupStatus, items[2].signupStatus], ['', 'soon'], '접수중 / 접수예정');
+eq(!!items[0].note, true, '부분접수중은 안내를 붙인다');
+eq(items[2].link, 'https://kato.kr/openGame/0340', '요강 주소');
+eq(parseKatoHome('<html>다른 모양</html>'), [], '모양이 바뀌면 빈 목록');
+
+/* 앱에 들어갈 때 — 진행 중(위닝컵)은 빠지고, 예정은 「접수 예정」으로 */
+const { upserts, skipped } = planSync({ found: items, existing: [], today: '2026-10-01' });
+eq(upserts.map((u) => u.data.name.split(' ')[1]), ['서산시장배', '수원화성배'], '접수 중·예정만 넣는다');
+eq(upserts[1].data.signupStatus, 'soon', '예정 표시가 남는다');
+eq(skipped.length, 1, '이미 열리고 있는 대회는 건너뜀');
+
+console.log(`\nKATO 목록 읽기 테스트: ${pass} 통과 / ${fail} 실패`);
+if (fail) process.exit(1);

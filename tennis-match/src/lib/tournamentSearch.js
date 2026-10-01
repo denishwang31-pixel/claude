@@ -24,6 +24,7 @@
       다시 검사하고, 링크는 http(s) 만 받는다. 쓰는 곳도 openTournaments 하나뿐.
    ============================================================ */
 import { planSync } from './openSync.js';
+import { fetchKatoList } from './openParse.js';
 
 /* 검색·정리는 Sonnet 으로 충분하다(앱 주인) — 매일 도는 일이라 비용이 Opus 의 절반 이하 */
 export const DEFAULT_MODEL = 'claude-sonnet-5-5';
@@ -227,15 +228,28 @@ export async function runTournamentSync({
   log = () => {}, onStage = () => {},
 }) {
   onStage('fetch');
+  /* 1) KATO 는 AI 없이 규칙대로 먼저 읽는다 — Claude 가 막혀도 목록이 비지 않게 */
+  const kato = await fetchKatoList();
+  log(`  KATO 목록 직접 읽기 — ${kato.items.length}건${kato.note ? ` (${kato.note})` : ''}`);
   const pages = await Promise.all(SOURCES.map(fetchSource));
   pages.forEach((p) => log(`  ${p.ok ? '○' : '×'} ${p.name} — ${p.note}`));
 
-  onStage('search');
-  const report = await research(client, { today, pages, model, effort, log });
-  if (!report) throw new Error('찾기 단계가 빈 결과를 냈습니다');
-  onStage('extract');
-  const found = await extract(client, { today, report, model });
-  log(`모은 대회 ${found.length}건`);
+  /* 2) Claude 가 웹을 찾아 더한다. 실패해도 KATO 것은 반영한다 */
+  let aiFound = [];
+  let aiError = null;
+  try {
+    onStage('search');
+    const report = await research(client, { today, pages, model, effort, log });
+    if (!report) throw new Error('찾기 단계가 빈 결과를 냈습니다');
+    onStage('extract');
+    aiFound = await extract(client, { today, report, model });
+  } catch (e) {
+    aiError = e;
+    log(`⚠️ AI 찾기 실패 — KATO 목록만 반영합니다: ${explainApiError(e)}`);
+  }
+  if (aiError && !kato.items.length) throw aiError;
+  const found = [...kato.items, ...aiFound];
+  log(`모은 대회 ${found.length}건 (KATO ${kato.items.length} · AI ${aiFound.length})`);
 
   onStage('write');
   const snap = await db.collection('openTournaments').get();
@@ -256,7 +270,11 @@ export async function runTournamentSync({
     deletes.forEach((id) => batch.delete(db.collection('openTournaments').doc(id)));
     if (upserts.length || deletes.length) await batch.commit();
   }
-  return { found, ...plan, added, updated: upserts.length - added, pages };
+  return {
+    found, ...plan, added, updated: upserts.length - added, pages,
+    katoCount: kato.items.length, aiCount: aiFound.length,
+    aiError: aiError ? explainApiError(aiError) : '',
+  };
 }
 
 export default { SOURCES, DEFAULT_MODEL, clientOptions, explainApiError, runTournamentSync };

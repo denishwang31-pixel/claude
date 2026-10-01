@@ -19,7 +19,7 @@ on:
   schedule:
     # UTC 17:00 = 한국 02:00
     - cron: '0 17 * * *'
-  # 작업 브랜치에서 찾기 코드를 고치면 바로 한 번 돌려 본다(시험 실행 — 목록은 안 바꾼다)
+  # 작업 브랜치에서 찾기 코드를 고치면 바로 한 번 돌린다(매일 02시 실행과 같이 실제 반영)
   push:
     branches: [claude/tennis-app-roadmap-review-oxol8b]
     paths:
@@ -83,7 +83,5 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
           GOOGLE_CLOUD_PROJECT: tennis-match-52b31
           # 예약 실행은 실제 반영, 손으로 누를 땐 기본이 시험 실행
-          DRY_RUN: ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run)) && '1' || '0' }}
-          # push 로 돈 시험 실행은 협회 사이트에서 읽은 글을 로그에 남긴다(사이트 모양을 보고 읽는 법을 고치려고)
-          DUMP_SOURCES: ${{ github.event_name == 'push' && '1' || '0' }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
         run: node sync-tournaments.mjs

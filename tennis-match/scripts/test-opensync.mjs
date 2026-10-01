@@ -107,9 +107,9 @@ ok(/401/.test(explainApiError({ status: 401, message: 'invalid x-api-key' })), '
 ok(!SOURCES.some((s) => /m\.ikata\.org/.test(s.url)), '없어진 KATA 모바일 공지(404)는 뺐다');
 
 console.log('[공용 코드는 바깥 라이브러리를 부르지 않는다 — 서버 함수로 복사되므로]');
-for (const f of ['tournamentSearch.js', 'openSync.js', 'openTournament.js', 'regions.js']) {
+for (const f of ['tournamentSearch.js', 'openSync.js', 'openParse.js', 'openTournament.js', 'regions.js']) {
   const src = readFileSync(new URL(`../src/lib/${f}`, import.meta.url), 'utf8');
-  const bad = [...src.matchAll(/^import .* from ['"]([^'"]+)['"]/gm)].map((m) => m[1]).filter((x) => !/^\.\/(openSync|openTournament|regions)\.js$/.test(x));
+  const bad = [...src.matchAll(/^import .* from ['"]([^'"]+)['"]/gm)].map((m) => m[1]).filter((x) => !/^\.\/(openSync|openParse|openTournament|regions)\.js$/.test(x));
   eq(bad, [], `${f} 의 import`);
 }
 
@@ -159,6 +159,7 @@ console.log('[지금 찾기 상태 한 줄]');
   ok(!stale.busy && /시간 초과/.test(stale.text), '15분 넘게 running 이면 끝난 것으로 — 버튼이 영영 잠기지 않게');
   eq(syncRunView({ status: 'done', added: 2, updated: 3, deleted: 0 }, NOW).text, '찾기 완료 · 새로 2건 · 갱신 3건', '완료 요약');
   ok(/실패 · 키/.test(syncRunView({ status: 'failed', reason: '키' }, NOW).text), '실패 이유');
+  ok(/KATO/.test(syncRunView({ status: 'done', added: 3, updated: 0, warn: 'AI 찾기 실패 — KATO 목록만 반영(키)' }, NOW).text), 'AI 가 막혀 KATO 만 반영한 경우도 알린다');
 }
 
 console.log(`\n대회 자동 갱신 테스트: ${pass} 통과 / ${fail} 실패`);

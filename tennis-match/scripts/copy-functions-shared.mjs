@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const out = join(root, 'functions', 'shared');
-export const SHARED = ['tournamentSearch.js', 'openSync.js', 'openTournament.js', 'regions.js'];
+export const SHARED = ['tournamentSearch.js', 'openSync.js', 'openParse.js', 'openTournament.js', 'regions.js'];
 
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'package.json'), '{ "type": "module" }\n');

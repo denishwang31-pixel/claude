@@ -1161,6 +1161,7 @@ exports.onOpenSyncRequested = onDocumentCreated(
         updated: r.updated,
         deleted: r.deletes.length,
         skippedCount: r.skipped.length,
+        warn: r.aiError ? `AI 찾기 실패 — KATO 목록만 반영(${r.aiError})`.slice(0, 300) : '',
         names: r.upserts.slice(0, 20).map(({ data }) => String(data.name || '').slice(0, 60)),
         doneAt: Date.now(),
       });
