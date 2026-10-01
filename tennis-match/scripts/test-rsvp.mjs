@@ -27,6 +27,19 @@ const eq = (name, got, want) => {
 const section = (s) => console.log(`\n[${s}]`);
 const ok_ = (c, name) => eq(name, !!c, true);
 
+/* ---------- 모임마다 따로 정한 마감 ---------- */
+section('모임 마감 — 모임마다 N일 전, 비우면 클럽 설정');
+eq('모임 3일 전 마감', app.deadlineFor({ date: '2026-10-10', rsvpDeadlineDays: 3 }, {}), { ymd: '2026-10-07', time: '12:00' });
+eq('비우면 클럽 기본(4일 전)', app.deadlineFor({ date: '2026-10-10', rsvpDeadlineDays: null }, {}), { ymd: '2026-10-06', time: '12:00' });
+eq('클럽 마감이 꺼져 있어도 모임 마감은 쓴다', app.deadlineFor({ date: '2026-10-10', rsvpDeadlineDays: 2 }, { deadline: null }), { ymd: '2026-10-08', time: '12:00' });
+eq('D-2 표시', app.deadlineLabel({ date: '2026-10-10', rsvpDeadlineDays: 3 }, {}, '2026-10-05', '09:00').text, '투표 마감 D-2 · 10/7(수) 12:00까지');
+eq('내일', app.deadlineLabel({ date: '2026-10-10', rsvpDeadlineDays: 3 }, {}, '2026-10-06', '09:00').text, '투표 마감 D-1 · 내일 12:00까지');
+eq('오늘', app.deadlineLabel({ date: '2026-10-10', rsvpDeadlineDays: 3 }, {}, '2026-10-07', '09:00').text, '투표 마감 오늘 12:00까지');
+eq('지남', app.deadlineLabel({ date: '2026-10-10', rsvpDeadlineDays: 3 }, {}, '2026-10-07', '12:30').passed, true);
+/* 마감을 7일 전으로 앞당기면 6일·5일 전 자동 요청은 없다 */
+eq('마감 뒤 자동 요청은 빠진다', app.askSchedule({ date: '2026-10-10', rsvpDeadlineDays: 7 }, {}).length, 0);
+eq('마감 전 요청은 그대로', app.askSchedule({ date: '2026-10-10', rsvpDeadlineDays: 5 }, {}).map((x) => x.ymd), ['2026-10-04', '2026-10-05']);
+
 /* ---------- 설정 정리 ---------- */
 section('설정 정리 — 기본은 6일 전·5일 전 정오 두 번, 마감 4일 전 정오');
 const DEF = {

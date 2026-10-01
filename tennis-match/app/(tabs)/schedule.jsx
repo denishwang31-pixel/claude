@@ -22,7 +22,7 @@ import {
   AgendaControls, CalendarView, TournamentCard, GuestCard, DayList,
 } from '../../src/components/AgendaViews';
 import {
-  normalizeAsk, pendingVoters, askSchedule, deadlineFor, deadlinePassed, shortWhen,
+  normalizeAsk, pendingVoters, askSchedule, deadlineFor, deadlinePassed, shortWhen, deadlineLabel, MEETING_DEADLINE_DAYS,
 } from '../../src/lib/rsvpAsk';
 import {
   visibleMeetings, groupByMonth, membersForMeeting, canRsvpSelf, meetingTie,
@@ -127,6 +127,7 @@ export default function Schedule() {
     surface: '',
     endScore: 6,
     ranked: true,          // 랭킹 반영 여부
+    rsvpDeadlineDays: null, // 참석 투표 마감 — 모임 N일 전(null = 클럽 설정)
     repeat: 'none',
     until: '',
   });
@@ -515,6 +516,7 @@ export default function Schedule() {
       surface: mt.surface || '',
       endScore: mt.endScore || 6,
       ranked: mt.ranked !== false,
+      rsvpDeadlineDays: mt.rsvpDeadlineDays ?? null,
       repeat: 'none',
       until: '',
     });
@@ -531,6 +533,7 @@ export default function Schedule() {
     surface: nd.surface || '',
     endScore: nd.endScore || 6,
     ranked: nd.ranked !== false,
+    rsvpDeadlineDays: nd.rsvpDeadlineDays ?? null,
   });
 
   const saveEditOne = async () => {
@@ -602,6 +605,7 @@ export default function Schedule() {
       surface: nd.surface || '',
       endScore: nd.endScore || 6,
       ranked: nd.ranked !== false,
+      rsvpDeadlineDays: nd.rsvpDeadlineDays ?? null,
     };
     /* ⚠️ 같은 날 · 같은 시간 · 같은 코트장 모임은 다시 만들지 않는다.
           정기 일정을 두 번 등록해 10/11 06:00 이 두 장 생긴 적이 있다(앱 주인).
@@ -749,16 +753,13 @@ export default function Schedule() {
                     {!quiet && (<>
                     {/* 투표 마감 안내 — 자동 요청 알림에 적힌 마감과 같은 값.
                        마감은 안내다: 지나도 버튼은 막지 않는다(급한 변경은 운영진이 받는다). */}
-                    {askCfg.enabled && (() => {
-                      const dl = deadlineFor(mt, askCfg);
-                      if (!dl) return null;
+                    {(askCfg.enabled || mt.rsvpDeadlineDays != null) && (() => {
                       const [ny, nt] = kstNow();
-                      const passed = deadlinePassed(mt, askCfg, ny, nt);
+                      const lb = deadlineLabel(mt, askCfg, ny, nt);
+                      if (!lb) return null;
                       return (
-                        <Text style={{ fontSize: 11.5, marginTop: 8, fontWeight: '700', color: passed ? C.faint : '#B45309' }}>
-                          {passed
-                            ? `투표 마감 지남(${shortWhen(dl.ymd, dl.time)}) · 바꿀 일이 있으면 운영진에게 알려 주세요`
-                            : `투표 마감 ${shortWhen(dl.ymd, dl.time)}까지`}
+                        <Text style={{ fontSize: 11.5, marginTop: 8, fontWeight: '700', color: lb.passed ? C.faint : lb.urgent ? '#B91C1C' : '#B45309' }}>
+                          {lb.passed ? `${lb.text} · 바꿀 일이 있으면 운영진에게 알려 주세요` : lb.text}
                         </Text>
                       );
                     })()}
@@ -1300,6 +1301,31 @@ export default function Schedule() {
                 <View style={{ marginTop: 12 }}>
                   <Label>장소</Label>
                   <Field placeholder="예: 올림픽공원 테니스장" value={nd.place} onChangeText={(t) => setNd({ ...nd, place: t })} />
+                </View>
+
+                {/* 참석 투표 마감 — 모임 며칠 전까지 답을 받을지. 비우면 클럽 설정(더보기 › 클럽 설정)을 따른다.
+                   홈·일정 카드에 'D-2 · 10/3(금) 12:00까지'로 보이고, 자동 요청 알림에도 적힌다. */}
+                <View style={{ marginTop: 12 }}>
+                  <Label hint="모임 며칠 전까지 참석·불참을 받을지">참석 투표 마감</Label>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                    <Chip tone={nd.rsvpDeadlineDays == null ? 'green' : 'outline'} onPress={() => setNd({ ...nd, rsvpDeadlineDays: null })}>
+                      {askCfg.deadline ? `클럽 기본 (${askCfg.deadline.daysBefore}일 전)` : '클럽 기본 (마감 없음)'}
+                    </Chip>
+                    {MEETING_DEADLINE_DAYS.map((d) => (
+                      <Chip key={d} tone={nd.rsvpDeadlineDays === d ? 'green' : 'outline'}
+                        onPress={() => setNd({ ...nd, rsvpDeadlineDays: d })}>{d}일 전</Chip>
+                    ))}
+                  </View>
+                  {(() => {
+                    const dl = nd.date ? deadlineFor({ date: nd.date, rsvpDeadlineDays: nd.rsvpDeadlineDays }, askCfg) : null;
+                    return (
+                      <Text style={{ fontSize: 11.5, color: C.faint, marginTop: 5, lineHeight: 17 }}>
+                        {dl
+                          ? `${shortWhen(dl.ymd, dl.time)}까지 받습니다.${nd.repeat !== 'none' && !editing ? ' 반복 일정은 모임마다 같은 일수로 계산합니다.' : ''} 나중에 「모임 수정」에서 바꿀 수 있습니다.`
+                          : nd.date ? '마감 없이 받습니다.' : '날짜를 고르면 마감 날짜가 보입니다.'}
+                      </Text>
+                    );
+                  })()}
                 </View>
 
                 {!editing && (

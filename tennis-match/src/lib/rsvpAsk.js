@@ -90,9 +90,10 @@ const sendKey = (ymd, time) => `d${String(ymd).replace(/-/g, '_')}_${String(time
 /** 이 모임의 자동 발송 일정 [{ymd, time, key}] — 앞선 것부터 */
 export function askSchedule(meeting, cfg) {
   if (!meeting || !meeting.date) return [];
+  const dl = deadlineFor(meeting, cfg);
   return normalizeAsk(cfg).sends
     .map((s) => { const ymd = shiftYmd(meeting.date, -s.daysBefore); return { ymd, time: s.time, key: sendKey(ymd, s.time) }; })
-    .filter((s) => s.ymd);
+    .filter((s) => s.ymd && !afterDeadline(s, dl));    // 모임 마감을 앞당겼으면 그 뒤 요청은 없다
 }
 
 /** 첫 자동 발송일 (예전 화면 호환) */
@@ -101,12 +102,48 @@ export const askDateFor = (meeting, cfg) => {
   return s.length ? s[0].ymd : '';
 };
 
-/** 이 모임의 투표 마감 {ymd, time} — 없으면 null */
+/* 모임마다 마감을 따로 정할 수 있다(2026-10 앱 주인) — meeting.rsvpDeadlineDays = 모임 N일 전.
+   비어 있으면 클럽 설정(기본 4일 전)을 따른다. 시각은 클럽 설정의 마감 시각(기본 12:00). */
+export const MEETING_DEADLINE_DAYS = [1, 2, 3, 4, 5, 6, 7];
+export const meetingDeadlineDays = (meeting) => {
+  const n = meeting ? meeting.rsvpDeadlineDays : null;
+  return n === null || n === undefined || n === '' || !Number.isFinite(Number(n)) ? null : days(n, null);
+};
+
+/** 이 모임의 투표 마감 {ymd, time} — 없으면 null (모임에서 따로 정했으면 그 값) */
 export function deadlineFor(meeting, cfg) {
   const c = normalizeAsk(cfg);
-  if (!meeting || !meeting.date || !c.deadline) return null;
+  if (!meeting || !meeting.date) return null;
+  const own = meetingDeadlineDays(meeting);
+  if (own !== null) {
+    const ymd = shiftYmd(meeting.date, -own);
+    return ymd ? { ymd, time: (c.deadline && c.deadline.time) || '12:00' } : null;
+  }
+  if (!c.deadline) return null;
   const ymd = shiftYmd(meeting.date, -c.deadline.daysBefore);
   return ymd ? { ymd, time: c.deadline.time } : null;
+}
+
+/** 날짜 차이(일) — b - a */
+const dayDiff = (a, b) => {
+  const x = new Date(`${a}T00:00:00Z`).getTime();
+  const y = new Date(`${b}T00:00:00Z`).getTime();
+  return Number.isNaN(x) || Number.isNaN(y) ? 0 : Math.round((y - x) / 86400000);
+};
+
+/**
+ * 화면 한 줄 — '투표 마감 D-2 · 10/3(금) 12:00까지' / '투표 마감 오늘 12:00까지' / 마감 지남
+ * @returns { text, dday, passed, urgent } 또는 null(마감 없음)
+ */
+export function deadlineLabel(meeting, cfg, nowYmd, nowHHMM) {
+  const d = deadlineFor(meeting, cfg);
+  if (!d) return null;
+  const passed = deadlinePassed(meeting, cfg, nowYmd, nowHHMM);
+  const dday = dayDiff(nowYmd, d.ymd);
+  const when = shortWhen(d.ymd, d.time);
+  if (passed) return { text: `투표 마감 지남 (${when})`, dday, passed: true, urgent: false, ymd: d.ymd, time: d.time };
+  const head = dday <= 0 ? `오늘 ${d.time}까지` : dday === 1 ? `D-1 · 내일 ${d.time}까지` : `D-${dday} · ${when}까지`;
+  return { text: `투표 마감 ${head}`, dday, passed: false, urgent: dday <= 1, ymd: d.ymd, time: d.time };
 }
 
 /** 마감이 지났는가 */
@@ -115,6 +152,9 @@ export function deadlinePassed(meeting, cfg, nowYmd, nowHHMM) {
   if (!d) return false;
   return nowYmd > d.ymd || (nowYmd === d.ymd && hhmm(nowHHMM, '00:00') >= d.time);
 }
+
+/** 이 발송이 마감보다 뒤인가 — 모임 마감을 앞당겼으면 그 뒤 자동 요청은 보내지 않는다 */
+const afterDeadline = (s, dl) => !!dl && (s.ymd > dl.ymd || (s.ymd === dl.ymd && s.time > dl.time));
 
 /**
  * 지금 보내야 할 자동 발송의 열쇠. 없으면 ''.

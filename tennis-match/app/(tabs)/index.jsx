@@ -24,6 +24,13 @@ import { dowName } from '../../src/lib/schedule';
 import { ddayOf } from '../../src/lib/agenda';
 import { membersInScope } from '../../src/lib/scope';
 import { canRsvpSelf, rsvpBlockReason, splitByTie } from '../../src/lib/scheduleView';
+import { normalizeAsk, deadlineLabel } from '../../src/lib/rsvpAsk';
+
+/* 한국 시각 [YYYY-MM-DD, HH:MM] — 투표 마감 D-day(서버와 같은 기준) */
+const kstNow = () => {
+  const k = new Date(Date.now() + 9 * 3600000).toISOString();
+  return [k.slice(0, 10), k.slice(11, 16)];
+};
 import {
   RSVP, isAnswered, viewModesFor, roleTone, JOIN_STATUS, screenRef,
 } from '../../src/lib/constants';
@@ -81,6 +88,13 @@ export default function Home() {
     isAdmin, realStaff, scopeVenues, seeAllVenues, realRole, seeFees, tournaments,
   } = useClub(clubId, me, { viewMode });
   const { venueId, setVenueId } = useVenueScope(scopeVenues);
+  /* 투표 마감 — 모임에서 따로 정했으면 그 값, 아니면 클럽 설정 */
+  const askCfg = normalizeAsk(club?.settings?.rsvpAsk);
+  const dlOf = (m) => {
+    if (!askCfg.enabled && m.rsvpDeadlineDays == null) return null;
+    const [ny, nt] = kstNow();
+    return deadlineLabel(m, askCfg, ny, nt);
+  };
 
   const [ads, setAds] = useState([]);
   const [pendingJoins, setPendingJoins] = useState(0);
@@ -409,6 +423,18 @@ export default function Home() {
                   <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11.5, fontWeight: '600', marginBottom: 7 }}>
                     내 참석 여부 — 누르면 바로 반영됩니다
                   </Text>
+                  {(() => {
+                    const lb = dlOf(meeting);
+                    if (!lb) return null;
+                    return (
+                      <Text style={{
+                        color: lb.passed ? 'rgba(255,255,255,0.5)' : lb.urgent ? '#FCA5A5' : '#FCD34D',
+                        fontSize: 12.5, fontWeight: '800', marginBottom: 8,
+                      }}>
+                        ⏰ {lb.text}
+                      </Text>
+                    );
+                  })()}
                   <RsvpRow
                     dark
                     value={myRsvp}
@@ -591,6 +617,19 @@ export default function Home() {
                           {m.place || venueName(m.venueId) || '장소 미정'} · {m.courts}면 · {m.rounds}타임
                           {m.matches?.length ? ' · 대진 완료' : ''}
                         </Text>
+                        {/* 투표 마감 — 아직 답하지 않았으면 진하게 */}
+                        {(() => {
+                          const lb = dlOf(m);
+                          if (!lb || !canRsvpSelf(meVal, m) || (lb.passed && mine !== undefined)) return null;
+                          return (
+                            <Text style={{
+                              fontSize: 11.5, marginTop: 3, fontWeight: mine === undefined ? '800' : '600',
+                              color: lb.passed ? C.faint : mine === undefined ? (lb.urgent ? '#B91C1C' : '#B45309') : C.sub,
+                            }}>
+                              {lb.text}
+                            </Text>
+                          );
+                        })()}
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Chip tone={enough ? 'soft' : 'warn'}>참석 {cnt}</Chip>
