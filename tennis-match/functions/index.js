@@ -49,7 +49,13 @@ const {
 } = require('./scope');
 
 /** 운영 담당 — 참석 변경·미납 현황 같은 운영 알림을 받는 사람 */
-const isStaff = (role) => role === '회장' || role === '총무' || role === '운영진';
+/* 역할 — 겸임(roles 배열)까지 본다. src/lib/constants.js STAFF_ROLES 와 같게
+   (회장 · 운영진 대표 · 총무 · 운영진 · 예전 '리드'/'책임리더') */
+const STAFF = ['회장', '운영진 대표', '총무', '운영진', '리드', '책임리더'];
+const rolesOf = (m) => (Array.isArray(m && m.roles) && m.roles.length ? m.roles : [(m && m.role) || '회원']);
+const hasAnyRole = (m, list) => rolesOf(m).some((r) => list.includes(r));
+const isStaff = (role) => STAFF.includes(role);
+const isStaffM = (m) => hasAnyRole(m, STAFF);
 
 /* ---------------- Expo Push 발송 헬퍼 ----------------
 
@@ -163,7 +169,7 @@ exports.onMeetingUpdated = onDocumentUpdated({ ...REGION, document: 'clubs/{club
     memberSnap.docs.forEach((d) => {
       const m = d.data();
       nameById[d.id] = m.name || '';
-      if (isStaff(m.role) && m.pushToken) staffTokens.push(m.pushToken);
+      if (isStaffM(m) && m.pushToken) staffTokens.push(m.pushToken);
     });
     if (staffTokens.length) {
       const msg = changeDigest(club.name, changes.map((ch) => nameById[ch.id]), after);
@@ -479,7 +485,7 @@ async function staffTokens(clubId) {
   if (!clubId) return [];
   const snap = await db.collection('clubs').doc(clubId).collection('members').get();
   return snap.docs
-    .filter((d) => isStaff(d.data().role))
+    .filter((d) => isStaffM(d.data()))
     .map((d) => d.data().pushToken)
     .filter(Boolean);
 }
@@ -641,7 +647,7 @@ exports.dailyFeeDunning = onSchedule(
 
           // 2차 단계에서는 총무에게 현황을 요약해 준다
           if (plan.stage.key === 'second') {
-            const staff = members.filter((m) => m.role === '회장' || m.role === '총무');
+            const staff = members.filter((m) => hasAnyRole(m, ['회장', '총무']));
             const staffPush = staff.map((m) => m.pushToken).filter(Boolean);
             if (staffPush.length) {
               const unpaid = unpaidMembers(scoped, paid);
@@ -742,7 +748,7 @@ exports.updateForecasts = onSchedule(
           await mdoc.ref.update({ forecast });
           // 강수확률 60% 이상 최초 감지 시 총무·운영진 알림
           if (forecast.rain >= 60 && prevRain < 60) {
-            const tokens = await clubTokens(club.id, (m) => m.role === '총무' || m.role === '운영진');
+            const tokens = await clubTokens(club.id, (m) => hasAnyRole(m, ['운영진 대표', '총무', '운영진', '리드', '책임리더']));
             await sendPush(tokens, '🌧 우천 예보', `${mt.date} ${mt.place || ''} 강수확률 ${forecast.rain}% — 취소 여부를 결정하세요.`, { type: 'weather', meetingId: mdoc.id });
           }
         } catch (e) { logger.error('forecast failed', club.id, mdoc.id, e); }

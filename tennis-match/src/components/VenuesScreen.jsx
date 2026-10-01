@@ -87,7 +87,7 @@ function VenueForm({ draft, setDraft, members, onSubmit, submitLabel, onCancel }
       />
 
       <Text style={{ fontSize: 11, color: C.sub, marginTop: 10, marginBottom: 4 }}>
-        리드 담당자 <Text style={{ color: C.faint }}>(이 코트장 운영을 맡는 회원)</Text>
+        대표 담당자 <Text style={{ color: C.faint }}>(이 코트장 연락 담당 · 선택)</Text>
       </Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         <Chip tone={!draft.leadId ? 'green' : 'outline'} onPress={() => setDraft({ ...draft, leadId: null })}>미지정</Chip>
@@ -189,7 +189,7 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
       <Card>
         <Text style={{ fontSize: 12, color: C.sub, lineHeight: 18 }}>
           클럽이 여러 코트장을 운영하면 여기에 등록하세요. 코트장마다
-          <Text style={{ fontWeight: '700' }}> 면수·운영시간·리드 담당자</Text>를 따로 관리합니다.
+          <Text style={{ fontWeight: '700' }}> 면수·운영시간·대표 담당자</Text>를 따로 관리합니다.
           모임을 등록할 때 코트장을 고르면 그 값이 자동으로 채워집니다.
         </Text>
       </Card>
@@ -226,7 +226,7 @@ export function Venues({ clubId, club, venues, members, isAdmin, flash }) {
                 {v.addr ? <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>{v.addr}</Text> : null}
                 <View style={{ flexDirection: 'row', gap: 6, marginTop: 6 }}>
                   <Chip tone={v.leadId ? 'lime' : 'outline'}>
-                    리드: {nameOf(v.leadId) || '미지정'}
+                    담당: {nameOf(v.leadId) || '미지정'}
                   </Chip>
                 </View>
                 <VenueOverrideBadges club={club} venue={v} />

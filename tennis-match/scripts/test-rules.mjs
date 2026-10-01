@@ -243,7 +243,7 @@ console.log('\n[역할 겸임]');
 await T('회장의 겸임 지정 허용(운영진+리드)',
   assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem2'),
     { roles: ['운영진', '리드'], role: '운영진' })));
-await T('회장이 아닌 운영 담당의 roles 변경 거부',
+await T('회원의 roles 변경 거부',
   assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem2'),
     { roles: ['운영진', '리드'], role: '운영진' })));
 await T('본인이 자기 roles 를 바꾸는 것 거부',
@@ -265,6 +265,48 @@ await T('회원의 프로필 수정은 roles 를 안 건드리면 허용',
 await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(ctx.firestore(), 'clubs', CLUB, 'members', 'mem2'),
     { name: '회원2', gender: 'M', grade: 'C', role: '회원', status: '활동' });
+});
+
+/* 2026-10 역할 단순화 — 운영진 대표가 임명을 위임받는다. 총무는 운영진에게 켜는 권한(roles 배열) */
+console.log('\n[운영진 대표 · 총무 켜기]');
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const f = ctx.firestore();
+  await setDoc(doc(f, 'clubs', CLUB, 'members', 'head1'), { name: '대표', gender: 'M', grade: 'B', role: '운영진 대표', roles: ['운영진 대표'], status: '활동' });
+  await setDoc(doc(f, 'clubs', CLUB, 'members', 'staff1'), { name: '운영', gender: 'F', grade: 'B', role: '운영진', roles: ['운영진'], status: '활동' });
+  await setDoc(doc(f, 'clubs', CLUB, 'members', 'tre1'), { name: '총무겸', gender: 'F', grade: 'B', role: '운영진 대표', roles: ['운영진 대표', '총무'], status: '활동' });
+  await setDoc(doc(f, 'clubs', CLUB, 'fees', '2026-09'), { paid: {} });
+});
+const headDb = env.authenticatedContext('head1').firestore();
+const staffDb = env.authenticatedContext('staff1').firestore();
+await T('운영진 대표는 회원을 운영진(선택 코트장)으로',
+  assertSucceeds(updateDoc(doc(headDb, 'clubs', CLUB, 'members', 'mem2'),
+    { roles: ['운영진'], role: '운영진', staffVenueIds: ['v1'] })));
+await T('운영진 대표는 운영진에게 총무를 켤 수 있다',
+  assertSucceeds(updateDoc(doc(headDb, 'clubs', CLUB, 'members', 'staff1'),
+    { roles: ['총무', '운영진'], role: '총무' })));
+await T('운영진 대표는 회장을 세울 수 없다',
+  assertFails(updateDoc(doc(headDb, 'clubs', CLUB, 'members', 'mem2'), { roles: ['회장'], role: '회장' })));
+await T('운영진 대표는 다른 운영진 대표를 세울 수 없다',
+  assertFails(updateDoc(doc(headDb, 'clubs', CLUB, 'members', 'mem1'), { roles: ['운영진 대표'], role: '운영진 대표' })));
+await T('운영진 대표는 회장의 역할을 바꿀 수 없다',
+  assertFails(updateDoc(doc(headDb, 'clubs', CLUB, 'members', 'owner1'), { roles: ['회원'], role: '회원' })));
+await T('일반 운영진은 역할을 못 바꾼다',
+  assertFails(updateDoc(doc(staffDb, 'clubs', CLUB, 'members', 'mem1'), { roles: ['운영진'], role: '운영진' })));
+await T('일반 운영진은 운영 범위도 못 바꾼다',
+  assertFails(updateDoc(doc(staffDb, 'clubs', CLUB, 'members', 'mem1'), { staffVenueIds: ['v1'] })));
+await T('본인이 자기 운영 범위를 바꾸는 것 거부',
+  assertFails(updateDoc(doc(env.authenticatedContext('mem2').firestore(), 'clubs', CLUB, 'members', 'mem2'), { staffVenueIds: [] })));
+await T('회장은 운영진 대표를 세운다',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem1'), { roles: ['운영진 대표'], role: '운영진 대표' })));
+await T('총무를 켠 운영진 대표(roles 에 총무)는 회비를 본다',
+  assertSucceeds(getDoc(doc(env.authenticatedContext('tre1').firestore(), 'clubs', CLUB, 'fees', '2026-09'))));
+await T('총무를 켜지 않은 운영진 대표는 회비를 못 본다',
+  assertFails(getDoc(doc(headDb, 'clubs', CLUB, 'fees', '2026-09'))));
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const f = ctx.firestore();
+  await setDoc(doc(f, 'clubs', CLUB, 'members', 'mem1'), { name: '회원1', gender: 'F', grade: 'B', role: '회원', status: '활동' });
+  await setDoc(doc(f, 'clubs', CLUB, 'members', 'mem2'), { name: '회원2', gender: 'M', grade: 'C', role: '회원', status: '활동' });
+  await deleteDoc(doc(f, 'clubs', CLUB, 'fees', '2026-09'));
 });
 
 console.log('\n[참석 투표 요청]');

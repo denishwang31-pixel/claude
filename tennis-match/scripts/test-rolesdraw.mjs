@@ -13,6 +13,7 @@
 import {
   ROLES, memberRoles, primaryRole, hasRole, rolesPayload, rolesLabel,
   isStaffMember, canSeeFeesMember, normalizeRole,
+  positionOf, isTreasurer, staffScope, positionPayload, canAssignRole, canEditRolesOf, canAppointRole,
 } from '../src/lib/constants.js';
 import {
   attendingIds, drawnIds, diffDraw, removeGhosts, dropAffected,
@@ -192,6 +193,29 @@ eq('null 대진', removeGhosts(null, ['a']), []);
 eq('지울 사람이 없으면 그대로', removeGhosts(AUTO, []).length, 2);
 eq('게스트도 빠질 수 있다',
   diffDraw([{ id: 'x', teamA: ['g:손님'], teamB: [] }], ['a']).ghosts, ['g:손님']);
+
+/* ---------- 2026-10 역할 단순화 ---------- */
+console.log('[직책 · 총무 · 운영 범위]');
+eq('운영진 + 총무 + 선택 코트장', positionPayload('운영진', { treasurer: true, venueIds: ['v1', 'v1'] }),
+  { roles: ['총무', '운영진'], role: '총무', staffVenueIds: ['v1'] });
+eq('운영진 대표 + 총무 — 대표가 대표 역할, 범위 없음', positionPayload('운영진 대표', { treasurer: true, venueIds: ['v1'] }),
+  { roles: ['운영진 대표', '총무'], role: '운영진 대표', staffVenueIds: [] });
+eq('회원은 총무·범위를 지운다', positionPayload('회원', { treasurer: true, venueIds: ['v1'] }),
+  { roles: ['회원'], role: '회원', staffVenueIds: [] });
+eq('예전 리드는 운영진 직책으로 보인다', positionOf({ role: '리드' }), '운영진');
+eq('총무만 든 예전 문서도 운영진 + 총무', [positionOf({ roles: ['총무'] }), isTreasurer({ roles: ['총무'] })], ['운영진', true]);
+eq('범위가 없으면 코트장 전체', staffScope({ roles: ['운영진'] }), { all: true, venueIds: [] });
+eq('선택한 코트장만', staffScope({ roles: ['운영진'], staffVenueIds: ['v2'] }), { all: false, venueIds: ['v2'] });
+eq('예전 리드 — 코트장 문서 leadId 로', staffScope({ id: 'x', roles: ['리드'] }, [{ id: 'v1', leadId: 'x' }, { id: 'v2' }]), { all: false, venueIds: ['v1'] });
+ok(isStaffMember({ roles: ['운영진 대표'] }), '운영진 대표는 운영 담당');
+ok(!canSeeFeesMember({ roles: ['운영진 대표'] }), '총무를 켜지 않은 대표는 회비를 못 본다');
+ok(canSeeFeesMember({ roles: ['운영진 대표', '총무'] }), '총무를 켜면 본다');
+ok(canAppointRole('운영진 대표') && canAppointRole('회장') && !canAppointRole('운영진') && !canAppointRole('총무'), '임명은 회장·운영진 대표만');
+ok(canAssignRole('운영진 대표', '회원', '운영진') && canAssignRole('운영진 대표', '운영진', '총무'), '대표는 운영진·총무를 정한다');
+ok(!canAssignRole('운영진 대표', '회원', '회장') && !canAssignRole('운영진 대표', '회원', '운영진 대표'), '대표는 회장·대표를 못 세운다');
+ok(!canEditRolesOf('운영진 대표', { roles: ['회장'] }) && !canEditRolesOf('운영진 대표', { roles: ['운영진 대표'] }), '대표는 회장·대표를 못 바꾼다');
+ok(canEditRolesOf('회장', { roles: ['운영진 대표'] }), '회장은 대표를 바꾼다');
+eq('서열 — 회장 > 대표 > 총무 > 운영진', primaryRole({ roles: ['운영진', '총무', '운영진 대표'] }), '운영진 대표');
 
 console.log(`\n역할 겸임·대진 동기화 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

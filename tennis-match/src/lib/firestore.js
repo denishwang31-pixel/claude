@@ -20,7 +20,7 @@ import {
   runTransaction, deleteField, writeBatch, increment, getCountFromServer,
 } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
-import { ROLES, GUEST_STATUS, JOIN_STATUS } from './constants';
+import { ROLES, GUEST_STATUS, JOIN_STATUS, memberRoles, rolesPayload } from './constants';
 import { lineupOf, scoreOp } from './scoreReport';
 import { todayYmd } from './today.js';
 
@@ -380,6 +380,8 @@ export const setMemberRoles = (clubId, memberId, payload) =>
   updateDoc(D(clubId, 'members', memberId), {
     roles: payload.roles,
     role: payload.role,
+    /* 운영 범위(코트장 전체 = 빈 배열) — positionPayload 가 함께 만든다 */
+    ...(Array.isArray(payload.staffVenueIds) ? { staffVenueIds: payload.staffVenueIds } : {}),
   });
 
 export const deleteMember = (clubId, memberId) => deleteDoc(D(clubId, 'members', memberId));
@@ -839,13 +841,20 @@ export const subIncomes = (clubId, cb) =>
 export const addIncome = (clubId, data) => addDoc(C(clubId, 'incomes'), data);
 export const deleteIncome = (clubId, id) => deleteDoc(D(clubId, 'incomes', id));
 
-/** 총무 인수인계 — 새 총무 임명 + 전임자는 열람 권한(운영진)으로 */
-export const handOverManager = async (clubId, fromId, toId) => {
+/** 총무 인수인계 — 새 사람에게 총무를 켜고, 전임자는 총무만 끈다(운영진 자리는 그대로).
+    from / to 는 회원 문서(역할 목록을 알아야 총무만 넣고 뺄 수 있다) */
+export const handOverManager = async (clubId, from, to) => {
   const batch = writeBatch(db);
-  batch.update(D(clubId, 'members', toId), { role: ROLES.MANAGER });
-  if (fromId && fromId !== toId) {
-    batch.update(D(clubId, 'members', fromId), { role: ROLES.STAFF });
+  const toRoles = memberRoles(to).filter((r) => r !== ROLES.MANAGER && r !== ROLES.MEMBER);
+  const toPayload = rolesPayload([...(toRoles.length ? toRoles : [ROLES.STAFF]), ROLES.MANAGER]);
+  batch.update(D(clubId, 'members', to.id), { roles: toPayload.roles, role: toPayload.role });
+  if (from && from.id !== to.id) {
+    const rest = memberRoles(from).filter((r) => r !== ROLES.MANAGER);
+    const fromPayload = rolesPayload(rest.length ? rest : [ROLES.STAFF]);
+    batch.update(D(clubId, 'members', from.id), { roles: fromPayload.roles, role: fromPayload.role });
   }
+  const fromId = from?.id || '';
+  const toId = to.id;
   batch.set(D(clubId, 'meta', 'handover'), {
     history: arrayUnion({ from: fromId || '', to: toId, at: new Date().toISOString() }),
   }, { merge: true });

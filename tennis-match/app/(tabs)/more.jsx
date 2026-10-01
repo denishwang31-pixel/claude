@@ -341,7 +341,7 @@ export default function More() {
       case 'profile': return <Profile {...{ clubId, club, me, meVal, venues, flash }} onOpen={setSub} />;
       case 'legal': return <Legal />;
       case 'deleteaccount': return <DeleteAccount {...{ clubId, me, members, flash }} />;
-      case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, myRole: realRole, flash }} />;
+      case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, myRole: realRole, seeFees, flash }} />;
       case 'joinreq': return <JoinRequests {...{ clubId, club, members, isAdmin, flash }} />;
       case 'invite': return <Invite {...{ clubId, club, members, isAdmin, flash }} />;
       case 'polls': return <Polls {...{ clubId, polls, members, me, isAdmin, flash }} />;

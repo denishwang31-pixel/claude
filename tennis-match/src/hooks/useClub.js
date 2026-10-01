@@ -21,7 +21,7 @@ import { windowStart, WINDOW_MONTHS } from '../lib/meetingWindow';
 import { mergeScores } from '../lib/scoreReport';
 import {
   isStaffRole, canAppointRole, isGuestId, guestUid, ROLES,
-  normalizeRole, canSeeFees, canSeeAllVenues, VIEW_MODE_ROLE,
+  normalizeRole, canSeeFees, canSeeAllVenues, VIEW_MODE_ROLE, staffScope,
   memberRoles, primaryRole,
 } from '../lib/constants';
 import { todayYmd } from '../lib/today';
@@ -182,14 +182,20 @@ export function useClub(clubId, me, opts = {}) {
   /* 겸임 중 하나라도 회비 권한이 있으면 본다.
      보기 모드로 낮춰 봤을 때는 그 모드를 따른다. */
   const seeFees = canSeeFees(effectiveRole) && myRoles.some(canSeeFees);
-  const seeAllVenues = canSeeAllVenues(effectiveRole);
+  /* 운영 범위 — 회장·운영진 대표는 전체. 운영진은 「코트장 전체 / 선택한 코트장만」(staffVenueIds).
+     예전 '리드'는 코트장 문서의 leadId 로 맡은 곳만(staffScope). */
+  const myScope = useMemo(() => staffScope(meVal ? { ...meVal, id: me } : null, venues), [meVal, me, venues]);
+  const topRole = myRoles.includes(ROLES.PRESIDENT) || myRoles.includes(ROLES.HEAD);
+  const seeAllVenues = viewRole
+    ? (viewRole === ROLES.LEAD ? false : canSeeAllVenues(effectiveRole))
+    : (realStaff && (topRole || myScope.all));
   const canAppoint = canAppointRole(realRole) && !viewMode;
   const isPresident = realRole === ROLES.PRESIDENT;
 
-  /* 내가 리드로 지정된 코트장 / 내가 소속(정기 운동)된 코트장 */
+  /* 내가 맡은 코트장(운영진 범위) / 내가 소속(정기 운동)된 코트장 */
   const myLeadVenues = useMemo(
-    () => venues.filter((v) => v.leadId === me),
-    [venues, me],
+    () => (myScope.all ? venues.filter((v) => v.leadId === me) : venues.filter((v) => myScope.venueIds.includes(v.id))),
+    [venues, me, myScope],
   );
   const myVenues = useMemo(
     () => venues.filter((v) => (meVal?.venueIds || []).includes(v.id)),
@@ -202,16 +208,14 @@ export function useClub(clubId, me, opts = {}) {
      member : 내가 소속된 코트장
      null   : 실제 역할대로 */
   const scopeVenues = useMemo(() => {
-    if (seeAllVenues) return venues;                    // 회장·총무·운영진
-    if (effectiveRole === ROLES.LEAD) {                 // 리드 — 내가 맡은 코트장
-      return myLeadVenues.length ? myLeadVenues : venues;
-    }
-    /* 겸임 리드 — 대표 역할이 운영진이라도 맡은 코트가 있으면 같이 본다 */
-    if (myRoles.includes(ROLES.LEAD) && myLeadVenues.length) {
-      return [...new Set([...myVenues, ...myLeadVenues])];
+    if (seeAllVenues) return venues;                    // 회장·운영진 대표·운영진(전체)
+    if (effectiveRole === ROLES.LEAD || (!viewRole && realStaff)) {
+      /* 운영진(선택한 코트장만) — 맡은 코트장 + 내가 운동하는 코트장 */
+      if (!myLeadVenues.length) return viewRole ? venues : myVenues;
+      return [...new Set([...myLeadVenues, ...myVenues])];
     }
     return myVenues;                                    // 회원 — 내가 속한 코트장
-  }, [seeAllVenues, effectiveRole, venues, myLeadVenues, myVenues, myRoles]);
+  }, [seeAllVenues, effectiveRole, venues, myLeadVenues, myVenues, viewRole, realStaff]);
 
   // 게스트 ID('g:<uid>')는 저장된 표시명을 우선 사용(타 클럽 회원일 수 있음)
   const nameOf = useMemo(() => {

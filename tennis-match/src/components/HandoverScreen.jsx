@@ -11,7 +11,7 @@
    못 보게 되면 인수인계 자체가 안 된다. */
 import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, Alert } from 'react-native';
-import { ROLES, normalizeRole } from '../lib/constants';
+import { ROLES, normalizeRole, memberRoles } from '../lib/constants';
 import { handOverManager, countMeetings } from '../lib/firestore';
 import { useOptionSheet } from './native';
 import { Card, SectionTitle, Chip, Btn, StatCard } from './ui';
@@ -28,7 +28,7 @@ export function Handover({
     () => members.filter((m) => !m.status || m.status === '활동'), [members],
   );
   const current = useMemo(
-    () => active.find((m) => normalizeRole(m.role) === ROLES.MANAGER), [active],
+    () => active.find((m) => memberRoles(m).includes(ROLES.MANAGER)), [active],
   );
 
   /* 클럽에 쌓인 기록 — "총무가 바뀌어도 남는다"를 눈으로 보여 준다.
@@ -80,7 +80,7 @@ export function Handover({
         {
           text: '인수인계',
           onPress: async () => {
-            await handOverManager(clubId, current?.id || null, target.id);
+            await handOverManager(clubId, current || null, target);
             flash(`${target.name} 총무로 임명되었습니다`);
             setTarget(null);
           },

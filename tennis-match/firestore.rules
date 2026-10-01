@@ -9,23 +9,30 @@ service cloud.firestore {
       return signedIn() &&
         exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
     }
-    function clubRole(clubId) {
-      return get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role;
+    function myMemberDoc(clubId) {
+      return get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data;
     }
-    /** 운영 권한 = 회장·총무·운영진·리드
-        ('책임리더'는 예전 이름 — 기존 데이터 호환을 위해 리드와 같게 인정한다.
-         src/lib/constants.js 의 STAFF_ROLES 와 반드시 같아야 한다) */
+    function clubRole(clubId) {
+      return myMemberDoc(clubId).get('role', '회원');
+    }
+    /** 내 역할 목록 — 겸임(roles 배열). 옛 문서는 role 하나 */
+    function clubRoles(clubId) {
+      return myMemberDoc(clubId).get('roles', [clubRole(clubId)]);
+    }
+    /** 운영 권한 = 회장·운영진 대표·총무·운영진 (+ 예전 '리드'·'책임리더')
+        src/lib/constants.js 의 STAFF_ROLES 와 반드시 같아야 한다 */
     function isClubAdmin(clubId) {
       return (isClubMember(clubId) && (
-        clubRole(clubId) == '회장' || clubRole(clubId) == '총무' ||
-        clubRole(clubId) == '운영진' || clubRole(clubId) == '리드' ||
-        clubRole(clubId) == '책임리더'
+        clubRoles(clubId).hasAny(['회장', '운영진 대표', '총무', '운영진', '리드', '책임리더'])
+        || ['회장', '운영진 대표', '총무', '운영진', '리드', '책임리더'].hasAny([clubRole(clubId)])
       )) || isClubOwner(clubId);
     }
-    /** 회비·지출을 다룰 수 있는 역할 = 회장·총무 (constants.js canSeeFees 와 동일) */
+    /** 회비·지출을 다룰 수 있는 역할 = 회장·총무 (constants.js canSeeFees 와 동일).
+        총무는 운영진에게 켜는 권한이라 roles 에 같이 들어 있다 — 대표 역할(role)만 보면 놓친다 */
     function canSeeFees(clubId) {
       return (isClubMember(clubId) && (
-        clubRole(clubId) == '회장' || clubRole(clubId) == '총무'
+        clubRoles(clubId).hasAny(['회장', '총무'])
+        || clubRole(clubId) == '회장' || clubRole(clubId) == '총무'
       )) || isClubOwner(clubId);
     }
     /** 클럽을 만든 사람 — 저장된 역할과 무관하게 회장으로 인정한다.
@@ -35,13 +42,19 @@ service cloud.firestore {
       return signedIn() &&
         get(/databases/$(database)/documents/clubs/$(clubId)).data.get('ownerId', '') == request.auth.uid;
     }
-    /** 역할 임명 권한은 회장(또는 클럽 소유자)만 */
+    /** 회장(또는 클럽 소유자) */
     function isPresident(clubId) {
-      return (isClubMember(clubId) && clubRole(clubId) == '회장') || isClubOwner(clubId);
+      return (isClubMember(clubId) && (clubRole(clubId) == '회장' || clubRoles(clubId).hasAny(['회장'])))
+        || isClubOwner(clubId);
     }
-    /** 회장이 아니어도 정할 수 있는 일상 역할 (constants.js DAILY_ROLES 와 동일) */
-    function isDailyRole(r) {
-      return r == '운영진' || r == '리드' || r == '회원' || r == '책임리더';
+    /** 운영진 대표 — 회장에게 역할 임명을 위임받는다 */
+    function isRoleHead(clubId) {
+      return isClubMember(clubId) && (clubRole(clubId) == '운영진 대표' || clubRoles(clubId).hasAny(['운영진 대표']));
+    }
+    /** 회장·운영진 대표 자리 — 운영진 대표도 이 자리는 세우거나 내리지 못한다 (constants.js TOP_ROLES) */
+    function hasTopRole(d) {
+      return d.get('roles', [d.get('role', '회원')]).hasAny(['회장', '운영진 대표'])
+        || d.get('role', '회원') == '회장' || d.get('role', '회원') == '운영진 대표';
     }
     /** 앱 운영자 = appAdmins/{uid} 문서가 존재하는 계정 (Firebase 콘솔에서 수동 등록) */
     function isAppAdmin() {
@@ -97,27 +110,23 @@ service cloud.firestore {
             || resource.data.get('birthYear', 0) == 0
             || isPresident(clubId)
           ) && (
-          /* 역할 변경 —
+          /* 역할 변경 (2026-10 단순화) —
                회장: 전부
-               운영 담당: 운영진·리드·회원 사이에서만. 회장·총무는 못 세우고,
-                          회장·총무인 사람을 끌어내리지도 못한다.
-
-             역할은 겸임될 수 있어서 roles(배열)와 role(대표) 두 필드로
-             저장된다. role 만 막으면 roles 에 '회장'을 몰래 넣어 화면상
-             권한을 얻을 수 있으므로 두 필드를 같이 막는다.
-             roles 의 내용까지 규칙에서 훑을 수는 없으므로(배열 순회 불가),
-             운영 담당이 roles 를 건드리는 것 자체를 회장에게만 허용한다. */
+               운영진 대표: 운영진·총무·회원·운영 범위(staffVenueIds)만. 회장·운영진 대표 자리는
+                            세우지도(바뀐 값) 내리지도(지금 값) 못한다.
+               그 밖의 운영진: 역할을 못 바꾼다.
+             역할은 roles(배열)와 role(대표) 두 필드로 저장되므로 둘 다 본다(hasTopRole). */
           (isClubAdmin(clubId)
-              && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'roles'])
+              && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'roles', 'staffVenueIds'])
                   || isPresident(clubId)
-                  || (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles'])
-                      && isDailyRole(request.resource.data.role)
-                      && isDailyRole(resource.data.get('role', '회원')))))
+                  || (isRoleHead(clubId)
+                      && !hasTopRole(request.resource.data)
+                      && !hasTopRole(resource.data))))
           /* 본인은 자기 프로필을 고칠 수 있지만 역할과 등급(부수 busu · 조 grade)은 못 바꾼다.
              등급은 운영진이 매기는 실력 구분이라 본인이 올리면 뜻이 없어진다.
              (가입할 때 적은 부수는 회원 문서를 처음 만들 때 들어간다 — create 라 여기와 무관) */
           || (request.auth.uid == memberId
-              && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'roles', 'grade', 'busu', 'birthYearCheckedBy', 'birthYearCheckedAt']))
+              && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'roles', 'staffVenueIds', 'grade', 'busu', 'birthYearCheckedBy', 'birthYearCheckedAt']))
           || (
             isClubMember(clubId)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ntrpVotes'])

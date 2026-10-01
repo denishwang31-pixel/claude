@@ -29,6 +29,7 @@ import {
   ROLES, ASSIGNABLE_ROLES, ROLE_DESC, GRADES, BUSU, BUSU_KEYS,
   roleTone, isStaffRole, normalizeRole, assignableRolesFor, canAssignRole,
   memberRoles, rolesPayload, rolesLabel, isStaffMember, primaryRole, canSeeFees,
+  POSITION_ROLES, positionOf, isTreasurer, staffScope, positionPayload, canEditRolesOf, TOP_ROLES,
 } from '../lib/constants';
 import { effectiveNtrp, careerText } from '../lib/ntrp';
 import { Label, MonthField } from './pickers';
@@ -41,7 +42,7 @@ import { C, S, R, F } from '../lib/theme';
 
 const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoint, myRole, flash }) {
+export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoint, myRole, seeFees, flash }) {
   const [openId, setOpenId] = useState(null);
   const [d, setD] = useState({});
   const [adding, setAdding] = useState(false);
@@ -55,7 +56,7 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
   });
 
   /* ---- 오프라인 회원 합치기 (회장·총무) ---- */
-  const canMerge = canSeeFees(myRole);
+  const canMerge = seeFees ?? canSeeFees(myRole);
   const [mergeJob, setMergeJob] = useState(null);   // { id, label, status, detail, slow }
   useEffect(() => {
     if (!mergeJob?.id) return undefined;
@@ -158,26 +159,36 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
     );
   };
 
-  /* 역할 하나를 켜고 끈다. 겸임이므로 누른 것만 바뀐다. */
-  const toggleRole = (m, role) => {
-    if (!canAssignRole(myRole, m.role, role)) {
-      return flash('회장·총무 지정은 회장만 할 수 있습니다');
+  /* 역할 — 직책(회원·운영진·운영진 대표·회장) 하나 + 총무 켜기 + 운영 범위(코트장 전체/선택).
+     누르면 바로 저장한다. 임명은 회장과 운영진 대표만(대표는 회장·대표 자리는 못 건드림). */
+  const applyRoles = (m, position, { treasurer, venueIds } = {}) => {
+    if (!canEditRolesOf(myRole, m) || (TOP_ROLES.includes(position) && !canAssignRole(myRole, m.role, position))) {
+      return flash('회장·운영진 대표 지정은 회장만 할 수 있습니다');
     }
-    const cur = memberRoles(m);
-    const on = cur.includes(role);
-
     /* 본인의 회장 권한을 스스로 내려놓으면 다시 올릴 사람이 없다 */
-    if (on && m.id === me && role === ROLES.PRESIDENT) {
+    if (m.id === me && positionOf(m) === ROLES.PRESIDENT && position !== ROLES.PRESIDENT) {
       return Alert.alert('확인',
         '본인의 회장 권한을 내려놓으면 다시 임명할 수 없습니다.\n'
         + '먼저 다른 회원을 회장으로 임명하세요.');
     }
-
-    const next = on ? cur.filter((r) => r !== role) : [...cur, role];
-    /* 다 끄면 '회원'으로 돌아간다 — 역할이 아예 없는 상태는 없다 */
-    const payload = rolesPayload(next.length ? next : [ROLES.MEMBER]);
+    const sc = staffScope(m, venues);
+    const payload = positionPayload(position, {
+      treasurer: treasurer ?? isTreasurer(m),
+      venueIds: venueIds ?? (sc.all ? [] : sc.venueIds),
+    });
     setMemberRoles(clubId, m.id, payload);
-    return flash(`${m.name} → ${payload.roles.join(' · ')}`);
+    return flash(`${m.name} → ${payload.roles.join(' · ')}${payload.staffVenueIds.length ? ` (${payload.staffVenueIds.map((id) => venues.find((v) => v.id === id)?.name || '').filter(Boolean).join(', ')})` : ''}`);
+  };
+
+  /** 화면 표시 — '운영진 · 총무 · 한강' */
+  const scopeLabel = (m) => {
+    if (positionOf(m) !== ROLES.STAFF) return '';
+    const sc = staffScope(m, venues);
+    return sc.all ? '코트장 전체' : sc.venueIds.map((id) => venues.find((v) => v.id === id)?.name).filter(Boolean).join(', ');
+  };
+  const roleText = (m) => {
+    const pos = positionOf(m);
+    return [pos, isTreasurer(m) && pos !== ROLES.MEMBER ? '총무' : '', scopeLabel(m)].filter(Boolean).join(' · ');
   };
 
   const staff = members.filter(isStaffMember);
@@ -216,20 +227,20 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
         <Text style={{ fontSize: 12, fontWeight: '700', marginBottom: 6 }}>운영 담당 ({staff.length}명)</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {staff.map((m) => (
-            <Chip key={m.id} tone={roleTone(m.role)}>{m.name} · {normalizeRole(m.role)}</Chip>
+            <Chip key={m.id} tone={roleTone(positionOf(m))}>{m.name} · {roleText(m)}</Chip>
           ))}
           {staff.length === 0 && <Text style={{ fontSize: 11, color: C.faint }}>지정된 운영 담당이 없습니다.</Text>}
         </View>
         <Text style={{ fontSize: 10, color: C.faint, marginTop: 8, lineHeight: 15 }}>
-          <Text style={{ fontWeight: '700' }}>운영진 · 리드 · 회원</Text>은 운영 담당이 정할 수 있고,
-          <Text style={{ fontWeight: '700' }}> 회장 · 총무</Text>는 회장만 정합니다. 인원 제한은 없습니다.
+          역할 임명은 <Text style={{ fontWeight: '700' }}>회장</Text>과 회장이 세운 <Text style={{ fontWeight: '700' }}>운영진 대표</Text>가 합니다.
+          운영진 대표는 운영진·총무·회원을 정하고, 회장·운영진 대표 자리는 회장만 정합니다. 인원 제한은 없습니다.
         </Text>
       </Card>
 
       {/* 역할이 뭘 할 수 있는지 — 임명하기 전에 확인 */}
       <SectionTitle>역할별 권한</SectionTitle>
       <Card>
-        {ASSIGNABLE_ROLES.map((r, i) => (
+        {[ROLES.PRESIDENT, ROLES.HEAD, ROLES.STAFF, ROLES.MANAGER, ROLES.MEMBER].map((r, i) => (
           <View
             key={r}
             style={{
@@ -237,12 +248,13 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
               borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4',
             }}
           >
-            <View style={{ width: 54 }}><Chip tone={roleTone(r)}>{r}</Chip></View>
+            <View style={{ width: 104 }}><Chip tone={roleTone(r)}>{r}</Chip></View>
             <Text style={{ flex: 1, fontSize: 11, color: C.sub, lineHeight: 16 }}>{ROLE_DESC[r]}</Text>
           </View>
         ))}
         <Text style={{ fontSize: 10, color: C.faint, marginTop: 8, lineHeight: 15 }}>
-          회비·지출 내역은 회장·총무만 볼 수 있습니다. 리드는 배정된 코트장의 일정·대진만 다룹니다.
+          총무는 따로 있는 자리가 아니라 운영진(또는 운영진 대표)에게 켜는 회비 관리 권한입니다.
+          운영진은 「코트장 전체」 또는 「선택한 코트장만」 맡습니다(예전 '리드' = 선택한 코트장만).
         </Text>
       </Card>
 
@@ -398,7 +410,7 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                       <Text style={{ fontSize: 14, fontWeight: '700' }}>{m.name}</Text>
-                      {isStaffRole(m.role) && <Chip tone={roleTone(m.role)}>{m.role}</Chip>}
+                      {isStaffMember(m) && <Chip tone={roleTone(positionOf(m))}>{[positionOf(m), isTreasurer(m) ? '총무' : ''].filter(Boolean).join(' · ')}</Chip>}
                       {!!m.grade && <Chip tone="lime">{m.grade}조</Chip>}
                       {!!m.busu && <Chip tone="soft">{m.busu}</Chip>}
                       {eff.value != null && <Chip tone="outline">NTRP {eff.value.toFixed(1)}</Chip>}
@@ -537,28 +549,55 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                     </View>
                   )}
 
-                  {/* 역할 지정 — 겸임을 허용한다.
-                     운영진이면서 화요일 코트를 맡는 리드는 흔하다. 하나만
-                     고르게 하면 "리드로 하면 운영 화면이 안 나오고, 운영진으로
-                     하면 내 코트 화면이 안 나온다"가 된다. */}
-                  {(() => {
-                    const options = assignableRolesFor(myRole, m.role);
-                    if (!options.length) return null;
-                    const cur = memberRoles(m);
+                  {/* 역할 — 직책 하나 + (운영진이면) 운영 범위 + 총무 켜기. 누르면 바로 저장 */}
+                  {canAppoint && canEditRolesOf(myRole, m) && (() => {
+                    const pos = positionOf(m);
+                    const sc = staffScope(m, venues);
+                    const tre = isTreasurer(m);
+                    const positions = POSITION_ROLES.filter((r) => !TOP_ROLES.includes(r) || canAssignRole(myRole, m.role, r));
                     return (
                       <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: '#e7e5e4', paddingTop: 10 }}>
-                        <Label hint="여러 개 고를 수 있습니다 (예: 운영진 + 리드)">역할</Label>
+                        <Label hint="누르면 바로 바뀝니다">직책</Label>
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                          {options.map((r) => (
-                            <Chip
-                              key={r}
-                              tone={cur.includes(r) ? 'green' : 'outline'}
-                              onPress={() => toggleRole(m, r)}
-                            >{r}</Chip>
+                          {positions.map((r) => (
+                            <Chip key={r} tone={pos === r ? 'green' : 'outline'} onPress={() => pos !== r && applyRoles(m, r)}>{r}</Chip>
                           ))}
                         </View>
-                        <Text style={{ fontSize: 10, color: C.faint, marginTop: 6, lineHeight: 15 }}>
-                          {cur.map((r) => ROLE_DESC[r]).filter(Boolean).join('\n')}
+
+                        {pos === ROLES.STAFF && venues.length > 0 && (
+                          <View style={{ marginTop: 10 }}>
+                            <Label hint="이 운영진이 맡는 코트장">운영 범위</Label>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                              <Chip tone={sc.all ? 'green' : 'outline'} onPress={() => !sc.all && applyRoles(m, pos, { venueIds: [] })}>코트장 전체</Chip>
+                              {venues.map((v) => {
+                                const on = !sc.all && sc.venueIds.includes(v.id);
+                                return (
+                                  <Chip key={v.id} tone={on ? 'green' : 'outline'}
+                                    onPress={() => {
+                                      const cur = sc.all ? [] : sc.venueIds;
+                                      applyRoles(m, pos, { venueIds: on ? cur.filter((x) => x !== v.id) : [...cur, v.id] });
+                                    }}>{v.name}</Chip>
+                                );
+                              })}
+                            </View>
+                            <Text style={{ fontSize: 10, color: C.faint, marginTop: 5, lineHeight: 15 }}>
+                              코트장을 고르면 그 코트장의 일정·대진·회원만 다룹니다. 모두 끄면 코트장 전체입니다.
+                            </Text>
+                          </View>
+                        )}
+
+                        {(pos === ROLES.STAFF || pos === ROLES.HEAD) && (
+                          <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.text }}>총무 (회비 관리)</Text>
+                              <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 2, lineHeight: 15 }}>켜면 회비·지출·정산을 보고 관리합니다</Text>
+                            </View>
+                            <Chip tone={tre ? 'green' : 'outline'} onPress={() => applyRoles(m, pos, { treasurer: !tre })}>{tre ? '켜짐' : '꺼짐'}</Chip>
+                          </View>
+                        )}
+
+                        <Text style={{ fontSize: 10, color: C.faint, marginTop: 8, lineHeight: 15 }}>
+                          {[ROLE_DESC[pos], tre && pos !== ROLES.MEMBER ? ROLE_DESC[ROLES.MANAGER] : ''].filter(Boolean).join('\n')}
                         </Text>
                       </View>
                     );
@@ -630,7 +669,7 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
               <View style={{ marginTop: 12 }}>
                 <Label hint="나중에 회원 목록에서 바꿀 수 있습니다">직책</Label>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
-                  {assignableRolesFor(myRole, ROLES.MEMBER).map((r) => (
+                  {(canAppoint ? POSITION_ROLES.filter((r) => canAssignRole(myRole, ROLES.MEMBER, r)) : [ROLES.MEMBER]).map((r) => (
                     <Chip key={r} tone={nm.role === r ? 'green' : 'outline'}
                       onPress={() => setNm({ ...nm, role: r })}>{r}</Chip>
                   ))}
@@ -672,7 +711,11 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                   const data = {
                     name: nm.name.trim(), gender: nm.gender, grade: nm.grade,
                     busu: nm.busu || '', region: nm.region || '',
-                    role: canAssignRole(myRole, ROLES.MEMBER, nm.role) ? nm.role : ROLES.MEMBER,
+                    ...(() => {
+                      const r = canAppoint && canAssignRole(myRole, ROLES.MEMBER, nm.role) ? nm.role : ROLES.MEMBER;
+                      const pl = rolesPayload([r]);
+                      return { role: pl.role, roles: pl.roles };
+                    })(),
                     venueIds: nm.venueIds || [],
                   };
                   const s = (nm.startedAt || '').trim();

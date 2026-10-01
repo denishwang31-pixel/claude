@@ -20,11 +20,31 @@
    여러 곳에 흩어져 있어 이름을 바꿨는데도 곳곳에 옛 이름이 남았다. */
 export const APP_NAME = 'Court';
 
+/* ============================================================
+   역할 (2026-10 단순화 — 앱 주인)
+
+   예전: 회장 · 총무 · 운영진 · 리드 · 회원 — 다섯 가지가 서로 겹쳐 클럽마다 맞추기 어려웠다.
+   지금:
+     회장          모든 권한. 운영진 대표를 임명한다.
+     운영진 대표   역할 임명을 위임받는다(회장·운영진 대표 자리는 못 건드림).
+     운영진        일정·대진·회원 운영. 범위는 「코트장 전체」 또는 「선택한 코트장만」
+                   (예전 '리드' = 선택한 코트장만 맡는 운영진)
+     총무          운영진에게 켜는 회비 관리 권한(on/off). 역할 목록(roles)에 '총무'가 같이 들어간다.
+     회원
+
+   저장 형태
+     roles         : ['운영진', '총무']  ← 실제 값(겸임)
+     role          : '총무'              ← 그중 가장 넓은 것(보안 규칙·옛 문서 호환)
+     staffVenueIds : ['v1']              ← 운영진 범위. 비어 있으면 코트장 전체
+   '리드'·'책임리더'는 예전 데이터 — 읽을 때는 '선택한 코트장만 맡는 운영진'으로 본다.
+   ⚠️ firestore.rules 의 역할 함수와 반드시 같아야 한다.
+   ============================================================ */
 export const ROLES = {
   PRESIDENT: '회장',
+  HEAD: '운영진 대표',
   MANAGER: '총무',
   STAFF: '운영진',
-  LEAD: '리드',
+  LEAD: '리드',        // 예전 이름 — 새로 임명하지 않는다(= 선택한 코트장만 맡는 운영진)
   MEMBER: '회원',
 };
 
@@ -33,17 +53,23 @@ export const LEGACY_ROLE = { 책임리더: ROLES.LEAD };
 export const normalizeRole = (role) => LEGACY_ROLE[role] || role || ROLES.MEMBER;
 
 /** 운영 권한을 가진 역할 (회원 제외 전부) */
-export const STAFF_ROLES = [ROLES.PRESIDENT, ROLES.MANAGER, ROLES.STAFF, ROLES.LEAD];
+export const STAFF_ROLES = [ROLES.PRESIDENT, ROLES.HEAD, ROLES.MANAGER, ROLES.STAFF, ROLES.LEAD];
 
-/** 임명 가능한 역할 (회장이 부여) */
-export const ASSIGNABLE_ROLES = [ROLES.PRESIDENT, ROLES.MANAGER, ROLES.STAFF, ROLES.LEAD, ROLES.MEMBER];
+/** 읽을 때 알아보는 역할(예전 '리드' 포함) */
+export const KNOWN_ROLES = [ROLES.PRESIDENT, ROLES.HEAD, ROLES.MANAGER, ROLES.STAFF, ROLES.LEAD, ROLES.MEMBER];
+
+/** 지금 임명하는 자리 — 직책(하나) + 총무(켜고 끄기) */
+export const ASSIGNABLE_ROLES = [ROLES.PRESIDENT, ROLES.HEAD, ROLES.MANAGER, ROLES.STAFF, ROLES.MEMBER];
+/** 직책 — 이 중 하나 */
+export const POSITION_ROLES = [ROLES.MEMBER, ROLES.STAFF, ROLES.HEAD, ROLES.PRESIDENT];
 
 /** 역할 설명 — 회원 관리 화면에서 보여준다 */
 export const ROLE_DESC = {
-  [ROLES.PRESIDENT]: '모든 권한 + 역할 임명',
-  [ROLES.MANAGER]: '운영 전반 + 회비·지출',
-  [ROLES.STAFF]: '일정·대진·회원 운영 (회비 제외)',
-  [ROLES.LEAD]: '내가 맡은 코트장만 운영',
+  [ROLES.PRESIDENT]: '모든 권한 · 운영진 대표 임명',
+  [ROLES.HEAD]: '운영진 운영 + 역할 임명(회장에게 위임받음)',
+  [ROLES.MANAGER]: '회비·지출 관리 (운영진에게 켜는 권한)',
+  [ROLES.STAFF]: '일정·대진·회원 운영 — 코트장 전체 또는 선택한 코트장만',
+  [ROLES.LEAD]: '선택한 코트장만 맡는 운영진(예전 이름)',
   [ROLES.MEMBER]: '조회 · 본인 참석 체크',
 };
 
@@ -53,27 +79,21 @@ export const isStaffRole = (role) => STAFF_ROLES.includes(normalizeRole(role));
 /** 회비·지출을 볼 수 있는 역할 — 회장·총무만 */
 export const canSeeFees = (role) => [ROLES.PRESIDENT, ROLES.MANAGER].includes(normalizeRole(role));
 
-/** 모든 코트를 볼 수 있는 역할 — 리드는 자기 코트만 */
+/** 역할만으로 모든 코트를 보는가 — 운영진은 범위(staffVenueIds)를 따로 본다(staffScope) */
 export const canSeeAllVenues = (role) =>
-  [ROLES.PRESIDENT, ROLES.MANAGER, ROLES.STAFF].includes(normalizeRole(role));
+  [ROLES.PRESIDENT, ROLES.HEAD, ROLES.MANAGER, ROLES.STAFF].includes(normalizeRole(role));
 
 /** 하위호환 */
 export const isAdminRole = (role) => isStaffRole(role);
 
-/** 역할 임명 권한 — 회장만 (회장·총무를 세울 수 있는 사람) */
-export const canAppointRole = (role) => normalizeRole(role) === ROLES.PRESIDENT;
+/** 역할 임명 권한 — 회장, 그리고 위임받은 운영진 대표 */
+export const canAppointRole = (role) => [ROLES.PRESIDENT, ROLES.HEAD].includes(normalizeRole(role));
 
-/* 운영진도 일상 역할은 정할 수 있어야 한다.
+/** 회장만 정할 수 있는 자리 — 운영진 대표도 이 두 자리는 못 세우고 못 내린다 */
+export const TOP_ROLES = [ROLES.PRESIDENT, ROLES.HEAD];
 
-   회장 한 사람만 임명할 수 있으면 "리드 한 명 지정"에도 회장을 불러야 한다.
-   그렇다고 아무나 회장·총무를 세우게 하면 권한이 위로 새어 나간다.
-   그래서 위 두 자리(회장·총무)만 회장이 정하고, 나머지는 운영 담당이 정한다. */
-
-/** 운영진 이하 역할 — 회장이 아니어도 정할 수 있다 */
-export const DAILY_ROLES = [ROLES.STAFF, ROLES.LEAD, ROLES.MEMBER];
-
-/** 회장만 정할 수 있는 자리 */
-export const TOP_ROLES = [ROLES.PRESIDENT, ROLES.MANAGER];
+/** 운영진 대표가 정할 수 있는 자리 */
+export const DAILY_ROLES = [ROLES.MANAGER, ROLES.STAFF, ROLES.LEAD, ROLES.MEMBER];
 
 /**
  * actor 가 target 인 사람을 nextRole 로 바꿀 수 있는가.
@@ -82,10 +102,17 @@ export const TOP_ROLES = [ROLES.PRESIDENT, ROLES.MANAGER];
 export const canAssignRole = (actorRole, targetRole, nextRole) => {
   const actor = normalizeRole(actorRole);
   if (actor === ROLES.PRESIDENT) return true;              // 회장은 전부
-  if (!isStaffRole(actor)) return false;                   // 일반 회원은 불가
-  // 운영 담당 — 위 두 자리는 건드리지 못한다 (올리는 것도, 내리는 것도)
-  return DAILY_ROLES.includes(nextRole)
-    && DAILY_ROLES.includes(normalizeRole(targetRole));
+  if (actor !== ROLES.HEAD) return false;                  // 임명은 회장·운영진 대표만
+  return !TOP_ROLES.includes(normalizeRole(nextRole))
+    && !TOP_ROLES.includes(normalizeRole(targetRole));
+};
+
+/** 사람 단위 — 겸임까지 보고 판단(대상이 roles 에 회장·대표를 하나라도 갖고 있으면 대표는 못 바꾼다) */
+export const canEditRolesOf = (actorRole, target) => {
+  const actor = normalizeRole(actorRole);
+  if (actor === ROLES.PRESIDENT) return true;
+  if (actor !== ROLES.HEAD) return false;
+  return !memberRoles(target).some((r) => TOP_ROLES.includes(r));
 };
 
 /** 이 사람이 지금 고를 수 있는 역할 목록 */
@@ -96,33 +123,25 @@ export const assignableRolesFor = (actorRole, targetRole) =>
 export const VIEW_MODES = [
   { key: null, label: '내 역할' },
   { key: 'president', label: '회장' },
+  { key: 'head', label: '운영진 대표' },
   { key: 'manager', label: '총무' },
   { key: 'staff', label: '운영진' },
-  { key: 'lead', label: '리드' },
+  { key: 'lead', label: '운영진(코트장)' },
   { key: 'member', label: '회원' },
 ];
 
 /** 역할 서열 — 숫자가 작을수록 권한이 넓다 */
 export const ROLE_RANK = {
-  [ROLES.PRESIDENT]: 0, [ROLES.MANAGER]: 1, [ROLES.STAFF]: 2, [ROLES.LEAD]: 3, [ROLES.MEMBER]: 4,
+  [ROLES.PRESIDENT]: 0, [ROLES.HEAD]: 1, [ROLES.MANAGER]: 2, [ROLES.STAFF]: 3, [ROLES.LEAD]: 4, [ROLES.MEMBER]: 5,
 };
-export const roleRank = (role) => ROLE_RANK[normalizeRole(role)] ?? 4;
+export const roleRank = (role) => ROLE_RANK[normalizeRole(role)] ?? 5;
 
 /* ============================================================
-   역할 겸임 — 한 사람이 운영진이면서 리드일 수 있다
+   역할 겸임 — 직책 하나 + 총무
 
-   실제 동호회에서는 겸임이 기본이다. 운영진이면서 화요일 코트를 맡고,
-   총무가 리드를 겸하기도 한다. 역할을 하나만 고르게 하면 둘 중 하나를
-   포기해야 하고, 그러면 "리드로 해 두면 회비를 못 보고, 총무로 해 두면
-   내 코트 화면이 안 나온다"가 된다.
-
-   저장 형태
-     roles : ['운영진', '리드']   ← 실제 값
-     role  : '운영진'             ← 그중 가장 넓은 권한 (대표 역할)
-
-   role 을 계속 두는 이유는 보안 규칙과 옛 데이터 때문이다. 규칙은
-   role 문자열 하나를 보고 판단하고, roles 가 없던 시절 문서도 아직 있다.
-   그래서 쓸 때 둘을 같이 맞춰 둔다 — 읽는 쪽은 memberRoles 만 쓰면 된다.
+   roles 를 계속 배열로 두는 이유: 총무는 운영진(또는 운영진 대표)에게 '켜는' 권한이라
+   한 사람이 ['운영진', '총무'] 처럼 둘을 든다. role 은 그중 가장 넓은 것(대표 역할)으로
+   보안 규칙과 옛 문서를 위해 같이 맞춰 둔다 — 읽는 쪽은 memberRoles 만 쓰면 된다.
    ============================================================ */
 
 /** 이 회원의 역할 목록. roles 가 없으면 옛 문서이므로 role 하나로 본다 */
@@ -130,7 +149,7 @@ export function memberRoles(member) {
   const list = Array.isArray(member?.roles) ? member.roles : null;
   const cleaned = (list || [])
     .map(normalizeRole)
-    .filter((r) => ASSIGNABLE_ROLES.includes(r));
+    .filter((r) => KNOWN_ROLES.includes(r));
   if (cleaned.length) return [...new Set(cleaned)];
   return [normalizeRole(member?.role)];
 }
@@ -147,17 +166,58 @@ export const hasRole = (member, role) =>
 export function rolesPayload(list) {
   const cleaned = [...new Set((list || [])
     .map(normalizeRole)
-    .filter((r) => ASSIGNABLE_ROLES.includes(r)))];
+    .filter((r) => KNOWN_ROLES.includes(r)))];
   const roles = cleaned.length ? cleaned : [ROLES.MEMBER];
-  /* '회원'은 "아무 역할 없음"이라 다른 역할과 같이 들 이유가 없다.
-     운영진이면서 회원인 상태는 의미가 없고 화면만 어지럽힌다. */
+  /* '회원'은 "아무 역할 없음"이라 다른 역할과 같이 들 이유가 없다. */
   const withoutMember = roles.filter((r) => r !== ROLES.MEMBER);
   const final = withoutMember.length ? withoutMember : [ROLES.MEMBER];
   const sorted = final.sort((a, b) => roleRank(a) - roleRank(b));
   return { roles: sorted, role: sorted[0] };
 }
 
-/** 겸임까지 본 화면 표시 — '운영진 · 리드' */
+/* ---------- 직책 + 총무 + 운영 범위 (회원 관리 화면) ---------- */
+
+/** 직책 — 회장 / 운영진 대표 / 운영진 / 회원. 예전 '리드'·총무만 든 사람은 운영진으로 본다 */
+export function positionOf(member) {
+  const rs = memberRoles(member);
+  if (rs.includes(ROLES.PRESIDENT)) return ROLES.PRESIDENT;
+  if (rs.includes(ROLES.HEAD)) return ROLES.HEAD;
+  if (rs.some((r) => [ROLES.STAFF, ROLES.LEAD, ROLES.MANAGER].includes(r))) return ROLES.STAFF;
+  return ROLES.MEMBER;
+}
+
+/** 총무(회비 관리)를 켰는가 */
+export const isTreasurer = (member) => memberRoles(member).includes(ROLES.MANAGER);
+
+/**
+ * 운영 범위 — { all: true } 또는 { all: false, venueIds: [...] }
+ * staffVenueIds 가 있으면 그 코트장만. 없으면 전체 — 단 예전 '리드'는 코트장 문서의 leadId 로 맡은 곳만.
+ */
+export function staffScope(member, venues = []) {
+  const ids = Array.isArray(member?.staffVenueIds) ? member.staffVenueIds.filter(Boolean) : [];
+  if (ids.length) return { all: false, venueIds: ids };
+  const rs = memberRoles(member);
+  const legacyLead = rs.includes(ROLES.LEAD) && !rs.some((r) => [ROLES.PRESIDENT, ROLES.HEAD, ROLES.MANAGER, ROLES.STAFF].includes(r));
+  if (legacyLead) {
+    const led = (venues || []).filter((v) => v.leadId === member?.id).map((v) => v.id);
+    if (led.length) return { all: false, venueIds: led };
+  }
+  return { all: true, venueIds: [] };
+}
+
+/**
+ * 직책·총무·범위 → 저장할 값 { roles, role, staffVenueIds }
+ * 회원이면 총무·범위를 지운다. 예전 '리드'는 운영진 + 선택 코트장으로 바뀐다.
+ */
+export function positionPayload(position, { treasurer = false, venueIds = [] } = {}) {
+  const pos = POSITION_ROLES.includes(position) ? position : ROLES.MEMBER;
+  if (pos === ROLES.MEMBER) return { ...rolesPayload([ROLES.MEMBER]), staffVenueIds: [] };
+  const list = [pos, ...(treasurer ? [ROLES.MANAGER] : [])];
+  const scoped = pos === ROLES.STAFF ? [...new Set((venueIds || []).filter(Boolean))] : [];
+  return { ...rolesPayload(list), staffVenueIds: scoped };
+}
+
+/** 화면 표시 — '운영진 · 총무', '운영진(한강) ' 등 */
 export const rolesLabel = (member) => memberRoles(member).join(' · ');
 
 /** 겸임 중 하나라도 운영 권한이 있으면 운영 담당이다 */
@@ -167,6 +227,7 @@ export const canSeeFeesMember = (member) => memberRoles(member).some(canSeeFees)
 /** 보기 모드 → 그 모드가 흉내내는 역할 */
 export const VIEW_MODE_ROLE = {
   president: ROLES.PRESIDENT,
+  head: ROLES.HEAD,
   manager: ROLES.MANAGER,
   staff: ROLES.STAFF,
   lead: ROLES.LEAD,
@@ -183,6 +244,7 @@ export const viewModesFor = (role) => {
 export const roleTone = (role) => {
   const r = normalizeRole(role);
   if (r === ROLES.PRESIDENT) return 'green';
+  if (r === ROLES.HEAD) return 'lime';
   if (r === ROLES.MANAGER) return 'soft';
   return isStaffRole(r) ? 'outline' : 'default';
 };

@@ -119,11 +119,12 @@ export default function Home() {
     if (viewMode && !myViewModes.some((v) => v.key === viewMode)) setViewMode(null);
   }, [viewMode, myViewModes]);
   const scopeIds = useMemo(() => scopeVenues.map((v) => v.id), [scopeVenues]);
-  const mode = viewMode || (realStaff ? 'staff' : 'member');
+  /* 선택한 코트장만 맡는 운영진은 '담당 코트' 모드(예전 리드) */
+  const mode = viewMode || (realStaff ? (seeAllVenues ? 'staff' : 'lead') : 'member');
   const visible = useMemo(() => {
     const upcoming = meetings.filter((m) => !m.canceled && m.date >= today());
     const inScope = upcoming.filter((m) => {
-      /* 회장·총무·운영진은 전 코트장의 일정을 본다. 리드는 맡은 코트장만 */
+      /* 회장·운영진 대표·운영진(전체)은 전 코트장의 일정을 본다. 선택한 코트장만 맡는 운영진은 그곳만 */
       if (seeAllVenues) return true;
       const mineGroup = m.venueId ? scopeIds.includes(m.venueId) : scopeIds.length === 0;
       const asGuest = (m.guests || []).some((g) => g.uid === me);
