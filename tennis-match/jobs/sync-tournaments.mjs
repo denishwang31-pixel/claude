@@ -45,9 +45,16 @@ async function main() {
     try {
       const html = await (await fetch(`https://kato.kr/openGame/${id}`, { signal: AbortSignal.timeout(20000) })).text();
       const body = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ');
-      const i = Math.max(0, body.search(/대회기간|접수기간|신청기간/));
+      const i = Math.max(0, body.indexOf('competition-title'));
+      const part = body.slice(i, i + 30000)
+        .replace(/<\/(td|th|li|dt|dd|p|div|tr|h\d)>/gi, ' | ')
+        .replace(/<br\s*\/?>/gi, ' / ')
+        .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').replace(/(\s*\|\s*)+/g, ' | ');
       log(`===== KATO openGame ${id} (${html.length}자)`);
-      log(body.slice(Math.max(0, i - 4000), i + 9000).replace(/\s+/g, ' ').replace(/></g, '>\n<'));
+      log(part.slice(0, 6000));
+      const j = body.search(/접수기간|신청기간|참가신청기간|접수 기간/);
+      log(`----- 원문(접수 칸 주변, 위치 ${j})`);
+      if (j > 0) log(body.slice(j - 1200, j + 1500).replace(/\s+/g, ' '));
     } catch (e) { log(`KATO openGame ${id} 실패: ${e?.message || e}`); }
   }
 
