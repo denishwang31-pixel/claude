@@ -3,15 +3,15 @@
    예전엔 내 정보를 고치려면 [회원 목록]에서 내 이름을 찾아 눌러야 했다.
    아무도 거기서 찾지 않는다(앱 주인: "내 프로필 조회 및 수정이 없어").
 
-   본인이 고치는 것: 이름 · 성별 · 부수 · 활동 지역 · 테니스 시작 년월(처음 한 번)
-   보기만 하는 것: 역할 · 클럽 조 · 소속 코트장(운영진이 정한다) · NTRP · 로그인 방법
+   본인이 고치는 것: 이름 · 성별 · 활동 지역 · 테니스 시작 년월(처음 한 번)
+   보기만 하는 것: 부수 · 조 · 역할 · 소속 코트장(운영진이 정한다) · NTRP · 로그인 방법
    생년월일·전화번호는 받지 않는다 — 클럽 운영에 필요 없고, 받으면 가입을 망설이게 된다. */
 import React, { useState } from 'react';
 import { View, Text } from 'react-native';
 import { updateMemberProfile } from '../lib/firestore';
 import { saveMyProfile } from '../lib/auth';
 import { auth } from '../../firebaseConfig';
-import { BUSU, BUSU_KEYS, memberRoles, isStaffRole } from '../lib/constants';
+import { BUSU, memberRoles, isStaffRole } from '../lib/constants';
 import { effectiveNtrp, careerText } from '../lib/ntrp';
 import { loginMethodOf, profilePatch } from '../lib/profile';
 import { Label, MonthField } from './pickers';
@@ -43,7 +43,7 @@ export function Profile({ clubId, club, me, meVal, venues = [], flash, onOpen })
 
   const start = () => {
     setD({
-      name: m.name || '', gender: m.gender || 'M', busu: m.busu || '',
+      name: m.name || '', gender: m.gender || 'M',
       region: m.region || '', startedAt: m.startedAt ? m.startedAt.slice(0, 7) : '',
     });
     setEditing(true);
@@ -92,7 +92,6 @@ export function Profile({ clubId, club, me, meVal, venues = [], flash, onOpen })
           <Card style={{ paddingVertical: 4 }}>
             <Row first k="이름" v={m.name} />
             <Row k="성별" v={m.gender === 'F' ? '여' : m.gender === 'M' ? '남' : ''} />
-            <Row k="부수" v={m.busu ? `${m.busu} · ${BUSU.find((b) => b.key === m.busu)?.desc || ''}` : '미입력'} />
             <Row k="활동 지역" v={m.region} />
             <Row k="구력" v={m.startedAt ? `${m.startedAt.slice(0, 7)} 시작 · ${careerText(m.startedAt)}` : '미입력'} />
           </Card>
@@ -101,6 +100,7 @@ export function Profile({ clubId, club, me, meVal, venues = [], flash, onOpen })
           <Card style={{ paddingVertical: 4 }}>
             <Row first k="클럽" v={club?.name} />
             <Row k="역할" v={memberRoles(m).join(' · ')} />
+            <Row k="부수" v={m.busu ? `${m.busu} · ${BUSU.find((b) => b.key === m.busu)?.desc || ''}` : '미배정'} />
             <Row k="클럽 조" v={m.grade ? `${m.grade}조` : '미배정'} />
             <Row k="소속 코트장" v={myVenues.join(', ') || '전체'} />
             <Row k="NTRP" v={eff.value != null ? eff.value.toFixed(1) : '미설정'} onPress={() => onOpen?.('ntrp')} />
@@ -112,7 +112,7 @@ export function Profile({ clubId, club, me, meVal, venues = [], flash, onOpen })
             {!!email && <Row k="이메일" v={email} />}
           </Card>
           <Text style={{ fontSize: 11, color: C.faint, marginTop: 10, lineHeight: 16 }}>
-            생년월일·전화번호는 받지 않습니다. 조·역할·소속 코트장은 운영진에게 요청하세요.
+            생년월일·전화번호는 받지 않습니다. 부수·조·역할·소속 코트장은 운영진이 정합니다. 바꿔야 하면 운영진에게 요청하세요.
           </Text>
         </>
       ) : (
@@ -126,16 +126,6 @@ export function Profile({ clubId, club, me, meVal, venues = [], flash, onOpen })
               <Label hint="혼합복식 대진에 씁니다">성별</Label>
               <Segmented options={[{ key: 'M', label: '남' }, { key: 'F', label: '여' }]}
                 value={d.gender} onChange={(v) => setD({ ...d, gender: v })} />
-            </View>
-
-            <View style={{ marginTop: S.md }}>
-              <Label hint="대회 참가 자격 기준">부수</Label>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
-                <Chip tone={!d.busu ? 'green' : 'outline'} onPress={() => setD({ ...d, busu: '' })}>모름</Chip>
-                {BUSU_KEYS.map((b) => (
-                  <Chip key={b} tone={d.busu === b ? 'green' : 'outline'} onPress={() => setD({ ...d, busu: b })}>{b}</Chip>
-                ))}
-              </View>
             </View>
 
             <View style={{ marginTop: S.md }}>

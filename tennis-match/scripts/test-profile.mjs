@@ -11,10 +11,10 @@ eq(loginMethodOf({ uid: 'x', isAnonymous: true, providerData: [] }), '둘러보�
 eq(loginMethodOf(null), '', '로그인 안 함');
 
 eq(profilePatch({ name: '  ' }, {}).error, '이름을 입력하세요', '이름 필수');
-eq(profilePatch({ name: '김코트', gender: 'F', busu: '3부', region: '서울 송파구' }, {}).patch,
-  { name: '김코트', gender: 'F', busu: '3부', region: '서울 송파구' }, '기본 칸만');
-eq(profilePatch({ name: 'a', grade: 'A', role: '회장', venueIds: ['v'] }, {}).patch,
-  { name: 'a', gender: 'M', busu: '', region: '' }, '조·역할·코트장은 본인이 못 바꾼다');
+eq(profilePatch({ name: '김코트', gender: 'F', region: '서울 송파구' }, {}).patch,
+  { name: '김코트', gender: 'F', region: '서울 송파구' }, '기본 칸만');
+eq(profilePatch({ name: 'a', busu: '1부', grade: 'A', role: '회장', venueIds: ['v'] }, {}).patch,
+  { name: 'a', gender: 'M', region: '' }, '부수·조·역할·코트장은 본인이 못 바꾼다');
 eq(profilePatch({ name: 'a', startedAt: '2019-03' }, {}).patch.startedAt, '2019-03-01', '구력 처음 넣기');
 eq(profilePatch({ name: 'a', startedAt: '2019-03' }, { startedAt: '2015-01-01' }).patch.startedAt, undefined, '이미 있으면 덮어쓰지 않는다');
 eq(profilePatch({ name: 'a', startedAt: '2019-13' }, {}).error, '테니스 시작 년월을 확인하세요', '잘못된 달');

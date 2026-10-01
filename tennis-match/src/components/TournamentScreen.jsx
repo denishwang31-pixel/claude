@@ -14,8 +14,7 @@ import {
   TOURNAMENT_FORMAT, TOURNAMENT_FORMATS, BUSU_KEYS, busuToNtrp, screenRef,
 } from '../lib/constants';
 import { effectiveNtrp } from '../lib/ntrp';
-import { GRADE_SKILL } from '../lib/constants';
-import { fillFromClub, tournamentSkill, groupsByGrade, gradeCountFor, gradeSummary } from '../lib/grades';
+import { fillFromClub, tournamentSkill, groupsByGrade, gradeCountFor, gradeSummary, schemeOf } from '../lib/grades';
 import { GradeRows } from './GradeRows';
 import { TeamMatch } from './TeamMatchScreen';
 import { TeamLeague } from './TeamLeagueScreen';
@@ -63,21 +62,29 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
   /* 대회 등급 — 이 대회에만. 클럽 조와 상관없이 새로 매긴다(앱 주인).
      매긴 사람은 이 대회의 팀 짜기·그룹 나누기에서 NTRP 대신 이 등급을 실력으로 쓴다. */
   const [tgrades, setTgrades] = useState({});
+  const [tgScheme, setTgScheme] = useState('busu');      // 'busu'(1부~) | 'grade'(A~)
   const [tgCount, setTgCount] = useState(4);
   const [tgOpen, setTgOpen] = useState(false);
 
   const pickedList = members.filter((m) => picked[m.id]);
   /* 고른 사람의 대회 등급만 — 참가에서 뺀 사람 값은 버린다 */
-  const tg = Object.fromEntries(pickedList.filter((m) => tgrades[m.id]).map((m) => [m.id, tgrades[m.id]]));
+  const tgKeys = schemeOf(tgScheme).keys;
+  const tg = Object.fromEntries(pickedList.filter((m) => tgKeys.includes(tgrades[m.id])).map((m) => [m.id, tgrades[m.id]]));
   const hasTg = Object.keys(tg).length > 0;
   /** 이 대회에서 쓸 실력 — 대회 등급 > NTRP > 3.0 */
-  const skillIn = (m) => tournamentSkill(tg[m.id], effectiveNtrp(m).value) ?? 3.0;
+  const skillIn = (m) => tournamentSkill(tg[m.id], effectiveNtrp(m).value, tgScheme) ?? 3.0;
   /** 명단에 싣는 한 사람 — 대회 등급을 매겼으면 그 등급이 조·실력이 된다 */
-  const rosterOf = (m) => ({
-    id: m.id, name: m.name, gender: m.gender, busu: m.busu || '',
-    grade: tg[m.id] || m.grade || '',
-    ...(tg[m.id] ? { tgrade: tg[m.id], ntrp: GRADE_SKILL[tg[m.id]] } : { ntrp: effectiveNtrp(m).value ?? null }),
-  });
+  const rosterOf = (m) => {
+    const t = tg[m.id];
+    const r = {
+      id: m.id, name: m.name, gender: m.gender,
+      busu: (t && tgScheme === 'busu') ? t : (m.busu || ''),
+      grade: (t && tgScheme === 'grade') ? t : (m.grade || ''),
+      ntrp: effectiveNtrp(m).value ?? null,
+    };
+    if (t) { r.tgrade = t; r.ntrp = tournamentSkill(t, r.ntrp, tgScheme); }
+    return r;
+  };
 
   /* 화면에 그릴 회원 — 코트장·이름·부수로 좁힌다 */
   const shown = useMemo(() => {
@@ -111,7 +118,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
   /** 대회 등급 그대로 그룹 — A그룹, B그룹 … */
   const assignByGrade = () => {
     if (!hasTg) return flash('위 대회 등급을 먼저 매기세요');
-    const gs = groupsByGrade(pickedList.map((m) => m.id), tg);
+    const gs = groupsByGrade(pickedList.map((m) => m.id), tg, tgScheme);
     setSkillGroups(gs);
     return flash(`대회 등급대로 ${gs.length}개 그룹`);
   };
@@ -125,6 +132,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
       busuLimit,
       status: 'ongoing',
       tgrades: tg,
+      tgScheme,
     };
 
     /* 팀 리그 — 3팀 이상. 청백전과 저장 구조는 같고(roster + 편성 결과),
@@ -179,6 +187,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
         mode: 'skillGroups',
         skillGroups,
         tgrades: tg,
+        tgScheme,
         entries: [], groups: [], bracket: null,
         stage: 'skillGroups', status: 'ongoing',
       });
@@ -196,6 +205,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
       useGroupStage: useGroup,
       advancePerGroup: +advance,
       tgrades: tg,
+      tgScheme,
       entries,
       groups,
       bracket,
@@ -402,22 +412,29 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
           <Card>
             {!tgOpen && (
               <Text style={{ fontSize: 11.5, color: C.sub, lineHeight: 17 }}>
-                {hasTg ? gradeSummary(pickedList, (m) => tg[m.id], '등급') : '매기지 않으면 NTRP(없으면 클럽 조)로 팀과 그룹을 짭니다.'}
+                {hasTg ? gradeSummary(pickedList, (m) => tg[m.id], tgScheme) : '매기지 않으면 NTRP(없으면 클럽 조·부수)로 팀과 그룹을 짭니다.'}
               </Text>
             )}
             {tgOpen && (
               <>
-                <Text style={{ fontSize: 11, color: C.faint, lineHeight: 16 }}>
-                  클럽 조와 상관없이 이 대회에서만 쓰는 등급입니다(A 가 가장 높음). 매긴 사람은 팀 짜기·그룹 나누기에서 이 등급을 실력으로 씁니다.
-                  클럽 조는 바뀌지 않습니다.
+                <Segmented
+                  options={[{ key: 'busu', label: '부수식 (1부~)' }, { key: 'grade', label: '조식 (A~)' }]}
+                  value={tgScheme}
+                  onChange={(v) => { setTgScheme(v); setTgrades({}); }}
+                />
+                <Text style={{ fontSize: 11, color: C.faint, lineHeight: 16, marginTop: 8 }}>
+                  클럽 부수·조와 상관없이 이 대회에서만 쓰는 등급입니다({tgScheme === 'busu' ? '1부' : 'A'}가 가장 높음).
+                  매긴 사람은 팀 짜기·그룹 나누기에서 이 등급을 실력으로 씁니다. 회원의 부수·조는 바뀌지 않습니다.
+                  표기를 바꾸면 매긴 등급이 지워집니다.
                 </Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10, marginBottom: 10 }}>
                   <Btn small tone="ghost" onPress={() => {
-                    const f = fillFromClub(pickedList.map((m) => m.id), members);
+                    const f = fillFromClub(pickedList.map((m) => m.id), members, tgScheme);
                     setTgrades({ ...tgrades, ...f });
-                    setTgCount(gradeCountFor(Object.values(f)));
-                    flash(Object.keys(f).length ? `클럽 조로 ${Object.keys(f).length}명 채웠습니다` : '클럽 조가 있는 참가자가 없습니다');
-                  }}>클럽 조로 채우기</Btn>
+                    if (tgScheme === 'grade') setTgCount(gradeCountFor(Object.values(f)));
+                    const what = schemeOf(tgScheme).name;
+                    flash(Object.keys(f).length ? `클럽 ${what}로 ${Object.keys(f).length}명 채웠습니다` : `클럽 ${what}가 있는 참가자가 없습니다`);
+                  }}>{tgScheme === 'busu' ? '클럽 부수로 채우기' : '클럽 조로 채우기'}</Btn>
                   <Btn small tone="ghost" onPress={() => setTgrades({})}>모두 지우기</Btn>
                 </View>
                 <GradeRows
@@ -426,8 +443,8 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
                   onPick={(id, g) => setTgrades({ ...tgrades, [id]: g })}
                   count={tgCount}
                   onCount={setTgCount}
-                  unit="등급"
-                  note={(m) => [m.grade ? `클럽 ${m.grade}조` : '', effectiveNtrp(m).value != null ? `NTRP ${effectiveNtrp(m).value.toFixed(1)}` : ''].filter(Boolean).join(' · ')}
+                  scheme={tgScheme}
+                  note={(m) => [m.busu ? `클럽 ${m.busu}` : '', m.grade ? `${m.grade}조` : '', effectiveNtrp(m).value != null ? `NTRP ${effectiveNtrp(m).value.toFixed(1)}` : ''].filter(Boolean).join(' · ')}
                 />
               </>
             )}
@@ -462,7 +479,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
             </View>
             {hasTg && (
               <View style={{ marginTop: 8 }}>
-                <Btn small tone="ghost" onPress={assignByGrade}>대회 등급대로 나누기 (A그룹 · B그룹 …)</Btn>
+                <Btn small tone="ghost" onPress={assignByGrade}>대회 등급대로 나누기 ({tgScheme === 'busu' ? '1부 그룹 · 2부 그룹' : 'A그룹 · B그룹'} …)</Btn>
               </View>
             )}
 
@@ -489,7 +506,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
                         }}
                         style={{ backgroundColor: m.gender === 'F' ? C.femaleBg : C.maleBg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
                         <Text style={{ fontSize: 11, fontWeight: '700', color: m.gender === 'F' ? C.female : C.male }}>
-                          {m.name} {tg[m.id] ? `${tg[m.id]}등급` : skillIn(m).toFixed(1)}
+                          {m.name} {tg[m.id] ? schemeOf(tgScheme).label(tg[m.id]) : skillIn(m).toFixed(1)}
                         </Text>
                       </Pressable>
                     );

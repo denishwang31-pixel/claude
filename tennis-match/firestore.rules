@@ -108,10 +108,11 @@ service cloud.firestore {
                   || (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles'])
                       && isDailyRole(request.resource.data.role)
                       && isDailyRole(resource.data.get('role', '회원')))))
-          /* 본인은 자기 프로필을 고칠 수 있지만 역할과 클럽 조(grade)는 못 바꾼다.
-             조는 운영진이 매기는 실력 구분이라 본인이 올리면 뜻이 없어진다. */
+          /* 본인은 자기 프로필을 고칠 수 있지만 역할과 등급(부수 busu · 조 grade)은 못 바꾼다.
+             등급은 운영진이 매기는 실력 구분이라 본인이 올리면 뜻이 없어진다.
+             (가입할 때 적은 부수는 회원 문서를 처음 만들 때 들어간다 — create 라 여기와 무관) */
           || (request.auth.uid == memberId
-              && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'roles', 'grade']))
+              && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'roles', 'grade', 'busu']))
           || (
             isClubMember(clubId)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ntrpVotes'])

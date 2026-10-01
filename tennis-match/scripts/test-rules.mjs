@@ -256,7 +256,7 @@ await T('회장은 roles 로 회장 겸임도 지정 가능',
   assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem2'),
     { roles: ['총무', '리드'], role: '총무' })));
 await T('회원의 프로필 수정은 roles 를 안 건드리면 허용',
-  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { busu: '3부' })));
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { region: '서울 강남구' })));
 
 /* 이 블록이 바꿔 놓은 상태를 되돌린다.
    안 되돌리면 뒤 테스트가 "같은 값 쓰기"가 되어 diff() 가 비고, 규칙이
@@ -542,8 +542,14 @@ await T('일반 회원의 역할 변경 거부',
   assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem2'), { role: '총무' })));
 await T('본인이 자기 역할 승격 거부',
   assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { role: '회장' })));
-await T('회원 본인 프로필(성별) 수정 허용',
-  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { gender: 'M', grade: '' })));
+await T('회원 본인 프로필(성별·지역) 수정 허용',
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { gender: 'M', region: '서울 송파구' })));
+await T('본인이 자기 조 올리기 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { grade: 'A' })));
+await T('본인이 자기 부수 올리기 거부',
+  assertFails(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { busu: '1부' })));
+await T('운영진의 회원 부수·조 배정 허용',
+  assertSucceeds(updateDoc(doc(owner, 'clubs', CLUB, 'members', 'mem1'), { busu: '3부', grade: 'A' })));
 await T('운영진의 회원 삭제 허용',
   assertSucceeds(deleteDoc(doc(owner, 'clubs', CLUB, 'members', 'local:abc'))));
 await T('회장의 지출 등록 허용',
@@ -593,7 +599,7 @@ await T('회장의 구력 초기화 허용',
 await T('초기화 후 본인이 다시 입력 허용',
   assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { startedAt: '2019-03-01' })));
 await T('구력 잠금과 무관한 필드는 그대로 수정 가능',
-  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { busu: '4부' })));
+  assertSucceeds(updateDoc(doc(mem1, 'clubs', CLUB, 'members', 'mem1'), { region: '경기 성남시' })));
 // 뒤 테스트가 mem1 프로필을 쓰므로 startedAt 은 남겨둬도 무방
 
 console.log('\n[참가투표]');

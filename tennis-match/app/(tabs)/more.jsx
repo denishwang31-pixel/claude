@@ -44,6 +44,7 @@ import { DeleteAccount } from '../../src/components/DeleteAccountScreen';
 import { AppOps } from '../../src/components/AppOpsScreen';
 import { Legal } from '../../src/components/LegalScreen';
 import { Profile } from '../../src/components/ProfileScreen';
+import { GradeAssign } from '../../src/components/GradeAssignScreen';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card, SectionTitle, Chip, Btn, ListRow, Badge } from '../../src/components/ui';
 import { C, F } from '../../src/lib/theme';
@@ -121,6 +122,7 @@ const MENU_GROUPS = [
     items: [
       ['joinreq', 'joinreq', SCREEN.joinreq, '검색으로 들어온 신청을 승인'],
       ['invite', 'invite', SCREEN.invite, '초대코드·링크 보내기'],
+      ['grades', 'ntrp', SCREEN.grades, '부수(1부~) · 조(A~)를 회원별로 매기기'],
       ['attendance', 'attendance', SCREEN.attendance, null],
       ['feemgmt', 'fees', SCREEN.feemgmt, '회비 현황 · 납부 체크 · 지출 · 일회성 정산', 'fees'],
       ['reconcile', 'fees', SCREEN.reconcile, '거래내역 붙여넣기 → 자동 확인', 'fees'],
@@ -323,6 +325,7 @@ export default function More() {
       case 'courts': return <Courts {...{ clubId, courts, me, isAdmin, flash }} />;
       case 'coachreview': return <CoachReviewScreen {...{ uid: me, flash }} />;
       case 'appops': return <AppOps {...{ me, flash }} />;
+      case 'grades': return <GradeAssign {...{ clubId, members, venues, flash }} />;
       case 'profile': return <Profile {...{ clubId, club, me, meVal, venues, flash }} onOpen={setSub} />;
       case 'legal': return <Legal />;
       case 'deleteaccount': return <DeleteAccount {...{ clubId, me, members, flash }} />;

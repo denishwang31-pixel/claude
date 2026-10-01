@@ -15,7 +15,7 @@ export function loginMethodOf(user) {
 }
 
 /**
- * 저장할 값 만들기. 본인이 고칠 수 있는 칸만 담는다(조·역할·코트장은 운영진 몫).
+ * 저장할 값 만들기. 본인이 고칠 수 있는 칸만 담는다(부수·조·역할·코트장은 운영진 몫).
  * @returns { patch } 또는 { error }
  */
 export function profilePatch(draft, member) {
@@ -25,7 +25,6 @@ export function profilePatch(draft, member) {
   const patch = {
     name,
     gender: draft.gender === 'F' ? 'F' : 'M',
-    busu: draft.busu || '',
     region: draft.region || '',
   };
   /* 구력은 한 번 들어가면 잠긴다(대회 자격) — 비어 있을 때만 받는다 */

@@ -302,6 +302,7 @@ export const roundMinutesLabel = (v) => {
    ============================================================ */
 export const SCREEN = {
   profile: '내 프로필',
+  grades: '등급 배정',
   myfees: '내 회비',
   rank: '내 기록·랭킹',
   ntrp: 'NTRP 등급',
