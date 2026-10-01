@@ -34,6 +34,7 @@ import {
 } from '../lib/agenda';
 import { DateField, Label } from './pickers';
 import { Card, SectionTitle, Chip, Btn, Field, CheckRow } from './ui';
+import { GenderMark, genderCount } from './Mine';
 import { C, S, F } from '../lib/theme';
 import { todayYmd } from '../lib/today';
 
@@ -271,7 +272,9 @@ export function TournamentSignup({ clubId, t, me, meVal, isAdmin, onPickRoster, 
       {isAdmin && applicants.length > 0 && (
         <>
           <SectionTitle right={
-            <Text style={{ fontSize: 11, color: C.faint }}>{applicants.length}명</Text>
+            <Text style={{ fontSize: 11.5, color: C.sub, fontWeight: '700' }}>
+              {applicants.length}명 · {genderCount(applicants, (a) => a.gender || memberOf(a.uid)?.gender)}
+            </Text>
           }>신청자</SectionTitle>
           <Card>
             {needYear ? (
@@ -285,7 +288,7 @@ export function TournamentSignup({ clubId, t, me, meVal, isAdmin, onPickRoster, 
                     borderTopWidth: i ? 1 : 0, borderTopColor: C.border,
                   }}>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: C.text }}>{a.name || a.uid}</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: C.text }}><GenderMark gender={a.gender || m.gender} />{a.name || a.uid}</Text>
                       <Text style={{ fontSize: 11.5, color: st.checked ? C.green2 : C.sub }}>{st.checked ? '✓ ' : ''}{st.text}</Text>
                     </View>
                     {!!st.year && !st.checked && (
@@ -300,8 +303,8 @@ export function TournamentSignup({ clubId, t, me, meVal, isAdmin, onPickRoster, 
             ) : (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                 {applicants.map((a) => (
-                  <Chip key={a.uid} tone={a.gender === 'F' ? 'soft' : 'outline'}>
-                    {a.name || a.uid}
+                  <Chip key={a.uid} tone="outline">
+                    <GenderMark gender={a.gender || memberOf(a.uid)?.gender} />{a.name || a.uid}
                   </Chip>
                 ))}
               </View>

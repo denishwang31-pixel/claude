@@ -9,7 +9,7 @@ import {
   normRules, makeGuest, makeEntries, assignGroups, roundRobin, buildGroupMatches, schedule, buildLeague,
   moveEntry, swapPlayers, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
   scoreChoices, nameLookup, liveView, kdkTables, setKdkScore,
-  eligible, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam, partialPairs, replacePlayer, divRules, advanceOf, bracketPlan, leagueChampions,
+  eligible, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam, partialPairs, replacePlayer, divRules, advanceOf, bracketPlan, leagueChampions, groupSizesFor, gamesCheck, gamesFixes, teamGamesRange,
 } from '../src/lib/groupLeague.js';
 
 let pass = 0; let fail = 0;
@@ -341,6 +341,29 @@ console.log('[부·조마다 본선 진출 수 · 조별리그만]');
   eq(leagueChampions({ ...tl, rules: {} }).length, 0, '본선이 있는 대회는 조 1위를 우승으로 치지 않는다');
   const lv = liveView({ ...tl, name: 'x' });
   ok(lv.champion.includes('여자복식') && lv.groups.every((g) => g.advance === 0), '공개 보기 — 조별리그만 우승·진출 표시 없음');
+}
+
+console.log('[조마다 경기 수 같게]');
+{
+  eq(groupSizesFor(15, 2), [8, 7], '15팀 2개 조 → 8·7');
+  eq(groupSizesFor(6, 4), [2, 2, 1, 1], '조가 팀보다 많아도 깨지지 않는다');
+  eq([teamGamesRange(5, 3), teamGamesRange(5, 2), teamGamesRange(4, 0)], [[2, 3], [2, 2], [3, 3]], '홀수 조 × 홀수 경기는 한 팀이 한 경기 덜');
+  ok(!gamesCheck([3, 3], 3).ok, '3팀 조에 팀당 3경기는 안 된다(앱 주인 예)');
+  ok(!gamesCheck([8, 7], 0).ok, '풀리그인데 조 크기가 다르면 경기 수가 다르다');
+  ok(gamesCheck([8, 7], 6).ok, '팀당 6경기로 맞추면 된다');
+  ok(gamesCheck([4, 4], 0).ok && gamesCheck([5, 5], 2).ok, '같은 크기 풀리그 · 5팀 2경기는 된다');
+  ok(!gamesCheck([5, 5], 3).ok, '5팀 × 3경기는 한 팀이 모자란다');
+  const f = gamesFixes(6, 2, 3);
+  eq(f.map((x) => [x.kind, x.value]), [['perTeam', 2], ['groupCount', 1]], '6팀 2개 조 3경기 → 2경기로 줄이기 · 조 1개로');
+  const f2 = gamesFixes(15, 2, 0);
+  ok(f2.some((x) => x.kind === 'addTeams' && x.add === 1), '15팀 2개 조 → 1팀 더 모으면 8·8');
+  /* 실제로 짠 조도 같은 경기 수인지 — 부분 리그 */
+  for (const [n, k] of [[5, 2], [7, 4], [8, 6], [9, 4]]) {
+    const ids = Array.from({ length: n }, (_, i) => `t${i}`);
+    const c = Object.fromEntries(ids.map((i) => [i, 0]));
+    partialPairs(ids, k).forEach(([a, b]) => { c[a]++; c[b]++; });
+    eq([...new Set(Object.values(c))], [k], `${n}팀 × 팀당 ${k}경기 — 모두 ${k}경기`);
+  }
 }
 
 console.log(`\n조별리그 테스트: ${pass} 통과 / ${fail} 실패`);

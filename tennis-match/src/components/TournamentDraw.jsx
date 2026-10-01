@@ -18,18 +18,20 @@
    계산은 src/lib/groupLeague.js (테스트: scripts/test-groupleague.mjs).
    ============================================================ */
 import React, { useMemo, useState } from 'react';
-import { View, Text, Alert, ScrollView } from 'react-native';
+import { View, Text, Alert, ScrollView, Pressable } from 'react-native';
 import { updateTournament } from '../lib/firestore';
 import {
   normRules, RULE_LABELS, RANK_RULE_TEXT, TEAM_MODE, GROUP_METHOD, PLAY,
   EVENTS, eventOf, eligible, drawAll, redrawDivision, schedule, playersOfFn, addTeam, removeTeam,
   leagueQualifiers, nameLookup, progress, KDK_RANK_TEXT, divRules, advanceOf, bracketPlan, leagueChampions, standings,
+  groupSizesFor, gamesCheck, gamesFixes, gamesProblemText,
 } from '../lib/groupLeague';
 import { drawKdkAll, kdkOk } from '../lib/tournamentKdk';
 import { KdkDivView } from './KdkDivView';
 import { buildBracket, applyResult, championOf, orderBySeed } from '../lib/tournament';
 import { normalizeCourtNames } from '../lib/courtNames';
 import { GroupLeagueView } from './GroupLeagueView';
+import { mineStyle, MineLegend, GenderMark, genderCount } from './Mine';
 import { BracketTree } from './BracketTree';
 import { MatchGrid } from './MatchGrid';
 import { Card, SectionTitle, Chip, Btn, Field, EmptyState } from './ui';
@@ -203,6 +205,41 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
     for (let i = 0; i < gc; i++) n += Math.min(dr.advance, base + (i < extra ? 1 : 0));
     return bracketPlan(n);
   };
+  /* 조별 경기 수 점검 — 한 부 안에서 모든 팀이 같은 경기 수를 쳐야 한다.
+     작성 전에는 지금 기준으로 예상한 조 크기로(같은 등급끼리 나누기는 짜 봐야 알아서 제외) */
+  const gameIssues = () => {
+    if (!critUseGroups || critKdk || crit.groupMethod === GROUP_METHOD.GRADE) return [];
+    const r = critRules();
+    return critEvents.map((k) => {
+      const teams = teamsIn(k);
+      if (teams < 2) return null;
+      const gc = Math.max(1, Math.min(divRules(r, k).groupCount, teams));
+      const sizes = groupSizesFor(teams, gc);
+      const chk = gamesCheck(sizes, r.perTeam);
+      if (chk.ok) return null;
+      return { k, teams, gc, text: gamesProblemText(chk, r.perTeam), fixes: gamesFixes(teams, gc, r.perTeam) };
+    }).filter(Boolean);
+  };
+  /* 실제로 짠 조로 다시 점검 — 맞지 않으면 저장하지 않는다 */
+  const drawnIssues = (gs, r, keys) => keys.map((k) => {
+    const sizes = gs.filter((g) => g.div === k).map((g) => g.entryIds.length);
+    if (!sizes.length) return null;
+    const chk = gamesCheck(sizes, r.perTeam);
+    return chk.ok ? null : `${EVENTS[k].name}: ${gamesProblemText(chk, r.perTeam)}`;
+  }).filter(Boolean);
+  const applyFix = (iss, f) => {
+    if (f.kind === 'perTeam') { setCrit({ ...crit, perTeam: String(f.value) }); return; }
+    if (f.kind === 'groupCount') {
+      if (critEvents.length === 1) { setCrit({ ...crit, groupCount: String(f.value) }); return; }
+      setDivCrit(iss.k, 'groupCount', String(f.value));
+      setSplitOpen(true);
+    }
+  };
+  const fixLabel = (f) => (f.kind === 'perTeam'
+    ? `팀당 ${f.value}경기로 맞추기`
+    : f.kind === 'groupCount'
+      ? `조 ${f.value}개로 (${f.sizes.join('·')}팀)`
+      : `${f.add}팀 더 모으면 조마다 ${f.sizes[0]}팀`);
   const planText = (p) => (p.teams < 2 ? '본선 팀 부족' : `본선 ${p.teams}팀 → ${p.size === 2 ? '결승' : p.size === 4 ? '4강' : `${p.size}강`}${p.byes ? ` (부전승 ${p.byes})` : ''}`);
   const critKdk = crit.format === 'kdk' && critKdkAble;
   const critCourts = () => Math.max(1, Math.min(20, Number(crit.courts) || 1));
@@ -235,6 +272,12 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
       } else if (scope === 'all') {
         const d = drawAll(roster, { ...r, groupAdvance: {} }, evs, { courts: n, excluded: t.excluded || {}, useGroups: ug });
         if (!d.entries.length) { flash(d.problems[0] || '대진을 짤 사람이 부족합니다'); return; }
+        const bad = ug ? drawnIssues(d.groups, r, evs) : [];
+        if (bad.length) {
+          setSetupOpen(true);
+          Alert.alert('조마다 경기 수가 다릅니다', `${bad.join('\n')}\n\n한 부 안에서는 모든 팀이 같은 경기 수를 쳐야 합니다. 「작성 기준」의 안내대로 조 안 경기 수나 조 개수를 고친 뒤 다시 작성하세요.`);
+          return;
+        }
         const ko = ug ? {} : Object.fromEntries(evs.map((k) => [k, koFor(d.entries.filter((e) => e.div === k))]).filter(([, v]) => v.bracket?.rounds?.length));
         await updateTournament(clubId, t.id, {
           rules: { ...r, groupAdvance: {} }, useGroupStage: ug, courts: n, courtNames: names, events: evs, entries: d.entries, groups: d.groups, ko, drawNotes: d.problems, kdk: null,
@@ -245,6 +288,12 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         const oldIds = new Set(groups.filter((g) => g.div === div).map((g) => g.id));
         r.groupAdvance = Object.fromEntries(Object.entries(r.groupAdvance).filter(([gid]) => !oldIds.has(gid)));
         const d = redrawDivision(t, div, roster, r, { courts: n, excluded, useGroups: ug });
+        const bad = ug ? drawnIssues(d.groups, r, [div]) : [];
+        if (bad.length) {
+          setSetupOpen(true);
+          Alert.alert('조마다 경기 수가 다릅니다', `${bad.join('\n')}\n\n「작성 기준」의 안내대로 고친 뒤 다시 작성하세요.`);
+          return;
+        }
         const ko = { ...(t.ko || {}) };
         delete ko[div];
         if (!ug) {
@@ -452,11 +501,11 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
             {critUseGroups && !critKdk && (
               <>
                 <ChoiceRow label="조 안 경기 수"
-                  options={[['0', '모두 한 번씩'], ['2', '팀당 2경기'], ['3', '팀당 3경기'], ['4', '팀당 4경기'], ['5', '팀당 5경기']]}
+                  options={[['0', '모두 한 번씩'], ...[1, 2, 3, 4, 5, 6, 7].map((n) => [String(n), `팀당 ${n}경기`])]}
                   value={String(Number(crit.perTeam) || 0)} onChange={(v) => setCrit({ ...crit, perTeam: v })} />
                 <Text style={{ fontSize: 11, color: C.faint, marginTop: -6, marginBottom: 12, lineHeight: 16 }}>
                   {Number(crit.perTeam) > 0
-                    ? `팀마다 ${crit.perTeam}경기만 — 원형 순서(1번↔끝번 …)로 ${crit.perTeam}라운드를 돌려 같은 팀과는 두 번 붙지 않습니다. 조 팀 수가 홀수면 한 팀이 한 경기 적을 수 있고, 그때 순위는 승률로 냅니다. 조 인원보다 많이 정하면 모두 한 번씩과 같습니다.`
+                    ? `팀마다 ${crit.perTeam}경기만 — 원형 순서(1번↔끝번 …)로 ${crit.perTeam}라운드를 돌려 같은 팀과는 두 번 붙지 않습니다. 모든 팀이 같은 경기 수가 되지 않는 조(3팀 조에 3경기, 5팀 조에 3경기 등)가 생기면 아래에 알려 드리고 대진을 작성하지 않습니다.`
                     : '조 안의 모든 팀과 한 번씩(풀리그) — 5팀 조면 팀당 4경기, 조 전체 10경기.'}
                 </Text>
               </>
@@ -490,11 +539,36 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
                     </Text>
                   );
                 })}
-                <View style={{ flexDirection: 'row', marginTop: 6 }}>
-                  <Chip tone={splitOpen ? 'green' : 'outline'} onPress={() => setSplitOpen(!splitOpen)}>
-                    {splitOpen ? '부·조마다 따로 정하기 닫기' : '부·조마다 따로 정하기 (필요할 때만)'}
-                  </Chip>
-                </View>
+                {/* 조별 경기 수 경고 — 고칠 방법을 버튼으로 */}
+                {gameIssues().map((iss) => (
+                  <View key={iss.k} style={{ marginTop: 8, padding: 10, borderRadius: R.md, backgroundColor: C.warnBg, borderWidth: 1, borderColor: '#F5C27A' }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: C.warn }}>⚠️ {EVENTS[iss.k].name} — 조마다 경기 수가 다릅니다</Text>
+                    <Text style={{ fontSize: 11.5, color: C.warn, marginTop: 4, lineHeight: 17 }}>
+                      {iss.teams}팀을 {iss.gc}개 조로: {iss.text}{'\n'}이대로는 대진을 작성할 수 없습니다. 아래 중 하나로 맞추세요.
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                      {iss.fixes.map((f) => (
+                        f.kind === 'addTeams'
+                          ? <Chip key={f.kind} tone="outline">{fixLabel(f)}</Chip>
+                          : <Chip key={f.kind} tone="green" onPress={() => applyFix(iss, f)}>{fixLabel(f)}</Chip>
+                      ))}
+                    </View>
+                  </View>
+                ))}
+                <Pressable onPress={() => setSplitOpen(!splitOpen)}
+                  style={({ pressed }) => ({
+                    marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 10,
+                    padding: 12, borderRadius: R.md, borderWidth: 1.5,
+                    borderColor: splitOpen ? C.green : C.border, backgroundColor: splitOpen ? C.greenSoft : C.surface,
+                    opacity: pressed ? 0.7 : 1,
+                  })}>
+                  <Text style={{ fontSize: 18 }}>⚙️</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: splitOpen ? C.green : C.text }}>부·조마다 따로 정하기</Text>
+                    <Text style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>남자부·여자부 조 개수가 다르거나, 조마다 본선 진출 수가 다를 때</Text>
+                  </View>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: C.green }}>{splitOpen ? '닫기' : '열기 ›'}</Text>
+                </Pressable>
                 {splitOpen && (
                   <View style={{ marginTop: 8, padding: 10, borderRadius: R.md, backgroundColor: C.fill }}>
                     <Text style={{ fontSize: 11, color: C.faint, lineHeight: 16, marginBottom: 8 }}>
@@ -574,7 +648,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
           </Card>
 
           <SectionTitle hint="이름을 누르면 이 부에서 빼거나 다시 넣습니다(대진을 다시 작성할 때 반영)">
-            {ev.name} 참가자 ({divPlayers.length - excluded.filter((id) => divPlayers.some((p) => p.id === id)).length}명)
+            {ev.name} 참가자 ({divPlayers.length - excluded.filter((id) => divPlayers.some((p) => p.id === id)).length}명 · {genderCount(divPlayers.filter((p) => !excluded.includes(p.id)))})
           </SectionTitle>
           <Card>
             {critEvents.length > 1 && (
@@ -585,7 +659,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
               {divPlayers.map((p) => (
                 <Chip key={p.id} tone={excluded.includes(p.id) ? 'outline' : 'soft'} onPress={() => toggleExclude(p.id)}>
-                  {excluded.includes(p.id) ? '✕ ' : ''}{nameOfPlayer(p.id) !== '?' ? nameOfPlayer(p.id) : p.name}
+                  {excluded.includes(p.id) ? '✕ ' : ''}<GenderMark gender={p.gender} />{nameOfPlayer(p.id) !== '?' ? nameOfPlayer(p.id) : p.name}
                 </Chip>
               ))}
               {divPlayers.length === 0 && <Text style={{ fontSize: 11.5, color: C.faint }}>이 부에 나갈 수 있는 참가자가 없습니다(성별 확인).</Text>}
@@ -599,14 +673,16 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: S.lg }}>
           <View style={{ flexDirection: 'row', gap: 6 }}>
             {events.map((k) => (
-              <Chip key={k} tone={!tabAll && div === k ? 'green' : 'outline'} onPress={() => { setTabAll(false); setDiv(k); setPick([]); }}>
-                {EVENTS[k].name}{k === myDiv ? ' · 내 부' : ''}
+              <Chip key={k} tone={!tabAll && div === k ? 'green' : 'outline'} onPress={() => { setTabAll(false); setDiv(k); setPick([]); }}
+                style={k === myDiv ? mineStyle(!tabAll && div === k) : undefined}>
+                {EVENTS[k].name}
               </Chip>
             ))}
             <Chip tone={tabAll ? 'green' : 'outline'} onPress={() => setTabAll(true)}>전체 시간표</Chip>
           </View>
         </ScrollView>
       )}
+      {events.length > 1 && drawn && !!myDiv && <MineLegend text="내가 나가는 부" />}
 
       {!drawn && (
         <EmptyState icon="🎾" title="아직 대진이 없습니다"

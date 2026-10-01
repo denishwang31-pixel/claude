@@ -28,6 +28,7 @@ import { DateField, Label } from './pickers';
 import { AppButton, Touchable, Segmented, useOptionSheet } from './native';
 import { TournamentSignup } from './TournamentSignup';
 import { Card, SectionTitle, Chip, Btn, Field, EmptyState, Divider } from './ui';
+import { GenderMark, genderCount } from './Mine';
 import { C, S, R, F } from '../lib/theme';
 import { todayYmd } from '../lib/today';
 import { firebaseConfig } from '../../firebaseConfig';
@@ -414,6 +415,12 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
           setPicked(all);
         }}>보이는 사람 전원</Chip>
       }>참가자 선택 ({pickedList.length}명)</SectionTitle>
+      {/* 성별 인원 — 남복·여복·혼복에 몇 명씩 더 필요한지 바로 보이게 */}
+      {(pickedList.length > 0 || guests.length > 0) && (
+        <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.sub, marginTop: -4, marginBottom: 8 }}>
+          {genderCount([...pickedList, ...guests])}{guests.length ? ` (외부 ${guests.length} 포함)` : ''}
+        </Text>
+      )}
       <Card>
         {/* 코트장으로 먼저 좁힌다.
            회원이 200명이면 이름 칩 200개에서 사람을 찾는 것 자체가 일이다.
@@ -443,7 +450,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
           {shown.map((m) => (
             <Chip key={m.id} tone={picked[m.id] ? 'green' : 'outline'}
               onPress={() => setPicked({ ...picked, [m.id]: !picked[m.id] })}>
-              {m.name}
+              <GenderMark gender={m.gender} on={!!picked[m.id]} />{m.name}
             </Chip>
           ))}
           {shown.length === 0 && (

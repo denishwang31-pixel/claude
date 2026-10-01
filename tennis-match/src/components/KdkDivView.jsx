@@ -9,6 +9,7 @@ import React, { useState } from 'react';
 import { View, Text } from 'react-native';
 import { kdkTables, setKdkScore, scoreChoices, KDK_RANK_TEXT } from '../lib/groupLeague';
 import { MatchGrid } from './MatchGrid';
+import { MINE } from './Mine';
 import { useOptionSheet } from './native';
 import { Card, SectionTitle, Btn, Field } from './ui';
 import { C, F } from '../lib/theme';
@@ -32,7 +33,7 @@ function KdkTable({ g, me }) {
         return (
           <View key={r.id} style={{
             flexDirection: 'row', alignItems: 'center', paddingVertical: 7,
-            borderBottomWidth: 1, borderBottomColor: C.fill, backgroundColor: mine ? C.greenSoft : 'transparent',
+            borderBottomWidth: 1, borderBottomColor: C.fill, backgroundColor: mine ? MINE.bg : 'transparent',
           }}>
             <View style={{ width: W.rank, alignItems: 'center' }}>
               <View style={{

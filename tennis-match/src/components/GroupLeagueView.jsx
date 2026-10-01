@@ -18,6 +18,7 @@ import {
   moveEntry, swapPlayers, replacePlayer, advanceOf, setGroupCourts, schedule, scoreChoices, nameLookup,
 } from '../lib/groupLeague';
 import { MatchGrid } from './MatchGrid';
+import { mineStyle, MineLegend, MINE } from './Mine';
 import { useOptionSheet } from './native';
 import { Card, SectionTitle, Chip, Btn, Field } from './ui';
 import { C, S, R, F } from '../lib/theme';
@@ -50,7 +51,7 @@ function StandingTable({ group, nameOfEntry, advance, myEntryId, compact }) {
           <View key={r.id} style={{
             flexDirection: 'row', alignItems: 'center', paddingVertical: 7,
             borderBottomWidth: 1, borderBottomColor: C.fill,
-            backgroundColor: mine ? C.greenSoft : 'transparent',
+            backgroundColor: mine ? MINE.bg : 'transparent',
           }}>
             <View style={{ width: W.rank, alignItems: 'center' }}>
               <View style={{
@@ -233,12 +234,14 @@ export function GroupLeagueView({
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: S.md }}>
         <View style={{ flexDirection: 'row', gap: 6 }}>
           {tabs.map((x) => (
-            <Chip key={x.key} tone={tab === x.key ? 'green' : 'outline'} onPress={() => setTab(x.key)}>
-              {x.label}{x.key === myGroup?.id ? ' · 내 조' : ''}
+            <Chip key={x.key} tone={tab === x.key ? 'green' : 'outline'} onPress={() => setTab(x.key)}
+              style={x.key === myGroup?.id ? mineStyle(tab === x.key) : undefined}>
+              {x.label}
             </Chip>
           ))}
         </View>
       </ScrollView>
+      {!!myGroup && <MineLegend text="내가 속한 조 · 순위표와 경기에서 내 팀도 같은 색" />}
 
       {tab === ALL && groups.map((g) => (
         <Card key={g.id} style={{ marginTop: S.md }}>
@@ -278,7 +281,7 @@ export function GroupLeagueView({
               return (
                 <View key={m.id} style={{ borderTopWidth: i ? 1 : 0, borderTopColor: C.fill }}>
                   <Pressable disabled={!canEdit} onPress={() => record(m)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, backgroundColor: mine ? C.greenSoft : 'transparent' }}>
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, backgroundColor: mine ? MINE.bg : 'transparent' }}>
                     <View style={{ width: 52 }}>
                       <Text style={{ fontSize: 11, fontWeight: '800', color: C.green }}>{m.round}타임</Text>
                       <Text style={{ fontSize: 10.5, color: C.faint }}>코트 {cn(m.court)}</Text>

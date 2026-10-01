@@ -100,6 +100,80 @@ export function advanceOf(rules, g) {
   return divRules(r, g?.div).advance;
 }
 
+/* ---------------- 조별 경기 수 맞추기 ----------------
+   한 부 안에서는 모든 팀이 같은 경기 수를 쳐야 순위가 공정하다(앱 주인).
+   조 팀 수가 다르면 풀리그 경기 수가 달라지고(3팀 조 2경기 · 4팀 조 3경기),
+   「팀당 N경기」가 조 인원보다 크거나(3팀 조에 3경기) 홀수 조에서 N이 홀수면(5팀 × 3경기 = 7.5)
+   누군가 한 경기 덜 친다. 그런 상태로는 대진을 짜지 않고 고칠 방법을 알려 준다. */
+
+/** 팀 수를 조 개수로 나눈 조별 팀 수 — 실력 고르게(스네이크) 나눌 때와 같다(차이는 최대 1) */
+export function groupSizesFor(teams, groupCount) {
+  const t = Math.max(0, Math.floor(Number(teams) || 0));
+  const g = Math.max(1, Math.min(Math.floor(Number(groupCount) || 1), Math.max(1, t)));
+  const base = Math.floor(t / g);
+  const extra = t % g;
+  return Array.from({ length: g }, (_, i) => base + (i < extra ? 1 : 0));
+}
+
+/** 조 하나에서 팀이 치는 경기 수 [가장 적게, 가장 많이] */
+export function teamGamesRange(size, perTeam = 0) {
+  const full = Math.max(0, size - 1);
+  const k = Number(perTeam) || 0;
+  if (!k || k >= full) return [full, full];
+  return (size * k) % 2 ? [k - 1, k] : [k, k];
+}
+
+/** 한 부의 조 크기들 → { ok, rows:[{ size, min, max }], min, max } */
+export function gamesCheck(sizes, perTeam = 0) {
+  const k = Number(perTeam) || 0;
+  /* short — 정한 「팀당 N경기」를 이 조에서는 칠 수 없다(3팀 조에 3경기) */
+  const rows = (sizes || []).map((size) => { const [min, max] = teamGamesRange(size, k); return { size, min, max, short: k > 0 && k > size - 1 }; });
+  if (!rows.length) return { ok: true, rows, min: 0, max: 0 };
+  const min = Math.min(...rows.map((r) => r.min));
+  const max = Math.max(...rows.map((r) => r.max));
+  return { ok: min === max && !rows.some((r) => r.short), rows, min, max };
+}
+
+/** 문제 한 줄 — 'A조 3팀은 팀당 최대 2경기(3경기 불가) · B조 4팀은 3경기' */
+export function gamesProblemText(check, perTeam = 0) {
+  const k = Number(perTeam) || 0;
+  const parts = check.rows.map((r, i) => {
+    const name = groupName(i);
+    if (r.short) return `${name} ${r.size}팀은 팀당 최대 ${r.size - 1}경기(${k}경기 불가)`;
+    if (r.min !== r.max) return `${name} ${r.size}팀은 한 팀만 ${r.min}경기(나머지 ${r.max}경기)`;
+    return `${name} ${r.size}팀은 팀당 ${r.max}경기`;
+  });
+  return parts.join(' · ');
+}
+
+/**
+ * 맞추는 방법 — [{ kind:'perTeam', value }, { kind:'groupCount', value, sizes }, { kind:'addTeams', add, sizes }]
+ * teams: 이 부 팀 수, groupCount: 지금 조 개수, perTeam: 지금 조 안 경기 수(0 = 모두 한 번씩)
+ */
+export function gamesFixes(teams, groupCount, perTeam = 0) {
+  const out = [];
+  const sizes = groupSizesFor(teams, groupCount);
+  /* 1) 조 안 경기 수를 줄인다 — 가장 큰 값부터 */
+  const small = Math.min(...sizes);
+  for (let k = small - 1; k >= 1; k--) {
+    if (gamesCheck(sizes, k).ok) { if (k !== Number(perTeam)) out.push({ kind: 'perTeam', value: k }); break; }
+  }
+  /* 2) 조 개수를 바꾼다 — 지금과 가까운 것부터, 조마다 3팀 이상 */
+  const tries = [];
+  for (let g = 1; g <= Math.floor(teams / 3); g++) if (g !== groupCount) tries.push(g);
+  tries.sort((a, b) => Math.abs(a - groupCount) - Math.abs(b - groupCount) || a - b);
+  const g2 = tries.find((g) => gamesCheck(groupSizesFor(teams, g), perTeam).ok);
+  if (g2) out.push({ kind: 'groupCount', value: g2, sizes: groupSizesFor(teams, g2) });
+  /* 3) 팀을 늘린다 — 조마다 같은 팀 수가 되게 */
+  const extra = teams % groupCount;
+  if (extra) {
+    const add = groupCount - extra;
+    const s2 = groupSizesFor(teams + add, groupCount);
+    if (gamesCheck(s2, perTeam).ok) out.push({ kind: 'addTeams', add, sizes: s2 });
+  }
+  return out;
+}
+
 /** 본선 크기 — 진출 팀 수 → 몇 강(2의 거듭제곱)·부전승 수 */
 export function bracketPlan(n) {
   if (n < 2) return { teams: n, size: 0, byes: 0 };
@@ -779,7 +853,7 @@ export function liveView(t, clubName = '') {
 export default {
   PLAY, TEAM_MODE, GROUP_METHOD, DEFAULT_RULES, RULE_LABELS, RANK_RULE_TEXT,
   normRules, makeGuest, makeEntries, assignGroups, roundRobin, buildGroupMatches, schedule, buildLeague,
-  moveEntry, swapPlayers, replacePlayer, divRules, advanceOf, bracketPlan, leagueChampions, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
+  moveEntry, swapPlayers, replacePlayer, divRules, advanceOf, bracketPlan, leagueChampions, groupSizesFor, teamGamesRange, gamesCheck, gamesFixes, gamesProblemText, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
   scoreChoices, nameLookup, groupName, liveView, partialPairs, kdkTables, setKdkScore, KDK_RANK_TEXT,
   EVENTS, EVENT_KEYS, LEGACY, eventOf, eligible, drawDivision, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam,
 };
