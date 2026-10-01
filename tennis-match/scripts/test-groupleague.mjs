@@ -9,6 +9,7 @@ import {
   normRules, makeGuest, makeEntries, assignGroups, roundRobin, buildGroupMatches, schedule, buildLeague,
   moveEntry, swapPlayers, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
   scoreChoices, nameLookup, liveView,
+  eligible, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam,
 } from '../src/lib/groupLeague.js';
 
 let pass = 0; let fail = 0;
@@ -164,6 +165,50 @@ console.log('[외부 공개 보기 — 필요한 것만]');
     '신청자·전화·등급·회원 id 는 내보내지 않는다');
   eq(liveView({ entries: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], bracket: { rounds: [{ matches: [{ a: 'a', b: 'b', score: { a: 6, b: 2 }, winner: 'a' }] }] }, championId: 'a' }).bracket[0],
     { name: '결승', matches: [{ a: 'A', b: 'B', score: { a: 6, b: 2 }, winner: 'A' }] }, '본선 대진도 이름으로');
+}
+
+console.log('[종목(부) — 남복·여복 따로, 혼복은 남녀 한 명씩]');
+{
+  const R = [
+    ...Array.from({ length: 9 }, (_, i) => ({ id: `m${i}`, name: `남${i}`, gender: 'M', skill: 4 - i * 0.1 })),
+    ...Array.from({ length: 8 }, (_, i) => ({ id: `f${i}`, name: `여${i}`, gender: 'F', skill: 3.5 - i * 0.1 })),
+  ];
+  eq([eligible(R, 'MD').length, eligible(R, 'WD').length, eligible(R, 'XD').length, eligible(R, 'MD', ['m0']).length], [9, 8, 17, 8], '부별 참가자 · 뺀 사람 제외');
+  const d = drawAll(R, { groupCount: 2 }, ['MD', 'WD', 'XD'], { courts: 4 }, rnd);
+  const byDiv = (k) => d.entries.filter((e) => e.div === k);
+  eq([byDiv('MD').length, byDiv('WD').length, byDiv('XD').length], [4, 4, 8], '남복 4팀(1명 빠짐) · 여복 4팀 · 혼복 8팀(남 1명 빠짐)');
+  ok(byDiv('MD').every((e) => e.players.every((p) => p.startsWith('m'))), '남복은 남자끼리');
+  ok(byDiv('XD').every((e) => e.players.some((p) => p.startsWith('m')) && e.players.some((p) => p.startsWith('f'))), '혼복은 남녀 한 명씩');
+  ok(d.problems.some((x) => /남자복식: 짝이 없어 빠진 사람/.test(x)), '짝 없는 사람은 빼고 알린다');
+  ok(d.groups.every((g) => g.div && g.entryIds.every((id) => d.entries.find((e) => e.id === id).div === g.div)), '조는 부 안에서만');
+  const po = playersOfFn(d.entries);
+  const slots = {};
+  d.groups.flatMap((g) => g.matches).forEach((m) => { (slots[m.round] ||= []).push(m); });
+  ok(Object.values(slots).every((ms) => { const ps = ms.flatMap((m) => [...po(m.a), ...po(m.b)]); return new Set(ps).size === ps.length; }),
+    '남복과 혼복에 다 나가는 사람도 같은 타임에 두 코트에 서지 않는다');
+  ok(/여자복식 0명/.test(drawAll(R.filter((p) => p.gender === 'M'), {}, ['WD']).problems[0]), '그 부에 사람이 없으면 알린다');
+
+  const t = { entries: d.entries, groups: setScore(d.groups, d.groups.find((g) => g.div === 'WD').matches[0].id, { a: 6, b: 1 }) };
+  const re = redrawDivision(t, 'MD', R, { groupCount: 1 }, { courts: 4 }, rnd);
+  eq(re.groups.filter((g) => g.div === 'MD').length, 1, '남복만 다시 짬(1개 조)');
+  ok(re.groups.filter((g) => g.div === 'WD').some((g) => g.matches.some((m) => m.score)), '다른 부 결과는 그대로');
+
+  const wd = t.groups.find((g) => g.div === 'MD');
+  const add = addTeam(t.entries, t.groups, { div: 'MD', players: ['m8', 'm7'], groupId: wd.id });
+  ok(/이미 이 부의/.test(add.error) || add.error === '', '부 안에 이미 있는 사람은 못 넣는다(또는 빠진 사람이면 들어간다)');
+  const out = d.entries.filter((e) => e.div === 'MD').flatMap((e) => e.players);
+  const left = eligible(R, 'MD').map((p) => p.id).find((id) => !out.includes(id));
+  const add2 = addTeam(t.entries, t.groups, { div: 'MD', players: [left], groupId: wd.id, nameOf: (id) => id });
+  eq(add2.error, '', '빠진 사람을 조에 넣기');
+  const g2 = add2.groups.find((g) => g.id === wd.id);
+  eq(g2.matches.length, (g2.entryIds.length * (g2.entryIds.length - 1)) / 2, '넣은 조의 경기를 다시 만든다');
+  const rm = removeTeam(add2.entries, add2.groups, add2.entries.at(-1).id);
+  eq(rm.groups.find((g) => g.id === wd.id).entryIds.length, wd.entryIds.length, '팀 빼기');
+  const scoredEntry = t.groups.find((g) => g.div === 'WD').matches[0].a;
+  ok(/뺄 수 없습니다/.test(removeTeam(t.entries, t.groups, scoredEntry).error), '경기한 팀은 못 뺀다');
+
+  const v = liveView({ name: 'x', entries: d.entries, groups: d.groups, events: ['MD', 'WD'], ko: {} });
+  ok(v.groups.some((g) => g.name.startsWith('남자복식 ')) && v.groups.some((g) => g.name.startsWith('여자복식 ')), '외부 공개에도 부 이름');
 }
 
 console.log(`\n조별리그 테스트: ${pass} 통과 / ${fail} 실패`);

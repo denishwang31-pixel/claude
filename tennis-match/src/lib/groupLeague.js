@@ -186,11 +186,14 @@ export function buildGroupMatches(group, old = []) {
    courts: 전체 코트 수. 조에 courts:[1,2] 를 정해 두면 그 조는 그 코트에서만 돈다
    (「A조는 1·2코트, B조는 3·4코트」처럼 조별로 따로 진행).
    같은 타임에 한 팀이 두 경기에 들어가지 않게, 풀리그 라운드 순서를 지키며 채운다. */
-export function schedule(groups, courts = 2) {
+export function schedule(groups, courts = 2, { playersOf = null } = {}) {
   const total = Math.max(1, Math.round(Number(courts) || 1));
   const allCourts = Array.from({ length: total }, (_, i) => i + 1);
+  /* 같은 타임에 겹치면 안 되는 사람 — 여러 부(남복·혼복)에 함께 나가는 사람도 있다.
+     playersOf 를 주면 선수 단위로, 없으면 팀 단위로 본다. */
+  const who = (id) => (playersOf ? (playersOf(id) || [id]) : [id]);
   const own = (g) => {
-    const cs = (g.courts || []).map(Number).filter((c) => c >= 1);
+    const cs = (g.courts || []).map(Number).filter((c) => c >= 1 && c <= total);
     return cs.length ? [...new Set(cs)].sort((a, b) => a - b) : null;
   };
   const out = groups.map((g) => ({ ...g, matches: (g.matches || []).map((m) => ({ ...m })) }));
@@ -203,26 +206,30 @@ export function schedule(groups, courts = 2) {
     const free = allCourts.filter((c) => !taken.has(c));
     lanes.push({ groups: shared, courts: free.length ? free : allCourts });
   }
-  lanes.forEach(({ groups: gs, courts: cs }) => {
-    /* 조를 번갈아 가며 라운드 순으로 줄 세운다 — 한 조만 먼저 끝나지 않게 */
-    const queue = [];
-    const maxRr = Math.max(0, ...gs.flatMap((g) => g.matches.map((m) => m.rr || 1)));
-    for (let r = 1; r <= maxRr; r++) gs.forEach((g) => g.matches.filter((m) => (m.rr || 1) === r).forEach((m) => queue.push(m)));
-    let slot = 0;
-    while (queue.length) {
-      slot += 1;
-      const busy = new Set();
-      let ci = 0;
-      for (let i = 0; i < queue.length && ci < cs.length;) {
-        const m = queue[i];
-        if (busy.has(m.a) || busy.has(m.b)) { i += 1; continue; }
-        m.round = slot; m.court = cs[ci]; ci += 1;
-        busy.add(m.a); busy.add(m.b);
-        queue.splice(i, 1);
-      }
-      if (slot > 500) break;   // 안전장치
-    }
+  /* 조를 번갈아 가며 라운드 순으로 줄 세운다 — 한 조만 먼저 끝나지 않게 */
+  lanes.forEach((lane) => {
+    const q = [];
+    const maxRr = Math.max(0, ...lane.groups.flatMap((g) => g.matches.map((m) => m.rr || 1)));
+    for (let r = 1; r <= maxRr; r++) lane.groups.forEach((g) => g.matches.filter((m) => (m.rr || 1) === r).forEach((m) => q.push(m)));
+    lane.queue = q;
   });
+  /* 타임을 하나씩 — 모든 줄(lane)이 같은 시계를 쓴다(한 사람이 두 코트에 동시에 서지 않게) */
+  let slot = 0;
+  while (lanes.some((l) => l.queue.length) && slot < 500) {
+    slot += 1;
+    const busy = new Set();
+    lanes.forEach((lane) => {
+      let ci = 0;
+      for (let i = 0; i < lane.queue.length && ci < lane.courts.length;) {
+        const m = lane.queue[i];
+        const ps = [...who(m.a), ...who(m.b)];
+        if (ps.some((p) => busy.has(p))) { i += 1; continue; }
+        m.round = slot; m.court = lane.courts[ci]; ci += 1;
+        ps.forEach((p) => busy.add(p));
+        lane.queue.splice(i, 1);
+      }
+    });
+  }
   return out;
 }
 
@@ -271,6 +278,40 @@ export function swapPlayers(entries, groups, p1, p2, nameOf = (id) => id) {
     return { ...e, players, name: players.map(nameOf).join(' / ') };
   };
   return { entries: entries.map((e) => (e.id === e1.id || e.id === e2.id ? fix(e) : e)), error: '' };
+}
+
+/** 팀을 손으로 넣기 — 대진에서 빠진 사람(짝 없음·늦게 온 사람)을 짝지어 조에 넣는다 */
+export function addTeam(entries, groups, { div = '', players = [], groupId, nameOf = (id) => id }) {
+  const ps = [...new Set(players)].filter(Boolean);
+  if (!ps.length) return { entries, groups, error: '선수를 고르세요' };
+  const g = groups.find((x) => x.id === groupId);
+  if (!g) return { entries, groups, error: '조를 고르세요' };
+  const inDiv = new Set(entries.filter((e) => (e.div || '') === (div || '')).flatMap((e) => e.players));
+  if (ps.some((p) => inDiv.has(p))) return { entries, groups, error: '이미 이 부의 다른 팀에 있는 사람입니다' };
+  const e = { id: uid('e'), name: ps.map(nameOf).join(' / '), players: ps, seed: null, skill: 3, ...(div ? { div } : {}) };
+  const ng = { ...g, entryIds: [...g.entryIds, e.id] };
+  return {
+    entries: [...entries, e],
+    groups: groups.map((x) => (x.id !== g.id ? x : { ...ng, matches: buildGroupMatches(ng, g.matches).map((m) => (div ? { ...m, div } : m)) })),
+    error: '',
+  };
+}
+
+/** 팀 빼기 — 결과가 있는 팀은 못 뺀다 */
+export function removeTeam(entries, groups, entryId) {
+  const g = groups.find((x) => x.entryIds.includes(entryId));
+  if (g && (g.matches || []).some((m) => m.score && (m.a === entryId || m.b === entryId))) {
+    return { entries, groups, error: '이미 경기를 한 팀은 뺄 수 없습니다' };
+  }
+  return {
+    entries: entries.filter((e) => e.id !== entryId),
+    groups: groups.map((x) => {
+      if (!x.entryIds.includes(entryId)) return x;
+      const ng = { ...x, entryIds: x.entryIds.filter((id) => id !== entryId) };
+      return { ...ng, matches: buildGroupMatches(ng, x.matches).map((m) => (x.div ? { ...m, div: x.div } : m)) };
+    }),
+    error: '',
+  };
 }
 
 /** 조에 코트를 정해 주기 ([] 면 함께 쓰기) — 시간표를 다시 짠다 */
@@ -375,6 +416,114 @@ export function nameLookup(members = [], guests = []) {
   return (id) => map.get(id) || '?';
 }
 
+/* ---------------- 종목(부) ----------------
+   대회는 보통 남복·여복·혼복으로 연다. 남복·여복을 함께 고르면 남자부·여자부를
+   따로 운영하고 따로 시상한다(부마다 조·순위·본선이 따로).
+   남녀 구분 없이 한 부로 하려면 「자유 복식」. */
+export const EVENTS = {
+  MD: { key: 'MD', name: '남자복식', short: '남복', play: 'doubles', gender: 'M' },
+  WD: { key: 'WD', name: '여자복식', short: '여복', play: 'doubles', gender: 'F' },
+  XD: { key: 'XD', name: '혼합복식', short: '혼복', play: 'doubles', gender: 'X' },
+  OD: { key: 'OD', name: '자유 복식', short: '복식', play: 'doubles', gender: 'any' },
+  MS: { key: 'MS', name: '남자단식', short: '남단', play: 'singles', gender: 'M' },
+  WS: { key: 'WS', name: '여자단식', short: '여단', play: 'singles', gender: 'F' },
+  OS: { key: 'OS', name: '자유 단식', short: '단식', play: 'singles', gender: 'any' },
+};
+export const EVENT_KEYS = Object.keys(EVENTS);
+/** 예전 대회(종목 없이 한 부) */
+export const LEGACY = 'ALL';
+export const eventOf = (k) => EVENTS[k] || { key: LEGACY, name: '', short: '', play: 'doubles', gender: 'any' };
+
+/** 이 부에 나갈 수 있는 사람 — 성별로 거르고, 운영진이 뺀 사람은 제외 */
+export function eligible(players, evKey, excluded = []) {
+  const ev = eventOf(evKey);
+  const out = new Set(excluded || []);
+  return (players || []).filter((p) => {
+    if (out.has(p.id)) return false;
+    if (ev.gender === 'M') return p.gender === 'M';
+    if (ev.gender === 'F') return p.gender === 'F';
+    if (ev.gender === 'X') return p.gender === 'M' || p.gender === 'F';
+    return true;
+  });
+}
+
+/** 혼복 짝 — 남녀 한 명씩. 균등이면 잘하는 남자 + 덜 잘하는 여자 식으로 팀 평균을 고르게 */
+function mixedEntries(players, teamMode, rnd) {
+  const sk = (p) => Number(p.skill) || 3;
+  let men = players.filter((p) => p.gender === 'M');
+  let women = players.filter((p) => p.gender === 'F');
+  if (teamMode === TEAM_MODE.RANDOM) { men = shuffle(men, rnd); women = shuffle(women, rnd); } else {
+    men = [...men].sort((a, b) => sk(b) - sk(a));
+    women = [...women].sort((a, b) => sk(a) - sk(b));
+  }
+  const teams = [];
+  const n = Math.min(men.length, women.length);
+  for (let i = 0; i < n; i++) teams.push([men[i], women[i]]);
+  [...men.slice(n), ...women.slice(n)].forEach((p) => teams.push([p]));   // 짝이 없는 사람 — 운영진이 고친다
+  return teams.map(entryOf);
+}
+
+/**
+ * 한 부의 대진 — 팀 → 조 → 조별 경기 (시간표는 drawAll 이 모든 부를 함께 짠다)
+ * @returns { entries, groups, problem }
+ */
+export function drawDivision(players, rulesIn, evKey, { excluded = [], useGroups = true } = {}, rnd = Math.random) {
+  const ev = eventOf(evKey);
+  const rules = normRules({ ...rulesIn, play: ev.play });
+  const ps = eligible(players, evKey, excluded);
+  const need = ev.play === PLAY.SINGLES ? 2 : 4;
+  if (ps.length < need) return { entries: [], groups: [], problem: `${ev.name || '참가자'} ${ps.length}명 — ${need}명 이상 필요` };
+  const base = ev.gender === 'X'
+    ? mixedEntries(ps, rules.teamMode, rnd)
+    : makeEntries(ps, { play: ev.play, teamMode: rules.teamMode === TEAM_MODE.MANUAL ? TEAM_MODE.BALANCED : rules.teamMode }, rnd);
+  /* 복식인데 짝이 없는 사람(홀수·혼복 남녀 수 차이)은 대진에서 빼고 알린다 —
+     혼자인 팀이 조에 들어가면 그 경기는 치를 수가 없다. 운영진이 외부 참가자를
+     더하거나 수기로 짝을 지어 준다. */
+  const solo = ev.play === PLAY.DOUBLES ? base.filter((e) => e.players.length < 2) : [];
+  const entries = base.filter((e) => !solo.includes(e)).map((e) => ({ ...e, div: ev.key }));
+  const notice = solo.length ? `${ev.name}: 짝이 없어 빠진 사람 — ${solo.map((e) => e.name).join(', ')}` : '';
+  if (entries.length < 2) return { entries: [], groups: [], problem: `${ev.name} 팀이 2팀 이상이어야 합니다`, notice };
+  if (!useGroups) return { entries, groups: [], problem: '', notice };
+  const groups = assignGroups(entries, rules, rnd).map((g) => {
+    const ng = { ...g, div: ev.key };
+    return { ...ng, matches: buildGroupMatches(ng).map((m) => ({ ...m, div: ev.key })) };
+  });
+  return { entries, groups, problem: '', notice };
+}
+
+/** 선수 → 그 선수가 든 팀들의 선수(시간표 겹침 검사용) */
+export const playersOfFn = (entries) => {
+  const map = new Map((entries || []).map((e) => [e.id, e.players || [e.id]]));
+  return (id) => map.get(id) || [id];
+};
+
+/**
+ * 대회 전체 대진 작성 — 고른 종목(부)마다 따로 짜고, 시간표는 코트를 나눠 쓰며 함께 짠다.
+ * @param roster  [{ id, name, gender, skill, tgrade }] (회원 + 외부 참가자)
+ * @returns { entries, groups, problems:[문구] }
+ */
+export function drawAll(roster, rulesIn, events, { courts = 2, excluded = {}, useGroups = true } = {}, rnd = Math.random) {
+  const entries = [];
+  const groups = [];
+  const problems = [];
+  (events || []).forEach((k) => {
+    const r = drawDivision(roster, rulesIn, k, { excluded: excluded[k] || [], useGroups }, rnd);
+    if (r.problem) problems.push(r.problem);
+    if (r.notice) problems.push(r.notice);
+    entries.push(...r.entries);
+    groups.push(...r.groups);
+  });
+  return { entries, groups: schedule(groups, courts, { playersOf: playersOfFn(entries) }), problems };
+}
+
+/** 부 하나만 다시 짠다 — 다른 부의 대진·결과는 그대로, 시간표만 함께 다시 */
+export function redrawDivision(t, evKey, roster, rulesIn, { courts = 2, excluded = [], useGroups = true } = {}, rnd = Math.random) {
+  const r = drawDivision(roster, rulesIn, evKey, { excluded, useGroups }, rnd);
+  const entries = [...(t.entries || []).filter((e) => e.div !== evKey), ...r.entries];
+  const groups = [...(t.groups || []).filter((g) => g.div !== evKey), ...r.groups];
+  return { entries, groups: schedule(groups, courts, { playersOf: playersOfFn(entries) }), problem: [r.problem, r.notice].filter(Boolean).join(' · ') };
+}
+
 /* ---------------- 외부 공개 보기 ----------------
    앱이 없는 사람에게 보여 줄 것만 — 이름·조·시간표·결과·순위·본선.
    회원 id·전화·신청자 목록·등급 같은 것은 내보내지 않는다(서버 함수 liveTournament 가 쓴다). */
@@ -383,8 +532,9 @@ export function liveView(t, clubName = '') {
   if (!t) return null;
   const nameOf = (id) => (t.entries || []).find((e) => e.id === id)?.name || '';
   const rules = normRules({ ...(t.rules || {}), advance: t.rules?.advance ?? t.advancePerGroup ?? 2 });
+  const label = (div, n) => (div && div !== LEGACY && eventOf(div).short ? `${eventOf(div).name} ${n}` : n);
   const groups = ensureSchedule(t.groups || [], Number(t.courts) || 2).map((g) => ({
-    name: g.name,
+    name: label(g.div, g.name),
     progress: progress(g),
     standings: standings(g).map((r) => ({
       rank: r.rank, tie: r.tie, name: nameOf(r.id), played: r.played, w: r.w, l: r.l, gf: r.gf, ga: r.ga, diff: r.diff,
@@ -392,7 +542,11 @@ export function liveView(t, clubName = '') {
     matches: (g.matches || []).map((m) => ({ round: m.round, court: m.court, a: nameOf(m.a), b: nameOf(m.b), score: m.score || null }))
       .sort((x, y) => x.round - y.round || x.court - y.court),
   }));
-  const rounds = t.bracket?.rounds || [];
+  /* 본선 — 예전 대회는 t.bracket 하나, 부가 있는 대회는 부마다 t.ko[부] */
+  const kos = [
+    ...(t.bracket?.rounds?.length ? [{ div: '', bracket: t.bracket, championId: t.championId }] : []),
+    ...Object.entries(t.ko || {}).filter(([, v]) => v?.bracket?.rounds?.length).map(([div, v]) => ({ div, ...v })),
+  ];
   return {
     name: String(t.name || ''),
     date: String(t.date || ''),
@@ -402,12 +556,12 @@ export function liveView(t, clubName = '') {
     rules: { games: rules.games, advance: rules.advance, play: rules.play },
     rankRule: RANK_RULE_TEXT,
     courts: Number(t.courts) || 2,
-    champion: t.championId ? nameOf(t.championId) : '',
+    champion: kos.filter((k) => k.championId).map((k) => (k.div ? `${eventOf(k.div).name} ${nameOf(k.championId)}` : nameOf(k.championId))).join(' · '),
     groups,
-    bracket: rounds.map((r, ri) => ({
-      name: koRound(ri, rounds.length),
+    bracket: kos.flatMap((k) => k.bracket.rounds.map((r, ri) => ({
+      name: label(k.div, koRound(ri, k.bracket.rounds.length)),
       matches: (r.matches || []).map((m) => ({ a: nameOf(m.a), b: nameOf(m.b), score: m.score || null, winner: m.winner ? nameOf(m.winner) : '' })),
-    })),
+    }))),
   };
 }
 
@@ -416,4 +570,5 @@ export default {
   normRules, makeGuest, makeEntries, assignGroups, roundRobin, buildGroupMatches, schedule, buildLeague,
   moveEntry, swapPlayers, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
   scoreChoices, nameLookup, groupName, liveView,
+  EVENTS, EVENT_KEYS, LEGACY, eventOf, eligible, drawDivision, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam,
 };

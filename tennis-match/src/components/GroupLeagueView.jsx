@@ -86,7 +86,10 @@ function StandingTable({ group, nameOfEntry, advance, myEntryId, compact }) {
  * @param t         대회 문서
  * @param onUpdate  (patch) => Promise — 운영진 저장. 읽기 전용(외부 공개 등)이면 생략
  */
-export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () => {}, onUpdate, onKnockout }) {
+export function GroupLeagueView({
+  t, members = [], isAdmin, me = '', flash = () => {}, onUpdate, onKnockout,
+  courtNames = [], label = '', editOpen, onRemoveTeam, extraEdit = null, hideRules = false,
+}) {
   const rules = normRules({ ...(t.rules || {}), advance: t.rules?.advance ?? t.advancePerGroup ?? 2 });
   const courts = Math.max(1, Number(t.courts) || 2);
   const groups = useMemo(() => ensureSchedule(t.groups || [], courts), [t.groups, courts]);
@@ -96,16 +99,23 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
   const myEntryId = entries.find((e) => (e.players || []).includes(me))?.id || '';
   const myGroup = groups.find((g) => g.entryIds.includes(myEntryId));
   const [tab, setTab] = useState(myGroup?.id || ALL);
-  const [editing, setEditing] = useState(false);
+  const [editingOwn, setEditing] = useState(false);
+  /* 부모(대회 대진 작성 화면)가 [수기 수정] 버튼으로 열고 닫을 수 있다 */
+  const controlled = typeof editOpen === 'boolean';
+  const editing = controlled ? editOpen : editingOwn;
+  /* 코트 이름 — 표·결과 입력창에 숫자 대신 그 코트장이 부르는 이름 */
+  const venue = { courts, courtNames };
+  const cn = (c) => (courtNames && courtNames[c - 1]) || String(c);
   const [pickPlayer, setPickPlayer] = useState(null);   // 선수 맞바꾸기 — 첫 번째로 누른 사람
   const [typed, setTyped] = useState(null);             // { id, a, b } 직접 입력 중
   const sheet = useOptionSheet();
   const canEdit = !!isAdmin && !!onUpdate;
 
-  const save = async (patch, msg) => {
-    try { await onUpdate(patch); if (msg) flash(msg); } catch (e) { flash('저장하지 못했습니다'); }
+  /* opts.reschedule — 조·코트가 바뀌어 시간표를 다시 짜야 할 때(부모가 모든 부를 함께 다시 짠다) */
+  const save = async (patch, msg, opts) => {
+    try { await onUpdate(patch, opts); if (msg) flash(msg); } catch (e) { flash('저장하지 못했습니다'); }
   };
-  const saveGroups = (gs, msg) => save({ groups: gs }, msg);
+  const saveGroups = (gs, msg, opts) => save({ groups: gs }, msg, opts);
 
   /* 결과 입력 — 빠른 버튼(6:0 …) + 직접 입력 + 지우기 */
   const record = (m) => {
@@ -118,7 +128,7 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
       ...(m.score ? [{ key: 'clear', label: '결과 지우기', destructive: true }] : []),
     ];
     sheet.open({
-      title: `${m.round}타임 · 코트 ${m.court}\n${nameOfEntry(m.a)} vs ${nameOfEntry(m.b)}`,
+      title: `${m.round}타임 · 코트 ${cn(m.court)}\n${nameOfEntry(m.a)} vs ${nameOfEntry(m.b)}`,
       options: opts,
       onSelect: (o) => {
         if (o.key === 'type') { setTyped({ id: m.id, a: '', b: '' }); return; }
@@ -144,7 +154,7 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
       onSelect: (o) => {
         const r = moveEntry(groups, entryId, o.key, courts);
         if (r.error) return flash(r.error);
-        return saveGroups(r.groups, '조를 옮겼습니다 — 두 조의 경기와 시간표를 다시 짰습니다');
+        return saveGroups(r.groups, '조를 옮겼습니다 — 두 조의 경기와 시간표를 다시 짰습니다', { reschedule: true });
       },
     });
   };
@@ -159,16 +169,16 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
   const toggleCourt = (g, c) => {
     const cur = (g.courts || []).map(Number);
     const next = cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c].sort((a, b) => a - b);
-    saveGroups(setGroupCourts(groups, g.id, next, courts));
+    saveGroups(setGroupCourts(groups, g.id, next, courts), '', { reschedule: true });
   };
-  const reschedule = () => saveGroups(schedule(groups, courts), '시간표를 다시 짰습니다(결과는 그대로)');
+  const reschedule = () => saveGroups(schedule(groups, courts), '시간표를 다시 짰습니다(결과는 그대로)', { reschedule: true });
 
   /* 표 — 기존 대진 표 모양 */
   const gridMatches = (gs) => gs.flatMap((g) => (g.matches || []).map((m) => ({
     ...m,
     teamA: entries.find((e) => e.id === m.a)?.players || [],
     teamB: entries.find((e) => e.id === m.b)?.players || [],
-    type: g.name,
+    type: `${label}${g.name}`,
   })));
   const genderOf = (id) => members.find((m) => m.id === id)?.gender || '';
 
@@ -179,7 +189,7 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
   return (
     <View>
       {/* 기준 */}
-      <Card style={{ marginTop: S.md, backgroundColor: C.fill }}>
+      {!hideRules && <Card style={{ marginTop: S.md, backgroundColor: C.fill }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
           <Chip tone="outline">{RULE_LABELS.play[rules.play]}</Chip>
           {rules.play === 'doubles' && <Chip tone="outline">{RULE_LABELS.teamMode[rules.teamMode]}</Chip>}
@@ -188,7 +198,7 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
           <Chip tone="outline">코트 {courts}면</Chip>
         </View>
         <Text style={{ fontSize: 11, color: C.sub, marginTop: 8 }}>순위: {RANK_RULE_TEXT}</Text>
-      </Card>
+      </Card>}
 
       {/* 탭 */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: S.md }}>
@@ -217,7 +227,7 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
             전체 시간표
           </SectionTitle>
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={gridMatches(groups)} nameOf={nameOfPlayer} genderOf={genderOf} me={me}
+            <MatchGrid matches={gridMatches(groups)} nameOf={nameOfPlayer} genderOf={genderOf} me={me} venue={venue}
               onPressMatch={canEdit ? (gm) => record(gm) : undefined} />
           </Card>
         </>
@@ -242,7 +252,7 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, backgroundColor: mine ? C.greenSoft : 'transparent' }}>
                     <View style={{ width: 52 }}>
                       <Text style={{ fontSize: 11, fontWeight: '800', color: C.green }}>{m.round}타임</Text>
-                      <Text style={{ fontSize: 10.5, color: C.faint }}>코트 {m.court}</Text>
+                      <Text style={{ fontSize: 10.5, color: C.faint }}>코트 {cn(m.court)}</Text>
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 12.5, fontWeight: aWin ? '800' : '500', color: aWin ? C.green : C.text }}>{nameOfEntry(m.a)}</Text>
@@ -270,7 +280,7 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
 
           <SectionTitle>{shown.name} 시간표</SectionTitle>
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={gridMatches([shown])} nameOf={nameOfPlayer} genderOf={genderOf} me={me}
+            <MatchGrid matches={gridMatches([shown])} nameOf={nameOfPlayer} genderOf={genderOf} me={me} venue={venue}
               onPressMatch={canEdit ? (gm) => record(gm) : undefined} />
           </Card>
         </>
@@ -279,12 +289,14 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
       {/* 편성 수정 — 운영진 */}
       {canEdit && (
         <>
-          <SectionTitle right={
-            <Chip tone={editing ? 'green' : 'outline'} onPress={() => { setEditing(!editing); setPickPlayer(null); }}>
-              {editing ? '닫기' : '열기'}
-            </Chip>
-          }>편성 수정 (운영진)</SectionTitle>
-          {!editing && (
+          {controlled ? (editing && <SectionTitle>수기 수정</SectionTitle>) : (
+            <SectionTitle right={
+              <Chip tone={editing ? 'green' : 'outline'} onPress={() => { setEditing(!editing); setPickPlayer(null); }}>
+                {editing ? '닫기' : '열기'}
+              </Chip>
+            }>편성 수정 (운영진)</SectionTitle>
+          )}
+          {!editing && !controlled && (
             <Text style={{ fontSize: 11.5, color: C.faint, lineHeight: 17 }}>
               조 옮기기 · 선수 맞바꾸기 · 조별 코트 정하기 · 시간표 다시 짜기. 이미 친 경기 결과는 지켜집니다.
             </Text>
@@ -307,7 +319,7 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 6 }}>
                     <Text style={{ fontSize: 11, color: C.faint }}>코트</Text>
                     {Array.from({ length: courts }, (_, i) => i + 1).map((c) => (
-                      <Chip key={c} tone={(g.courts || []).map(Number).includes(c) ? 'green' : 'outline'} onPress={() => toggleCourt(g, c)}>{c}</Chip>
+                      <Chip key={c} tone={(g.courts || []).map(Number).includes(c) ? 'green' : 'outline'} onPress={() => toggleCourt(g, c)}>{cn(c)}</Chip>
                     ))}
                   </View>
                   {g.entryIds.map((eid) => {
@@ -320,6 +332,7 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
                           ))}
                         </View>
                         {groups.length > 1 && <Btn small tone="ghost" onPress={() => moveTo(eid)}>조 이동</Btn>}
+                        {onRemoveTeam && <Btn small tone="ghost" onPress={() => onRemoveTeam(eid)}>빼기</Btn>}
                       </View>
                     );
                   })}
@@ -328,6 +341,7 @@ export function GroupLeagueView({ t, members = [], isAdmin, me = '', flash = () 
               <View style={{ marginTop: 12 }}>
                 <Btn small tone="ghost" onPress={reschedule}>시간표 다시 짜기</Btn>
               </View>
+              {extraEdit}
             </Card>
           )}
         </>
