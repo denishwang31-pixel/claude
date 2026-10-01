@@ -142,5 +142,7 @@ writeFileSync(join(OUT, 'delete-account.html'), page('계정 삭제', DELETE));
       반대로 약관 빈칸 때문에 이 스크립트가 멈추면 이 페이지도 안 올라가는데,
       그게 맞다 — 약관 없이 사이트 절반만 올리면 약관 페이지가 지워진다. */
 copyFileSync(join(ROOT, 'web', 'rsvp.html'), join(OUT, 'rsvp.html'));
+/* 대회 외부 공개 페이지(/live) — 대진표·실시간 순위. 같은 이유로 함께 올린다 */
+copyFileSync(join(ROOT, 'web', 'live.html'), join(OUT, 'live.html'));
 
-console.log('약관 페이지를 만들었습니다 — public/index.html, privacy.html, terms.html, delete-account.html');
+console.log('약관 페이지를 만들었습니다 — public/index.html, privacy.html, terms.html, delete-account.html (+ rsvp.html, live.html)');

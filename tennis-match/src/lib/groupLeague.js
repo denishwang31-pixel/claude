@@ -659,6 +659,7 @@ export function liveView(t, clubName = '') {
     const team = (ids) => (ids || []).map(pn).join('·');
     kdkTables(d).forEach((g) => groups.push({
       name: [div !== LEGACY ? eventOf(div).name : '', g.name, 'KDK 개인전'].filter(Boolean).join(' '),
+      kind: 'kdk',      // 개인 순위 — 본선 진출 표시 없음
       progress: g.progress,
       standings: g.standings.map((r) => ({
         rank: r.rank, tie: r.tie, name: r.name, played: r.played, w: r.w, l: r.l, gf: r.gf, ga: r.ga, diff: r.diff,
@@ -679,10 +680,20 @@ export function liveView(t, clubName = '') {
     status: t.status === 'finished' ? 'finished' : 'ongoing',
     stage: t.stage || '',
     rules: { games: rules.games, advance: rules.advance, play: rules.play },
-    rankRule: RANK_RULE_TEXT,
+    rankRule: Object.keys(t.kdk || {}).length && !(t.groups || []).length ? KDK_RANK_TEXT : RANK_RULE_TEXT,
     courts: Number(t.courts) || 2,
     champion: kos.filter((k) => k.championId).map((k) => (k.div ? `${eventOf(k.div).name} ${nameOf(k.championId)}` : nameOf(k.championId))).join(' · '),
     groups,
+    /* 부별 본선 — 사다리 그림용(라운드 순서·경기 위치를 그대로). r 라운드 i 경기의 승자 → r+1 라운드 i/2 경기 */
+    kos: kos.map((k) => ({
+      name: k.div && k.div !== LEGACY ? eventOf(k.div).name : '',
+      champion: k.championId ? nameOf(k.championId) : '',
+      rounds: k.bracket.rounds.map((r, ri) => ({
+        name: koRound(ri, k.bracket.rounds.length),
+        matches: (r.matches || []).map((m) => ({ a: nameOf(m.a), b: nameOf(m.b), score: m.score || null, winner: m.winner ? (m.winner === m.a ? 'a' : 'b') : '' })),
+      })),
+    })),
+    /* 예전 페이지용 평평한 목록(새 페이지는 kos 를 쓴다) */
     bracket: kos.flatMap((k) => k.bracket.rounds.map((r, ri) => ({
       name: label(k.div, koRound(ri, k.bracket.rounds.length)),
       matches: (r.matches || []).map((m) => ({ a: nameOf(m.a), b: nameOf(m.b), score: m.score || null, winner: m.winner ? nameOf(m.winner) : '' })),

@@ -165,6 +165,16 @@ console.log('[외부 공개 보기 — 필요한 것만]');
     '신청자·전화·등급·회원 id 는 내보내지 않는다');
   eq(liveView({ entries: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], bracket: { rounds: [{ matches: [{ a: 'a', b: 'b', score: { a: 6, b: 2 }, winner: 'a' }] }] }, championId: 'a' }).bracket[0],
     { name: '결승', matches: [{ a: 'A', b: 'B', score: { a: 6, b: 2 }, winner: 'A' }] }, '본선 대진도 이름으로');
+  /* 사다리 그림용 — 부마다 라운드 구조 그대로, 이긴 쪽은 a/b 로 */
+  const es = ['a', 'b', 'c', 'd'].map((id) => ({ id, name: id.toUpperCase(), div: 'MD' }));
+  const kv = liveView({ entries: es, events: ['MD'], ko: { MD: { championId: null, bracket: { rounds: [
+    { matches: [{ id: 'r0m0', a: 'a', b: 'b', score: { a: 6, b: 1 }, winner: 'a' }, { id: 'r0m1', a: 'c', b: 'd', score: null, winner: null }] },
+    { matches: [{ id: 'r1m0', a: 'a', b: null, score: null, winner: null }] },
+  ] } } } });
+  eq(kv.kos.length, 1, '부 하나 = 사다리 하나');
+  eq([kv.kos[0].name, kv.kos[0].rounds.map((r) => r.name)], ['남자복식', ['준결승', '결승']], '부 이름·라운드 이름');
+  eq(kv.kos[0].rounds[0].matches.map((m) => m.winner), ['a', ''], '이긴 쪽 a/b');
+  ok(!JSON.stringify(kv.kos).includes('r0m0'), '경기 id 는 내보내지 않는다');
 }
 
 console.log('[종목(부) — 남복·여복 따로, 혼복은 남녀 한 명씩]');

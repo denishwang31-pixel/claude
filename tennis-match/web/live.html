@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>대진표·실시간 순위 — Court</title>
+<!--
+  대회 외부 공개 페이지 — /live?c=클럽&t=대회
+
+  운영진이 앱에서 [외부 공개 링크]를 켜고 보낸 주소. 앱이 없는 외부 참가자·
+  관중이 카톡 안 브라우저로 연다. 서버 함수 liveTournament(/api/live)가
+  공개된 대회만, 이름·조·시간표·결과·순위만 돌려준다.
+
+  ⚠️ 30초마다 다시 읽는다 — 결과가 들어오면 순위가 저절로 바뀐다.
+  ⚠️ 외부 글꼴·라이브러리를 안 쓴다(느린 망에서도 바로 뜨게). 읽기 전용.
+-->
+<style>
+  :root {
+    --green: #0E6B4F; --green2: #10B981; --green-soft: #E8F8F2; --ink: #0F172A; --sub: #475569;
+    --faint: #94A3B8; --line: #E2E8F0; --fill: #F1F5F9; --bg: #F8FAFC; --card: #FFFFFF; --no: #B91C1C;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
+    -webkit-text-size-adjust: 100%; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 20px 16px 48px; }
+  .club { font-size: 13px; font-weight: 700; color: var(--green); }
+  h1 { font-size: 22px; margin: 4px 0 4px; letter-spacing: -0.02em; }
+  .meta { font-size: 13px; color: var(--sub); }
+  .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); margin-top: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--green2); }
+  .tabs { display: flex; gap: 6px; overflow-x: auto; margin: 16px 0 4px; padding-bottom: 4px; }
+  .tab { font: inherit; font-size: 14px; font-weight: 700; padding: 8px 14px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--card); color: var(--sub); white-space: nowrap; cursor: pointer; }
+  .tab.on { background: var(--green); border-color: var(--green); color: #fff; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-top: 12px; }
+  .card h2 { font-size: 17px; margin: 0 0 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { font-size: 12px; color: var(--faint); font-weight: 700; padding: 6px 2px; border-bottom: 1px solid var(--line); text-align: center; }
+  th.l, td.l { text-align: left; }
+  td { padding: 8px 2px; border-bottom: 1px solid var(--fill); text-align: center; }
+  .rk { display: inline-block; min-width: 22px; padding: 2px 5px; border-radius: 11px; background: var(--fill); font-size: 12px; font-weight: 800; color: var(--sub); }
+  .rk.up { background: var(--green); color: #fff; }
+  .w { color: var(--green); font-weight: 800; }
+  .plus { color: var(--green2); font-weight: 700; } .minus { color: var(--no); font-weight: 700; }
+  .note { font-size: 12px; color: var(--faint); margin-top: 8px; line-height: 1.5; }
+  .m { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--fill); }
+  .m:first-child { border-top: 0; }
+  .when { width: 58px; font-size: 12px; color: var(--green); font-weight: 800; }
+  .when span { display: block; color: var(--faint); font-weight: 500; }
+  .teams { flex: 1; font-size: 14px; line-height: 1.5; }
+  .teams .win { color: var(--green); font-weight: 800; }
+  .sc { font-size: 16px; font-weight: 800; }
+  .sc.wait { font-size: 12px; color: var(--faint); font-weight: 600; }
+  /* 본선 사다리 — 앱의 BracketTree 와 같은 모양(위·아래에서 가운데 결승으로) */
+  .lad-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
+  .lad { position: relative; }
+  .lad .ln { position: absolute; background: var(--line); }
+  .lad .ln.on { background: var(--green2); border-radius: 2px; }
+  .lad .bx { position: absolute; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--card); }
+  .lad .bx.fin { border: 2px solid var(--green); }
+  .lad .tr { height: 26px; display: flex; align-items: center; padding: 0 7px; font-size: 12px; position: relative; }
+  .lad .tr + .tr { border-top: 1px solid var(--line); }
+  .lad .tr .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); font-weight: 500; }
+  .lad .tr .s { font-weight: 800; color: var(--faint); margin-left: 4px; }
+  .lad .tr.win { background: var(--green-soft); }
+  .lad .tr.win::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--green); }
+  .lad .tr.win .nm, .lad .tr.win .s { color: var(--green); font-weight: 800; }
+  .lad .tr.lose { background: var(--fill); }
+  .lad .tr.lose .nm { color: var(--faint); }
+  .lad .tr .nm.empty { color: var(--faint); }
+  .lad .rl { position: absolute; left: 2px; font-size: 11.5px; font-weight: 800; color: var(--faint); white-space: nowrap; }
+  .lad .rl.fin { color: var(--green); }
+  .champ { background: var(--ink); color: #fff; text-align: center; padding: 18px; border-radius: 16px; margin-top: 12px; }
+  .champ small { color: #A3E635; font-weight: 800; letter-spacing: .1em; }
+  .champ b { display: block; font-size: 21px; margin-top: 6px; }
+  .err { background: #FEF2F2; color: var(--no); border-radius: 14px; padding: 16px; margin-top: 16px; line-height: 1.6; }
+  .foot { font-size: 12px; color: var(--faint); text-align: center; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><p class="meta">불러오는 중…</p></div>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var c = q.get('c') || '', t = q.get('t') || '';
+  var app = document.getElementById('app');
+  var tab = null, data = null;
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (x) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[x]; }); };
+
+  function standings(g, advance) {
+    var kdk = g.kind === 'kdk';
+    if (kdk) advance = 0;          // KDK 는 개인 순위로 끝(본선 없음)
+    var rows = g.standings.map(function (r) {
+      var up = advance > 0 && r.rank <= advance && r.played > 0;
+      var d = r.diff > 0 ? '<span class="plus">+' + r.diff + '</span>' : r.diff < 0 ? '<span class="minus">' + r.diff + '</span>' : '0';
+      return '<tr><td><span class="rk' + (up ? ' up' : '') + '">' + r.rank + (r.tie ? '=' : '') + '</span></td>' +
+        '<td class="l">' + esc(r.name) + '</td><td>' + r.played + '</td><td class="w">' + r.w + '</td><td>' + r.l + '</td>' +
+        '<td>' + r.gf + '</td><td>' + r.ga + '</td><td>' + d + '</td></tr>';
+    }).join('');
+    return '<table><tr><th>순위</th><th class="l">' + (kdk ? '이름' : '팀') + '</th><th>경기</th><th>승</th><th>패</th><th>득</th><th>실</th><th>득실</th></tr>' + rows + '</table>' +
+      '<p class="note">경기 ' + g.progress.done + '/' + g.progress.total + (advance > 0 ? ' · 초록 순위 = 본선 진출권(상위 ' + advance + '팀)' : '') + '</p>';
+  }
+  function matches(list) {
+    return list.map(function (m) {
+      var aw = m.score && m.score.a > m.score.b, bw = m.score && m.score.b > m.score.a;
+      return '<div class="m"><div class="when">' + (m.round ? m.round + '타임' : '') + '<span>' + (m.court ? '코트 ' + m.court : '') + '</span></div>' +
+        '<div class="teams"><div class="' + (aw ? 'win' : '') + '">' + esc(m.a || '—') + '</div><div class="' + (bw ? 'win' : '') + '">' + esc(m.b || '—') + '</div></div>' +
+        (m.score ? '<div class="sc">' + m.score.a + ' : ' + m.score.b + '</div>' : '<div class="sc wait">경기 전</div>') + '</div>';
+    }).join('');
+  }
+  /* 본선 사다리 — r 라운드 i 경기의 승자 → r+1 라운드 floor(i/2) 경기.
+     위쪽 절반은 위에서 아래로, 아래쪽 절반은 아래에서 위로 올라와 가운데 결승에서 만난다.
+     이긴 팀이 올라간 길은 굵은 초록 선, 진 팀 칸은 흐리게. */
+  function ladder(ko, avail) {
+    var R = ko.rounds || [], RN = R.length;
+    if (!RN) return '';
+    var ROW = 26, H = ROW * 2 + 3, VG = 36, TOP = 20, MIN = 84, THIN = 1.5, THICK = 3.5;
+    var n0 = R[0].matches.length, two = RN >= 2;
+    var perRow = two ? Math.max(1, n0 / 2) : 1;
+    var slot = Math.max(MIN, Math.floor(avail / perRow));
+    var bw = Math.min(slot - 8, 180);
+    var W = Math.max(avail, perRow * slot);
+    var rows = two ? 2 * (RN - 1) + 1 : 1;
+    var rowY = function (row) { return TOP + row * (H + VG); };
+    var HT = rowY(rows - 1) + H + 4;
+    var pos = function (r, i) {
+      if (r === RN - 1) return { side: 'final', row: two ? RN - 1 : 0, cx: W / 2 };
+      var n = R[r].matches.length, top = i < n / 2, j = top ? i : i - n / 2, span = W / (n / 2);
+      return { side: top ? 'top' : 'bottom', row: top ? r : 2 * (RN - 1) - r, cx: (j + 0.5) * span };
+    };
+    var thin = [], thick = [], boxes = [], labels = [];
+    var line = function (x, y, w, h, on) {
+      var t = on ? THICK : THIN;
+      var st = 'left:' + (x - (w ? 0 : t / 2)) + 'px;top:' + (y - (h ? 0 : t / 2)) + 'px;width:' + (w ? w + (on ? t / 2 : 0) : t) + 'px;height:' + (h ? h + (on ? t / 2 : 0) : t) + 'px';
+      (on ? thick : thin).push('<div class="ln' + (on ? ' on' : '') + '" style="' + st + '"></div>');
+    };
+    var team = function (m, side, first) {
+      var nm = m[side], other = m[side === 'a' ? 'b' : 'a'];
+      var bye = first && !nm && other;
+      var st = !m.winner ? '' : m.winner === side ? 'win' : 'lose';
+      var sc = m.score ? m.score[side] : null;
+      return '<div class="tr ' + st + '"><span class="nm' + (nm ? '' : ' empty') + '">' + esc(nm || (bye ? '부전승' : '—')) + '</span>' +
+        (sc != null ? '<span class="s">' + sc + '</span>' : '') + '</div>';
+    };
+    R.forEach(function (round, r) {
+      round.matches.forEach(function (m, i) {
+        var p = pos(r, i), y = rowY(p.row);
+        boxes.push('<div class="bx' + (p.side === 'final' ? ' fin' : '') + '" style="left:' + (p.cx - bw / 2) + 'px;top:' + y + 'px;width:' + bw + 'px;height:' + H + 'px">' +
+          team(m, 'a', r === 0) + team(m, 'b', r === 0) + '</div>');
+        if (r === RN - 1) return;
+        var pp = pos(r + 1, Math.floor(i / 2)), py = rowY(pp.row), on = !!m.winner;
+        if (p.side === 'top') {
+          var y0 = y + H, ym = y0 + VG / 2;
+          line(p.cx, y0, 0, VG / 2, on); line(Math.min(p.cx, pp.cx), ym, Math.abs(pp.cx - p.cx), 0, on); line(pp.cx, ym, 0, py - ym, on);
+        } else {
+          var ym2 = y - VG / 2;
+          line(p.cx, ym2, 0, VG / 2, on); line(Math.min(p.cx, pp.cx), ym2, Math.abs(pp.cx - p.cx), 0, on); line(pp.cx, py + H, 0, ym2 - (py + H), on);
+        }
+      });
+      var fin = r === RN - 1;
+      var rs = fin ? [two ? RN - 1 : 0] : [r, 2 * (RN - 1) - r];
+      rs.forEach(function (row) {
+        labels.push('<div class="rl' + (fin ? ' fin' : '') + '" style="top:' + (rowY(row) - 17) + 'px">' + esc(round.name) + (fin && ko.champion ? ' · 🏆 ' + esc(ko.champion) : '') + '</div>');
+      });
+    });
+    return '<div class="lad-scroll"><div class="lad" style="width:' + W + 'px;height:' + HT + 'px">' +
+      thin.join('') + thick.join('') + boxes.join('') + labels.join('') + '</div></div>';
+  }
+  function koAvail() { return Math.max(260, app.clientWidth - 32 - 30); }   // .wrap 좌우 16 + 카드 안쪽 15
+
+  function render() {
+    var d = data;
+    var tabs = [];
+    if (d.bracket.length) tabs.push(['ko', '본선']);
+    if (d.groups.length) tabs.push(['all', '전체 순위']);
+    d.groups.forEach(function (g, i) { tabs.push(['g' + i, g.name]); });
+    if (!tab || !tabs.some(function (x) { return x[0] === tab; })) tab = tabs.length ? tabs[0][0] : null;
+    var h = '<div class="club">' + esc(d.club) + '</div><h1>' + esc(d.name) + '</h1>' +
+      '<div class="meta">' + esc(d.date) + ' · ' + d.rules.games + '게임 선승 · 순위: ' + esc(d.rankRule) + '</div>' +
+      '<div class="live"><span class="dot"></span>' + (d.status === 'finished' ? '대회 종료' : '실시간 — 30초마다 새로 고침') + '</div>';
+    if (d.champion) h += '<div class="champ"><small>CHAMPION</small><b>🏆 ' + esc(d.champion) + '</b></div>';
+    h += '<div class="tabs">' + tabs.map(function (x) { return '<button class="tab' + (tab === x[0] ? ' on' : '') + '" data-k="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>';
+    if (tab === 'ko' && d.kos) {
+      var av = koAvail();
+      d.kos.forEach(function (k) {
+        h += '<div class="card"><h2>' + esc(k.name ? k.name + ' 본선' : '본선 토너먼트') + '</h2>' + ladder(k, av) +
+          '<p class="note">굵은 초록 선 = 이긴 팀이 올라간 길 · 흐린 칸 = 진 팀</p></div>';
+      });
+    } else if (tab === 'ko') {
+      /* 서버 함수가 아직 예전 판(사다리 자료 없음)일 때 — 라운드별 목록 */
+      d.bracket.forEach(function (r) { h += '<div class="card"><h2>' + esc(r.name) + '</h2>' + matches(r.matches) + '</div>'; });
+    } else if (tab === 'all') {
+      d.groups.forEach(function (g) { h += '<div class="card"><h2>' + esc(g.name) + '</h2>' + standings(g, d.rules.advance) + '</div>'; });
+    } else if (tab) {
+      var g = d.groups[Number(tab.slice(1))];
+      h += '<div class="card"><h2>' + esc(g.name) + ' 순위</h2>' + standings(g, d.rules.advance) + '</div>';
+      h += '<div class="card"><h2>' + esc(g.name) + ' 경기</h2>' + matches(g.matches) + '</div>';
+    }
+    h += '<p class="foot">Court · 테니스 클럽 운영 앱</p>';
+    app.innerHTML = h;
+    Array.prototype.forEach.call(app.querySelectorAll('.tab'), function (b) {
+      b.onclick = function () { tab = b.getAttribute('data-k'); render(); };
+    });
+  }
+  function load() {
+    fetch('/api/live?c=' + encodeURIComponent(c) + '&t=' + encodeURIComponent(t), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) { app.innerHTML = '<div class="err">' + esc(j.message || '대회를 열지 못했습니다.') + '</div>'; return; }
+        data = j; render();
+        if (j.status !== 'finished') setTimeout(load, 30000);
+      })
+      .catch(function () {
+        if (!data) app.innerHTML = '<div class="err">연결이 불안정합니다. 잠시 후 다시 열어 주세요.</div>';
+        setTimeout(load, 30000);
+      });
+  }
+  /* 화면을 돌리거나 창 크기가 바뀌면 사다리 폭을 다시 맞춘다 */
+  var rz = null, lastW = 0;
+  window.addEventListener('resize', function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () { if (data && tab === 'ko' && Math.abs(app.clientWidth - lastW) > 2) { lastW = app.clientWidth; render(); } }, 150);
+  });
+  if (!c || !t) app.innerHTML = '<div class="err">링크 주소가 잘못되었습니다. 운영진에게 다시 받아 주세요.</div>';
+  else load();
+})();
+</script>
+</body>
+</html>
