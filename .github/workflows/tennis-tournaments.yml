@@ -19,6 +19,15 @@ on:
   schedule:
     # UTC 17:00 = 한국 02:00
     - cron: '0 17 * * *'
+  # 작업 브랜치에서 찾기 코드를 고치면 바로 한 번 돌린다(매일 02시 실행과 같이 실제 반영)
+  push:
+    branches: [claude/tennis-app-roadmap-review-oxol8b]
+    paths:
+      - 'tennis-match/jobs/**'
+      - 'tennis-match/src/lib/tournamentSearch.js'
+      - 'tennis-match/src/lib/openSync.js'
+      - 'tennis-match/src/lib/openParse.js'
+      - '.github/workflows/tennis-tournaments.yml'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -47,7 +56,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || 'claude/tennis-app-roadmap-review-oxol8b' }}
+          ref: ${{ github.event_name == 'push' && github.sha || inputs.ref || 'claude/tennis-app-roadmap-review-oxol8b' }}
 
       - uses: actions/setup-node@v4
         with:
