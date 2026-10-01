@@ -6,7 +6,7 @@ import {
   addTournament, updateTournament, deleteTournament,
 } from '../lib/firestore';
 import {
-  buildBracket, applyResult, championOf, roundName, orderBySeed, assignSkillGroups, moveMemberToGroup,
+  buildBracket, applyResult, championOf, orderBySeed, assignSkillGroups, moveMemberToGroup,
 } from '../lib/tournament';
 import { generateKdk, kdkStandingsByGroup, splitKdkGroups } from '../lib/kdk';
 import {
@@ -16,6 +16,7 @@ import { effectiveNtrp } from '../lib/ntrp';
 import { fillFromClub, tournamentSkill, groupsByGrade, gradeCountFor, gradeSummary, schemeOf } from '../lib/grades';
 import { GradeRows } from './GradeRows';
 import { GroupLeagueView } from './GroupLeagueView';
+import { BracketTree } from './BracketTree';
 import {
   DEFAULT_RULES, RANK_RULE_TEXT, EVENTS, EVENT_KEYS, makeGuest, leagueQualifiers, normRules,
 } from '../lib/groupLeague';
@@ -623,6 +624,7 @@ function Knockout({ clubId, t, isAdmin, nameOfEntry, flash }) {
   if (!bracket?.rounds?.length) return <Card><Text style={{ color: C.sub }}>본선 대진이 아직 없습니다.</Text></Card>;
 
   const champion = championOf(bracket);
+  const editing = edit ? bracket.rounds.flatMap((r) => r.matches).find((m) => m.id === edit) : null;
 
   const save = (matchId) => {
     if (sc.a === '' || sc.b === '' || sc.a === sc.b) return flash('스코어 확인 (동점 불가)');
@@ -644,43 +646,25 @@ function Knockout({ clubId, t, isAdmin, nameOfEntry, flash }) {
           <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700', marginTop: 6 }}>🏆 {nameOfEntry(champion)}</Text>
         </Card>
       )}
-      {bracket.rounds.map((round, ri) => (
-        <View key={ri}>
-          <SectionTitle>{roundName(ri, bracket.rounds.length)}</SectionTitle>
-          {round.matches.map((m) => {
-            const bye = (m.a && !m.b) || (!m.a && m.b);
-            return (
-              <Card key={m.id} style={{ marginBottom: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: m.winner === m.a ? '900' : '600', color: m.winner === m.a ? C.green : C.text }}>
-                      {m.a ? nameOfEntry(m.a) : '—'}
-                    </Text>
-                    <Text style={{ fontSize: 13, fontWeight: m.winner === m.b ? '900' : '600', color: m.winner === m.b ? C.green : C.text, marginTop: 2 }}>
-                      {m.b ? nameOfEntry(m.b) : '—'}
-                    </Text>
-                  </View>
-                  {m.score ? (
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: C.green }}>{m.score.a} : {m.score.b}</Text>
-                  ) : bye ? (
-                    <Chip tone="default">부전승</Chip>
-                  ) : isAdmin && m.a && m.b ? (
-                    <Btn small tone="ghost" onPress={() => { setEdit(m.id); setSc({ a: '', b: '' }); }}>입력</Btn>
-                  ) : <Text style={{ fontSize: 11, color: C.faint }}>대기</Text>}
-                </View>
-                {edit === m.id && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
-                    <Field keyboardType="number-pad" placeholder="위" value={sc.a} onChangeText={(v) => setSc({ ...sc, a: v })} style={{ flex: 1 }} />
-                    <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
-                    <Field keyboardType="number-pad" placeholder="아래" value={sc.b} onChangeText={(v) => setSc({ ...sc, b: v })} style={{ flex: 1 }} />
-                    <Btn small onPress={() => save(m.id)}>저장</Btn>
-                  </View>
-                )}
-              </Card>
-            );
-          })}
-        </View>
-      ))}
+      <Card style={{ padding: 10, marginTop: champion ? 10 : 0 }}>
+        <BracketTree bracket={bracket} nameOf={nameOfEntry} selectedId={edit}
+          onPressMatch={isAdmin ? (m) => { setEdit(m.id); setSc({ a: '', b: '' }); } : undefined} />
+        <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>
+          굵은 초록 선 = 이긴 팀이 올라간 길 · 흐린 칸 = 진 팀{isAdmin ? ' · 경기를 누르면 결과를 넣습니다' : ''}
+        </Text>
+      </Card>
+      {editing && (
+        <Card style={{ marginTop: 8 }}>
+          <Text style={F.bodyBold}>{nameOfEntry(editing.a)} vs {nameOfEntry(editing.b)}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+            <Field keyboardType="number-pad" placeholder="위 팀" value={sc.a} onChangeText={(v) => setSc({ ...sc, a: v })} style={{ flex: 1 }} />
+            <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
+            <Field keyboardType="number-pad" placeholder="아래 팀" value={sc.b} onChangeText={(v) => setSc({ ...sc, b: v })} style={{ flex: 1 }} />
+            <Btn small onPress={() => save(editing.id)}>저장</Btn>
+            <Btn small tone="ghost" onPress={() => setEdit(null)}>닫기</Btn>
+          </View>
+        </Card>
+      )}
     </View>
   );
 }
