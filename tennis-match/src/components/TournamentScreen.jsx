@@ -52,7 +52,8 @@ function formatLabel(t) {
     const evs = (t.events || []).map((k) => EVENTS[k]?.short).filter(Boolean).join('·');
     const kdkOn = Object.keys(t.kdk || {}).length > 0 || t.rules?.format === 'kdk';
     const drawn = (t.entries || []).length || Object.keys(t.kdk || {}).length;
-    return `${evs || '복식'} · ${(t.roster || []).length}명 · ${kdkOn ? 'KDK 개인전' : t.useGroupStage === false ? '토너먼트' : '예선 + 토너먼트'}${drawn ? '' : ' · 대진 작성 전'}`;
+    const how = kdkOn ? 'KDK 개인전' : t.useGroupStage === false ? '토너먼트' : t.rules?.knockout === false ? '조별리그' : '예선 + 토너먼트';
+    return `${evs || '복식'} · ${(t.roster || []).length}명 · ${how}${drawn ? '' : ' · 대진 작성 전'}`;
   }
   return `${t.entries?.length || 0}팀 · ${t.useGroupStage ? '예선 + 토너먼트' : '토너먼트'}`;
 }
@@ -64,7 +65,9 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
   const [date, setDate] = useState(today());
   const [courts, setCourts] = useState('2');
   const [busuLimit, setBusuLimit] = useState('');   // 참가 자격(부수 제한)
-  const [useGroup, setUseGroup] = useState(true);
+  /* 진행 — group_ko(조별리그 → 본선) · group(조별리그만) · ko(토너먼트만) */
+  const [stage, setStage] = useState('group_ko');
+  const useGroup = stage !== 'ko';
   const [groupCount, setGroupCount] = useState('4');
   const [advance, setAdvance] = useState('2');
   const [picked, setPicked] = useState({});             // 참가 회원
@@ -251,8 +254,8 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
       stage: 'draw',
       events,
       useGroupStage: useGroup,
-      advancePerGroup: Math.max(0, Number(advance) || 0),
-      rules: normRules({ ...DEFAULT_RULES, groupCount, advance }),
+      advancePerGroup: stage === 'group' ? 0 : Math.max(0, Number(advance) || 0),
+      rules: normRules({ ...DEFAULT_RULES, groupCount, advance, knockout: stage !== 'group' }),
       roster: leagueRoster(),
       guests,
       entries: [], groups: [], ko: {}, bracket: null,
@@ -364,9 +367,15 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
       <Card>
         <Text style={{ fontSize: 11.5, color: C.sub, fontWeight: '700', marginBottom: 6 }}>진행</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-          <Chip tone={useGroup ? 'green' : 'outline'} onPress={() => setUseGroup(true)}>조별리그 → 본선 토너먼트</Chip>
-          <Chip tone={!useGroup ? 'green' : 'outline'} onPress={() => setUseGroup(false)}>토너먼트만</Chip>
+          <Chip tone={stage === 'group_ko' ? 'green' : 'outline'} onPress={() => setStage('group_ko')}>조별리그 → 본선 토너먼트</Chip>
+          <Chip tone={stage === 'group' ? 'green' : 'outline'} onPress={() => setStage('group')}>조별리그만</Chip>
+          <Chip tone={stage === 'ko' ? 'green' : 'outline'} onPress={() => setStage('ko')}>토너먼트만</Chip>
         </View>
+        {stage === 'group' && (
+          <Text style={{ fontSize: 11, color: C.faint, marginTop: -6, marginBottom: 12, lineHeight: 16 }}>
+            본선 없이 조 순위로 끝납니다. 조가 하나면 1위가 우승, 여럿이면 조마다 1위.
+          </Text>
+        )}
         <Text style={{ fontSize: 11.5, color: C.sub, fontWeight: '700', marginBottom: 6 }}>종목 (여러 개 고르면 부별로 따로 운영·시상)</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {EVENT_KEYS.map((k) => (
@@ -385,10 +394,12 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
               <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>조 개수 (부마다)</Text>
               <Field keyboardType="number-pad" value={groupCount} onChangeText={setGroupCount} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>조별 본선 진출</Text>
-              <Field keyboardType="number-pad" value={advance} onChangeText={setAdvance} suffix="팀" />
-            </View>
+            {stage === 'group_ko' && (
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>조별 본선 진출</Text>
+                <Field keyboardType="number-pad" value={advance} onChangeText={setAdvance} suffix="팀" />
+              </View>
+            )}
           </View>
         )}
         <Text style={{ fontSize: 11, color: C.faint, marginTop: 10, lineHeight: 16 }}>순위: {RANK_RULE_TEXT}</Text>

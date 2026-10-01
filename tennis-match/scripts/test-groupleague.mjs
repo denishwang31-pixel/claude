@@ -9,7 +9,7 @@ import {
   normRules, makeGuest, makeEntries, assignGroups, roundRobin, buildGroupMatches, schedule, buildLeague,
   moveEntry, swapPlayers, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
   scoreChoices, nameLookup, liveView, kdkTables, setKdkScore,
-  eligible, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam, partialPairs, replacePlayer,
+  eligible, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam, partialPairs, replacePlayer, divRules, advanceOf, bracketPlan, leagueChampions,
 } from '../src/lib/groupLeague.js';
 
 let pass = 0; let fail = 0;
@@ -305,6 +305,42 @@ console.log('[선수 바꾸기 — 대진 밖 사람 넣기 · 다른 팀과 맞
   ok(/같은 팀/.test(replacePlayer(es, gs, 'a', 'b').error), '같은 팀끼리는 안내');
   const played = [{ ...gs[0], matches: [{ id: 'm1', a: 'e1', b: 'e2', score: { a: 6, b: 3 } }] }];
   ok(/경기를 한 팀/.test(replacePlayer(es, played, 'b', 'x').error), '경기한 팀은 못 바꾼다');
+}
+
+console.log('[부·조마다 본선 진출 수 · 조별리그만]');
+{
+  const r = normRules({ groupCount: 2, advance: 4, byDiv: { WD: { advance: '2' }, MD: { groupCount: '', advance: '' } }, groupAdvance: { gB: '3', gX: '' } });
+  eq(r.byDiv, { WD: { advance: 2 } }, '빈칸은 버리고 숫자만 남긴다');
+  eq(r.groupAdvance, { gB: 3 }, '조별 지정도 숫자만');
+  eq([divRules(r, 'MD').advance, divRules(r, 'WD').advance, divRules(r, 'WD').groupCount], [4, 2, 2], '부별 진출 수');
+  eq([advanceOf(r, { id: 'gA', div: 'MD' }), advanceOf(r, { id: 'gB', div: 'MD' }), advanceOf(r, { id: 'gC', div: 'WD' })], [4, 3, 2], '조별 > 부별 > 기본');
+  eq(advanceOf({ ...r, knockout: false }, { id: 'gB', div: 'MD' }), 0, '조별리그만이면 진출 0');
+  eq([bracketPlan(8), bracketPlan(6), bracketPlan(7)].map((x) => [x.size, x.byes]), [[8, 0], [8, 2], [8, 1]], '본선 크기·부전승');
+  /* 남자 30명(15팀) 2개 조 4팀씩, 여자 12명(6팀) 2개 조 2팀씩 */
+  const R = [
+    ...Array.from({ length: 30 }, (_, i) => ({ id: `m${i}`, name: `남${i}`, gender: 'M', skill: 4 - i * 0.02 })),
+    ...Array.from({ length: 12 }, (_, i) => ({ id: `w${i}`, name: `여${i}`, gender: 'F', skill: 3.5 - i * 0.02 })),
+  ];
+  const rules = normRules({ groupCount: 2, advance: 4, byDiv: { WD: { advance: 2 } } });
+  const d = drawAll(R, rules, ['MD', 'WD'], { courts: 6 }, rnd);
+  const gs = (k) => d.groups.filter((g) => g.div === k);
+  eq([gs('MD').length, gs('WD').length], [2, 2], '부마다 2개 조');
+  const qM = leagueQualifiers(gs('MD'), (g) => advanceOf(rules, g));
+  const qW = leagueQualifiers(gs('WD'), (g) => advanceOf(rules, g));
+  eq([qM.length, qW.length], [8, 4], '남자부 8팀·여자부 4팀 본선');
+  const r3 = normRules({ ...rules, groupAdvance: { [gs('MD')[1].id]: 3 } });
+  eq(leagueQualifiers(gs('MD'), (g) => advanceOf(r3, g)).length, 7, 'B조만 3팀 진출 → 7팀(부전승 1)');
+  const d2 = drawAll(R, normRules({ groupCount: 2, byDiv: { WD: { groupCount: 1 } } }), ['MD', 'WD'], { courts: 6 }, rnd);
+  eq(d2.groups.filter((g) => g.div === 'WD').length, 1, '부별 조 개수(여자부 1개 조)');
+  /* 조별리그만 — 끝난 조의 1위 */
+  let wg = d2.groups.filter((g) => g.div === 'WD');
+  wg = wg.map((g) => ({ ...g, matches: g.matches.map((m) => ({ ...m, score: { a: 6, b: 2 } })) }));
+  const tl = { rules: { knockout: false }, groups: [...d2.groups.filter((g) => g.div === 'MD'), ...wg], entries: d2.entries, events: ['MD', 'WD'] };
+  const ch = leagueChampions(tl);
+  eq([ch.length, ch[0].div, ch[0].groupName], [1, 'WD', ''], '끝난 부만, 조 하나면 조 이름 없이 우승');
+  eq(leagueChampions({ ...tl, rules: {} }).length, 0, '본선이 있는 대회는 조 1위를 우승으로 치지 않는다');
+  const lv = liveView({ ...tl, name: 'x' });
+  ok(lv.champion.includes('여자복식') && lv.groups.every((g) => g.advance === 0), '공개 보기 — 조별리그만 우승·진출 표시 없음');
 }
 
 console.log(`\n조별리그 테스트: ${pass} 통과 / ${fail} 실패`);

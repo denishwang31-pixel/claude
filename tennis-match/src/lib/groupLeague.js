@@ -43,6 +43,9 @@ export const DEFAULT_RULES = {
   games: 6,           // 한 경기 게임 수(6게임 단세트가 기본)
   perTeam: 0,         // 조 안 팀당 경기 수 — 0 이면 풀리그(모두 한 번씩)
   format: 'league',   // league(팀 고정 조별리그) | kdk(개인전, 매 경기 파트너 교체)
+  knockout: true,     // false 면 조별리그만(본선 없이 조 순위로 끝)
+  byDiv: {},          // 부마다 다르게(필요할 때만) — { MD: { groupCount: 2, advance: 4 }, WD: { advance: 2 } }
+  groupAdvance: {},   // 조마다 다르게(필요할 때만) — { [조 id]: 3 }
 };
 
 export const RULE_LABELS = {
@@ -66,7 +69,42 @@ export function normRules(r = {}) {
   x.games = Math.min(9, Math.max(1, Math.round(Number(x.games) || 6)));
   x.perTeam = Math.max(0, Math.min(20, Math.round(Number(x.perTeam) || 0)));   // 0 = 풀리그
   x.format = x.format === 'kdk' ? 'kdk' : 'league';                              // 팀 고정 조별리그 / KDK
+  x.knockout = x.knockout !== false;
+  /* 부·조마다 따로 — 숫자로 정한 값만 남긴다(빈칸 = 대회 기본값) */
+  const num = (v, min) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Math.max(min, Math.round(Number(v))));
+  const byDiv = {};
+  Object.entries(x.byDiv || {}).forEach(([k, v]) => {
+    const gc = num(v?.groupCount, 1);
+    const ad = num(v?.advance, 0);
+    if (gc != null || ad != null) byDiv[k] = { ...(gc != null ? { groupCount: gc } : {}), ...(ad != null ? { advance: ad } : {}) };
+  });
+  x.byDiv = byDiv;
+  const ga = {};
+  Object.entries(x.groupAdvance || {}).forEach(([k, v]) => { const n = num(v, 0); if (n != null) ga[k] = n; });
+  x.groupAdvance = ga;
   return x;
+}
+
+/** 한 부의 기준 — 부마다 따로 정한 조 개수·본선 진출이 있으면 그것으로 */
+export function divRules(rules, div) {
+  const r = normRules(rules);
+  const o = r.byDiv[div] || {};
+  return { ...r, ...(o.groupCount != null ? { groupCount: o.groupCount } : {}), ...(o.advance != null ? { advance: o.advance } : {}) };
+}
+
+/** 이 조에서 본선에 올라가는 팀 수 — 조별 지정 > 부별 지정 > 대회 기본. 조별리그만이면 0 */
+export function advanceOf(rules, g) {
+  const r = normRules(rules);
+  if (!r.knockout) return 0;
+  if (g?.id && r.groupAdvance[g.id] != null) return r.groupAdvance[g.id];
+  return divRules(r, g?.div).advance;
+}
+
+/** 본선 크기 — 진출 팀 수 → 몇 강(2의 거듭제곱)·부전승 수 */
+export function bracketPlan(n) {
+  if (n < 2) return { teams: n, size: 0, byes: 0 };
+  const size = 2 ** Math.ceil(Math.log2(n));
+  return { teams: n, size, byes: size - n };
 }
 
 /* ---------------- 외부 참가자 ---------------- */
@@ -473,7 +511,8 @@ export function progress(group) {
 /** 본선 진출 — 조 1위들 먼저, 그다음 2위들 … (공동 순위는 표 순서대로) */
 export function leagueQualifiers(groups, advance = 2) {
   const out = [];
-  (groups || []).forEach((g, gi) => standings(g).slice(0, advance).forEach((s, pos) => out.push({ entryId: s.id, groupIndex: gi, rank: pos })));
+  /* advance — 숫자(모든 조 같게) 또는 (조) => 숫자(조마다 다르게) */
+  (groups || []).forEach((g, gi) => standings(g).slice(0, typeof advance === 'function' ? advance(g) : advance).forEach((s, pos) => out.push({ entryId: s.id, groupIndex: gi, rank: pos })));
   return out.sort((a, b) => a.rank - b.rank || a.groupIndex - b.groupIndex);
 }
 
@@ -584,7 +623,7 @@ export function drawAll(roster, rulesIn, events, { courts = 2, excluded = {}, us
   const groups = [];
   const problems = [];
   (events || []).forEach((k) => {
-    const r = drawDivision(roster, rulesIn, k, { excluded: excluded[k] || [], useGroups }, rnd);
+    const r = drawDivision(roster, divRules(rulesIn, k), k, { excluded: excluded[k] || [], useGroups }, rnd);
     if (r.problem) problems.push(r.problem);
     if (r.notice) problems.push(r.notice);
     entries.push(...r.entries);
@@ -595,7 +634,7 @@ export function drawAll(roster, rulesIn, events, { courts = 2, excluded = {}, us
 
 /** 부 하나만 다시 짠다 — 다른 부의 대진·결과는 그대로, 시간표만 함께 다시 */
 export function redrawDivision(t, evKey, roster, rulesIn, { courts = 2, excluded = [], useGroups = true } = {}, rnd = Math.random) {
-  const r = drawDivision(roster, rulesIn, evKey, { excluded, useGroups }, rnd);
+  const r = drawDivision(roster, divRules(rulesIn, evKey), evKey, { excluded, useGroups }, rnd);
   const entries = [...(t.entries || []).filter((e) => e.div !== evKey), ...r.entries];
   const groups = [...(t.groups || []).filter((g) => g.div !== evKey), ...r.groups];
   return { entries, groups: schedule(groups, courts, { playersOf: playersOfFn(entries) }), problem: [r.problem, r.notice].filter(Boolean).join(' · ') };
@@ -650,6 +689,23 @@ export function setKdkScore(kdk, div, matchId, score) {
   return { ...kdk, [div]: { ...d, matches: d.matches.map((m) => (m.id === matchId ? { ...m, score: score || null } : m)) } };
 }
 
+/** 조별리그만 — 끝난 조의 1위(부에 조가 하나면 그 부 우승). 본선이 있는 대회는 빈 목록 */
+export function leagueChampions(t, rulesIn) {
+  const rules = normRules(rulesIn || t?.rules);
+  if (rules.knockout || t?.useGroupStage === false) return [];
+  const gs = t?.groups || [];
+  const out = [];
+  [...new Set(gs.map((g) => g.div || ''))].forEach((div) => {
+    const mine = gs.filter((g) => (g.div || '') === div);
+    mine.forEach((g) => {
+      if (!progress(g).finished) return;
+      const top = standings(g)[0];
+      if (top) out.push({ div, groupName: mine.length > 1 ? g.name : '', entryId: top.id });
+    });
+  });
+  return out;
+}
+
 /* ---------------- 외부 공개 보기 ----------------
    앱이 없는 사람에게 보여 줄 것만 — 이름·조·시간표·결과·순위·본선.
    회원 id·전화·신청자 목록·등급 같은 것은 내보내지 않는다(서버 함수 liveTournament 가 쓴다). */
@@ -661,6 +717,7 @@ export function liveView(t, clubName = '') {
   const label = (div, n) => (div && div !== LEGACY && eventOf(div).short ? `${eventOf(div).name} ${n}` : n);
   const groups = ensureSchedule(t.groups || [], Number(t.courts) || 2).map((g) => ({
     name: label(g.div, g.name),
+    advance: advanceOf(rules, g),     // 이 조 본선 진출 수(조마다 다를 수 있음, 조별리그만이면 0)
     progress: progress(g),
     standings: standings(g).map((r) => ({
       rank: r.rank, tie: r.tie, name: nameOf(r.id), played: r.played, w: r.w, l: r.l, gf: r.gf, ga: r.ga, diff: r.diff,
@@ -697,7 +754,10 @@ export function liveView(t, clubName = '') {
     rules: { games: rules.games, advance: rules.advance, play: rules.play },
     rankRule: Object.keys(t.kdk || {}).length && !(t.groups || []).length ? KDK_RANK_TEXT : RANK_RULE_TEXT,
     courts: Number(t.courts) || 2,
-    champion: kos.filter((k) => k.championId).map((k) => (k.div ? `${eventOf(k.div).name} ${nameOf(k.championId)}` : nameOf(k.championId))).join(' · '),
+    champion: [
+      ...kos.filter((k) => k.championId).map((k) => (k.div ? `${eventOf(k.div).name} ${nameOf(k.championId)}` : nameOf(k.championId))),
+      ...leagueChampions(t, rules).map((c) => `${c.div ? `${eventOf(c.div).name} ` : ''}${c.groupName ? `${c.groupName} ` : ''}${nameOf(c.entryId)}`),
+    ].join(' · '),
     groups,
     /* 부별 본선 — 사다리 그림용(라운드 순서·경기 위치를 그대로). r 라운드 i 경기의 승자 → r+1 라운드 i/2 경기 */
     kos: kos.map((k) => ({
@@ -719,7 +779,7 @@ export function liveView(t, clubName = '') {
 export default {
   PLAY, TEAM_MODE, GROUP_METHOD, DEFAULT_RULES, RULE_LABELS, RANK_RULE_TEXT,
   normRules, makeGuest, makeEntries, assignGroups, roundRobin, buildGroupMatches, schedule, buildLeague,
-  moveEntry, swapPlayers, replacePlayer, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
+  moveEntry, swapPlayers, replacePlayer, divRules, advanceOf, bracketPlan, leagueChampions, setGroupCourts, setScore, ensureSchedule, standings, progress, leagueQualifiers,
   scoreChoices, nameLookup, groupName, liveView, partialPairs, kdkTables, setKdkScore, KDK_RANK_TEXT,
   EVENTS, EVENT_KEYS, LEGACY, eventOf, eligible, drawDivision, drawAll, redrawDivision, playersOfFn, addTeam, removeTeam,
 };

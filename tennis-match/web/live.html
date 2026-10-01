@@ -192,10 +192,10 @@
       /* 서버 함수가 아직 예전 판(사다리 자료 없음)일 때 — 라운드별 목록 */
       d.bracket.forEach(function (r) { h += '<div class="card"><h2>' + esc(r.name) + '</h2>' + matches(r.matches) + '</div>'; });
     } else if (tab === 'all') {
-      d.groups.forEach(function (g) { h += '<div class="card"><h2>' + esc(g.name) + '</h2>' + standings(g, d.rules.advance) + '</div>'; });
+      d.groups.forEach(function (g) { h += '<div class="card"><h2>' + esc(g.name) + '</h2>' + standings(g, g.advance != null ? g.advance : d.rules.advance) + '</div>'; });
     } else if (tab) {
       var g = d.groups[Number(tab.slice(1))];
-      h += '<div class="card"><h2>' + esc(g.name) + ' 순위</h2>' + standings(g, d.rules.advance) + '</div>';
+      h += '<div class="card"><h2>' + esc(g.name) + ' 순위</h2>' + standings(g, g.advance != null ? g.advance : d.rules.advance) + '</div>';
       h += '<div class="card"><h2>' + esc(g.name) + ' 경기</h2>' + matches(g.matches) + '</div>';
     }
     h += '<p class="foot">Court · 테니스 클럽 운영 앱</p>';

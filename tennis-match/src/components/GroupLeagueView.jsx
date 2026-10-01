@@ -15,7 +15,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import {
   normRules, RULE_LABELS, RANK_RULE_TEXT, standings, progress, ensureSchedule, setScore,
-  moveEntry, swapPlayers, replacePlayer, setGroupCourts, schedule, scoreChoices, nameLookup,
+  moveEntry, swapPlayers, replacePlayer, advanceOf, setGroupCourts, schedule, scoreChoices, nameLookup,
 } from '../lib/groupLeague';
 import { MatchGrid } from './MatchGrid';
 import { useOptionSheet } from './native';
@@ -246,7 +246,7 @@ export function GroupLeagueView({
             <Text style={[F.h3, { flex: 1 }]}>{g.name}</Text>
             <Text style={{ fontSize: 11.5, color: C.green2, fontWeight: '700' }}>경기·결과 ›</Text>
           </Pressable>
-          <StandingTable group={g} nameOfEntry={nameOfEntry} advance={rules.advance} myEntryId={myEntryId} compact />
+          <StandingTable group={g} nameOfEntry={nameOfEntry} advance={advanceOf(rules, g)} myEntryId={myEntryId} compact />
         </Card>
       ))}
 
@@ -266,7 +266,7 @@ export function GroupLeagueView({
         <>
           <SectionTitle>{shown.name} 순위</SectionTitle>
           <Card>
-            <StandingTable group={shown} nameOfEntry={nameOfEntry} advance={rules.advance} myEntryId={myEntryId} />
+            <StandingTable group={shown} nameOfEntry={nameOfEntry} advance={advanceOf(rules, shown)} myEntryId={myEntryId} />
           </Card>
 
           <SectionTitle hint={canEdit ? '경기를 누르면 결과를 넣습니다' : undefined}>{shown.name} 경기</SectionTitle>
@@ -376,7 +376,7 @@ export function GroupLeagueView({
         </>
       )}
 
-      {canEdit && onKnockout && rules.advance > 0 && (
+      {canEdit && onKnockout && groups.some((g) => advanceOf(rules, g) > 0) && (
         <View style={{ marginTop: 16 }}>
           <Btn full disabled={!allDone} onPress={() => onKnockout(groups)}>
             {allDone ? '예선 종료 → 본선 토너먼트 대진 만들기' : '예선 경기를 모두 입력하면 본선 대진을 만들 수 있습니다'}
