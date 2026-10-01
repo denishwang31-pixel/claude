@@ -58,7 +58,9 @@ export function explainApiError(e) {
   }
   if (e?.status === 401 || /invalid x-api-key|authentication/i.test(msg)) return 'API 키가 맞지 않습니다(401). 키를 다시 확인해 주세요.';
   if (e?.status === 429) return '요청이 많아 잠시 막혔습니다(429). 조금 뒤 다시 해 주세요.';
-  if (/credit balance|billing/i.test(msg)) return 'API 사용 한도나 결제 설정을 확인해 주세요.';
+  if (/credit balance|billing/i.test(msg)) {
+    return 'API 크레딧(선불 잔액)이 부족합니다. Anthropic 콘솔에서 크레딧을 충전하거나 결제 수단을 등록해 주세요.';
+  }
   return msg.slice(0, 300) || '알 수 없는 오류';
 }
 
