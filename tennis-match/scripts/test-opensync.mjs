@@ -107,7 +107,7 @@ ok(/401/.test(explainApiError({ status: 401, message: 'invalid x-api-key' })), '
 ok(!SOURCES.some((s) => /m\.ikata\.org/.test(s.url)), '없어진 KATA 모바일 공지(404)는 뺐다');
 
 console.log('[공용 코드는 바깥 라이브러리를 부르지 않는다 — 서버 함수로 복사되므로]');
-for (const f of ['tournamentSearch.js', 'openSync.js', 'openParse.js', 'openTournament.js', 'regions.js']) {
+for (const f of ['tournamentSearch.js', 'openSync.js', 'openParse.js', 'openTournament.js', 'regions.js', 'groupLeague.js']) {
   const src = readFileSync(new URL(`../src/lib/${f}`, import.meta.url), 'utf8');
   const bad = [...src.matchAll(/^import .* from ['"]([^'"]+)['"]/gm)].map((m) => m[1]).filter((x) => !/^\.\/(openSync|openParse|openTournament|regions)\.js$/.test(x));
   eq(bad, [], `${f} 의 import`);

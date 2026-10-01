@@ -456,8 +456,31 @@ export default function Schedule() {
     ],
   );
 
-  const openTournament = () => router.push({
-    pathname: '/(tabs)/more', params: { open: 'tournament', from: 'schedule' },
+  /* 대회 카드를 누르면 그 대회의 대진·순위로 바로 */
+  const openTournament = (id) => router.push({
+    pathname: '/(tabs)/more', params: { open: 'tournament', from: 'schedule', ...(typeof id === 'string' && id ? { tid: id } : {}) },
+  });
+  /* [＋ 새 모임] — 정기·번개 모임인지, 클럽 내부 대회인지 먼저 고른다.
+     클럽 대회는 [클럽 대회 › 새 대회 개설]과 같은 화면으로 간다.
+     (협회·오픈 같은 큰 대회 등록은 앱 관리자만 — [대회 찾기]에 있다) */
+  const newMeeting = () => {
+    setEditing(null);
+    setNd({ ...blank(), venueId: venueId || null });
+    setOpen(true);
+  };
+  const pickNew = () => sheet.open({
+    title: '무엇을 등록할까요?',
+    options: [
+      { key: 'meeting', icon: '📅', label: '모임 (정기·번개)' },
+      { key: 'tournament', icon: '🏆', label: '클럽 대회 (조별리그·KDK·청백전 …)' },
+    ],
+    onSelect: (o) => {
+      if (o.key === 'tournament') {
+        router.push({ pathname: '/(tabs)/more', params: { open: 'tournament', from: 'schedule', create: '1' } });
+        return;
+      }
+      newMeeting();
+    },
   });
   const openGuest = () => router.push({
     pathname: '/(tabs)/more', params: { open: 'guest', from: 'schedule' },
@@ -916,7 +939,7 @@ export default function Schedule() {
     if (it.kind === KIND.MEETING) return meetingCard(it.raw);
     if (it.kind === KIND.TOURNAMENT) {
       return (
-        <TournamentCard key={it.key} item={it} today={today()} onOpen={openTournament}
+        <TournamentCard key={it.key} item={it} today={today()} onOpen={() => openTournament(it.raw?.id)}
           apply={() => applyTo(it)} cancel={() => cancelApply(it)} />
       );
     }
@@ -1134,7 +1157,7 @@ export default function Schedule() {
                 icon="📅"
                 title={venueId ? '이 코트장에 예정된 일정이 없습니다' : '예정된 일정이 없습니다'}
                 body={isAdmin
-                  ? '오른쪽 아래 [＋ 새 모임] 버튼으로 등록하세요. 정기 모임이면 기한까지 한 번에 만들 수 있습니다.'
+                  ? '오른쪽 아래 [＋ 새 모임] 버튼으로 모임이나 클럽 대회를 등록하세요. 정기 모임이면 기한까지 한 번에 만들 수 있습니다.'
                   : '운영진이 일정을 등록하면 여기에 표시됩니다.'}
               />
             )}
@@ -1339,11 +1362,7 @@ export default function Schedule() {
 
       {/* 새 모임 — 목록 맨 아래가 아니라 항상 손 닿는 자리에 */}
       {isAdmin && (
-        <Fab icon="＋" label="새 모임" onPress={() => {
-          setEditing(null);
-          setNd({ ...blank(), venueId: venueId || null });
-          setOpen(true);
-        }} />
+        <Fab icon="＋" label="새 모임" onPress={pickNew} />
       )}
 
       {sheet.node}

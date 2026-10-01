@@ -905,6 +905,32 @@ exports.onMatchesRecorded = onDocumentUpdated(
       · 열쇠가 클럽에 저장된 것과 다르면 아무것도 보여 주지 않는다
       · 내보내는 것은 오프라인 회원의 이름과 참석 여부뿐이다
       · 쓸 수 있는 것은 오프라인 회원의 참석 여부 한 칸뿐이다 */
+/* ---------------- 대회 외부 공개 보기 (/api/live) ----------------
+   운영진이 [외부 공개 링크]를 켠 클럽 대회만, 앱이 없는 사람도 브라우저로
+   대진표·결과·실시간 순위를 본다(public/live.html 이 30초마다 다시 읽는다).
+   ⚠️ 내보내는 것은 groupLeague.liveView 가 고른 것뿐 — 이름·조·시간표·결과·순위·본선.
+      공개가 꺼졌거나 없는 대회는 구별 없이 같은 답(대회 id 를 캐 볼 수 없게). */
+exports.liveTournament = onRequest({ ...REGION, cors: true, maxInstances: 5 }, async (req, res) => {
+  res.set('Cache-Control', 'public, max-age=15');
+  const fail = (status, message) => res.status(status).json({ ok: false, message });
+  try {
+    if (req.method !== 'GET') return fail(405, '지원하지 않는 요청입니다.');
+    const clubId = String(req.query?.c || '');
+    const tid = String(req.query?.t || '');
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(clubId) || !/^[A-Za-z0-9_-]{1,64}$/.test(tid)) return fail(400, '링크 주소가 잘못되었습니다.');
+    const ref = db.collection('clubs').doc(clubId);
+    const snap = await ref.collection('tournaments').doc(tid).get();
+    const t = snap.exists ? snap.data() : null;
+    if (!t || t.publicView !== true) return fail(404, '공개되지 않았거나 없는 대회입니다. 운영진에게 링크를 다시 받아 주세요.');
+    const club = (await ref.get()).data() || {};
+    const { liveView } = await import('./shared/groupLeague.js');
+    return res.json({ ok: true, at: Date.now(), ...liveView(t, club.name || '') });
+  } catch (e) {
+    logger.error('liveTournament', e);
+    return fail(500, '잠시 후 다시 열어 주세요.');
+  }
+});
+
 exports.rsvpLink = onRequest({ ...REGION, cors: false, maxInstances: 5 }, async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const fail = (status, code, message) => res.status(status).json({ ok: false, code, message });

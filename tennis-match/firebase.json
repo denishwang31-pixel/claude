@@ -16,6 +16,13 @@
         }
       },
       {
+        "source": "/api/live",
+        "function": {
+          "functionId": "liveTournament",
+          "region": "asia-northeast3"
+        }
+      },
+      {
         "source": "/api/rsvp",
         "function": {
           "functionId": "rsvpLink",

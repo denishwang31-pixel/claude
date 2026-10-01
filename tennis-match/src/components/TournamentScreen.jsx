@@ -1,13 +1,12 @@
 /* 대회 — 조별+토너먼트 · KDK · 청백전 · 팀 리그 개설 · 진행 · 기록 보관
    (클럽 교류전은 두 클럽이 같이 보는 문서라 [클럽 교류전] 화면에 따로 있다) */
 import React, { useMemo, useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, Share } from 'react-native';
 import {
   addTournament, updateTournament, deleteTournament,
 } from '../lib/firestore';
 import {
-  buildGroups, groupStandings, qualifiers, buildBracket, applyResult,
-  championOf, roundName, autoTeams, orderBySeed, assignSkillGroups, moveMemberToGroup,
+  buildBracket, applyResult, championOf, roundName, orderBySeed, assignSkillGroups, moveMemberToGroup,
 } from '../lib/tournament';
 import { generateKdk, kdkStandingsByGroup, splitKdkGroups } from '../lib/kdk';
 import {
@@ -16,6 +15,11 @@ import {
 import { effectiveNtrp } from '../lib/ntrp';
 import { fillFromClub, tournamentSkill, groupsByGrade, gradeCountFor, gradeSummary, schemeOf } from '../lib/grades';
 import { GradeRows } from './GradeRows';
+import { GroupLeagueView } from './GroupLeagueView';
+import {
+  DEFAULT_RULES, RULE_LABELS, RANK_RULE_TEXT, PLAY, TEAM_MODE, GROUP_METHOD,
+  buildLeague, makeGuest, leagueQualifiers, normRules,
+} from '../lib/groupLeague';
 import { TeamMatch } from './TeamMatchScreen';
 import { TeamLeague } from './TeamLeagueScreen';
 import { MatchGrid } from './MatchGrid';
@@ -25,6 +29,11 @@ import { TournamentSignup } from './TournamentSignup';
 import { Card, SectionTitle, Chip, Btn, Field, EmptyState, Divider } from './ui';
 import { C, S, R, F } from '../lib/theme';
 import { todayYmd } from '../lib/today';
+import { firebaseConfig } from '../../firebaseConfig';
+
+/** 외부 공개 보기 주소 — 앱이 없는 사람도 브라우저로 대진·순위를 본다(public/live.html) */
+export const liveUrl = (projectId, clubId, tid) =>
+  `https://${projectId}.web.app/live?c=${encodeURIComponent(clubId)}&t=${encodeURIComponent(tid)}`;
 
 const today = () => todayYmd();
 
@@ -51,9 +60,8 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
   const [useGroup, setUseGroup] = useState(true);
   const [groupCount, setGroupCount] = useState('4');
   const [advance, setAdvance] = useState('2');
-  const [teamMode, setTeamMode] = useState('balanced'); // balanced | random
   const [picked, setPicked] = useState({});             // 참가 회원
-  const [seeds, setSeeds] = useState({});               // entryIndex → seed no
+  const [seeds, setSeeds] = useState({});               // entryId → seed no (토너먼트만일 때)
   const [useSkillGroups, setUseSkillGroups] = useState(false); // NTRP 실력 그룹 사용
   const [groupSizes, setGroupSizes] = useState('8,8');         // 그룹별 정원
   const [skillGroups, setSkillGroups] = useState(null);        // 배정 결과(수동 조정 가능)
@@ -65,6 +73,18 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
   const [tgScheme, setTgScheme] = useState('busu');      // 'busu'(1부~) | 'grade'(A~)
   const [tgCount, setTgCount] = useState(4);
   const [tgOpen, setTgOpen] = useState(false);
+  /* 대진표 작성 기준 (조별리그) — src/lib/groupLeague.js */
+  const [play, setPlay] = useState(DEFAULT_RULES.play);
+  const [teamModeL, setTeamModeL] = useState(DEFAULT_RULES.teamMode);
+  const [groupMethod, setGroupMethod] = useState(DEFAULT_RULES.groupMethod);
+  const [games, setGames] = useState(String(DEFAULT_RULES.games));
+  const [pairs, setPairs] = useState([]);            // 직접 짝짓기 [[a,b]]
+  const [pairPick, setPairPick] = useState(null);
+  /* 외부 참가자 — 회원이 아닌 사람(외부 대회를 우리 앱으로 운영할 때) */
+  const [guests, setGuests] = useState([]);
+  const [gName, setGName] = useState('');
+  const [gClub, setGClub] = useState('');
+  const [preview, setPreview] = useState(null);      // buildLeague 결과(미리보기 → 그대로 개설)
 
   const pickedList = members.filter((m) => picked[m.id]);
   /* 고른 사람의 대회 등급만 — 참가에서 뺀 사람 값은 버린다 */
@@ -96,13 +116,35 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
       return true;
     });
   }, [members, pickVenue, pickQ, busuLimit]);
-  const teams = useMemo(() => {
-    if (pickedList.length < 4) return [];
-    return autoTeams(
-      pickedList.map((m) => ({ id: m.id, name: m.name, ntrp: skillIn(m) })),
-      teamMode,
-    );
-  }, [picked, teamMode, members, tgrades]);
+
+  /* 조별리그 참가자 — 회원 + 외부 참가자 */
+  const leaguePlayers = () => [
+    ...pickedList.map((m) => ({ id: m.id, name: m.name, skill: skillIn(m), ...(tg[m.id] ? { tgrade: tg[m.id] } : {}) })),
+    ...guests.map((g) => ({ id: g.id, name: g.club ? `${g.name}(${g.club})` : g.name, skill: 3 })),
+  ];
+  const leagueRules = () => normRules({ play, teamMode: teamModeL, groupMethod, groupCount, advance, games });
+  const playerCount = pickedList.length + guests.length;
+  const minPlayers = play === PLAY.SINGLES ? 2 : 4;
+  const makePreview = () => {
+    if (playerCount < minPlayers) return flash(`참가자를 ${minPlayers}명 이상 고르세요`);
+    const lg = buildLeague(leaguePlayers(), leagueRules(), { courts: Math.max(1, Number(courts) || 1), pairs });
+    setPreview(lg);
+    return flash(useGroup ? `${lg.entries.length}팀 · ${lg.groups.length}개 조로 짰습니다` : `${lg.entries.length}팀을 짰습니다`);
+  };
+  const nameOfAny = (id) => members.find((m) => m.id === id)?.name
+    || (() => { const g = guests.find((x) => x.id === id); return g ? (g.club ? `${g.name}(${g.club})` : g.name) : '?'; })();
+  const addGuest = () => {
+    const g = makeGuest(gName, gClub);
+    if (!g) return flash('외부 참가자 이름을 넣어 주세요');
+    setGuests([...guests, g]); setGName(''); setPreview(null);
+    return undefined;
+  };
+  const tapPair = (id) => {
+    if (pairs.some((p) => p.includes(id))) { setPairs(pairs.filter((p) => !p.includes(id))); setPreview(null); return; }
+    if (!pairPick) { setPairPick(id); return; }
+    if (pairPick === id) { setPairPick(null); return; }
+    setPairs([...pairs, [pairPick, id]]); setPairPick(null); setPreview(null);
+  };
 
   const runAssign = () => {
     const sizes = groupSizes.split(',').map((v) => Number(v.trim())).filter((v) => v > 0);
@@ -194,23 +236,23 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
       flash('실력 그룹 대회가 개설되었습니다');
       return onDone();
     }
-    if (teams.length < 2) return flash('참가자는 최소 4명(2팀) 이상이어야 합니다');
-    const entries = teams.map((t, i) => ({ ...t, seed: seeds[i] ? Number(seeds[i]) : null }));
-    const groups = useGroup ? buildGroups(entries, Math.max(1, +groupCount)) : [];
+    if (playerCount < minPlayers) return flash(`참가자를 ${minPlayers}명 이상 고르세요`);
+    /* 미리보기에서 손본 그대로 개설한다 — 없으면 기준대로 새로 짠다 */
+    const lg = preview || buildLeague(leaguePlayers(), leagueRules(), { courts: Math.max(1, Number(courts) || 1), pairs });
+    if (lg.entries.length < 2) return flash('팀이 2팀 이상이어야 합니다');
+    const entries = lg.entries.map((e, i) => ({ ...e, seed: seeds[e.id] ? Number(seeds[e.id]) : (e.seed || null), _i: i }));
     // 예선 미사용 → 시드 순서 그대로 토너먼트
     const bracket = useGroup ? null : buildBracket(orderBySeed(entries).map((e) => e.id));
     addTournament(clubId, {
-      name: name || `${date} 클럽대회`,
-      date,
+      ...base,
       useGroupStage: useGroup,
-      advancePerGroup: +advance,
-      tgrades: tg,
-      tgScheme,
+      advancePerGroup: lg.rules.advance,
+      rules: lg.rules,
+      guests,
       entries,
-      groups,
+      groups: useGroup ? lg.groups : [],
       bracket,
       stage: useGroup ? 'group' : 'knockout',
-      status: 'ongoing',
     });
     flash('대회가 개설되었습니다');
     onDone();
@@ -314,30 +356,44 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
 
       {isBracket && (
       <>
-      <SectionTitle>진행 방식</SectionTitle>
+      <SectionTitle hint="정한 기준대로 팀·조·시간표를 짜고, 만든 뒤에도 손으로 고칠 수 있습니다.">대진표 작성 기준</SectionTitle>
       <Card>
-        <Pressable onPress={() => setUseGroup(!useGroup)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: useGroup ? C.green : '#e7e5e4', alignItems: 'center', justifyContent: 'center' }}>
-            {useGroup && <Text style={{ color: C.lime, fontWeight: '700', fontSize: 13 }}>✓</Text>}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: '700' }}>예선 조별리그 진행</Text>
-            <Text style={{ fontSize: 11, color: C.faint }}>체크 해제 시 곧바로 토너먼트만 진행합니다</Text>
-          </View>
-        </Pressable>
-
-        {useGroup && (
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>조 개수</Text>
-              <Field keyboardType="number-pad" value={groupCount} onChangeText={setGroupCount} />
+        {[
+          ['진행', [['group', '조별리그 → 토너먼트'], ['ko', '토너먼트만']], useGroup ? 'group' : 'ko', (v) => setUseGroup(v === 'group')],
+          ['경기', Object.entries(RULE_LABELS.play), play, setPlay],
+          ...(play === PLAY.DOUBLES ? [['짝 짓기', Object.entries(RULE_LABELS.teamMode), teamModeL, setTeamModeL]] : []),
+          ...(useGroup ? [['조 나누기', Object.entries(RULE_LABELS.groupMethod), groupMethod, setGroupMethod]] : []),
+          ['한 경기', [['4', '4게임'], ['6', '6게임'], ['8', '8게임']], games, setGames],
+        ].map(([label, opts, value, set]) => (
+          <View key={label} style={{ marginBottom: 12 }}>
+            <Text style={{ fontSize: 11.5, color: C.sub, fontWeight: '700', marginBottom: 6 }}>{label}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {opts.map(([k, l]) => (
+                <Chip key={k} tone={value === k ? 'green' : 'outline'} onPress={() => { set(k); setPreview(null); }}>{l}</Chip>
+              ))}
             </View>
+          </View>
+        ))}
+        {useGroup && groupMethod === GROUP_METHOD.GRADE && !hasTg && (
+          <Text style={{ fontSize: 11, color: C.warn, marginBottom: 10 }}>같은 등급끼리 나누려면 아래 「대회 등급」을 먼저 매기세요. 안 매기면 실력 고르게 나눕니다.</Text>
+        )}
+        {useGroup && (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {groupMethod !== GROUP_METHOD.GRADE && (
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>조 개수</Text>
+                <Field keyboardType="number-pad" value={groupCount} onChangeText={(v) => { setGroupCount(v); setPreview(null); }} />
+              </View>
+            )}
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>조별 진출 팀</Text>
-              <Field keyboardType="number-pad" value={advance} onChangeText={setAdvance} />
+              <Text style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>조별 본선 진출</Text>
+              <Field keyboardType="number-pad" value={advance} onChangeText={setAdvance} suffix="팀" />
             </View>
           </View>
         )}
+        <Text style={{ fontSize: 11, color: C.faint, marginTop: 10, lineHeight: 16 }}>
+          순위: {RANK_RULE_TEXT}. 조별 경기는 서로 한 번씩(풀리그), 시간표는 코트 수에 맞춰 자동으로 짭니다.
+        </Text>
       </Card>
       </>
       )}
@@ -399,6 +455,48 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
           </View>
         )}
       </Card>
+
+      {/* 외부 참가자 — 회원이 아닌 사람. 외부 대회를 우리 앱으로 운영할 때도 이것으로 */}
+      {isBracket && !useSkillGroups && (
+        <>
+          <SectionTitle hint="회원이 아닌 참가자 — 외부 대회를 이 앱으로 운영할 때도 씁니다">외부 참가자 ({guests.length}명)</SectionTitle>
+          <Card>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <Field placeholder="이름" value={gName} onChangeText={setGName} style={{ flex: 1 }} />
+              <Field placeholder="소속(선택)" value={gClub} onChangeText={setGClub} style={{ flex: 1 }} />
+              <Btn small onPress={addGuest}>추가</Btn>
+            </View>
+            {guests.length > 0 && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                {guests.map((g) => (
+                  <Chip key={g.id} tone="soft" onPress={() => { setGuests(guests.filter((x) => x.id !== g.id)); setPreview(null); }}>
+                    {g.club ? `${g.name}(${g.club})` : g.name} ✕
+                  </Chip>
+                ))}
+              </View>
+            )}
+          </Card>
+        </>
+      )}
+
+      {/* 직접 짝짓기 — 이름 두 개를 차례로 누르면 한 팀 */}
+      {isBracket && !useSkillGroups && play === PLAY.DOUBLES && teamModeL === TEAM_MODE.MANUAL && playerCount > 0 && (
+        <>
+          <SectionTitle hint="이름 두 개를 차례로 누르면 한 팀이 됩니다. 짝 없는 사람은 실력 균등으로 짝지어집니다.">짝 짓기 ({pairs.length}팀)</SectionTitle>
+          <Card>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {[...pickedList.map((m) => m.id), ...guests.map((g) => g.id)].map((id) => {
+                const pi = pairs.findIndex((p) => p.includes(id));
+                return (
+                  <Chip key={id} tone={pairPick === id ? 'green' : pi >= 0 ? 'soft' : 'outline'} onPress={() => tapPair(id)}>
+                    {pi >= 0 ? `${pi + 1}팀 · ` : ''}{nameOfAny(id)}
+                  </Chip>
+                );
+              })}
+            </View>
+          </Card>
+        </>
+      )}
 
       {/* 대회 등급 — 이 대회에만 쓰는 등급. 클럽 조와 따로 매긴다. */}
       {pickedList.length > 0 && (
@@ -523,34 +621,56 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
         )}
       </Card>
 
-      {!useSkillGroups && <SectionTitle>팀 구성 방식</SectionTitle>}
-      {!useSkillGroups && <Card>
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          <Chip tone={teamMode === 'balanced' ? 'green' : 'outline'} onPress={() => setTeamMode('balanced')}>NTRP 균등</Chip>
-          <Chip tone={teamMode === 'random' ? 'green' : 'outline'} onPress={() => setTeamMode('random')}>무작위</Chip>
-        </View>
-        {teams.length > 0 && (
-          <View style={{ marginTop: 10 }}>
-            <Text style={{ fontSize: 11, color: C.sub, marginBottom: 6 }}>
-              구성된 {teams.length}팀 — 시드를 줄 팀에 번호를 입력하세요(1이 최상위 시드, 비워도 됨)
-            </Text>
-            {teams.map((t, i) => (
-              <View key={t.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
-                <Text style={{ flex: 1, fontSize: 13, fontWeight: '600' }}>{t.name}</Text>
-                <Field placeholder="시드" keyboardType="number-pad" value={seeds[i] || ''}
-                  onChangeText={(v) => setSeeds({ ...seeds, [i]: v })} style={{ width: 64, textAlign: 'center' }} />
+      {!useSkillGroups && (
+        <>
+          <SectionTitle right={
+            <Chip tone="soft" onPress={makePreview}>{preview ? '다시 짜기' : '미리 짜 보기'}</Chip>
+          }>대진표 미리보기</SectionTitle>
+          <Card>
+            {!preview && (
+              <Text style={{ fontSize: 11.5, color: C.sub, lineHeight: 17 }}>
+                「미리 짜 보기」로 팀·조를 확인하세요. 마음에 들 때까지 다시 짤 수 있고, 개설 뒤에도
+                조 옮기기·선수 맞바꾸기·코트 정하기가 됩니다. 미리 보지 않고 개설하면 기준대로 바로 짭니다.
+              </Text>
+            )}
+            {preview && play === PLAY.DOUBLES && preview.entries.some((e) => e.players.length < 2) && (
+              <Text style={{ fontSize: 11.5, color: C.warn, marginBottom: 8, lineHeight: 17 }}>
+                인원이 홀수라 혼자인 팀이 있습니다({preview.entries.filter((e) => e.players.length < 2).map((e) => e.name).join(', ')}).
+                외부 참가자를 한 명 더하거나, 개설 뒤 「편성 수정」에서 짝을 고치세요.
+              </Text>
+            )}
+            {preview && useGroup && preview.groups.map((g) => (
+              <View key={g.id} style={{ marginBottom: 10, padding: 10, borderRadius: R.md, backgroundColor: C.fill }}>
+                <Text style={F.bodyBold}>{g.name} · {g.entryIds.length}팀 · {g.matches.length}경기</Text>
+                {g.entryIds.map((id) => (
+                  <Text key={id} style={{ fontSize: 12, color: C.text, marginTop: 4 }}>· {preview.entries.find((e) => e.id === id)?.name}</Text>
+                ))}
               </View>
             ))}
-          </View>
-        )}
-      </Card>}
+            {preview && !useGroup && (
+              <View>
+                <Text style={{ fontSize: 11, color: C.sub, marginBottom: 6 }}>
+                  {preview.entries.length}팀 — 시드를 줄 팀에 번호를 넣으세요(1이 최상위, 비워도 됨)
+                </Text>
+                {preview.entries.map((e) => (
+                  <View key={e.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
+                    <Text style={{ flex: 1, fontSize: 13, fontWeight: '600' }}>{e.name}</Text>
+                    <Field placeholder="시드" keyboardType="number-pad" value={seeds[e.id] || ''}
+                      onChangeText={(v) => setSeeds({ ...seeds, [e.id]: v })} style={{ width: 64, textAlign: 'center' }} />
+                  </View>
+                ))}
+              </View>
+            )}
+          </Card>
+        </>
+      )}
       </>
       )}
 
       <View style={{ marginTop: S.lg }}>
         <AppButton full
           disabled={isBracket
-            ? (useSkillGroups ? !skillGroups?.length : teams.length < 2)
+            ? (useSkillGroups ? !skillGroups?.length : playerCount < minPlayers)
             : pickedList.length < 4}
           onPress={create}>
           대회 개설
@@ -560,88 +680,6 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
         <Text style={{ fontSize: 11.5, color: C.faint, textAlign: 'center', marginTop: 8 }}>
           참가자를 4명 이상 선택해야 개설할 수 있습니다.
         </Text>
-      )}
-    </View>
-  );
-}
-
-/* ---------------- 조별리그 진행 ---------------- */
-function GroupStage({ clubId, t, isAdmin, nameOfEntry, flash }) {
-  const [edit, setEdit] = useState(null);
-  const [sc, setSc] = useState({ a: '', b: '' });
-
-  const saveScore = (groupId, matchId) => {
-    if (sc.a === '' || sc.b === '' || sc.a === sc.b) return flash('스코어 확인 (동점 불가)');
-    const groups = t.groups.map((g) => (g.id !== groupId ? g : {
-      ...g,
-      matches: g.matches.map((m) => (m.id === matchId ? { ...m, score: { a: +sc.a, b: +sc.b } } : m)),
-    }));
-    updateTournament(clubId, t.id, { groups });
-    setEdit(null); setSc({ a: '', b: '' });
-  };
-
-  const allDone = t.groups.every((g) => g.matches.every((m) => m.score));
-
-  const goKnockout = () => {
-    const q = qualifiers(t.groups, t.advancePerGroup || 2);
-    if (q.length < 2) return flash('진출 팀이 부족합니다');
-    const bracket = buildBracket(q.map((x) => x.entryId));
-    updateTournament(clubId, t.id, { bracket, stage: 'knockout' });
-    flash('본선 토너먼트 대진이 생성되었습니다');
-  };
-
-  return (
-    <View>
-      {t.groups.map((g) => {
-        const st = groupStandings(g);
-        return (
-          <View key={g.id}>
-            <SectionTitle>{g.name}</SectionTitle>
-            <Card>
-              {st.map((s, i) => (
-                <View key={s.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5, borderTopWidth: i ? 1 : 0, borderTopColor: '#f5f5f4' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: i < (t.advancePerGroup || 2) ? C.lime : '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: i < (t.advancePerGroup || 2) ? C.ink : C.sub }}>{i + 1}</Text>
-                    </View>
-                    <Text style={{ fontSize: 13, fontWeight: '600' }}>{nameOfEntry(s.id)}</Text>
-                  </View>
-                  <Text style={{ fontSize: 11, color: C.sub }}>{s.w}승 {s.l}패 · 득실 {s.gf - s.ga > 0 ? '+' : ''}{s.gf - s.ga}</Text>
-                </View>
-              ))}
-              <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingTop: 8 }}>
-                {g.matches.map((m) => (
-                  <View key={m.id} style={{ paddingVertical: 4 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Text style={{ fontSize: 12, flex: 1 }}>{nameOfEntry(m.a)} vs {nameOfEntry(m.b)}</Text>
-                      {m.score ? (
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: C.green }}>{m.score.a} : {m.score.b}</Text>
-                      ) : isAdmin ? (
-                        <Btn small tone="ghost" onPress={() => { setEdit(m.id); setSc({ a: '', b: '' }); }}>입력</Btn>
-                      ) : <Text style={{ fontSize: 11, color: C.faint }}>미진행</Text>}
-                    </View>
-                    {edit === m.id && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-                        <Field keyboardType="number-pad" placeholder="A" value={sc.a} onChangeText={(v) => setSc({ ...sc, a: v })} style={{ flex: 1 }} />
-                        <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
-                        <Field keyboardType="number-pad" placeholder="B" value={sc.b} onChangeText={(v) => setSc({ ...sc, b: v })} style={{ flex: 1 }} />
-                        <Btn small onPress={() => saveScore(g.id, m.id)}>저장</Btn>
-                      </View>
-                    )}
-                  </View>
-                ))}
-              </View>
-            </Card>
-          </View>
-        );
-      })}
-
-      {isAdmin && (
-        <View style={{ marginTop: 12 }}>
-          <Btn full disabled={!allDone} onPress={goKnockout}>
-            {allDone ? '예선 종료 → 본선 대진 생성' : '예선 경기를 모두 입력하세요'}
-          </Btn>
-        </View>
       )}
     </View>
   );
@@ -846,9 +884,12 @@ function KdkView({ clubId, t, isAdmin, flash }) {
 
 export function Tournaments({
   clubId, members, venues = [], tournaments, isAdmin, me = '', meVal = null, flash,
+  startCreate = false, startOpenId = null,
 }) {
-  const [view, setView] = useState('list'); // list | create | detail
-  const [openId, setOpenId] = useState(null);
+  /* 일정의 [＋ 새 모임 › 클럽 대회]로 오면 바로 개설 화면, 일정의 대회 카드로 오면 그 대회 */
+  const [view, setView] = useState(startCreate && isAdmin ? 'create' : startOpenId ? 'detail' : 'list'); // list | create | detail
+  const [openId, setOpenId] = useState(startOpenId || null);
+  const [showGroups, setShowGroups] = useState(false);
 
   const t = tournaments.find((x) => x.id === openId);
   const nameOfEntry = (entryId) => {
@@ -908,9 +949,55 @@ export function Tournaments({
         ) : t.stage === 'skillGroups' ? (
           <SkillGroupsView clubId={clubId} t={t} members={members} isAdmin={isAdmin} flash={flash} />
         ) : t.stage === 'group' ? (
-          <GroupStage clubId={clubId} t={t} isAdmin={isAdmin} nameOfEntry={nameOfEntry} flash={flash} />
+          <GroupLeagueView
+            key={t.id} t={t} members={members} isAdmin={isAdmin} me={me} flash={flash}
+            onUpdate={(patch) => updateTournament(clubId, t.id, patch)}
+            onKnockout={(groups) => {
+              const q = leagueQualifiers(groups, normRules(t.rules || { advance: t.advancePerGroup }).advance || 2);
+              if (q.length < 2) return flash('진출 팀이 부족합니다');
+              updateTournament(clubId, t.id, { groups, bracket: buildBracket(q.map((x) => x.entryId)), stage: 'knockout' });
+              return flash('본선 토너먼트 대진을 만들었습니다');
+            }}
+          />
         ) : (
           <Knockout clubId={clubId} t={t} isAdmin={isAdmin} nameOfEntry={nameOfEntry} flash={flash} />
+        )}
+
+        {/* 본선으로 넘어간 뒤에도 예선 조별 결과·순위는 계속 볼 수 있게 */}
+        {t.stage === 'knockout' && (t.groups || []).length > 0 && (
+          <>
+            <SectionTitle right={
+              <Chip tone={showGroups ? 'green' : 'outline'} onPress={() => setShowGroups(!showGroups)}>{showGroups ? '접기' : '보기'}</Chip>
+            }>예선 조별 결과</SectionTitle>
+            {showGroups && <GroupLeagueView key={`${t.id}-g`} t={t} members={members} isAdmin={false} me={me} />}
+          </>
+        )}
+
+        {/* 외부 공개 — 앱이 없는 외부 참가자·관중도 링크로 대진·결과·순위를 본다 */}
+        {isAdmin && (t.stage === 'group' || t.stage === 'knockout') && (
+          <Card style={{ marginTop: S.lg }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={F.bodyBold}>외부 공개 링크</Text>
+                <Text style={{ fontSize: 11, color: C.faint, marginTop: 2, lineHeight: 16 }}>
+                  켜면 링크를 받은 누구나(앱 없이도) 대진표·결과·순위를 봅니다. 참가자 이름이 보이니 필요할 때만 켜세요.
+                </Text>
+              </View>
+              <Chip tone={t.publicView ? 'green' : 'outline'}
+                onPress={() => updateTournament(clubId, t.id, { publicView: !t.publicView })
+                  .then(() => flash(t.publicView ? '외부 공개를 껐습니다' : '외부 공개를 켰습니다'))
+                  .catch(() => flash('바꾸지 못했습니다'))}>
+                {t.publicView ? '켜짐' : '꺼짐'}
+              </Chip>
+            </View>
+            {t.publicView && (
+              <View style={{ marginTop: 10 }}>
+                <Btn small tone="ghost" onPress={() => Share.share({
+                  message: `[${t.name}] 대진표·실시간 순위\n${liveUrl(firebaseConfig.projectId, clubId, t.id)}`,
+                }).catch(() => {})}>링크 보내기</Btn>
+              </View>
+            )}
+          </Card>
         )}
 
         {/* 참가 신청 — 모집을 열면 일정 화면에서 바로 신청할 수 있다.

@@ -156,13 +156,18 @@ export default function More() {
      홈의 [회원]을 눌러 들어왔으면 뒤로가기는 홈으로 가야 한다.
      더보기 목록으로 돌아가면 "누른 적 없는 화면"으로 가는 셈이라 어색하다. */
   const [cameFrom, setCameFrom] = useState(null);
+  /* 일정에서 클럽 대회로 올 때 — 바로 개설(create=1) 또는 그 대회(tid) */
+  const [tourStart, setTourStart] = useState({ create: false, id: null, n: 0 });
 
   useEffect(() => {
     if (!params?.open) return;
     const k = String(params.open);
     setSub(k === 'manage' ? null : k);
     setCameFrom(params?.from ? String(params.from) : null);
-    router.setParams({ open: '', from: '' });
+    if (k === 'tournament') {
+      setTourStart((x) => ({ create: String(params?.create || '') === '1', id: params?.tid ? String(params.tid) : null, n: x.n + 1 }));
+    }
+    router.setParams({ open: '', from: '', create: '', tid: '' });
   }, [params?.open]);
 
   /* 하단 [더보기] 탭을 누르면 언제나 메뉴 목록으로 — 마지막으로 봤던
@@ -258,7 +263,8 @@ export default function More() {
           isAppAdmin={!!isAppAdmin && viewMode !== 'member' && viewMode !== 'lead'} />
       );
       case 'tournament': return (
-        <Tournaments {...{ clubId, members, venues, tournaments, isAdmin, me, meVal, flash }} />
+        <Tournaments key={`tour-${tourStart.n}`} {...{ clubId, members, venues, tournaments, isAdmin, me, meVal, flash }}
+          startCreate={tourStart.create} startOpenId={tourStart.id} />
       );
       case 'clubmatch': return (
         <ClubMatchScreen
