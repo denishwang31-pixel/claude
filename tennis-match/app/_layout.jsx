@@ -158,7 +158,13 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AppCtx.Provider value={{ ...session, viewMode, setViewMode, venueId, setVenueId, switchClub, resetOnboarding, openOnboarding, markVerified }}>
+        {/* 역할 미리보기(회장·총무·운영진·리드·회원으로 보기) 중에는 앱 관리자 기능을 모두 숨긴다 —
+            그 역할 사람에게는 [대회 등록]·[지금 찾기] 같은 버튼이 없다. 미리보기 전환 줄만
+            진짜 값(realAppAdmin)을 써서 "내 역할"로 되돌아올 수 있게 한다. */}
+        <AppCtx.Provider value={{
+          ...session, isAppAdmin: !!session.isAppAdmin && !viewMode, realAppAdmin: !!session.isAppAdmin,
+          viewMode, setViewMode, venueId, setVenueId, switchClub, resetOnboarding, openOnboarding, markVerified,
+        }}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="login" />
             <Stack.Screen name="verify" />
