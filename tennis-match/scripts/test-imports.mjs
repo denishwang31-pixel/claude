@@ -325,8 +325,11 @@ console.log('[클럽에 들어간 뒤 세션을 갱신하는지 검사]');
   ok(switches >= links,
     `${rel}: 클럽에 넣은 뒤 switchClub 을 부른다 (넣기 ${links}곳 / 갱신 ${switches}곳)`
     + ' — 빠지면 온보딩에 갇혀 뒤로가기로 앱이 꺼집니다');
-  ok(/const \{ switchClub \} = useApp\(\)/.test(src),
+  ok(/const \{ switchClub[ ,}]/.test(src) && /= useApp\(\)/.test(src),
     `${rel}: switchClub 을 앱 상태에서 가져온다`);
+  /* 「나중에」도 같은 함정 — 둘러보기로 바꾸지 않으면 가드가 온보딩으로 되돌린다(2026-10-02) */
+  ok(/markSkipped \} = useApp\(\)/.test(src) && /markSkipped\?\.\(\)/.test(src),
+    `${rel}: 클럽 없이 가입하면 markSkipped 로 앱 상태를 바꾼다`);
 }
 
 console.log('[선언 전에 쓰는 값 검사]');

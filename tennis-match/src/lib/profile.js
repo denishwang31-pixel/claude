@@ -37,4 +37,32 @@ export function profilePatch(draft, member) {
   return { patch };
 }
 
-export default { loginMethodOf, profilePatch };
+/* 가입할 때 꼭 받는 칸 — 이름 · 성별 · 활동 지역 · 테니스 시작 년월 (앱 주인 2026-10-02)
+   성별은 혼복 대진, 지역은 가까운 클럽·게스트 모집, 시작 년월은 대회 구력 자격에 쓴다.
+   부수는 모르는 사람이 많아 선택으로 둔다. */
+export const SIGNUP_REQUIRED = [
+  ['name', '이름'],
+  ['gender', '성별'],
+  ['region', '활동 지역'],
+  ['startedAt', '테니스 시작 년월'],
+];
+
+/** 비어 있는 필수 칸의 key 목록 */
+export function signupMissing(p = {}) {
+  const ok = {
+    name: !!String(p.name || '').trim(),
+    gender: p.gender === 'M' || p.gender === 'F',
+    region: !!String(p.region || '').trim(),
+    startedAt: /^\d{4}-\d{2}/.test(String(p.startedAt || '')),
+  };
+  return SIGNUP_REQUIRED.filter(([k]) => !ok[k]).map(([k]) => k);
+}
+
+/** 화면에 보일 안내 — 무엇을 넣어야 하는지 이름으로 */
+export function signupMissingText(keys) {
+  if (!keys?.length) return '';
+  const names = SIGNUP_REQUIRED.filter(([k]) => keys.includes(k)).map(([, n]) => n);
+  return `위의 필수 칸(*)을 채워 주세요: ${names.join(' · ')}`;
+}
+
+export default { loginMethodOf, profilePatch, signupMissing, signupMissingText };

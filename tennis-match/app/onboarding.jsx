@@ -15,7 +15,7 @@
      이제 위에서 클럽을 고르거나(찾기) 정보를 채우거나(만들기) 「나중에」를 고른 뒤,
      맨 아래 「가입하기」를 누르면 고른 갈래대로 처리한다. 버튼 아래 한 줄이 무엇이 일어날지 말해 준다.
    ============================================================ */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useApp } from './_layout';
@@ -30,9 +30,10 @@ import { linkUserToClub, markPendingClub, skipOnboarding, getMySession, logout }
 import { JOIN_STATUS, BUSU_KEYS, APP_NAME } from '../src/lib/constants';
 import { DEFAULT_SETTINGS, roundsFromSettings } from '../src/lib/schedule';
 import { MonthField, Label } from '../src/components/pickers';
+import { signupMissing, signupMissingText } from '../src/lib/profile';
 import { RegionPicker } from '../src/components/RegionPicker';
 import { useBackHandler } from '../src/hooks/useBackHandler';
-import { AppButton, Segmented, Touchable } from '../src/components/native';
+import { AppButton, Touchable } from '../src/components/native';
 import { Card, Btn, Field, Chip, SectionTitle, StatCard } from '../src/components/ui';
 import { C, S, R, F } from '../src/lib/theme';
 
@@ -53,7 +54,7 @@ export default function Onboarding() {
      화면은 그대로인 것처럼 보이고, 온보딩이 스택의 유일한 화면이라
      뒤로가기를 누르면 앱이 꺼진다. 나갈 길이 아예 없다.
      실제로 그렇게 막혔다 — 클럽을 만들었는데 아무 데도 못 갔다. */
-  const { switchClub } = useApp();
+  const { switchClub, markSkipped } = useApp();
   const router = useRouter();
   const params = useLocalSearchParams();
   const uid = auth.currentUser?.uid;
@@ -70,7 +71,11 @@ export default function Onboarding() {
   /* 공통 프로필 */
   /* 카카오·네이버·구글로 들어온 사람은 그쪽 이름을 미리 채워 둔다(고칠 수 있다) */
   const [myName, setMyName] = useState(() => String(auth.currentUser?.displayName || '').slice(0, 20));
-  const [gender, setGender] = useState('M');
+  /* 성별은 미리 고르지 않는다 — 필수 칸이라 본인이 눌러야 한다(예전엔 '남'이 미리 골라져 있었다) */
+  const [gender, setGender] = useState('');
+  /* [가입하기]를 눌렀는데 빈 필수 칸이 있으면 그 칸 이름을 빨갛게 */
+  const [showMissing, setShowMissing] = useState(false);
+  const scrollRef = useRef(null);
   const [startedAt, setStartedAt] = useState('');
   const [busu, setBusu] = useState('');
   const [myRegion, setMyRegion] = useState('');
@@ -301,8 +306,17 @@ export default function Onboarding() {
   const doSkip = async () => {
     if (!uid) return;
     setBusy(true);
-    try { await skipOnboarding(uid, myName.trim() ? buildProfile() : null); } catch (e) { /* 무시 */ }
+    try {
+      await skipOnboarding(uid, myName.trim() ? buildProfile() : null);
+    } catch (e) {
+      setBusy(false);
+      setErr('가입 정보를 저장하지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요.');
+      return;
+    }
     setBusy(false);
+    /* ⚠️ 앱의 로그인 상태에도 "클럽 없이 둘러보기"를 알려야 한다. 안 그러면 라우팅 가드가
+          클럽도 없고 둘러보기도 아니라며 이 화면으로 다시 돌려보낸다(실제로 그랬다). */
+    markSkipped?.();
     router.replace('/(tabs)');
   };
 
@@ -331,9 +345,17 @@ export default function Onboarding() {
       run: doSkip,
     };
   })();
-  const nameMissing = !switching && !myName.trim();
+  /* 이미 클럽이 있는 사람(switching)은 프로필 칸이 안 보이니 묻지 않는다 */
+  const missing = switching ? [] : signupMissing({ name: myName, gender, region: myRegion, startedAt });
+  const missingText = signupMissingText(missing);
+  const miss = (k) => showMissing && missing.includes(k);
   const finish = () => {
-    if (nameMissing) { setErr('맨 위에 이름을 넣어 주세요.'); return; }
+    if (missing.length) {
+      setShowMissing(true);      // 칸 이름이 빨개지고, 버튼 아래 안내가 빠진 칸을 이름으로 알려 준다
+      setErr('');
+      scrollRef.current?.scrollTo?.({ y: 0, animated: true });
+      return;
+    }
     if (!plan.ok) { setErr(plan.hint); return; }
     setErr('');
     plan.run();
@@ -378,28 +400,28 @@ export default function Onboarding() {
 
   /* ================= 일반 온보딩 ================= */
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={{ padding: 24, paddingTop: 56, paddingBottom: 48 }}>
+    <ScrollView ref={scrollRef} style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={{ padding: 24, paddingTop: 56, paddingBottom: 48 }}>
       <Text style={{ fontSize: 22, fontWeight: '700', color: C.ink }}>
         {switching ? '클럽 찾기' : '시작하기'}
       </Text>
       <Text style={{ fontSize: 12, color: C.sub, marginTop: 4 }}>
         {switching
           ? `${myName ? `${myName}님, ` : ''}다른 클럽을 찾아보세요. 둘러보기만 해도 됩니다.`
-          : '클럽은 나중에 정해도 됩니다. 우선 이름만 알려주세요.'}
+          : '클럽은 나중에 정해도 됩니다. 빨간 * 표시는 꼭 넣어 주세요.'}
       </Text>
 
       {/* 내 프로필 — 이미 클럽이 있는 사람에게는 다시 묻지 않는다 */}
       <Card style={{ marginTop: S.lg, display: switching ? 'none' : 'flex' }}>
-        <Label>내 이름</Label>
+        <Label required missing={miss('name')} hint="클럽 안에서 보일 이름">내 이름</Label>
         <Field placeholder="이름" value={myName} onChangeText={setMyName} />
 
         <View style={{ marginTop: S.md }}>
-          <Label>성별</Label>
-          <Segmented
-            options={[{ key: 'M', label: '남' }, { key: 'F', label: '여' }]}
-            value={gender}
-            onChange={setGender}
-          />
+          <Label required missing={miss('gender')} hint="혼합복식 대진에 씁니다">성별</Label>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {[['M', '남'], ['F', '여']].map(([k, l]) => (
+              <Chip key={k} tone={gender === k ? 'green' : 'outline'} onPress={() => setGender(k)}>{l}</Chip>
+            ))}
+          </View>
         </View>
 
         <View style={{ marginTop: S.md }}>
@@ -413,12 +435,12 @@ export default function Onboarding() {
         </View>
 
         <View style={{ marginTop: S.md }}>
-          <Label hint="선택 · 가까운 클럽과 게스트 모집을 찾는 기준">활동 지역</Label>
+          <Label required missing={miss('region')} hint="가까운 클럽과 게스트 모집을 찾는 기준">활동 지역</Label>
           <RegionPicker value={myRegion} onChange={setMyRegion} labels={false} />
         </View>
 
         <View style={{ marginTop: S.md }}>
-          <Label hint="선택 · 한 번 저장하면 변경할 수 없습니다">테니스 시작 년월</Label>
+          <Label required missing={miss('startedAt')} hint="대충이라도 괜찮아요 · 한 번 저장하면 바꿀 수 없습니다">테니스 시작 년월</Label>
           <MonthField value={startedAt} onChange={setStartedAt} />
           <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 5, lineHeight: 15 }}>
             공정한 대회 운영을 위한 구력 확인제도입니다. 잘못 넣으면 회장만 초기화할 수 있으니 신중히 입력하세요.
@@ -624,8 +646,8 @@ export default function Onboarding() {
         <Btn full disabled={busy} onPress={finish}>
           {busy ? '처리 중…' : plan.label}
         </Btn>
-        <Text style={{ fontSize: 12, color: plan.ok && !nameMissing ? C.sub : C.danger, marginTop: 8, textAlign: 'center', lineHeight: 18 }}>
-          {nameMissing ? '맨 위에 이름을 넣어 주세요.' : plan.hint}
+        <Text style={{ fontSize: 12, color: plan.ok && !missing.length ? C.sub : C.danger, marginTop: 8, textAlign: 'center', lineHeight: 18 }}>
+          {missing.length ? missingText : plan.hint}
         </Text>
       </View>
 

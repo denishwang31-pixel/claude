@@ -135,6 +135,12 @@ export default function RootLayout() {
     setOnboardingIntent(false);
     setSession((s) => ({ ...s, clubId, skipped: false, pendingClubId: null }));
   };
+  /** 「나중에」 — 클럽 없이 가입. 이걸 안 바꾸면 아래 라우팅 가드가 다시 온보딩으로 돌려보낸다
+      (네이버로 시작 → 나중에 → [가입하기] 를 눌러도 같은 화면이 다시 떴다, 앱 주인 2026-10-02) */
+  const markSkipped = () => {
+    setOnboardingIntent(false);
+    setSession((s) => ({ ...s, skipped: true, pendingClubId: null }));
+  };
   /** 온보딩을 다시 밟게 한다(클럽 찾기/만들기 재진입) */
   const resetOnboarding = () => setSession((s) => ({ ...s, skipped: false }));
   /** 클럽이 있는 상태에서 클럽 찾기/만들기 화면을 여는 정식 통로 */
@@ -163,7 +169,7 @@ export default function RootLayout() {
             진짜 값(realAppAdmin)을 써서 "내 역할"로 되돌아올 수 있게 한다. */}
         <AppCtx.Provider value={{
           ...session, isAppAdmin: !!session.isAppAdmin && !viewMode, realAppAdmin: !!session.isAppAdmin,
-          viewMode, setViewMode, venueId, setVenueId, switchClub, resetOnboarding, openOnboarding, markVerified,
+          viewMode, setViewMode, venueId, setVenueId, switchClub, markSkipped, resetOnboarding, openOnboarding, markVerified,
         }}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="login" />

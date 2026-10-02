@@ -232,12 +232,14 @@ export function MonthField({ value, onChange, placeholder = '년월 선택', max
 }
 
 /** 입력 라벨 */
-export const Label = ({ children, hint }) => (
+/* required — 이름 뒤에 빨간 * (필수 칸). missing — 비어 있는데 [가입하기]를 눌렀을 때 이름까지 빨갛게 */
+export const Label = ({ children, hint, required, missing }) => (
   <Text style={{
-    fontSize: 12, fontWeight: '700', color: C.sub, marginBottom: 6,
+    fontSize: 12, fontWeight: '700', color: missing ? C.danger : C.sub, marginBottom: 6,
     letterSpacing: Platform.OS === 'android' ? 0.1 : 0,
   }}>
-    {children}{hint ? <Text style={{ fontWeight: '400', color: C.faint }}>  {hint}</Text> : null}
+    {children}{required ? <Text style={{ color: C.danger }}> *</Text> : null}
+    {hint ? <Text style={{ fontWeight: '400', color: missing ? C.danger : C.faint }}>  {hint}</Text> : null}
   </Text>
 );
 
