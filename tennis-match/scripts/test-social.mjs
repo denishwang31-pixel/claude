@@ -468,10 +468,13 @@ console.log('[카카오톡을 거쳐 늦게 온 로그인 결과도 받는다]')
   ok(/\[S12\]/.test(socialClosedHint('kakao')), '끝내 결과가 없으면 번호 붙은 안내');
   /* 2026-09-30: 안드로이드에서 카카오 로그인을 바깥 창으로 열면 [로그인]을 누르는 순간 창이 사라지고
      서버에 카카오 콜백이 한 번도 안 왔다 → 카카오(안드로이드)는 앱 안 로그인 화면으로 */
-  ok(/inApp = typeof openInApp === 'function' && RN\.Platform\?\.OS === 'android' && provider === PROVIDERS\.KAKAO/.test(signSrc), '안드로이드 카카오는 앱 안 로그인 화면으로 연다');
-  ok(/openAuthSessionAsync\(url, returnUrl/.test(signSrc), '네이버·iOS 는 잘 되던 바깥 창 그대로');
+  /* 2026-10-02: 네이버를 바깥 창으로 열면 기본 브라우저(삼성 인터넷 등)의 네이버 로그인 기록으로
+     로그인·동의 화면 없이 넘어갔다 → 네이버(안드로이드)도 앱 안 로그인 화면(기록을 남기지 않음)으로 */
+  ok(/RN\.Platform\?\.OS === 'android'\s*&& \(provider === PROVIDERS\.KAKAO \|\| provider === PROVIDERS\.NAVER\)/.test(signSrc), '안드로이드 카카오·네이버는 앱 안 로그인 화면으로 연다');
+  ok(/openAuthSessionAsync\(url, returnUrl/.test(signSrc), 'iOS 는 잘 되던 바깥 창 그대로');
   ok(/openInApp,/.test(loginSrc2) && /<SocialLoginSheet/.test(loginSrc2), '로그인 화면이 앱 안 로그인 화면을 띄울 수 있다');
   const { webLoginDecision, intentFallback } = await import('../src/lib/social.js');
+  eq(webLoginDecision('https://nid.naver.com/nidlogin.login?mode=form', 'com.donghyun.tennismatch://oauth'), 'load', '네이버 로그인 화면은 그대로 연다');
   const RET = 'com.donghyun.tennismatch://oauth';
   eq(webLoginDecision(RET + '?token=t&state=s', RET), 'result', '앱 복귀 주소는 로그인 끝 — 화면을 닫고 결과를 읽는다');
   eq(webLoginDecision('https://tennis-match-52b31.web.app/auth/kakao/callback?code=c', RET), 'load', '우리 서버 콜백은 그대로 연다(서버가 코드를 토큰으로 바꾼다)');

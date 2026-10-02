@@ -268,19 +268,23 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
     candidates = browserCandidates(null);
   }
 
-  /* ⚠️ 안드로이드 카카오는 **앱 안 로그인 화면**(components/SocialLoginSheet)으로 연다.
-        바깥 창(크롬 탭)으로 열면 [로그인]을 누르는 순간 창이 사라지고, 서버 기록에 카카오의
-        결과 요청이 한 번도 없었다(2026-09-30). 앱이 창을 닫지 않게 해도 같았다.
-        네이버·iOS 는 바깥 창으로 잘 된다 — 그대로 둔다. */
+  /* ⚠️ 안드로이드 카카오·네이버는 **앱 안 로그인 화면**(components/SocialLoginSheet, 매번 새 기록)으로 연다.
+        카카오: 바깥 창(크롬 탭)으로 열면 [로그인]을 누르는 순간 창이 사라지고, 서버 기록에 카카오의
+                결과 요청이 한 번도 없었다(2026-09-30).
+        네이버: 바깥 창은 휴대폰 기본 브라우저(삼성 인터넷 등)의 네이버 로그인 기록을 그대로 써서,
+                로그인·동의 화면 없이 바로 넘어갔다 — 크롬에 로그인이 안 돼 있어도(2026-10-02 앱 주인).
+                다른 아이디로 들어갈 수도, 검수용 화면을 찍을 수도 없었다. 앱 안 화면은 기록을 남기지 않는다.
+        iOS 는 바깥 창 그대로. */
   const RN = await import('react-native');
-  const inApp = typeof openInApp === 'function' && RN.Platform?.OS === 'android' && provider === PROVIDERS.KAKAO;
+  const inApp = typeof openInApp === 'function' && RN.Platform?.OS === 'android'
+    && (provider === PROVIDERS.KAKAO || provider === PROVIDERS.NAVER);
   let result = null;
   let lastErr = null;
   let backUrl = '';
   let got = null;
   let trail = '';
   if (inApp) {
-    const r = await openInApp({ url, returnUrl, title: '카카오 로그인' });
+    const r = await openInApp({ url, returnUrl, title: provider === PROVIDERS.NAVER ? '네이버 로그인' : '카카오 로그인' });
     backUrl = typeof r === 'string' ? r : (r?.url || '');
     trail = typeof r === 'string' ? '' : (r?.trail || '');
     if (!backUrl) got = await fetchHandoff(state);     // 화면을 닫기 직전에 서버까지는 갔을 수도 있다
@@ -319,7 +323,7 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
     /* 앱 안 화면을 사용자가 닫은 것 — 오류는 아니지만, 어디까지 갔는지 한 줄 남긴다(진단) */
     if (inApp) {
       await clearPending();
-      return { ok: false, cancelled: true, error: '', hint: trail ? `카카오 로그인을 마치지 않고 닫았습니다.\n(거쳐 간 곳: ${trail})` : '' };
+      return { ok: false, cancelled: true, error: '', hint: trail ? `${provider === PROVIDERS.NAVER ? '네이버' : '카카오'} 로그인을 마치지 않고 닫았습니다.\n(거쳐 간 곳: ${trail})` : '' };
     }
     /* 끝내 없으면 기억은 남겨 둔다 — 나중에 앱으로 돌아올 때 checkPendingSocial 이 한 번 더 본다 */
     const hint = socialClosedHint(provider);
