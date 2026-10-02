@@ -8,6 +8,12 @@
      3) 나중에 하기 : 클럽 없이 앱 둘러보기(게스트 모집 게시판·용품 등)
 
    승인 대기 중에는 대기 화면이 뜨고, 운영진이 승인하는 즉시 자동 입장한다.
+
+   마무리는 언제나 맨 아래 「가입하기」 하나(2026-10 앱 주인).
+     예전에는 갈래마다 버튼이 달랐고(바로 가입하기 · 가입 신청 · 클럽 만들기),
+     클럽 없이 들어가는 길은 밑줄 글씨 「나중에 할게요」라 버튼으로 보이지 않았다.
+     이제 위에서 클럽을 고르거나(찾기) 정보를 채우거나(만들기) 「나중에」를 고른 뒤,
+     맨 아래 「가입하기」를 누르면 고른 갈래대로 처리한다. 버튼 아래 한 줄이 무엇이 일어날지 말해 준다.
    ============================================================ */
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, Image } from 'react-native';
@@ -33,6 +39,7 @@ import { C, S, R, F } from '../src/lib/theme';
 const TABS = [
   ['find', '클럽 찾기'],
   ['create', '클럽 만들기'],
+  ['later', '나중에'],
 ];
 
 export default function Onboarding() {
@@ -77,8 +84,10 @@ export default function Onboarding() {
 
   /* 승인 대기 */
   const [pending, setPending] = useState(null);   // { clubId, clubName, status }
-  /* 비밀번호로 가입하는 중인 클럽 */
-  const [pwClub, setPwClub] = useState(null);
+  /* 검색 결과에서 고른 클럽 — 맨 아래 「가입하기」가 이 클럽으로 처리한다 */
+  const [picked, setPicked] = useState(null);
+  /* 비밀번호가 있는 클럽: 'password'(바로 입장) | 'request'(가입 신청) */
+  const [joinWay, setJoinWay] = useState('request');
   const [pwInput, setPwInput] = useState('');
 
   /* 클럽 만들기 */
@@ -188,14 +197,17 @@ export default function Onboarding() {
       if (/^[A-Z0-9]{6}$/.test(code)) {
         const found = await findClubByInviteCode(code);
         if (found) {
-          setResults([{ id: found.clubId, name: found.clubName, byCode: true, code }]);
+          const hit = { id: found.clubId, name: found.clubName, byCode: true, code };
+          setResults([hit]);
+          setPicked(hit);          // 초대코드로 찾은 클럽은 하나뿐이라 바로 고른다
           setSearched(true); setSearching(false);
           return;
         }
       }
       const list = await searchClubs(kw);
-      setResults(list);
+      setResults(Array.isArray(list) ? list : []);
       setSearched(true);
+      setPicked(null);
     } catch (e) { setErr('검색에 실패했습니다. 잠시 후 다시 시도하세요.'); }
     setSearching(false);
   };
@@ -216,7 +228,7 @@ export default function Onboarding() {
   };
 
   /* ---------------- 비밀번호로 즉시 가입 ---------------- */
-  const doJoinByPassword = async () => {
+  const doJoinByPassword = async (pwClub) => {
     if (!uid || !pwClub) return;
     if (!myName.trim()) return setErr('이름을 먼저 입력하세요.');
     setErr(''); setBusy(true);
@@ -292,6 +304,39 @@ export default function Onboarding() {
     try { await skipOnboarding(uid, myName.trim() ? buildProfile() : null); } catch (e) { /* 무시 */ }
     setBusy(false);
     router.replace('/(tabs)');
+  };
+
+  /* ---------------- 가입하기 — 고른 갈래대로 ---------------- */
+  const plan = (() => {
+    if (switching && (tab === 'later' || (tab === 'find' && !picked))) {
+      return { ok: true, label: '돌아가기', hint: '지금 클럽으로 돌아갑니다.', run: () => router.replace('/(tabs)') };
+    }
+    if (tab === 'create') {
+      if (!clubName.trim()) return { ok: false, label: '가입하기', hint: '위에 클럽 이름을 넣어 주세요.' };
+      return { ok: true, label: '가입하기', hint: `「${clubName.trim()}」 클럽을 만들고 회장으로 시작합니다.`, run: doCreate };
+    }
+    if (tab === 'find' && picked) {
+      if (picked.byCode) return { ok: true, label: '가입하기', hint: `초대코드로 「${picked.name}」에 바로 들어갑니다.`, run: () => doJoinByCode(picked) };
+      if (picked.hasPassword && joinWay === 'password') {
+        if (!pwInput) return { ok: false, label: '가입하기', hint: '클럽 비밀번호를 넣어 주세요.' };
+        return { ok: true, label: '가입하기', hint: `비밀번호로 「${picked.name}」에 바로 들어갑니다.`, run: () => doJoinByPassword(picked) };
+      }
+      return { ok: true, label: '가입하기', hint: `「${picked.name}」에 가입 신청을 보냅니다. 운영진이 승인하면 들어갑니다.`, run: () => doRequest(picked) };
+    }
+    return {
+      ok: true, label: '가입하기',
+      hint: tab === 'find'
+        ? '클럽을 고르지 않았습니다 — 클럽 없이 가입하고 먼저 둘러봅니다. 클럽은 나중에 [더보기]에서 찾거나 만들 수 있어요.'
+        : '클럽 없이 가입하고 먼저 둘러봅니다. 클럽은 나중에 [더보기]에서 찾거나 만들 수 있어요.',
+      run: doSkip,
+    };
+  })();
+  const nameMissing = !switching && !myName.trim();
+  const finish = () => {
+    if (nameMissing) { setErr('맨 위에 이름을 넣어 주세요.'); return; }
+    if (!plan.ok) { setErr(plan.hint); return; }
+    setErr('');
+    plan.run();
   };
 
   if (booting) {
@@ -407,19 +452,25 @@ export default function Onboarding() {
             </View>
             <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 16 }}>
               · <Text style={{ fontWeight: '700' }}>초대코드</Text>를 받았다면 그대로 입력하세요 — 승인 없이 바로 가입됩니다.{'\n'}
-              · 코드가 없으면 클럽을 찾아 <Text style={{ fontWeight: '700' }}>가입 신청</Text>하세요. 운영진이 승인하면 입장합니다.
+              · 코드가 없으면 클럽을 찾아 고른 뒤, 맨 아래 <Text style={{ fontWeight: '700' }}>가입하기</Text>를 누르면 가입 신청이 갑니다.{'\n'}
+              · 클럽을 고르지 않고 가입하면 클럽 없이 먼저 둘러봅니다.
             </Text>
           </Card>
 
           {searched && (
             <>
               <SectionTitle right={
-                <Chip tone="outline" onPress={() => { setSearched(false); setResults([]); }}>지우기</Chip>
-              }>검색 결과 {results.length}곳</SectionTitle>
+                <Chip tone="outline" onPress={() => { setSearched(false); setResults([]); setPicked(null); }}>지우기</Chip>
+              }>검색 결과 {results.length}곳{results.length > 1 ? ' · 눌러서 고르기' : ''}</SectionTitle>
 
               {results.map((c) => (
-                <Card key={c.id} style={{ marginBottom: S.sm }}>
-                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                <Card key={c.id} style={{
+                  marginBottom: S.sm,
+                  ...(picked?.id === c.id ? { borderColor: C.green, borderWidth: 2, backgroundColor: C.greenSoft } : {}),
+                }}>
+                  <Pressable onPress={() => { setPicked(picked?.id === c.id ? null : c); setJoinWay('request'); setPwInput(''); setErr(''); }}
+                    accessibilityRole="radio" accessibilityState={{ selected: picked?.id === c.id }}
+                    style={{ flexDirection: 'row', gap: 12 }}>
                     {c.image ? (
                       <Image source={{ uri: c.image }} style={{ width: 56, height: 56, borderRadius: R.md }} />
                     ) : (
@@ -455,43 +506,25 @@ export default function Onboarding() {
                         </>
                       )}
                     </View>
-                  </View>
+                    {/* 고르기 표시 */}
+                    <View style={{
+                      width: 24, height: 24, borderRadius: 12, alignSelf: 'center',
+                      borderWidth: picked?.id === c.id ? 7 : 2, borderColor: picked?.id === c.id ? C.green : C.border,
+                      backgroundColor: C.surface,
+                    }} />
+                  </Pressable>
 
-                  {/* 비밀번호 입력창 — 이 클럽을 고른 경우에만 */}
-                  {pwClub?.id === c.id && (
+                  {/* 고른 클럽 — 비밀번호가 있으면 입장 방법을 고른다. 처리는 맨 아래 「가입하기」가 */}
+                  {picked?.id === c.id && !c.byCode && c.hasPassword && (
                     <View style={{ marginTop: S.md }}>
-                      <Label hint="운영진에게 받은 클럽 비밀번호">비밀번호</Label>
-                      <Field secureTextEntry placeholder="비밀번호" value={pwInput} onChangeText={setPwInput} />
-                      <View style={{ flexDirection: 'row', gap: 8, marginTop: S.sm }}>
-                        <View style={{ flex: 1 }}>
-                          <AppButton full disabled={busy || !pwInput} onPress={doJoinByPassword}>
-                            {busy ? '확인 중…' : '입장'}
-                          </AppButton>
-                        </View>
-                        <AppButton variant="text" onPress={() => { setPwClub(null); setPwInput(''); }}>취소</AppButton>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        <Chip tone={joinWay === 'password' ? 'green' : 'outline'} onPress={() => setJoinWay('password')}>🔒 비밀번호로 바로 입장</Chip>
+                        <Chip tone={joinWay === 'request' ? 'green' : 'outline'} onPress={() => setJoinWay('request')}>가입 신청 (운영진 승인)</Chip>
                       </View>
-                    </View>
-                  )}
-
-                  {pwClub?.id !== c.id && (
-                    <View style={{ marginTop: S.md, gap: 8 }}>
-                      {c.byCode ? (
-                        <AppButton full disabled={busy || !myName.trim()} onPress={() => doJoinByCode(c)}>
-                          {busy ? '가입 중…' : '바로 가입하기'}
-                        </AppButton>
-                      ) : (
-                        <>
-                          {c.hasPassword && (
-                            <AppButton full variant="tonal" disabled={!myName.trim()}
-                              onPress={() => { setPwClub(c); setPwInput(''); setErr(''); }}>
-                              🔒 비밀번호로 바로 입장
-                            </AppButton>
-                          )}
-                          <AppButton full variant="outlined" disabled={busy || !myName.trim()}
-                            onPress={() => doRequest(c)}>
-                            {busy ? '신청 중…' : '가입 신청 (운영진 승인)'}
-                          </AppButton>
-                        </>
+                      {joinWay === 'password' && (
+                        <View style={{ marginTop: S.sm }}>
+                          <Field secureTextEntry placeholder="운영진에게 받은 클럽 비밀번호" value={pwInput} onChangeText={setPwInput} />
+                        </View>
                       )}
                     </View>
                   )}
@@ -510,7 +543,7 @@ export default function Onboarding() {
             </>
           )}
         </>
-      ) : (
+      ) : tab === 'create' ? (
         <Card style={{ marginTop: 12 }}>
           <Label>클럽 이름</Label>
           <Field placeholder="예: 그린스매시 테니스클럽" value={clubName} onChangeText={setClubName} />
@@ -568,29 +601,31 @@ export default function Onboarding() {
             <Text style={{ fontSize: 12, color: C.sub }}>데모 회원·모임 데이터로 시작 (체험용)</Text>
           </Pressable>
 
-          <View style={{ marginTop: 16 }}>
-            <Btn full disabled={busy || !clubName.trim() || !myName.trim()} onPress={doCreate}>
-              {busy ? '생성 중…' : '클럽 만들기 (내가 회장)'}
-            </Btn>
-          </View>
-          <Text style={{ fontSize: 10, color: C.faint, marginTop: 8 }}>
-            만들면 초대코드가 자동 발급됩니다. [더보기]에서 링크로 바로 초대할 수 있어요.
+          <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 12, lineHeight: 15 }}>
+            맨 아래 「가입하기」를 누르면 클럽이 만들어지고 내가 회장이 됩니다. 초대코드가 자동 발급되어 [더보기]에서 링크로 바로 초대할 수 있어요.
+          </Text>
+        </Card>
+      ) : null}
+
+      {tab === 'later' && (
+        <Card style={{ marginTop: 12 }}>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: C.text }}>클럽 없이 먼저 둘러보기</Text>
+          <Text style={{ fontSize: 12, color: C.sub, marginTop: 6, lineHeight: 18 }}>
+            클럽 없이도 원포인트 영상, 게스트 모집 게시판, 코트 찾기, 대회 찾기를 볼 수 있습니다.
+            클럽은 언제든 [더보기]에서 찾거나 만들 수 있어요.
           </Text>
         </Card>
       )}
 
       {err ? <Text style={{ fontSize: 12, color: C.danger, textAlign: 'center', marginTop: 12 }}>{err}</Text> : null}
 
-      {/* 나중에 하기 */}
-      <View style={{ marginTop: 24, alignItems: 'center' }}>
-        <Pressable onPress={doSkip} disabled={busy} hitSlop={10}>
-          <Text style={{ fontSize: 13, color: C.green2, fontWeight: '700', textDecorationLine: 'underline' }}>
-            나중에 할게요 · 먼저 둘러보기
-          </Text>
-        </Pressable>
-        <Text style={{ fontSize: 10, color: C.faint, marginTop: 6, textAlign: 'center', lineHeight: 15 }}>
-          클럽 없이도 원포인트 영상과 게스트 모집 게시판을 볼 수 있습니다.{'\n'}
-          언제든 [더보기]에서 클럽을 찾거나 만들 수 있어요.
+      {/* 마무리 — 언제나 이 버튼 하나 */}
+      <View style={{ marginTop: 24 }}>
+        <Btn full disabled={busy} onPress={finish}>
+          {busy ? '처리 중…' : plan.label}
+        </Btn>
+        <Text style={{ fontSize: 12, color: plan.ok && !nameMissing ? C.sub : C.danger, marginTop: 8, textAlign: 'center', lineHeight: 18 }}>
+          {nameMissing ? '맨 위에 이름을 넣어 주세요.' : plan.hint}
         </Text>
       </View>
 
