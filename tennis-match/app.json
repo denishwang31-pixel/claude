@@ -7,6 +7,7 @@
       "com.donghyun.tennismatch"
     ],
     "version": "1.0.0",
+    "platforms": ["android", "ios"],
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,

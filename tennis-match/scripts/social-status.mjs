@@ -28,7 +28,7 @@
 */
 import {
   PROVIDER_ORDER, PROVIDER_SHORT, REQUIREMENTS, SOCIAL_CONFIG,
-  configFromExtra, unknownKeys, providerReady, appleGap, needsNativeRebuild,
+  configFromExtra, unknownKeys, providerReady, appleGap, enabledProviders,
 } from '../src/lib/social.js';
 
 /* app.config.js 와 같은 이름을 읽는다. 짝이 맞는지는 test-social.mjs 가 본다. */
@@ -83,7 +83,9 @@ if (unknown.length) {
   say('');
 }
 
-if (!needsNativeRebuild(config)) {
+/* ⚠️ 예전엔 needsNativeRebuild(애플만 봄)로 판단해서, 카카오·네이버·구글 키가 다 있어도
+   이 문구가 찍혔다(2026-10-02 production 빌드 로그). 켜진 제공자가 정말 하나도 없을 때만. */
+if (!enabledProviders(config).length) {
   say('아직 실리는 소셜 로그인이 없습니다. 로그인 화면에는 이메일과');
   say('둘러보기만 나옵니다 — 키를 넣기 전의 정상 모습입니다.');
   say('');
