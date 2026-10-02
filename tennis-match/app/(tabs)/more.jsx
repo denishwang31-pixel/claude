@@ -9,7 +9,7 @@ import { useBottomPad } from '../../src/hooks/useBottomPad';
 import { useClub } from '../../src/hooks/useClub';
 import { useBackHandler } from '../../src/hooks/useBackHandler';
 import { computeStats } from '../../src/lib/matchmaking';
-import { logout } from '../../src/lib/auth';
+import { logout, getMyProfile } from '../../src/lib/auth';
 import {
   subJoinRequests, subFeeAliases, subDunningLog, subExpenses,
   subHandoverHistory, loadAllFees, subFeeClaims, subDuesPools,
@@ -139,6 +139,28 @@ const MENU_GROUPS = [
 /** 서브화면 제목 검색용 평탄화 */
 const MENU_FLAT = MENU_GROUPS.flatMap((g) => g.items.map(([k, , label]) => [k, label]));
 
+/* 클럽 없이도 쓰는 메뉴 — 클럽 가입·생성 없이도 기본 화면은 열려야 한다(앱 주인).
+   예전엔 클럽이 없으면 더보기가 「클럽 찾아 가입 신청」 한 장뿐이라, 홈·일정에서
+   [대회 찾기]·[게스트 모집]을 눌러도 그 장으로 와 버렸다. */
+const CLUBLESS_GROUPS = [
+  {
+    title: '내 활동',
+    items: [
+      ['profile', 'members', SCREEN.profile, '이름 · 성별 · 부수 · 지역 · 구력 보기와 고치기'],
+      ['legal', 'settings', SCREEN.legal, '이용약관 · 개인정보처리방침'],
+    ],
+  },
+  {
+    title: '찾아보기',
+    items: [
+      ['opens', 'tournament', SCREEN.opens, '협회·지자체·기업이 여는 큰 대회'],
+      ['guest', 'guest', SCREEN.guest, '다른 클럽 모임에 게스트로 신청'],
+      ['courts', 'courts', SCREEN.courts, '주변 공공·사설 테니스장 찾기'],
+    ],
+  },
+];
+const CLUBLESS_KEYS = ['profile', 'legal', 'opens', 'guest', 'courts', 'deleteaccount'];
+
 export default function More() {
   const { clubId, me, viewMode, isAppAdmin, resetOnboarding, openOnboarding } = useApp();
   const bottomPad = useBottomPad();
@@ -205,6 +227,15 @@ export default function More() {
     seeFees, seeAllVenues, myLeadVenues,
   } = useClub(clubId, me, { feeMonth, feeScopeId, viewMode });
   const { stats } = useMemo(() => computeStats(members, meetings), [members, meetings]);
+
+  /* 클럽이 없을 때의 내 정보 — 클럽 회원 문서가 없으니 계정(users) 문서에서 읽는다.
+     프로필을 고치고 돌아오면 다시 읽는다(sub 가 바뀔 때). */
+  const [myProf, setMyProf] = useState(null);
+  useEffect(() => {
+    if (clubId || !me) return;
+    getMyProfile(me).then(setMyProf).catch(() => setMyProf(null));
+  }, [clubId, me, sub, toast]);   // toast — 프로필을 저장하면 안내가 뜨므로 그때 다시 읽는다
+  const meLite = meVal || (myProf ? { id: me, ...myProf } : null);
 
   /* 대기 중인 가입 신청 건수 — 메뉴에 배지로 표시 */
   useEffect(() => {
@@ -325,7 +356,7 @@ export default function More() {
       case 'board': return <Board {...{ clubId, club, posts, publicPosts, meVal, me, isAdmin, flash }} />;
       case 'guest': return (
         <Guest {...{
-          clubId, club, guestPosts, meetings, venues, me, meVal, isAdmin, flash,
+          clubId, club, guestPosts, meetings, venues, me, meVal: meLite, isAdmin, flash,
           draft: params?.draftMeetingId ? {
             meetingId: String(params.draftMeetingId),
             needM: Number(params.draftNeedM) || 0,
@@ -338,7 +369,7 @@ export default function More() {
       case 'coachreview': return <CoachReviewScreen {...{ uid: me, flash }} />;
       case 'appops': return <AppOps {...{ me, flash }} />;
       case 'grades': return <GradeAssign {...{ clubId, members, venues, flash }} />;
-      case 'profile': return <Profile {...{ clubId, club, me, meVal, venues, flash }} onOpen={setSub} />;
+      case 'profile': return <Profile {...{ clubId, club, me, meVal: meLite, venues, flash }} onOpen={setSub} />;
       case 'legal': return <Legal />;
       case 'deleteaccount': return <DeleteAccount {...{ clubId, me, members, flash }} />;
       case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, myRole: realRole, seeFees, flash }} />;
@@ -364,15 +395,43 @@ export default function More() {
 
   /* ---------- 클럽에 아직 속하지 않은 상태(둘러보기) ---------- */
   if (!clubId) {
+    /* 클럽 없이 쓸 수 있는 화면은 그대로 연다 */
+    if (sub && CLUBLESS_KEYS.includes(sub)) {
+      return (
+        <View style={{ flex: 1, backgroundColor: C.bg }}>
+          <ScreenHeader title={title} onBack={goBack} backLabel={FROM_LABELS[cameFrom] || '더보기'} />
+          <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
+            {renderSub()}
+          </ScrollView>
+          {toast && (
+            <View style={{ position: 'absolute', bottom: 20, alignSelf: 'center', backgroundColor: C.ink, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, maxWidth: 340 }}>
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600', textAlign: 'center' }}>{toast}</Text>
+            </View>
+          )}
+        </View>
+      );
+    }
     return (
       <View style={{ flex: 1, backgroundColor: C.bg }}>
-        <ScreenHeader title="더보기" subtitle="클럽 없이 둘러보는 중" />
+        <ScreenHeader title="더보기" subtitle={meLite?.name ? `${meLite.name} · 클럽 없이 둘러보는 중` : '클럽 없이 둘러보는 중'} />
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
+          {CLUBLESS_GROUPS.map((g) => (
+            <View key={g.title}>
+              <SectionTitle>{g.title}</SectionTitle>
+              <Card style={{ paddingVertical: 4 }}>
+                {g.items.map(([k, icon, label, subLabel], i) => (
+                  <ListRow key={k} first={i === 0} icon={icon} label={label} sub={subLabel} onPress={() => setSub(k)} />
+                ))}
+              </Card>
+            </View>
+          ))}
+
+          <SectionTitle>클럽</SectionTitle>
           <Card style={{ backgroundColor: C.ink }}>
             <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>아직 클럽에 속해 있지 않습니다</Text>
             <Text style={{ color: C.lime2, fontSize: 12, marginTop: 6, lineHeight: 18 }}>
               클럽에 들어가면 일정·대진표·회비·랭킹을 함께 쓸 수 있습니다.
-              지금은 원포인트 영상·게시판·게스트 모집을 볼 수 있어요.
+              지금은 내 프로필, 대회 찾기, 게스트 모집, 코트 검색, 원포인트 영상을 쓸 수 있어요.
             </Text>
           </Card>
 

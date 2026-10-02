@@ -98,15 +98,28 @@ export function Profile({ clubId, club, me, meVal, venues = [], flash, onOpen })
             <Row k="출생 연도" v={birthYearStatus(m).year ? birthYearStatus(m).text : '연령 확인 대회에 신청할 때 받습니다'} />
           </Card>
 
-          <SectionTitle hint="운영진이 정합니다">클럽에서</SectionTitle>
-          <Card style={{ paddingVertical: 4 }}>
-            <Row first k="클럽" v={club?.name} />
-            <Row k="역할" v={memberRoles(m).join(' · ')} />
-            <Row k="부수" v={m.busu ? `${m.busu} · ${BUSU.find((b) => b.key === m.busu)?.desc || ''}` : '미배정'} />
-            <Row k="클럽 조" v={m.grade ? `${m.grade}조` : '미배정'} />
-            <Row k="소속 코트장" v={myVenues.join(', ') || '전체'} />
-            <Row k="NTRP" v={eff.value != null ? eff.value.toFixed(1) : '미설정'} onPress={() => onOpen?.('ntrp')} />
-          </Card>
+          {clubId ? (
+            <>
+              <SectionTitle hint="운영진이 정합니다">클럽에서</SectionTitle>
+              <Card style={{ paddingVertical: 4 }}>
+                <Row first k="클럽" v={club?.name} />
+                <Row k="역할" v={memberRoles(m).join(' · ')} />
+                <Row k="부수" v={m.busu ? `${m.busu} · ${BUSU.find((b) => b.key === m.busu)?.desc || ''}` : '미배정'} />
+                <Row k="클럽 조" v={m.grade ? `${m.grade}조` : '미배정'} />
+                <Row k="소속 코트장" v={myVenues.join(', ') || '전체'} />
+                <Row k="NTRP" v={eff.value != null ? eff.value.toFixed(1) : '미설정'} onPress={() => onOpen?.('ntrp')} />
+              </Card>
+            </>
+          ) : (
+            <>
+              <SectionTitle>클럽</SectionTitle>
+              <Card>
+                <Text style={{ fontSize: 13, color: C.sub, lineHeight: 19 }}>
+                  아직 클럽에 들어가지 않았습니다. 클럽에 들어가면 운영진이 정하는 부수·조·역할·소속 코트장이 여기에 나옵니다.
+                </Text>
+              </Card>
+            </>
+          )}
 
           <SectionTitle>로그인</SectionTitle>
           <Card style={{ paddingVertical: 4 }}>

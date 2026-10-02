@@ -286,18 +286,26 @@ export default function Home() {
             </Card>
           )}
           <AdBanner ads={ads} slot={AD_SLOTS.HOME} />
-          <Card style={{ marginTop: S.md }} onPress={() => go({ more: 'guest' })}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Icon name="guest" size={20} color={C.green} />
-              <View style={{ flex: 1 }}>
-                <Text style={F.bodyBold}>게스트 모집 게시판</Text>
-                <Text style={[F.caption, { marginTop: 2 }]}>
-                  클럽 없이도 볼 수 있어요 · 공개 모집 {guestPosts.length}건
-                </Text>
+          {/* 클럽 없이도 쓰는 것 — 가입·생성 없이도 기본 화면은 열린다(앱 주인) */}
+          <SectionTitle>클럽 없이도 쓸 수 있어요</SectionTitle>
+          {[
+            ['guest', 'guest', '게스트 모집 게시판', `다른 클럽 모임에 게스트로 신청 · 공개 모집 ${guestPosts.length}건`, () => go({ more: 'guest' })],
+            ['opens', 'tournament', '대회 찾기', '협회·오픈 대회 일정과 접수 마감', () => go({ more: 'opens' })],
+            ['courts', 'courts', '코트 검색', '주변 공공·사설 테니스장과 예약 바로가기', () => go({ more: 'courts' })],
+            ['levelup', 'ntrp', '원포인트 레슨', '짧은 레슨 영상 — 하단 [레벨업]', () => router.push('/(tabs)/levelup')],
+            ['profile', 'members', '내 프로필', '이름 · 성별 · 부수 · 지역 · 구력', () => go({ more: 'profile' })],
+          ].map(([k, icon, label, sub, onPress]) => (
+            <Card key={k} style={{ marginTop: S.sm }} onPress={onPress}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Icon name={icon} size={20} color={C.green} />
+                <View style={{ flex: 1 }}>
+                  <Text style={F.bodyBold}>{label}</Text>
+                  <Text style={[F.caption, { marginTop: 2 }]}>{sub}</Text>
+                </View>
+                <Icon name="forward" size={16} color={C.faint} />
               </View>
-              <Icon name="forward" size={16} color={C.faint} />
-            </View>
-          </Card>
+            </Card>
+          ))}
         </ScrollView>
       </View>
     );
