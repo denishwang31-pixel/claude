@@ -14,7 +14,7 @@
     "primaryColor": "#064e3b",
     "android": {
       "package": "com.donghyun.tennismatch",
-      "versionCode": 9,
+      "versionCode": 10,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "INTERNET",
