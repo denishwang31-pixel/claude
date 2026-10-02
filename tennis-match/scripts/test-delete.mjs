@@ -8,9 +8,16 @@
 import {
   WIPE_FIELDS, KEEP_FIELDS, tombstone, successionPlan, successionText,
   emptyClubPatch, CONFIRM_WORD, confirmOk, deleteReady, DELETE_STEPS,
+  reauthMethod, reauthFresh, REAUTH_FRESH_MS, loginAccountText,
 } from '../src/lib/accountDelete.js';
 import { ROLES } from '../src/lib/constants.js';
-import { pendingBlanks } from '../src/lib/legalText.js';
+import { pendingBlanks, TERMS, PRIVACY } from '../src/lib/legalText.js';
+import { customTokenUid } from '../src/lib/social.js';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 let pass = 0; let fail = 0;
 const ok = (c, m) => { if (c) pass += 1; else { fail += 1; console.log('  ✗', m); } };
@@ -180,6 +187,64 @@ console.log('\n[지울 수 있는 상태인가]');
      두면 "원래 하나는 실패하는 것"이 되어 진짜 실패를 놓치게 된다.
      대신 눈에 걸리게 크게 찍고, PRE-LAUNCH.md A 에 항목으로 남겨 둔다.
    ============================================================ */
+console.log('\n[본인 확인 — 로그인한 방법마다]');
+{
+  const pw = { uid: 'abc', providerData: [{ providerId: 'password' }], email: 'a@b.c' };
+  eq(reauthMethod(pw), 'password', '이메일 가입 → 비밀번호');
+  eq(reauthMethod({ uid: 'kakao:123', providerData: [], email: 'k@kakao.com' }), 'kakao',
+    '카카오 가입은 이메일이 붙어 있어도 비밀번호가 아니라 카카오로 다시 로그인(예전엔 비밀번호를 물어 삭제가 막혔다)');
+  eq(reauthMethod({ uid: 'naver:xyz', providerData: [] }), 'naver', '네이버 가입 → 네이버로 다시 로그인');
+  eq(reauthMethod({ uid: 'g1', providerData: [{ providerId: 'google.com' }], email: 'g@gmail.com' }), 'google',
+    '구글 가입 → 구글로 다시 로그인');
+  eq(reauthMethod({ uid: 'x', isAnonymous: true }), 'anon', '둘러보기 계정은 확인할 것이 없다');
+  eq(reauthMethod(null), 'none', '로그인 안 됨');
+
+  const now = 1_000_000_000;
+  ok(reauthFresh(now - 60_000, now), '1분 전 확인 → 유효');
+  ok(!reauthFresh(now - REAUTH_FRESH_MS, now), '4분이 지나면 다시 확인(Firebase 는 5분 뒤 삭제를 거부)');
+  ok(!reauthFresh(0, now), '확인한 적 없음');
+  ok(REAUTH_FRESH_MS < 5 * 60 * 1000, 'Firebase 의 5분보다 짧다');
+
+  eq(loginAccountText('password'), '로그인 계정 (이메일·비밀번호)', '이메일 가입 문구');
+  eq(loginAccountText('kakao'), '로그인 계정 (카카오 로그인 연결)', '소셜 가입은 비밀번호라고 쓰지 않는다');
+}
+
+console.log('\n[소셜 본인 확인 — 다른 아이디로 바뀌지 않게]');
+{
+  const b64url = (o) => Buffer.from(JSON.stringify(o)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const tok = (uid) => `${b64url({ alg: 'RS256', typ: 'JWT' })}.${b64url({ iss: 'x@y.iam.gserviceaccount.com', uid, claims: { provider: 'kakao' } })}.sig`;
+  eq(customTokenUid(tok('kakao:4242')), 'kakao:4242', '서버 토큰에서 계정을 로그인 없이 읽는다');
+  eq(customTokenUid(tok('naver:AbC-_9')), 'naver:AbC-_9', '네이버 id(영문·기호)도 읽는다');
+  eq(customTokenUid('garbage'), '', '못 읽으면 빈 값 → 다른 계정으로 보고 막는다');
+  eq(customTokenUid(''), '', '빈 토큰');
+
+  const sig = readFileSync(resolve(ROOT, 'src/lib/socialSignIn.js'), 'utf8');
+  ok(/expectUid && customTokenUid\(back\.token\) !== expectUid/.test(sig), '다른 아이디면 그 토큰으로 로그인하지 않는다');
+  ok(/reauthenticateWithCredential\(auth\.currentUser, cred\)/.test(sig), '구글은 새로 로그인하지 않고 지금 계정을 다시 확인한다');
+  ok(/savePending\(\{[^}]*expectUid/.test(sig) && /pending\?\.expectUid/.test(sig) && /p\.expectUid/.test(sig),
+    '늦게 도착한 결과(카카오톡을 거친 경우)에도 같은 확인을 한다');
+
+  const scr = readFileSync(resolve(ROOT, 'src/components/DeleteAccountScreen.jsx'), 'utf8');
+  ok(/expectUid: me/.test(scr), '삭제 화면은 지금 계정으로만 확인한다');
+  ok(/method === 'password' &&/.test(scr) && !/!anon && !pw/.test(scr), '비밀번호 칸은 이메일 가입자에게만');
+  ok(/<SocialLoginSheet/.test(scr), '안드로이드 카카오·네이버는 앱 안 로그인 화면으로 확인');
+  ok(/!verified/.test(scr), '소셜 계정은 다시 로그인하기 전엔 삭제 버튼이 잠긴다');
+}
+
+console.log('\n[계정 삭제로 가는 길 — 내 프로필]');
+{
+  const prof = readFileSync(resolve(ROOT, 'src/components/ProfileScreen.jsx'), 'utf8');
+  ok(/onOpen\?\.\('deleteaccount'\)/.test(prof), '내 프로필 맨 아래에 [계정 삭제]');
+  const legal = readFileSync(resolve(ROOT, 'src/components/LegalScreen.jsx'), 'utf8');
+  ok(!/open: 'deleteaccount'/.test(legal) && /내 프로필/.test(legal), '약관 화면엔 가는 길만 안내');
+  ok(/\[내 프로필\] → \[계정 삭제\]/.test(PRIVACY) && /\[내 프로필\] → \[계정 삭제\]/.test(TERMS),
+    '약관·개인정보처리방침의 경로도 같다');
+  const web = readFileSync(resolve(ROOT, 'scripts/build-legal.mjs'), 'utf8');
+  ok(/\[더보기\] → \[내 프로필\] → 맨 아래 \[계정 삭제\]/.test(web), '웹 삭제 안내 페이지의 경로도 같다');
+  const more = readFileSync(resolve(ROOT, 'app/(tabs)/more.jsx'), 'utf8');
+  ok(/onOpen=\{openFrom\('profile'\)\}/.test(more) && /if \(subParent\)/.test(more), '계정 삭제에서 뒤로 가면 내 프로필로');
+}
+
 /* 검사 자체가 맞게 도는지 먼저 확인한다.
    처음 만든 검사는 `[[...]]` 두 겹만 찾아서, 대괄호를 하나씩만 지운 상태를
    놓쳤다. 그 상태로 "빈칸 없음 — 출시 가능"이 떴다. 실제로 겪었다. */

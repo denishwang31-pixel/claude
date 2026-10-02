@@ -5,6 +5,8 @@
 
    본인이 고치는 것: 이름 · 성별 · 활동 지역 · 테니스 시작 년월(처음 한 번)
    보기만 하는 것: 부수 · 조 · 역할 · 소속 코트장(운영진이 정한다) · NTRP · 로그인 방법
+   맨 아래 [계정 삭제] — 예전엔 약관·개인정보 화면 맨 아래에 있어 찾기 어려웠다(앱 주인).
+     내 계정에 관한 일은 내 프로필에서 찾는다.
    생년월일·전화번호는 받지 않는다 — 클럽 운영에 필요 없고, 받으면 가입을 망설이게 된다. */
 import React, { useState } from 'react';
 import { View, Text } from 'react-native';
@@ -129,6 +131,16 @@ export function Profile({ clubId, club, me, meVal, venues = [], flash, onOpen })
           <Text style={{ fontSize: 11, color: C.faint, marginTop: 10, lineHeight: 16 }}>
             생년월일·전화번호는 받지 않습니다. 부수·조·역할·소속 코트장은 운영진이 정합니다. 바꿔야 하면 운영진에게 요청하세요.
           </Text>
+
+          <SectionTitle>계정</SectionTitle>
+          <Card>
+            <Text style={{ fontSize: 12, color: C.sub, lineHeight: 18 }}>
+              계정을 지우면 로그인 정보와 개인정보가 삭제됩니다. 되돌릴 수 없습니다.
+            </Text>
+            <View style={{ marginTop: 12 }}>
+              <Btn full tone="outline" onPress={() => onOpen?.('deleteaccount')}>계정 삭제</Btn>
+            </View>
+          </Card>
         </>
       ) : (
         <>

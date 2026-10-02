@@ -173,3 +173,41 @@ export const DELETE_STEPS = [
   { key: 'wipe', label: '개인정보 삭제' },
   { key: 'auth', label: '로그인 계정 삭제' },
 ];
+
+/* ------------------------------------------------------------
+   본인 확인 방법 — 로그인한 방법마다 다르다
+
+   이메일로 가입한 사람만 비밀번호가 있다. 카카오·네이버·구글로 가입한 사람은
+   Court 비밀번호가 없다(그 회사 비밀번호를 우리가 받을 수도 없다). 예전 화면은
+   누구에게나 비밀번호 칸을 보여 줘서
+     · 카카오(이메일 동의)·구글: 넣을 비밀번호가 없어 삭제가 아예 막혔고
+     · 네이버: 아무 글자나 넣으면 지나갔지만, 로그인한 지 오래면 마지막 단계에서
+       Firebase 가 "다시 로그인하라"며 계정 삭제를 거부했다 — 개인정보만 지워진 채로.
+   그래서 소셜 계정은 그 회사로 **한 번 더 로그인**해서 확인한다(같은 아이디일 때만 통과).
+   ------------------------------------------------------------ */
+
+/** @returns 'anon' | 'password' | 'google' | 'kakao' | 'naver' | 'none' */
+export function reauthMethod(user) {
+  if (!user) return 'none';
+  if (user.isAnonymous) return 'anon';
+  const uid = String(user.uid || '');
+  if (uid.startsWith('kakao:')) return 'kakao';
+  if (uid.startsWith('naver:')) return 'naver';
+  const ids = (user.providerData || []).map((p) => p?.providerId);
+  if (ids.includes('password')) return 'password';
+  if (ids.includes('google.com')) return 'google';
+  return 'none';
+}
+
+export const REAUTH_LABEL = { kakao: '카카오', naver: '네이버', google: '구글', password: '이메일' };
+
+/** Firebase 는 로그인한 지 5분이 지나면 계정 삭제를 거부한다 — 여유를 두고 4분 */
+export const REAUTH_FRESH_MS = 4 * 60 * 1000;
+export const reauthFresh = (at, now = Date.now()) => !!at && now - at >= 0 && now - at < REAUTH_FRESH_MS;
+
+/** 지워지는 것 목록의 첫 줄 */
+export function loginAccountText(method) {
+  if (method === 'password') return '로그인 계정 (이메일·비밀번호)';
+  if (REAUTH_LABEL[method]) return `로그인 계정 (${REAUTH_LABEL[method]} 로그인 연결)`;
+  return '로그인 계정';
+}

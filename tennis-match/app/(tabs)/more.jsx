@@ -178,6 +178,9 @@ export default function More() {
      홈의 [회원]을 눌러 들어왔으면 뒤로가기는 홈으로 가야 한다.
      더보기 목록으로 돌아가면 "누른 적 없는 화면"으로 가는 셈이라 어색하다. */
   const [cameFrom, setCameFrom] = useState(null);
+  /* 서브화면 안에서 연 서브화면(내 프로필 → 계정 삭제·NTRP) — 뒤로가기는 그 화면으로 */
+  const [subParent, setSubParent] = useState(null);
+  const openFrom = (parent) => (k) => { setSubParent(parent); setSub(k); };
   /* 일정에서 클럽 대회로 올 때 — 바로 개설(create=1) 또는 그 대회(tid) */
   const [tourStart, setTourStart] = useState({ create: false, id: null, n: 0 });
   /* 화면을 바꾸면 맨 위부터 — 앞 화면에서 내려 둔 스크롤이 남아 새 화면이 맨 아래로 열리던 문제
@@ -190,6 +193,7 @@ export default function More() {
     if (!params?.open) return;
     const k = String(params.open);
     setSub(k === 'manage' ? null : k);
+    setSubParent(null);
     setCameFrom(params?.from ? String(params.from) : null);
     if (k === 'tournament') {
       setTourStart((x) => ({ create: String(params?.create || '') === '1', id: params?.tid ? String(params.tid) : null, n: x.n + 1 }));
@@ -201,6 +205,7 @@ export default function More() {
      서브화면(게시판 등)이 열리면 "더보기를 눌렀는데 게시판이 뜬다"가 된다. */
   useEffect(() => navigation.addListener?.('tabPress', () => {
     setSub(null);
+    setSubParent(null);
     setCameFrom(null);
     router.setParams({ open: '', from: '' });
   }), [navigation]);
@@ -279,6 +284,7 @@ export default function More() {
      갔다 — 가 본 적 없는 화면이라 어색하다.
      새 진입점을 만들 때 from 만 붙이면 뒤로가기는 자동으로 맞는다. */
   const goBack = () => {
+    if (subParent) { setSub(subParent); setSubParent(null); return; }
     setSub(null);
     if (!cameFrom) return;              // 더보기 목록에서 열었으면 목록으로
     setCameFrom(null);
@@ -369,7 +375,7 @@ export default function More() {
       case 'coachreview': return <CoachReviewScreen {...{ uid: me, flash }} />;
       case 'appops': return <AppOps {...{ me, flash }} />;
       case 'grades': return <GradeAssign {...{ clubId, members, venues, flash }} />;
-      case 'profile': return <Profile {...{ clubId, club, me, meVal: meLite, venues, flash }} onOpen={setSub} />;
+      case 'profile': return <Profile {...{ clubId, club, me, meVal: meLite, venues, flash }} onOpen={openFrom('profile')} />;
       case 'legal': return <Legal />;
       case 'deleteaccount': return <DeleteAccount {...{ clubId, me, members, flash }} />;
       case 'members': return <Members {...{ clubId, members, venues, stats, me, isAdmin, canAppoint, myRole: realRole, seeFees, flash }} />;

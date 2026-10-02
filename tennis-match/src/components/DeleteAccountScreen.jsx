@@ -4,8 +4,10 @@
    화면이 하는 일
      1. 무엇이 지워지고 무엇이 남는지 먼저 보여 준다
      2. 회장이면 클럽이 누구에게 넘어가는지 이름으로 알려 준다
-     3. "계정 삭제" 를 정확히 입력해야 버튼이 열린다
-     4. 진행 중에는 어느 단계인지 보여 준다
+     3. 본인 확인 — 이메일 가입은 비밀번호, 카카오·네이버·구글 가입은 그 회사로 한 번 더 로그인
+        (소셜 계정은 Court 비밀번호가 없다. lib/accountDelete.js reauthMethod 머리말)
+     4. "계정 삭제" 를 정확히 입력해야 버튼이 열린다
+     5. 진행 중에는 어느 단계인지 보여 준다
 
    왜 확인을 이렇게까지 하나
      복구할 방법이 없다. 실수로 지운 사람이 나오면 해 줄 수 있는 것이
@@ -15,15 +17,19 @@ import React, { useState, useMemo } from 'react';
 import { View, Text, TextInput, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-  reauthenticate, deleteAuthUser, isAnonymousUser, currentEmail, logout,
+  reauthenticate, deleteAuthUser, currentEmail, logout, sendReset,
 } from '../lib/auth';
+import { signInWithGoogle, signInWithSocialWeb } from '../lib/socialSignIn';
+import { auth } from '../../firebaseConfig';
 import {
   promoteToPresidents, handOverClub, closeEmptyClub, wipeMember, deleteUserDoc,
 } from '../lib/firestore';
 import {
   tombstone, successionPlan, successionText, emptyClubPatch,
   CONFIRM_WORD, confirmOk, deleteReady, DELETE_STEPS, WIPE_FIELDS, KEEP_FIELDS,
+  reauthMethod, REAUTH_LABEL, reauthFresh, loginAccountText,
 } from '../lib/accountDelete';
+import { SocialLoginSheet } from './SocialLoginSheet';
 import { Card, SectionTitle, Btn, Chip } from './ui';
 import { Label } from './pickers';
 import { C, R, F } from '../lib/theme';
@@ -36,8 +42,41 @@ export function DeleteAccount({ clubId, me, members, flash }) {
   const [err, setErr] = useState('');
   const [done, setDone] = useState(false);
 
-  const anon = isAnonymousUser();
+  const method = useMemo(() => reauthMethod(auth?.currentUser), [me]);
+  const social = !!REAUTH_LABEL[method] && method !== 'password';
   const email = currentEmail();
+  const [verifiedAt, setVerifiedAt] = useState(0);   // 소셜로 다시 로그인한 시각
+  const [checking, setChecking] = useState(false);
+  const [note, setNote] = useState('');
+
+  /* 앱 안 로그인 화면(안드로이드 카카오·네이버) — 로그인 화면(app/login.jsx)과 같은 모양 */
+  const [webLogin, setWebLogin] = useState(null);
+  const openInApp = (req) => new Promise((resolve) => setWebLogin({ ...req, resolve }));
+  const onWebLoginDone = (url, trail) => {
+    const r = webLogin?.resolve;
+    setWebLogin(null);
+    r?.({ url, trail });
+  };
+
+  /* 소셜 본인 확인 — 같은 계정일 때만 통과. 다른 아이디면 계정을 바꾸지 않는다 */
+  const verifySocial = async () => {
+    setErr(''); setNote(''); setChecking(true);
+    const r = method === 'google'
+      ? await signInWithGoogle({ reauth: true })
+      : await signInWithSocialWeb(method, { openInApp, expectUid: me });
+    setChecking(false);
+    if (r.ok && r.uid === me) { setVerifiedAt(Date.now()); return; }
+    if (r.error) setErr(r.error);
+    else if (r.hint) setNote(r.hint);
+  };
+
+  const onReset = async () => {
+    setErr('');
+    const r = await sendReset(email);
+    if (r.ok) setNote(`${email} 으로 비밀번호 재설정 메일을 보냈습니다. 새 비밀번호를 정한 뒤 여기에 넣어 주세요.`);
+    else setErr(r.reason);
+  };
+  const verified = social ? reauthFresh(verifiedAt) : true;
   const nameOf = (id) => members?.find((m) => m.id === id)?.name || '';
 
   const ready = useMemo(() => deleteReady({ uid: me, members }), [me, members]);
@@ -51,8 +90,17 @@ export function DeleteAccount({ clubId, me, members, flash }) {
       /* 1) 본인 확인 — 가장 먼저 한다.
             마지막에 하면 계정 삭제가 막혔을 때 데이터만 지워진 채로 남는다. */
       setStep('reauth');
-      const auth1 = await reauthenticate(pw);
-      if (!auth1.ok) { setErr(auth1.reason); setStep(null); return; }
+      if (social) {
+        if (!reauthFresh(verifiedAt)) {
+          setVerifiedAt(0);
+          setErr(`본인 확인 후 시간이 지났습니다. [${REAUTH_LABEL[method]}로 본인 확인]을 한 번 더 눌러 주세요.`);
+          setStep(null);
+          return;
+        }
+      } else if (method === 'password') {
+        const auth1 = await reauthenticate(pw);
+        if (!auth1.ok) { setErr(auth1.reason); setStep(null); return; }
+      }
 
       /* 2) 클럽 정리 — 회장 자리를 넘기거나, 빈 클럽을 닫는다 */
       setStep('succession');
@@ -114,6 +162,7 @@ export function DeleteAccount({ clubId, me, members, flash }) {
   const busy = !!step;
 
   return (
+    <>
     <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
       <Card style={{ backgroundColor: C.dangerBg }}>
         <Text style={{ fontSize: 14, fontWeight: '800', color: C.danger }}>
@@ -128,7 +177,7 @@ export function DeleteAccount({ clubId, me, members, flash }) {
 
       <SectionTitle>지워지는 것</SectionTitle>
       <Card>
-        {['로그인 계정 (이메일·비밀번호)',
+        {[loginAccountText(method),
           '내 프로필과 소속 클럽 정보',
           '연락처 · 알림 수신 정보',
           '클럽 안에서의 운영 권한'].map((t) => (
@@ -165,17 +214,17 @@ export function DeleteAccount({ clubId, me, members, flash }) {
         </Card>
       )}
 
-      {!anon && (
+      {method === 'password' && (
         <>
           <SectionTitle hint={email}>본인 확인</SectionTitle>
           <Card>
-            <Label>비밀번호</Label>
+            <Label>Court 비밀번호</Label>
             <TextInput
               value={pw}
               onChangeText={setPw}
               secureTextEntry
               autoCapitalize="none"
-              placeholder="비밀번호"
+              placeholder="이메일로 가입할 때 정한 비밀번호"
               placeholderTextColor={C.faint}
               style={{
                 borderWidth: 1, borderColor: C.border, borderRadius: R.md,
@@ -183,8 +232,42 @@ export function DeleteAccount({ clubId, me, members, flash }) {
                 backgroundColor: C.fill,
               }}
             />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, gap: 8 }}>
+              <Text style={{ flex: 1, fontSize: 11, color: C.faint, lineHeight: 16 }}>
+                비밀번호가 기억나지 않으면 재설정 메일로 새로 정할 수 있습니다.
+              </Text>
+              <Btn small tone="ghost" onPress={onReset}>재설정 메일</Btn>
+            </View>
           </Card>
         </>
+      )}
+
+      {social && (
+        <>
+          <SectionTitle hint={`${REAUTH_LABEL[method]} 가입`}>본인 확인</SectionTitle>
+          <Card>
+            <Text style={{ fontSize: 12.5, color: C.text, lineHeight: 19 }}>
+              {REAUTH_LABEL[method]}로 가입한 계정이라 Court 비밀번호가 없습니다.
+              아래 버튼으로 <Text style={{ fontWeight: '800' }}>{REAUTH_LABEL[method]}에 한 번 더 로그인</Text>하면
+              본인 확인이 됩니다. 가입할 때 쓴 {REAUTH_LABEL[method]} 아이디로 로그인해 주세요.
+            </Text>
+            <View style={{ marginTop: 12 }}>
+              {verified ? (
+                <Chip tone="green">✓ 본인 확인됨 · 4분 안에 삭제를 마쳐 주세요</Chip>
+              ) : (
+                <Btn full tone="outline" disabled={checking || busy} onPress={verifySocial}>
+                  {checking ? '확인 중…' : `${REAUTH_LABEL[method]}로 본인 확인`}
+                </Btn>
+              )}
+            </View>
+          </Card>
+        </>
+      )}
+
+      {!!note && (
+        <Card style={{ marginTop: 10 }}>
+          <Text style={{ fontSize: 12, color: C.sub, lineHeight: 18 }}>{note}</Text>
+        </Card>
       )}
 
       <SectionTitle>확인</SectionTitle>
@@ -228,7 +311,7 @@ export function DeleteAccount({ clubId, me, members, flash }) {
         <Btn
           full
           tone="danger"
-          disabled={busy || !ready.ok || !confirmOk(typed) || (!anon && !pw)}
+          disabled={busy || checking || !ready.ok || !confirmOk(typed) || (method === 'password' && !pw) || !verified}
           onPress={run}>
           {busy ? '삭제 중…' : '계정 영구 삭제'}
         </Btn>
@@ -239,6 +322,8 @@ export function DeleteAccount({ clubId, me, members, flash }) {
         계정 삭제는 앱 전체에서 나가는 것입니다.
       </Text>
     </ScrollView>
+    <SocialLoginSheet request={webLogin} onDone={onWebLoginDone} />
+    </>
   );
 }
 

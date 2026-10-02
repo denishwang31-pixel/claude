@@ -445,6 +445,42 @@ export function parseSocialReturn(url) {
   return out;
 }
 
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/**
+ * 서버가 준 로그인 토큰이 어느 계정(uid)의 것인지 — **로그인하지 않고** 읽는다.
+ *
+ * 계정 삭제 전 본인 확인에 쓴다. 카카오·네이버로 다시 로그인했는데 다른 아이디였다면,
+ * 그 토큰으로 로그인해 버리면 지우려던 계정이 아니라 다른 계정으로 바뀐다.
+ * 그래서 먼저 열어 보고 같을 때만 로그인한다. 서명 확인은 Firebase 가 로그인할 때 한다.
+ * @returns {string} 못 읽으면 '' (= 다른 계정으로 본다)
+ */
+export function customTokenUid(token) {
+  const part = String(token || '').split('.')[1] || '';
+  if (!part) return '';
+  const s = part.replace(/-/g, '+').replace(/_/g, '/');
+  let bits = 0;
+  let acc = 0;
+  let text = '';
+  for (const ch of s) {
+    if (ch === '=') break;
+    const v = B64.indexOf(ch);
+    if (v < 0) return '';
+    acc = (acc << 6) | v;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      text += String.fromCharCode((acc >> bits) & 0xff);
+    }
+  }
+  try {
+    const json = JSON.parse(text);   // uid·claims 는 영문·숫자라 바이트 그대로 읽어도 된다
+    return typeof json?.uid === 'string' ? json.uid : '';
+  } catch (e) {
+    return '';
+  }
+}
+
 /* ---------------- 늦게 도착한 로그인 결과 ----------------
    카카오 로그인 창에서 카카오톡 앱으로 넘어갔다 돌아오면, 앱이 다시 앞에 나오는
    순간 로그인 창(expo-web-browser)이 "사용자가 닫았다"로 먼저 끝나 버린다.
@@ -630,7 +666,7 @@ export default {
   GOOGLE_SCOPES, googleRedirectUri, googleErrorText,
   KNOWN_BROWSERS, browserCandidates, isNoBrowserError,
   SOCIAL_AUTH_HOST, socialRedirectUri, socialReturnUrl, makeState, authorizeUrl,
-  parseSocialReturn, socialAuthErrorText,
+  parseSocialReturn, customTokenUid, socialAuthErrorText,
   providerReady, enabledProviders, missingFor, googleClientMixup,
   appleGap, socialReadiness, needsNativeRebuild, SETUP,
 };

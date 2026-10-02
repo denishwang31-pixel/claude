@@ -33,6 +33,7 @@ import {
   browserCandidates, isNoBrowserError,
   PROVIDERS, makeState, authorizeUrl, socialReturnUrl, parseSocialReturn, socialAuthErrorText,
   matchLateReturn, socialClosedHint, LATE_WAIT_MS, HANDOFF_POLL_MS, PENDING_TTL_MS, socialResultUrl,
+  customTokenUid,
 } from './social';
 import { LIVE_SOCIAL_CONFIG } from './socialConfig';
 
@@ -46,11 +47,13 @@ const GOOGLE_DISCOVERY = {
 /**
  * 구글로 로그인한다.
  *
+ * @param reauth  true 면 새로 로그인하지 않고 **지금 계정의 본인 확인**만 한다(계정 삭제 전).
+ *                 다른 구글 계정을 고르면 계정이 바뀌지 않고 오류로 끝난다.
  * @returns {Promise<{ok: boolean, uid?: string, error?: string, cancelled?: boolean}>}
  *          error 가 빈 문자열이면 "사용자가 닫았다"는 뜻이라 화면에
  *          아무것도 띄우지 않는다.
  */
-export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
+export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG, reauth = false } = {}) {
   const clientId = String(config?.googleAndroidClientId || '').trim();
   if (!clientId) {
     return { ok: false, error: '[G1] 구글 로그인 설정이 빠져 있습니다(안드로이드 클라이언트 ID).' };
@@ -194,13 +197,22 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
 
   /* ---- 4. Firebase 계정으로 ---- */
   try {
-    const [{ GoogleAuthProvider, signInWithCredential }, { auth }] = await Promise.all([
+    const [{ GoogleAuthProvider, signInWithCredential, reauthenticateWithCredential }, { auth }] = await Promise.all([
       import('firebase/auth'),
       import('../../firebaseConfig'),
     ]);
-    const res = await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+    const cred = GoogleAuthProvider.credential(idToken);
+    if (reauth) {
+      if (!auth.currentUser) return { ok: false, error: '[G13] 로그인 상태가 아닙니다.' };
+      await reauthenticateWithCredential(auth.currentUser, cred);
+      return { ok: true, uid: auth.currentUser.uid };
+    }
+    const res = await signInWithCredential(auth, cred);
     return { ok: true, uid: res.user.uid };
   } catch (e) {
+    if (reauth && /user-mismatch/.test(String(e?.code || ''))) {
+      return { ok: false, error: '[G14] 지금 로그인한 계정과 다른 구글 계정입니다. Court 에 가입할 때 쓴 구글 계정을 골라 주세요.' };
+    }
     /* 구글은 통과했고 Firebase 가 거부한 자리다. 고칠 곳이 구글
        클라우드가 아니라 Firebase 콘솔이라는 뜻이라 꼭 구분해야 한다. */
     const code = String(e?.code || '');
@@ -214,9 +226,10 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG } = {}) {
  * 네이티브 SDK 를 쓰지 않아서 새 빌드 없이 키만 들어오면 된다. 비밀값은 서버에만 있다.
  * 흐름은 functions/socialAuth.js 머리말 참고.
  *
+ * @param expectUid  계정 삭제 전 본인 확인 — 이 계정의 토큰일 때만 로그인한다(다른 아이디면 계정을 바꾸지 않고 오류)
  * @returns {Promise<{ok: boolean, uid?: string, name?: string, error?: string, cancelled?: boolean}>}
  */
-export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFIG, onWaiting, openInApp } = {}) {
+export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFIG, onWaiting, openInApp, expectUid = '' } = {}) {
   const clientId = String(
     provider === PROVIDERS.KAKAO ? config?.kakaoRestKey : provider === PROVIDERS.NAVER ? config?.naverClientId : '',
   ).trim();
@@ -247,7 +260,7 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
   /* 늦게 도착하는 결과를 받을 준비 — social.js 의 matchLateReturn 머리말 참고.
      기억은 파일에도 남긴다: 카카오톡에 가 있는 동안 휴대폰이 앱을 닫아 버리면
      결과 주소가 앱을 새로 켜는데, 그때도 이어서 로그인하려고. */
-  await savePending({ provider, state, at: Date.now() });
+  await savePending({ provider, state, at: Date.now(), ...(expectUid ? { expectUid } : {}) });
   let lateUrl = '';
   let sub = null;
   const seen = [];          // 진단용 — 들어온 주소의 앞부분만(값은 안 남김)
@@ -318,7 +331,7 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
     if (got === GONE) return { ok: false, cancelled: true, error: '' };   // 다른 곳(앱 뿌리)이 이미 받아 처리했다
     if (got && got.error !== 'expired') {
       await clearPending();
-      return finishSocial(got, got.provider || provider);
+      return finishSocial(got, got.provider || provider, expectUid);
     }
     /* 앱 안 화면을 사용자가 닫은 것 — 오류는 아니지만, 어디까지 갔는지 한 줄 남긴다(진단) */
     if (inApp) {
@@ -336,7 +349,7 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
   /* ⚠️ 우리가 연 로그인에서 돌아온 것인지 확인한다 — 다른 곳에서 만든 주소로
         남의 계정에 들어가게 만드는 공격을 막는다. */
   if (back.state !== state) return { ok: false, error: socialAuthErrorText('state', provider) };
-  return finishSocial(back, provider);
+  return finishSocial(back, provider, expectUid);
 }
 
 /* ---------------- 로그인 창 밖에서 도착한 결과 ---------------- */
@@ -365,10 +378,11 @@ export async function handleLateSocialUrl(url, { delayMs = 1500 } = {}) {
   if (!url || !matchLateReturn(url, { state: parseSocialReturn(url).state, at: Date.now() })) return null;
   /* 로그인 창이 같은 주소를 받았다면 그쪽이 곧 기억을 지운다 — 두 번 로그인하지 않게 잠깐 기다린다 */
   if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
-  const back = matchLateReturn(url, await loadPending());
+  const pending = await loadPending();
+  const back = matchLateReturn(url, pending);
   if (!back) return null;
   await clearPending();
-  return finishSocial(back, back.provider);
+  return finishSocial(back, back.provider, pending?.expectUid || '');
 }
 
 const GONE = 'gone';
@@ -413,15 +427,20 @@ export async function checkPendingSocial() {
   if (!j) return null;
   await clearPending();
   if (j.error === 'expired') return null;
-  return finishSocial(j, j.provider || p.provider);
+  return finishSocial(j, j.provider || p.provider, p.expectUid || '');
 }
 
-async function finishSocial(back, provider) {
+async function finishSocial(back, provider, expectUid = '') {
   if (back.error) {
     const text = socialAuthErrorText(back.error, provider);
     return text ? { ok: false, error: text } : { ok: false, cancelled: true, error: '' };
   }
   if (!back.token) return { ok: false, error: socialAuthErrorText('server', provider) };
+  /* 본인 확인 중 — 다른 아이디로 로그인했으면 그 계정으로 바꾸지 않는다 */
+  if (expectUid && customTokenUid(back.token) !== expectUid) {
+    const who = provider === PROVIDERS.NAVER ? '네이버' : '카카오';
+    return { ok: false, error: `[S13] 지금 로그인한 계정과 다른 ${who} 아이디입니다. Court 에 가입할 때 쓴 ${who} 아이디로 로그인해 주세요.` };
+  }
 
   try {
     const [{ signInWithCustomToken }, { auth }] = await Promise.all([

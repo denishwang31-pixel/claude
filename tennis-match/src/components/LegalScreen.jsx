@@ -1,10 +1,9 @@
 /* ============================================================
-   약관 · 개인정보처리방침 + 계정 삭제로 가는 길
+   약관 · 개인정보처리방침
 
-   왜 계정 삭제를 여기 붙였나
-     스토어 심사는 "가입할 수 있으면 지울 수도 있어야 한다"를 본다.
-     그리고 이용자가 그 길을 실제로 찾을 수 있어야 한다. 약관을 읽다가
-     "그만두고 싶다"고 생각하는 자리가 바로 여기다.
+   계정 삭제는 [내 프로필] 맨 아래로 옮겼다(2026-10-02 앱 주인 — 여기선 찾기 어렵다).
+     스토어 심사는 "가입할 수 있으면 지울 수도 있어야 한다"와 그 길을 찾을 수
+     있는지를 본다. 약관을 읽다 찾는 사람도 있으니 여기엔 가는 길만 한 줄 남긴다.
 
    빈칸 경고
      법적 문서에 [[대괄호]] 가 남은 채로 스토어에 올라가면 그대로
@@ -13,14 +12,12 @@
    ============================================================ */
 import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
 import { TERMS, PRIVACY, pendingBlanks } from '../lib/legalText';
-import { Card, SectionTitle, Chip, Btn } from './ui';
-import { C, F } from '../lib/theme';
+import { Card, Chip } from './ui';
+import { C } from '../lib/theme';
 
 export function Legal() {
   const [tab, setTab] = useState('privacy');   // privacy | terms
-  const router = useRouter();
   const blanks = useMemo(() => pendingBlanks(), []);
   const body = tab === 'privacy' ? PRIVACY : TERMS;
 
@@ -58,18 +55,9 @@ export function Legal() {
         </Text>
       </Card>
 
-      <SectionTitle>계정</SectionTitle>
-      <Card>
-        <Text style={{ fontSize: 12, color: C.sub, lineHeight: 18 }}>
-          계정을 지우면 로그인 정보와 개인정보가 삭제됩니다. 되돌릴 수 없습니다.
-        </Text>
-        <View style={{ marginTop: 12 }}>
-          <Btn full tone="outline"
-            onPress={() => router.setParams({ open: 'deleteaccount', from: 'more' })}>
-            계정 삭제
-          </Btn>
-        </View>
-      </Card>
+      <Text style={{ fontSize: 11.5, color: C.faint, marginTop: 14, lineHeight: 17 }}>
+        계정 삭제는 [더보기] → [내 프로필] 맨 아래에 있습니다.
+      </Text>
     </ScrollView>
   );
 }
