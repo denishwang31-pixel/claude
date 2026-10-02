@@ -7,7 +7,10 @@
       "com.donghyun.tennismatch"
     ],
     "version": "1.0.0",
-    "platforms": ["android", "ios"],
+    "platforms": [
+      "android",
+      "ios"
+    ],
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -15,7 +18,7 @@
     "primaryColor": "#064e3b",
     "android": {
       "package": "com.donghyun.tennismatch",
-      "versionCode": 10,
+      "versionCode": 11,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "INTERNET",
