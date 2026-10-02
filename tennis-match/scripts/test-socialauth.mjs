@@ -135,5 +135,57 @@ eq(await err({ path: '/auth/kakao/callback', query: { code: 'C', state: STATE } 
   eq(q.token, 'CUSTOM.TOKEN', '맡기기에 실패해도 앱 주소로는 그대로 돌려보낸다');
 }
 
+console.log('[연결 끊기 — 계정 삭제]');
+{
+  ok(S.isUnlinkIntent('kakao.del_abcdefghijklmnopqrstuvwxyz012345'), '삭제 전 본인 확인 state');
+  ok(!S.isUnlinkIntent(STATE), '보통 로그인은 토큰을 맡기지 않는다');
+  ok(S.stateOk('kakao', 'kakao.del_abcdefghijklmnopqrstuvwxyz012345'), '삭제용 state 도 모양 검사를 통과한다');
+  ok(S.isUnlinkPath('/auth/unlink') && !S.isUnlinkPath('/auth/kakao/callback'), '/auth/unlink 주소');
+
+  const kr = S.unlinkRequest('kakao', 'AT', ENV);
+  eq([kr.url, kr.headers.Authorization], ['https://kapi.kakao.com/v1/user/unlink', 'Bearer AT'], '카카오: 사용자 토큰으로 unlink (Admin 키 불필요)');
+  const nr = S.unlinkRequest('naver', 'AT', ENV);
+  ok(nr.url === 'https://nid.naver.com/oauth2.0/token' && /grant_type=delete/.test(nr.body) && /access_token=AT/.test(nr.body)
+    && /client_secret=nsec/.test(nr.body) && /service_provider=NAVER/.test(nr.body), '네이버: 토큰 삭제 요청');
+  ok(S.unlinkOk('kakao', 200, { id: 1 }) && !S.unlinkOk('kakao', 401, { code: -401 }), '카카오 응답 판정');
+  ok(S.unlinkOk('naver', 200, { result: 'success' }) && !S.unlinkOk('naver', 200, { error: 'invalid_request' }), '네이버 응답 판정');
+
+  /* 흐름: 삭제용 로그인 → 토큰 맡김 → /auth/unlink 가 그 토큰으로 끊는다 */
+  const box = new Map();
+  const unlinkStore = { put: async (k, v) => { box.set(k, v); }, take: async (k) => { const v = box.get(k); box.delete(k); return v || null; } };
+  const DEL = 'kakao.del_abcdefghijklmnopqrstuvwxyz012345';
+  const { calls, deps } = fakes();
+  await S.handle({ path: '/auth/kakao/callback', query: { code: 'C', state: DEL } }, { ...deps, unlinkStore });
+  eq(box.get('kakao:12345')?.accessToken, 'AT', '삭제 전 본인 확인이면 토큰을 uid 이름으로 맡긴다');
+  const box2 = new Map();
+  await S.handle({ path: '/auth/kakao/callback', query: { code: 'C', state: STATE } }, { ...deps, unlinkStore: { put: async (k, v) => box2.set(k, v) } });
+  eq(box2.size, 0, '보통 로그인은 맡기지 않는다');
+
+  const verify = (uid) => ({ verifyIdToken: async (t) => { if (t !== 'ID') throw new Error('bad'); return { uid }; } });
+  const sent = [];
+  const fetchOk = async (url, init) => { sent.push({ url, init }); return { status: 200, json: async () => ({ id: 12345 }) }; };
+  let r = await S.handleUnlink({ idToken: 'ID' }, { fetch: fetchOk, auth: verify('kakao:12345'), env: ENV, unlinkStore });
+  eq(r.body, { ok: true, provider: 'kakao' }, '맡겨 둔 토큰으로 카카오 연결을 끊는다');
+  eq(sent[0].init.headers.Authorization, 'Bearer AT', '그 사람의 토큰으로');
+  eq(box.has('kakao:12345'), false, '한 번 쓰면 지운다');
+  r = await S.handleUnlink({ idToken: 'ID' }, { fetch: fetchOk, auth: verify('kakao:12345'), env: ENV, unlinkStore });
+  eq(r.body.error, 'no-token', '맡긴 토큰이 없으면(본인 확인 안 함) 끊지 못한다고 알린다');
+  r = await S.handleUnlink({ idToken: 'X' }, { fetch: fetchOk, auth: verify('kakao:12345'), env: ENV, unlinkStore });
+  eq([r.status, r.body.error], [401, 'auth'], 'Firebase 로그인이 확인 안 되면 거절 — 남의 연결을 끊을 수 없다');
+  r = await S.handleUnlink({ idToken: 'ID' }, { fetch: fetchOk, auth: verify('abcUID'), env: ENV, unlinkStore });
+  eq(r.body, { ok: true, skipped: 'provider' }, '이메일·구글 계정은 서버에서 끊을 것이 없다');
+  box.set('naver:nv-1', { provider: 'naver', accessToken: 'NT', at: 0 });
+  r = await S.handleUnlink({ idToken: 'ID' }, { fetch: fetchOk, auth: verify('naver:nv-1'), env: ENV, unlinkStore, now: () => S.UNLINK_TTL_MS + 1 });
+  eq(r.body.error, 'expired', '오래된 토큰은 쓰지 않는다');
+  box.set('naver:nv-1', { provider: 'naver', accessToken: 'NT', at: 0 });
+  r = await S.handleUnlink({ idToken: 'ID' }, { fetch: async () => ({ status: 200, json: async () => ({ result: 'success' }) }), auth: verify('naver:nv-1'), env: ENV, unlinkStore, now: () => 1000 });
+  eq(r.body, { ok: true, provider: 'naver' }, '네이버 연결 끊기');
+
+  const idx = (await import('node:fs')).readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  ok(/isUnlinkPath\(req\.path\)/.test(idx) && /unlinkStore,/.test(idx) && /req\.method !== 'POST'/.test(idx), '함수에 /auth/unlink 가 이어져 있다(POST 만)');
+  const rules = (await import('node:fs')).readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  ok(!/authUnlink/.test(rules), '맡겨 둔 토큰 컬렉션은 규칙에 없다 = 앱이 못 읽는다');
+}
+
 console.log(`\n카카오·네이버 서버 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

@@ -14,12 +14,13 @@
      아무것도 없다. 그래서 한 걸음 더 두었다.
    ============================================================ */
 import React, { useState, useMemo } from 'react';
-import { View, Text, TextInput, ScrollView } from 'react-native';
+import { View, Text, TextInput, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   reauthenticate, deleteAuthUser, currentEmail, logout, sendReset,
 } from '../lib/auth';
 import { signInWithGoogle, signInWithSocialWeb } from '../lib/socialSignIn';
+import { unlinkSocial, revokeGoogle } from '../lib/socialUnlink';
 import { auth } from '../../firebaseConfig';
 import {
   promoteToPresidents, handOverClub, closeEmptyClub, wipeMember, deleteUserDoc,
@@ -27,7 +28,7 @@ import {
 import {
   tombstone, successionPlan, successionText, emptyClubPatch,
   CONFIRM_WORD, confirmOk, deleteReady, DELETE_STEPS, WIPE_FIELDS, KEEP_FIELDS,
-  reauthMethod, REAUTH_LABEL, reauthFresh, loginAccountText,
+  reauthMethod, REAUTH_LABEL, reauthFresh, loginAccountText, unlinkFailText,
 } from '../lib/accountDelete';
 import { SocialLoginSheet } from './SocialLoginSheet';
 import { Card, SectionTitle, Btn, Chip } from './ui';
@@ -48,6 +49,8 @@ export function DeleteAccount({ clubId, me, members, flash }) {
   const [verifiedAt, setVerifiedAt] = useState(0);   // 소셜로 다시 로그인한 시각
   const [checking, setChecking] = useState(false);
   const [note, setNote] = useState('');
+  const [googleToken, setGoogleToken] = useState('');   // 구글 연결 끊기(revoke)용
+  const [unlinkNote, setUnlinkNote] = useState('');      // 연결을 못 끊었을 때 완료 화면에 남길 말
 
   /* 앱 안 로그인 화면(안드로이드 카카오·네이버) — 로그인 화면(app/login.jsx)과 같은 모양 */
   const [webLogin, setWebLogin] = useState(null);
@@ -65,7 +68,7 @@ export function DeleteAccount({ clubId, me, members, flash }) {
       ? await signInWithGoogle({ reauth: true })
       : await signInWithSocialWeb(method, { openInApp, expectUid: me });
     setChecking(false);
-    if (r.ok && r.uid === me) { setVerifiedAt(Date.now()); return; }
+    if (r.ok && r.uid === me) { setGoogleToken(r.accessToken || ''); setVerifiedAt(Date.now()); return; }
     if (r.error) setErr(r.error);
     else if (r.hint) setNote(r.hint);
   };
@@ -86,6 +89,7 @@ export function DeleteAccount({ clubId, me, members, flash }) {
 
   const run = async () => {
     setErr('');
+    let unlinkMsg = '';
     try {
       /* 1) 본인 확인 — 가장 먼저 한다.
             마지막에 하면 계정 삭제가 막혔을 때 데이터만 지워진 채로 남는다. */
@@ -127,7 +131,15 @@ export function DeleteAccount({ clubId, me, members, flash }) {
       }
       await deleteUserDoc(me).catch(() => {});
 
-      /* 4) 로그인 계정 삭제 */
+      /* 4) 카카오·네이버·구글 쪽 「연결된 서비스」에서 Court 끊기 — 로그인 계정을 지우기 전에
+            (서버가 누구인지 확인해야 한다). 못 끊어도 삭제는 계속하고 완료 화면에 알린다. */
+      if (social) {
+        setStep('unlink');
+        const u = method === 'google' ? await revokeGoogle(googleToken) : await unlinkSocial();
+        if (!u?.ok) { unlinkMsg = unlinkFailText(method); setUnlinkNote(unlinkMsg); }
+      }
+
+      /* 5) 로그인 계정 삭제 */
       setStep('auth');
       const gone = await deleteAuthUser();
       if (!gone.ok) {
@@ -140,6 +152,8 @@ export function DeleteAccount({ clubId, me, members, flash }) {
 
       setDone(true);
       setStep(null);
+      /* 계정이 없어지면 곧바로 로그인 화면으로 넘어가 이 화면의 안내가 안 보인다 — 알림창으로 남긴다 */
+      if (unlinkMsg) Alert.alert('계정이 삭제되었습니다', unlinkMsg);
       await logout().catch(() => {});
       router.replace('/');
     } catch (e) {
@@ -155,6 +169,9 @@ export function DeleteAccount({ clubId, me, members, flash }) {
         <Text style={{ fontSize: 12, color: C.sub, marginTop: 8, lineHeight: 18 }}>
           그동안 이용해 주셔서 감사합니다.
         </Text>
+        {!!unlinkNote && (
+          <Text style={{ fontSize: 12, color: C.warn, marginTop: 10, lineHeight: 18 }}>{unlinkNote}</Text>
+        )}
       </Card>
     );
   }

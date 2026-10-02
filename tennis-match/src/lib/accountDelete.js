@@ -171,6 +171,7 @@ export const DELETE_STEPS = [
   { key: 'reauth', label: '본인 확인' },
   { key: 'succession', label: '클럽 정리' },
   { key: 'wipe', label: '개인정보 삭제' },
+  { key: 'unlink', label: '연결 끊기' },
   { key: 'auth', label: '로그인 계정 삭제' },
 ];
 
@@ -210,4 +211,12 @@ export function loginAccountText(method) {
   if (method === 'password') return '로그인 계정 (이메일·비밀번호)';
   if (REAUTH_LABEL[method]) return `로그인 계정 (${REAUTH_LABEL[method]} 로그인 연결)`;
   return '로그인 계정';
+}
+
+/** 연결 끊기를 못 했을 때 남길 안내 — 삭제는 끝났으니 직접 끊는 길만 알려 준다.
+ *  (카카오·네이버·구글 화면의 메뉴 이름은 바뀔 수 있어 「연결된 서비스」 정도로만 쓴다) */
+export function unlinkFailText(method) {
+  const who = REAUTH_LABEL[method];
+  if (!who || method === 'password') return '';
+  return `${who} 쪽 연결은 끊지 못했습니다. ${who} 계정 설정의 연결된 서비스 목록에서 Court 를 직접 끊을 수 있습니다.`;
 }

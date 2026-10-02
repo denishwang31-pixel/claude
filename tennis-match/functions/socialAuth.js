@@ -234,6 +234,14 @@ async function handle(req, deps) {
   if (!profile) return done({ error: 'profile' });
 
   const uid = uidFor(provider, profile.id);
+  /* 계정 삭제 전 본인 확인이면 — 연결 끊기에 쓸 토큰을 잠깐 맡겨 둔다(아래 「연결 끊기」) */
+  if (isUnlinkIntent(state) && deps.unlinkStore) {
+    try {
+      await deps.unlinkStore.put(uid, { provider, accessToken, at: (deps.now || Date.now)() });
+    } catch (e) {
+      log('unlink-put', provider, String(e?.message || e).slice(0, 120));
+    }
+  }
   /* 계정 이름·사진을 채워 둔다 — 온보딩이 이름 칸을 미리 채운다.
      이메일은 확인된 것만, 그리고 다른 계정이 이미 쓰면 붙이지 않는다(가입이 막히지 않게). */
   try {
@@ -266,8 +274,93 @@ async function handle(req, deps) {
   }
 }
 
+/* ---------------- 연결 끊기 (계정 삭제) ----------------
+   Court 계정을 지워도 카카오·네이버 쪽 「연결된 서비스」에는 Court 가 남는다.
+   그러면 탈퇴한 사람이 다시 가입할 때 동의 화면이 안 뜨고, 카카오 정책도
+   탈퇴할 때 연결을 끊으라고 한다. 그래서 계정 삭제 과정에서 연결을 끊는다.
+
+   어떻게
+     1. 삭제 화면의 [카카오로 본인 확인] 은 state 를 '<제공자>.del_…' 로 연다(앱 social.js makeState).
+     2. 위 handle() 이 그 로그인에서 받은 액세스 토큰을 uid 이름으로 잠깐 맡겨 둔다(서버만 읽는 컬렉션).
+     3. 앱이 삭제 중에 POST /auth/unlink {idToken} — 우리 서버가 그 사람의 Firebase 로그인을 확인하고,
+        맡겨 둔 토큰으로 카카오(사용자 토큰으로 unlink)·네이버(토큰 삭제 요청)에 연결 끊기를 보낸다.
+   카카오 Admin 키가 필요 없다 — 본인이 방금 로그인해서 받은 토큰을 쓰기 때문.
+   토큰은 한 번 쓰면 지우고, 50분이 지나면 버린다(네이버 토큰은 1시간짜리). */
+const UNLINK_TTL_MS = 50 * 60 * 1000;
+
+/** 계정 삭제 전 본인 확인으로 연 로그인인가 */
+const isUnlinkIntent = (state) => /^(kakao|naver)\.del_/.test(String(state || ''));
+
+/** /auth/unlink 인가 */
+const isUnlinkPath = (path) => /^\/auth\/unlink\/?$/.test(String(path || ''));
+
+/** 연결 끊기 요청 모양 */
+function unlinkRequest(provider, accessToken, env = {}) {
+  if (provider === 'kakao') {
+    return {
+      url: 'https://kapi.kakao.com/v1/user/unlink',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: '',
+    };
+  }
+  return {
+    url: 'https://nid.naver.com/oauth2.0/token',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+    body: form({
+      grant_type: 'delete',
+      client_id: env.NAVER_CLIENT_ID,
+      client_secret: env.NAVER_CLIENT_SECRET,
+      access_token: accessToken,
+      service_provider: 'NAVER',
+    }),
+  };
+}
+
+/** 응답이 "끊었다"인가 */
+function unlinkOk(provider, status, json) {
+  if (provider === 'kakao') return status === 200 && !!json?.id;
+  return status === 200 && json?.result === 'success';
+}
+
+/**
+ * 앱의 연결 끊기 요청.
+ * @param body {idToken}
+ * @param deps {fetch, auth, env, unlinkStore, log, now}
+ * @returns {{status:number, body:{ok:boolean, provider?:string, skipped?:string, error?:string}}}
+ */
+async function handleUnlink(body, deps) {
+  const { fetch, auth, env = {}, log = () => {} } = deps;
+  const idToken = str((body || {}).idToken, 4000);
+  if (!idToken) return { status: 401, body: { ok: false, error: 'auth' } };
+  let uid = '';
+  try {
+    uid = (await auth.verifyIdToken(idToken)).uid || '';
+  } catch (e) {
+    return { status: 401, body: { ok: false, error: 'auth' } };
+  }
+  const provider = uid.split(':')[0];
+  /* 카카오·네이버가 아닌 계정(이메일·구글)은 여기서 끊을 것이 없다 */
+  if (!PROVIDERS.includes(provider) || !uid.includes(':')) return { status: 200, body: { ok: true, skipped: 'provider' } };
+  if (!deps.unlinkStore) return { status: 200, body: { ok: false, provider, error: 'store' } };
+  const saved = await deps.unlinkStore.take(uid);
+  if (!saved?.accessToken || saved.provider !== provider) return { status: 200, body: { ok: false, provider, error: 'no-token' } };
+  if ((deps.now || Date.now)() - Number(saved.at || 0) > UNLINK_TTL_MS) return { status: 200, body: { ok: false, provider, error: 'expired' } };
+  try {
+    const r = unlinkRequest(provider, saved.accessToken, env);
+    const res = await fetch(r.url, { method: 'POST', headers: r.headers, body: r.body });
+    const json = await res.json().catch(() => ({}));
+    const done = unlinkOk(provider, res.status, json);
+    if (!done) log('unlink', provider, res.status, str(json?.error || json?.code || json?.msg, 60));
+    return { status: 200, body: done ? { ok: true, provider } : { ok: false, provider, error: 'provider' } };
+  } catch (e) {
+    log('unlink-throw', provider, String(e?.message || e).slice(0, 120));
+    return { status: 200, body: { ok: false, provider, error: 'network' } };
+  }
+}
+
 module.exports = {
-  PROVIDERS, APP_RETURN_DEFAULT, AUTH_HOST_DEFAULT, HANDOFF_TTL_MS,
+  PROVIDERS, APP_RETURN_DEFAULT, AUTH_HOST_DEFAULT, HANDOFF_TTL_MS, UNLINK_TTL_MS,
   providerFromPath, stateOk, configured, tokenRequest, profileUrl, profileFrom, uidFor, appRedirect, handle,
   isResultPath, handleResult,
+  isUnlinkIntent, isUnlinkPath, unlinkRequest, unlinkOk, handleUnlink,
 };

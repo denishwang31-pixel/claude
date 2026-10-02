@@ -8,11 +8,11 @@
 import {
   WIPE_FIELDS, KEEP_FIELDS, tombstone, successionPlan, successionText,
   emptyClubPatch, CONFIRM_WORD, confirmOk, deleteReady, DELETE_STEPS,
-  reauthMethod, reauthFresh, REAUTH_FRESH_MS, loginAccountText,
+  reauthMethod, reauthFresh, REAUTH_FRESH_MS, loginAccountText, unlinkFailText,
 } from '../src/lib/accountDelete.js';
 import { ROLES } from '../src/lib/constants.js';
 import { pendingBlanks, TERMS, PRIVACY } from '../src/lib/legalText.js';
-import { customTokenUid } from '../src/lib/social.js';
+import { customTokenUid, makeState } from '../src/lib/social.js';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -173,10 +173,11 @@ console.log('\n[지울 수 있는 상태인가]');
   eq(deleteReady({ uid: 'p', members: [members[0]] }).ok, true,
     '마지막 한 명이어도 나갈 수 있다 — 빈 클럽이 될 뿐이다');
 
-  ok(DELETE_STEPS.length === 4, '단계는 넷');
+  ok(DELETE_STEPS.length === 5, '단계는 다섯');
   eq(DELETE_STEPS[0].key, 'reauth',
     '본인 확인이 가장 먼저 — 나중에 계정 삭제가 막히면 데이터만 지워진 채로 남는다');
-  eq(DELETE_STEPS[3].key, 'auth', '로그인 계정 삭제가 마지막');
+  eq(DELETE_STEPS[4].key, 'auth', '로그인 계정 삭제가 마지막');
+  eq(DELETE_STEPS[3].key, 'unlink', '연결 끊기는 로그인 계정을 지우기 바로 전(서버가 누구인지 확인해야 한다)');
 }
 
 /* ============================================================
@@ -229,6 +230,23 @@ console.log('\n[소셜 본인 확인 — 다른 아이디로 바뀌지 않게]')
   ok(/method === 'password' &&/.test(scr) && !/!anon && !pw/.test(scr), '비밀번호 칸은 이메일 가입자에게만');
   ok(/<SocialLoginSheet/.test(scr), '안드로이드 카카오·네이버는 앱 안 로그인 화면으로 확인');
   ok(/!verified/.test(scr), '소셜 계정은 다시 로그인하기 전엔 삭제 버튼이 잠긴다');
+}
+
+console.log('\n[연결 끊기 — 카카오·네이버·구글 쪽에서도 Court 를 지운다]');
+{
+  const bytes = Array.from({ length: 32 }, (_, i) => i * 7);
+  ok(/^kakao\.del_[A-Za-z0-9]{32}$/.test(makeState('kakao', bytes, 'unlink')), '삭제 전 본인 확인 state 는 del_ 로 시작(서버가 토큰을 맡아 둔다)');
+  ok(!/del_/.test(makeState('kakao', bytes)), '보통 로그인 state 는 그대로');
+  const scr = readFileSync(resolve(ROOT, 'src/components/DeleteAccountScreen.jsx'), 'utf8');
+  const iUnlink = scr.indexOf("setStep('unlink')");
+  const iAuth = scr.indexOf("setStep('auth')");
+  ok(iUnlink > 0 && iUnlink < iAuth, '연결 끊기는 로그인 계정을 지우기 전에(서버가 Firebase 로그인으로 누구인지 확인)');
+  ok(/revokeGoogle\(googleToken\)/.test(scr) && /unlinkSocial\(\)/.test(scr) && /from '..\/lib\/socialUnlink'/.test(scr), '구글은 토큰 반납, 카카오·네이버는 서버로');
+  ok(/Alert\.alert\('계정이 삭제되었습니다', unlinkMsg\)/.test(scr), '못 끊었으면 삭제 뒤 알림창으로 직접 끊는 길을 알린다');
+  const sig = readFileSync(resolve(ROOT, 'src/lib/socialSignIn.js'), 'utf8');
+  ok(/makeState\(provider, bytes, expectUid \? 'unlink' : ''\)/.test(sig), '본인 확인 로그인만 삭제용 state');
+  ok(/accessToken: googleAccess/.test(sig), '구글 본인 확인이 반납할 토큰을 돌려준다');
+  ok(/연결된 서비스/.test(unlinkFailText('kakao')) && unlinkFailText('password') === '', '실패 안내는 소셜 계정에만');
 }
 
 console.log('\n[계정 삭제로 가는 길 — 내 프로필]');

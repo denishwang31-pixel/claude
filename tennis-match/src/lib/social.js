@@ -412,14 +412,19 @@ export const socialReturnUrl = (applicationId) => {
 };
 
 /** state — 우리 앱이 연 로그인인지 확인하는 값. '<제공자>.<영숫자 32>' */
-export function makeState(provider, randomBytes) {
+/* purpose 'unlink' = 계정 삭제 전 본인 확인 — 서버가 연결 끊기용 토큰을 맡아 둔다
+   (functions/socialAuth.js 「연결 끊기」). '_' 는 무작위 글자에 안 나오니 섞이지 않는다. */
+export function makeState(provider, randomBytes, purpose = '') {
   const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = Array.isArray(randomBytes) || ArrayBuffer.isView(randomBytes)
     ? Array.from(randomBytes)
     : Array.from({ length: 32 }, () => Math.floor(Math.random() * 256));
   const tail = bytes.slice(0, 32).map((b) => abc[b % abc.length]).join('');
-  return `${provider}.${tail.padEnd(16, 'x')}`;
+  return `${provider}.${purpose === 'unlink' ? 'del_' : ''}${tail.padEnd(16, 'x')}`;
 }
+
+/** 계정 삭제 때 카카오·네이버 연결 끊기 (POST {idToken}) */
+export const socialUnlinkUrl = (host = SOCIAL_AUTH_HOST) => `https://${host}/auth/unlink`;
 
 /** 로그인 창 주소 */
 export function authorizeUrl(provider, { clientId, state, host = SOCIAL_AUTH_HOST }) {

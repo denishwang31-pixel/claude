@@ -1109,15 +1109,48 @@ const handoffStore = {
   },
 };
 
+/* 계정 삭제 때 카카오·네이버 연결을 끊으려고 잠깐 맡겨 두는 액세스 토큰 — socialAuth.js 「연결 끊기」.
+   ⚠️ 이것도 규칙에 없다 = 앱은 못 읽는다. 한 번 꺼내면 지운다. */
+const UNLINK = 'authUnlink';
+const unlinkStore = {
+  async put(uid, data) {
+    await db.collection(UNLINK).doc(uid).set(data);
+    const old = await db.collection(UNLINK)
+      .where('at', '<', Date.now() - socialAuthLib.UNLINK_TTL_MS).limit(20).get();
+    await Promise.all(old.docs.map((d) => d.ref.delete()));
+  },
+  async take(uid) {
+    const ref = db.collection(UNLINK).doc(uid);
+    return db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return null;
+      tx.delete(ref);
+      return snap.data();
+    });
+  },
+};
+
 exports.socialAuth = onRequest({ ...REGION, cors: false, maxInstances: 5 }, async (req, res) => {
   const deps = {
     fetch,
     auth: getAuth(),
     env: process.env,
     handoff: handoffStore,
+    unlinkStore,
     log: (...a) => console.warn('[socialAuth]', ...a),
   };
   res.set('Cache-Control', 'no-store');
+  if (socialAuthLib.isUnlinkPath(req.path)) {
+    if (req.method !== 'POST') { res.status(405).json({ ok: false, error: 'method' }); return; }
+    try {
+      const r = await socialAuthLib.handleUnlink(req.body || {}, deps);
+      res.status(r.status).json(r.body);
+    } catch (e) {
+      deps.log('unlink-route', String(e?.message || e).slice(0, 120));
+      res.status(200).json({ ok: false, error: 'server' });
+    }
+    return;
+  }
   if (socialAuthLib.isResultPath(req.path)) {
     try {
       const r = await socialAuthLib.handleResult(req.query || {}, deps);

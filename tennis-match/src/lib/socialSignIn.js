@@ -176,6 +176,7 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG, reauth = f
 
   /* ---- 3. 코드를 토큰으로 ---- */
   let idToken = '';
+  let googleAccess = '';      // 계정 삭제 때 구글 연결 끊기(revoke)에 쓴다
   try {
     const token = await AuthSession.exchangeCodeAsync({
       clientId,
@@ -186,6 +187,7 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG, reauth = f
         : undefined,
     }, GOOGLE_DISCOVERY);
     idToken = token?.idToken || '';
+    googleAccess = token?.accessToken || '';
   } catch (e) {
     /* 여기서 실패하면 창은 떴다는 뜻이다 — 즉 클라이언트 ID 자체는 맞다.
        원문을 붙여 둔다. invalid_grant / invalid_client 가 갈린다. */
@@ -203,9 +205,9 @@ export async function signInWithGoogle({ config = LIVE_SOCIAL_CONFIG, reauth = f
     ]);
     const cred = GoogleAuthProvider.credential(idToken);
     if (reauth) {
-      if (!auth.currentUser) return { ok: false, error: '[G13] 로그인 상태가 아닙니다.' };
+      if (!auth.currentUser) return { ok: false, error: '[G13] 지금은 로그인 상태가 아닙니다.' };
       await reauthenticateWithCredential(auth.currentUser, cred);
-      return { ok: true, uid: auth.currentUser.uid };
+      return { ok: true, uid: auth.currentUser.uid, accessToken: googleAccess };
     }
     const res = await signInWithCredential(auth, cred);
     return { ok: true, uid: res.user.uid };
@@ -254,7 +256,7 @@ export async function signInWithSocialWeb(provider, { config = LIVE_SOCIAL_CONFI
   const returnUrl = socialReturnUrl(applicationId);
   if (!returnUrl) return { ok: false, error: '[S9] 앱 패키지명을 읽지 못했습니다.' };
 
-  const state = makeState(provider, bytes);
+  const state = makeState(provider, bytes, expectUid ? 'unlink' : '');
   const url = authorizeUrl(provider, { clientId, state });
 
   /* 늦게 도착하는 결과를 받을 준비 — social.js 의 matchLateReturn 머리말 참고.
