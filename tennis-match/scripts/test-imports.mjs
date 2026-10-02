@@ -585,5 +585,27 @@ console.log('[비밀 키가 섞여 들어갔는지 검사]');
     + '      커밋하지 말고 프로젝트 밖으로 옮기세요. 이미 커밋했다면 키를 폐기하고 새로 발급하세요.');
 }
 
+console.log('[Expo SDK 54 — 업그레이드 때 바뀐 것들이 되돌아가지 않게]');
+{
+  /* Play 스토어는 2026-08-31 부터 새 앱에 Android 16(API 36) 대상을 요구한다 → SDK 54(2026-10-02 올림) */
+  const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'));
+  ok(/^~?54\./.test(pkg.dependencies.expo), 'expo 는 SDK 54 (API 36 대상)');
+  for (const f of ['src/lib/authStorage.js', 'src/lib/deviceStore.js']) {
+    const src = readFileSync(resolve(ROOT, f), 'utf8');
+    ok(/import\('expo-file-system\/legacy'\)/.test(src) && !/import\('expo-file-system'\)/.test(src),
+      `${f}: expo-file-system/legacy 를 쓴다 — 새 API 에는 documentDirectory 가 없어 로그인이 조용히 안 남는다`);
+  }
+  const metro = readFileSync(resolve(ROOT, 'metro.config.js'), 'utf8');
+  ok(/unstable_enablePackageExports = false/.test(metro), 'metro: package exports 끔 — Firebase JS SDK 가 두 벌로 들어오지 않게');
+  const babel = readFileSync(resolve(ROOT, 'babel.config.js'), 'utf8');
+  ok(!/reanimated\/plugin/.test(babel.replace(/\/\*[\s\S]*?\*\//g, '')), 'babel: worklets 플러그인은 preset 이 붙인다(두 번 붙이지 않는다)');
+  for (const dep of ['@expo/vector-icons', 'expo-file-system', 'expo-font', 'react-native-worklets']) {
+    ok(!!pkg.dependencies[dep], `${dep} 를 직접 의존성으로 둔다(SDK 54 는 expo 가 대신 깔아 주지 않거나 버전이 갈린다)`);
+  }
+  const appj = JSON.parse(readFileSync(resolve(ROOT, 'app.json'), 'utf8')).expo;
+  ok(appj.version !== '0.3.0' && appj.runtimeVersion?.policy === 'appVersion',
+    'SDK 54 코드는 0.3.0(SDK 51) 앱에 OTA 로 나가면 안 된다 — 버전(=runtimeVersion)을 올려 둔다');
+}
+
 console.log(`\n임포트 검증: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

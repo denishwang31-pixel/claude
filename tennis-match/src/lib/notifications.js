@@ -21,7 +21,8 @@ import { savePushToken } from './firestore';
 // 포그라운드 수신 시에도 배너 표시
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true, shouldPlaySound: false, shouldSetBadge: false,
+    /* SDK 54(expo-notifications 0.32): shouldShowAlert 대신 배너·알림 목록을 따로 적는다 */
+    shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false,
   }),
 });
 

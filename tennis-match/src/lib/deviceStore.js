@@ -14,7 +14,9 @@ let dir = '';
 
 async function fs() {
   if (FS) return FS;
-  const mod = await import('expo-file-system');
+  /* Expo SDK 54 부터 'expo-file-system' 은 새 API 다(documentDirectory·readAsStringAsync 가 없다).
+     예전 함수는 '/legacy' 로 옮겨졌다 — 그대로 두면 조용히 저장이 안 된다(로그인이 안 남는다). */
+  const mod = await import('expo-file-system/legacy');
   FS = mod;
   dir = mod.documentDirectory || '';
   return FS;
