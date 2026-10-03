@@ -5,8 +5,10 @@
    기다리는 시간이 길어진다. 그래서 4~6명씩 여러 팀으로 나눠 돌린다.
 
    화면 흐름
-     1. 팀 수를 정하고 [자동 편성] — 실력·성비가 고르게 나뉜다
-     2. 마음에 안 들면 선수를 눌러 다른 팀으로 옮긴다
+     1. 배치 방식을 고른다
+          자동 배치 — 팀 수를 누르면 실력·성비가 고르게 나뉜다
+          수동 배치 — 모두 '미배정'에서 시작해 운영진이 팀에 넣는다
+     2. 회원을 눌러 여러 명 고른 뒤 옮길 팀을 누르면 한 번에 옮겨진다(자동 배치 뒤에도 같다)
      3. 코트·타임·타임별 유형을 정하고 [대진 자동 작성] — 또는 [경기 직접 추가]로 손으로 넣는다
      4. 경기를 눌러 결과 입력 → 팀 순위가 자동으로 갱신된다
         같은 자리에서 [경기 고치기]·[삭제] — 자동으로 짠 뒤 손보기(2026-10-03 앱 주인)
@@ -19,7 +21,7 @@ import {
   teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames, TEAM_NAME_MAX,
   leagueBalanceNote, teamGameCounts,
   addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
-  packLeague, unpackLeague,
+  packLeague, unpackLeague, moveToTeam, emptyTeams, resizeTeams, UNASSIGNED,
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { TEAM_ROUND_TYPES } from '../lib/teamMatch';
@@ -33,11 +35,14 @@ import { C, S, R, F } from '../lib/theme';
 export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, flash }) {
   /* 저장된 모양은 teams:[{players}] — 화면에서는 [[선수…]] 로 푼다(lib/teamLeague.js packLeague 머리말) */
   const saved = useMemo(() => unpackLeague(savedRaw), [savedRaw]);
-  const [teamCount, setTeamCount] = useState(saved?.teams?.length || 4);
   const [teams, setTeams] = useState(
     () => saved?.teams || splitIntoTeams(roster, 4, { busuToNtrp }),
   );
   const [matches, setMatches] = useState(saved?.matches || []);
+  /* 배치 방식 — auto: 실력·성비 자동 / manual: 미배정에서 손으로. 미배정 명단은 manual 에서 주로 쓴다 */
+  const [placement, setPlacement] = useState(saved?.config?.placement === 'manual' ? 'manual' : 'auto');
+  const [unassigned, setUnassigned] = useState(saved?.unassigned || []);
+  const [picked, setPicked] = useState([]);       // 골라 둔 회원 id — 한꺼번에 옮길 사람
   const [nCourts, setNCourts] = useState(String(saved?.config?.courts || courts || 2));
   const [nRounds, setNRounds] = useState(String(saved?.config?.rounds || 6));
   const [roundTypes, setRoundTypes] = useState(saved?.config?.roundTypes || {});
@@ -56,6 +61,7 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
     roundTypes,
     oneCourtPerTeam,
     teamNames,
+    placement,
   };
 
   const nameOf = useMemo(() => {
@@ -82,6 +88,7 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
     try {
       const r = onSave?.(packLeague({
         teams: next.teams ?? teams,
+        unassigned: next.unassigned ?? unassigned,
         matches: next.matches ?? matches,
         config: next.config ?? cfg,
       }));
@@ -91,37 +98,91 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
     }
   };
 
-  const reshuffle = (n) => {
+  /** 자동 배치 — 실력·성비가 고르게. 팀이 바뀌면 옛 대진은 의미가 없어 지운다 */
+  const reshuffle = (n, mode = placement) => {
     const cnt = Math.min(MAX_TEAMS, Math.max(MIN_TEAMS, n));
     const next = splitIntoTeams(roster, cnt, { busuToNtrp });
-    setTeamCount(cnt);
     setTeams(next);
-    setMatches([]);            // 팀이 바뀌면 옛 대진은 의미가 없다
-    persist({ teams: next, matches: [] });
-    flash(`${cnt}개 팀으로 나눴습니다`);
+    setUnassigned([]);
+    setPicked([]);
+    setMatches([]);
+    setPlacement(mode);
+    persist({ teams: next, unassigned: [], matches: [], config: { ...cfg, placement: mode } });
+    flash(`${cnt}개 팀으로 고르게 나눴습니다`);
   };
 
-  /** 선수를 눌러 다른 팀으로 옮긴다 */
-  const movePlayer = (player, fromIdx) => {
-    if (!isAdmin) return;
-    sheet.open({
-      title: `${player.name} — 팀 옮기기`,
-      options: teams.map((_, i) => ({
-        key: String(i),
-        label: `${look(i).name}${i === fromIdx ? ' (현재)' : ''}`,
-      })),
-      onSelect: (o) => {
-        const to = Number(o.key);
-        if (to === fromIdx) return;
-        const next = teams.map((t, i) => {
-          if (i === fromIdx) return t.filter((p) => p.id !== player.id);
-          if (i === to) return [...t, player];
-          return t;
-        });
-        setTeams(next);
-        persist({ teams: next });
+  /** 수동 배치에서 팀 수 바꾸기 — 넣어 둔 사람은 그대로 둔다 */
+  const resize = (n) => {
+    const r = resizeTeams(teams, unassigned, n);
+    setTeams(r.teams);
+    setUnassigned(r.unassigned);
+    setPicked([]);
+    const clear = r.dropped > 0 || r.teams.length !== teams.length;
+    if (clear) setMatches([]);
+    persist({ teams: r.teams, unassigned: r.unassigned, ...(clear ? { matches: [] } : {}) });
+    flash(r.dropped ? `${r.teams.length}팀으로 줄였습니다 — ${r.dropped}명은 미배정으로` : `${r.teams.length}팀으로 바꿨습니다`);
+  };
+
+  const onTeamCount = (n) => {
+    if (n === teams.length) return;
+    if (placement === 'manual') resize(n);
+    else reshuffle(n);
+  };
+
+  /** 수동 배치 시작 — 모두 미배정으로 */
+  const startManual = () => {
+    const r = emptyTeams(roster, teams.length);
+    setTeams(r.teams);
+    setUnassigned(r.unassigned);
+    setPicked([]);
+    setMatches([]);
+    setPlacement('manual');
+    persist({ teams: r.teams, unassigned: r.unassigned, matches: [], config: { ...cfg, placement: 'manual' } });
+    flash('모두 미배정으로 돌렸습니다. 회원을 골라 팀에 넣으세요');
+  };
+
+  const choosePlacement = (mode) => {
+    if (mode === placement) return;
+    const wipe = matches.length ? ' 지금 대진도 지워집니다.' : '';
+    if (mode === 'auto') {
+      Alert.alert('자동 배치로 바꿀까요?', `모든 회원을 실력·성비가 고르게 ${teams.length}팀으로 다시 나눕니다.${wipe}`,
+        [{ text: '취소', style: 'cancel' }, { text: '자동 배치', onPress: () => reshuffle(teams.length, 'auto') }]);
+      return;
+    }
+    Alert.alert('수동 배치', `모든 회원을 미배정으로 돌리고 직접 팀에 넣을까요?${wipe}\n\n지금 편성을 그대로 두고 고치기만 할 수도 있습니다.`, [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '지금 편성 그대로',
+        onPress: () => { setPlacement('manual'); persist({ config: { ...cfg, placement: 'manual' } }); },
       },
-    });
+      { text: '미배정에서 시작', onPress: startManual },
+    ]);
+  };
+
+  /* ---- 여러 명 골라 한꺼번에 옮기기 ---- */
+  const togglePick = (id) => {
+    if (!isAdmin) return;
+    setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  };
+  /** 이 팀 사람을 모두 고르기 — 이미 다 골랐으면 이 팀 사람만 풀기 */
+  const pickAll = (list) => {
+    const ids = list.map((p) => p.id);
+    setPicked((cur) => (ids.every((id) => cur.includes(id))
+      ? cur.filter((id) => !ids.includes(id))
+      : [...new Set([...cur, ...ids])]));
+  };
+  const moveTo = (to) => {
+    const r = moveToTeam(teams, unassigned, picked, to);
+    if (!r.moved) { setPicked([]); return; }
+    setTeams(r.teams);
+    setUnassigned(r.unassigned);
+    persist({ teams: r.teams, unassigned: r.unassigned });
+    const inMatches = matches.some((m) => [...(m.teamA || []), ...(m.teamB || [])].some((id) => picked.includes(id)));
+    setPicked([]);
+    const where = to === UNASSIGNED ? '미배정' : look(to).name;
+    flash(inMatches
+      ? `${r.moved}명을 ${where}(으)로 옮겼습니다 — 이미 짠 대진은 그대로라 [대진 다시 작성]으로 반영하세요`
+      : `${r.moved}명을 ${where}(으)로 옮겼습니다`);
   };
 
   /* ---- 팀 이름 ---- */
@@ -152,13 +213,21 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
       return flash(`선수가 있는 팀이 ${MIN_TEAMS}개 이상 필요합니다`);
     }
     /* 손으로 고친 것·점수가 있으면 한 번 묻는다 — 다시 짜면 전부 새로 만든다 */
-    if (matches.length) {
+    const confirmRedo = () => {
+      if (!matches.length) { runGenerate(); return; }
       Alert.alert('대진을 다시 짤까요?',
         `지금 대진 ${matches.length}경기${matches.some((m) => m.score) ? '와 넣은 점수' : ''}가 지워지고 새로 만들어집니다.`,
         [{ text: '취소', style: 'cancel' }, { text: '다시 짜기', style: 'destructive', onPress: runGenerate }]);
+    };
+    /* 미배정이 남았으면 그 사람들은 대진에 안 들어간다 — 먼저 알린다 */
+    if (unassigned.length) {
+      Alert.alert('미배정 회원이 있습니다',
+        `${unassigned.length}명이 아직 팀에 없어 대진에 들어가지 않습니다. 그래도 짤까요?`,
+        [{ text: '취소', style: 'cancel' }, { text: '그대로 짜기', onPress: confirmRedo }]);
       return undefined;
     }
-    return runGenerate();
+    confirmRedo();
+    return undefined;
   };
 
   const runGenerate = () => {
@@ -229,6 +298,54 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
     });
   };
 
+  /* 회원 칩 — 운영진은 눌러서 고른다(✓). 여러 명 고른 뒤 아래 줄에서 옮길 팀을 누른다 */
+  const playerChips = (list) => (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
+      {list.map((p) => {
+        const on = picked.includes(p.id);
+        return (
+          <Touchable key={p.id} disabled={!isAdmin} onPress={() => togglePick(p.id)}
+            style={{
+              paddingHorizontal: 9, paddingVertical: 6, borderRadius: R.sm,
+              borderWidth: 1.5, borderColor: on ? C.green : 'transparent',
+              backgroundColor: on ? C.fill : p.gender === 'F' ? C.femaleBg : C.maleBg,
+            }}>
+            <Text style={{
+              fontSize: 12, fontWeight: on ? '800' : '700',
+              color: p.gender === 'F' ? C.female : C.male,
+            }}>
+              {on ? '✓ ' : ''}{p.name}
+            </Text>
+          </Touchable>
+        );
+      })}
+    </View>
+  );
+
+  /* 고른 사람이 이 칸에 있으면 칸 바로 아래에 '어디로 옮길지'를 띄운다 — 위아래로 오가지 않게.
+     다른 칸에서 고른 사람도 함께 옮겨진다. */
+  const moveBar = (list, here) => {
+    if (!isAdmin || !list.some((p) => picked.includes(p.id))) return null;
+    return (
+      <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: C.fill }}>
+        <Text style={{ fontSize: 11.5, fontWeight: '800', color: C.text }}>
+          고른 {picked.length}명을 옮길 곳
+        </Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {teams.map((_, j) => (j === here ? null : (
+            <Chip key={j} tone="outline" onPress={() => moveTo(j)}>
+              <Text style={{ color: look(j).color, fontWeight: '800' }}>{look(j).name}</Text>
+            </Chip>
+          )))}
+          {here !== UNASSIGNED && (
+            <Chip tone="outline" onPress={() => moveTo(UNASSIGNED)}>미배정</Chip>
+          )}
+          <Chip tone="soft" onPress={() => setPicked([])}>선택 해제</Chip>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View>
       {/* 순위 */}
@@ -286,24 +403,43 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
 
       {/* 팀 편성 */}
       <SectionTitle
-        hint={isAdmin ? '선수를 누르면 다른 팀으로 옮길 수 있습니다.' : undefined}>
+        hint={isAdmin ? '회원을 눌러 여러 명 고른 뒤, 옮길 팀을 누르세요.' : undefined}>
         팀 편성
       </SectionTitle>
 
       {isAdmin && (
         <Card style={{ marginBottom: 10 }}>
+          <Label>배치 방식</Label>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <Chip tone={placement === 'auto' ? 'green' : 'outline'} onPress={() => choosePlacement('auto')}>자동 배치</Chip>
+            <Chip tone={placement === 'manual' ? 'green' : 'outline'} onPress={() => choosePlacement('manual')}>수동 배치</Chip>
+          </View>
+          <Text style={{ fontSize: 11, color: C.faint, marginTop: 6, lineHeight: 16 }}>
+            {placement === 'auto'
+              ? '실력·성비가 고르게 자동으로 나뉩니다. 나눈 뒤에도 여러 명을 골라 다른 팀으로 옮길 수 있습니다.'
+              : '미배정 회원을 골라 팀에 넣습니다. 팀 수를 바꿔도 넣어 둔 사람은 그대로입니다.'}
+          </Text>
+
+          <Divider style={{ marginVertical: S.md }} />
           <Label hint="인원이 많을수록 팀을 늘리면 대기가 짧아집니다">팀 수</Label>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             {Array.from({ length: MAX_TEAMS - MIN_TEAMS + 1 }, (_, i) => i + MIN_TEAMS).map((n) => (
-              <Chip key={n} tone={teamCount === n ? 'green' : 'outline'}
-                onPress={() => reshuffle(n)}>
+              <Chip key={n} tone={teams.length === n ? 'green' : 'outline'}
+                onPress={() => onTeamCount(n)}>
                 {n}팀
               </Chip>
             ))}
+            {placement === 'auto' && (
+              <Chip tone="soft" onPress={() => Alert.alert('다시 고르게 나눌까요?',
+                `모든 회원을 ${teams.length}팀으로 새로 나눕니다.${matches.length ? ' 지금 대진은 지워집니다.' : ''}`,
+                [{ text: '취소', style: 'cancel' }, { text: '다시 나누기', onPress: () => reshuffle(teams.length) }])}>
+                다시 나누기
+              </Chip>
+            )}
           </View>
           <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 16 }}>
-            참가자 {roster.length}명 · {teamCount}팀이면 팀당 약 {Math.round(roster.length / teamCount)}명.
-            누르면 실력·성비가 고르게 다시 나뉩니다(기존 대진은 지워집니다).
+            참가자 {roster.length}명 · {teams.length}팀이면 팀당 약 {Math.round(roster.length / Math.max(1, teams.length))}명.
+            {placement === 'auto' ? ' 팀 수를 누르면 고르게 다시 나뉩니다(기존 대진은 지워집니다).' : ''}
           </Text>
 
           <Divider style={{ marginVertical: S.md }} />
@@ -320,6 +456,27 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
       )}
 
       <View style={{ gap: 8 }}>
+        {(unassigned.length > 0 || (isAdmin && placement === 'manual')) && (
+          <Card style={{ borderLeftWidth: 4, borderLeftColor: C.faint }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 13.5, fontWeight: '800', color: C.sub }}>미배정</Text>
+              <Text style={{ fontSize: 11.5, color: C.sub, flex: 1 }}>{unassigned.length}명</Text>
+              {isAdmin && unassigned.length > 0 && (
+                <Touchable onPress={() => pickAll(unassigned)}>
+                  <Text style={{ fontSize: 11.5, fontWeight: '700', color: C.green2 }}>
+                    {unassigned.every((p) => picked.includes(p.id)) ? '선택 풀기' : '모두 선택'}
+                  </Text>
+                </Touchable>
+              )}
+            </View>
+            {playerChips(unassigned)}
+            {unassigned.length === 0 && (
+              <Text style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>모든 회원이 팀에 들어갔습니다.</Text>
+            )}
+            {moveBar(unassigned, UNASSIGNED)}
+          </Card>
+        )}
+
         {teams.map((team, i) => {
           const st = look(i);
           const comp = teamComposition(team);
@@ -334,10 +491,17 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
                 <Text style={{ fontSize: 11.5, color: C.sub, flex: 1 }}>
                   {comp.total}명 (남 {comp.male} · 여 {comp.female})
                 </Text>
-                <Text style={{ fontSize: 11, color: C.faint }}>
-                  평균 {teamAverage(team, { busuToNtrp })}
-                </Text>
+                {isAdmin && team.length > 0 ? (
+                  <Touchable onPress={() => pickAll(team)}>
+                    <Text style={{ fontSize: 11.5, fontWeight: '700', color: C.green2 }}>
+                      {team.every((p) => picked.includes(p.id)) ? '선택 풀기' : '모두 선택'}
+                    </Text>
+                  </Touchable>
+                ) : null}
               </View>
+              <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
+                평균 {teamAverage(team, { busuToNtrp })}
+              </Text>
               {renaming?.idx === i && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
                   <View style={{ flex: 1 }}>
@@ -348,25 +512,13 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
                   <AppButton small variant="text" onPress={() => setRenaming(null)}>취소</AppButton>
                 </View>
               )}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
-                {team.map((p) => (
-                  <Touchable key={p.id} onPress={() => movePlayer(p, i)}
-                    style={{
-                      paddingHorizontal: 9, paddingVertical: 6, borderRadius: R.sm,
-                      backgroundColor: p.gender === 'F' ? C.femaleBg : C.maleBg,
-                    }}>
-                    <Text style={{
-                      fontSize: 12, fontWeight: '700',
-                      color: p.gender === 'F' ? C.female : C.male,
-                    }}>
-                      {p.name}
-                    </Text>
-                  </Touchable>
-                ))}
-                {team.length === 0 && (
-                  <Text style={{ fontSize: 11.5, color: C.faint }}>선수가 없습니다.</Text>
-                )}
-              </View>
+              {playerChips(team)}
+              {team.length === 0 && (
+                <Text style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>
+                  {isAdmin ? '선수가 없습니다. 다른 곳에서 회원을 골라 이 팀으로 옮기세요.' : '선수가 없습니다.'}
+                </Text>
+              )}
+              {moveBar(team, i)}
             </Card>
           );
         })}

@@ -120,6 +120,47 @@ export function nestedArrayPath(v, path = '') {
   return '';
 }
 
+/* ---------------- 팀 편성 손보기 — 자동 배치 / 수동 배치 ----------------
+   자동 배치: splitIntoTeams 로 실력·성비가 고르게 나뉜다.
+   수동 배치: 모두 '미배정'에서 시작해 운영진이 팀에 넣는다.
+   어느 쪽이든 여러 명을 골라 한 번에 다른 팀으로 옮길 수 있다 — 백팀에서 셋을 골라
+   홍팀으로 보내는 식(2026-10-03 앱 주인). 미배정 명단은 league.unassigned 에 둔다(평평한 배열). */
+export const UNASSIGNED = -1;
+
+/** 고른 사람들(ids)을 to 팀으로 — to 가 UNASSIGNED 면 미배정으로. 이미 그 팀인 사람은 자리 그대로 */
+export function moveToTeam(teams, unassigned, ids, to) {
+  const list = teams || [];
+  const pool = unassigned || [];
+  if (to !== UNASSIGNED && (to < 0 || to >= list.length)) return { teams: list, unassigned: pool, moved: 0 };
+  const pick = new Set(ids || []);
+  const moving = [];
+  const take = (arr) => arr.filter((p) => {
+    if (!pick.has(p.id)) return true;
+    moving.push(p);
+    return false;
+  });
+  const nextTeams = list.map((t, i) => (i === to ? t : take(t)));
+  const nextPool = to === UNASSIGNED ? pool : take(pool);
+  if (to === UNASSIGNED) return { teams: nextTeams, unassigned: [...nextPool, ...moving], moved: moving.length };
+  nextTeams[to] = [...nextTeams[to], ...moving];
+  return { teams: nextTeams, unassigned: nextPool, moved: moving.length };
+}
+
+/** 수동 배치 시작 — 빈 팀 N개, 모두 미배정 */
+export function emptyTeams(roster, count) {
+  const n = Math.min(MAX_TEAMS, Math.max(MIN_TEAMS, Math.round(Number(count) || 2)));
+  return { teams: Array.from({ length: n }, () => []), unassigned: [...(roster || [])] };
+}
+
+/** 수동 배치 중 팀 수 바꾸기 — 넣어 둔 사람은 그대로, 없어지는 팀의 사람은 미배정으로 */
+export function resizeTeams(teams, unassigned, count) {
+  const n = Math.min(MAX_TEAMS, Math.max(MIN_TEAMS, Math.round(Number(count) || 2)));
+  const list = teams || [];
+  const kept = Array.from({ length: n }, (_, i) => list[i] || []);
+  const dropped = list.slice(n).flat();
+  return { teams: kept, unassigned: [...(unassigned || []), ...dropped], dropped: dropped.length };
+}
+
 /* ---------------- 청백전을 3팀(청·백·홍)으로 ----------------
    청백전은 두 팀(lib/teamMatch.js)이다. 세 팀으로 늘리면 팀 리그 엔진을 그대로 쓴다 —
    팀끼리 덜 만난 조합부터 붙이므로 세 팀이 고르게 돈다(2026-10-03 앱 주인). */

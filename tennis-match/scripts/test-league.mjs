@@ -15,6 +15,7 @@ import {
   teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames,
   leagueFromRoster, BLUE_WHITE_RED, leagueBalanceNote, teamGameCounts,
   packLeague, unpackLeague, nestedArrayPath,
+  moveToTeam, emptyTeams, resizeTeams, UNASSIGNED,
   checkLeagueMatch, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft, sideSize,
 } from '../src/lib/teamLeague.js';
 import {
@@ -248,6 +249,47 @@ section('Firestore 에 저장되는 모양 — 배열 안에 배열 금지');
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
   ok((ts.match(/packLeague\(leagueFromRoster/g) || []).length === 2 && /packLeague\(t\.league\)/.test(ts), '3팀 개설·2→3팀 전환도 pack 해서 저장');
   ok(!/\n      addTournament\(clubId/.test(ts) && /await createInner\(\)/.test(ts), '대회 개설은 저장이 끝난 뒤에 "개설됐다"고 알리고, 실패는 잡는다');
+}
+
+section('팀 편성 — 자동/수동 배치 · 여러 명 한꺼번에 옮기기');
+{
+  /* 2026-10-03 앱 주인: 백팀에서 여럿 골라 청팀이나 홍팀으로 한 번에 */
+  const T = [
+    [P('a1', '청1', 'M'), P('a2', '청2', 'F')],
+    [P('b1', '백1', 'M'), P('b2', '백2', 'F'), P('b3', '백3', 'M')],
+    [P('c1', '홍1', 'M')],
+  ];
+  const ids = (t) => t.map((p) => p.id).join(',');
+  let r = moveToTeam(T, [], ['b1', 'b3'], 2);
+  eq('백팀 둘을 홍팀으로', ids(r.teams[2]), 'c1,b1,b3');
+  eq('백팀에는 나머지만', ids(r.teams[1]), 'b2');
+  eq('옮긴 수', r.moved, 2);
+  ok(T[1].length === 3, '원래 편성은 건드리지 않는다');
+  r = moveToTeam(T, [], ['a1', 'b2', 'c1'], 0);
+  eq('여러 팀에서 고른 사람도 한 번에 — 이미 그 팀인 사람은 자리 그대로', ids(r.teams[0]), 'a1,a2,b2,c1');
+  eq('이미 그 팀인 사람은 옮긴 수에서 빠진다', r.moved, 2);
+  r = moveToTeam(T, [], ['b1', 'b2'], UNASSIGNED);
+  eq('미배정으로', ids(r.unassigned), 'b1,b2');
+  r = moveToTeam(r.teams, r.unassigned, ['b2'], 0);
+  eq('미배정에서 팀으로', `${ids(r.teams[0])}|${ids(r.unassigned)}`, 'a1,a2,b2|b1');
+  eq('없는 팀이면 아무것도 안 바뀐다', moveToTeam(T, [], ['a1'], 5).moved, 0);
+  const count = (x) => x.teams.flat().length + x.unassigned.length;
+  eq('옮겨도 사람 수는 그대로', count(moveToTeam(T, [], ['a1', 'b1', 'c1'], 1)), 6);
+
+  const e = emptyTeams(ROSTER, 3);
+  ok(e.teams.length === 3 && e.teams.every((t) => !t.length) && e.unassigned.length === ROSTER.length, '수동 배치는 빈 3팀 + 모두 미배정');
+  const z = resizeTeams(T, [], 2);
+  eq('팀을 줄이면 없어진 팀 사람은 미배정으로', `${z.teams.length}|${ids(z.unassigned)}|${z.dropped}`, '2|c1|1');
+  const g = resizeTeams(T, [], 4);
+  ok(g.teams.length === 4 && !g.teams[3].length && ids(g.teams[1]) === 'b1,b2,b3', '팀을 늘리면 빈 팀이 붙고 나머지는 그대로');
+
+  const lg = packLeague({ teams: e.teams, unassigned: e.unassigned, matches: [], config: { placement: 'manual' } });
+  eq('미배정 명단이 있어도 저장 모양에 배열 안 배열이 없다', nestedArrayPath(lg), '');
+  eq('pack → unpack 해도 미배정은 그대로', unpackLeague(lg).unassigned.length, ROSTER.length);
+
+  const scr = readFileSync(new URL('../src/components/TeamLeagueScreen.jsx', import.meta.url), 'utf8');
+  ok(/unassigned: next\.unassigned \?\? unassigned/.test(scr), '저장할 때 미배정 명단도 함께');
+  ok(/자동 배치/.test(scr) && /수동 배치/.test(scr) && /moveToTeam\(teams, unassigned, picked, to\)/.test(scr), '화면: 배치 방식 두 가지 + 고른 사람 한꺼번에 옮기기');
 }
 
 section('손으로 넣기 · 고치기 · 지우기');
