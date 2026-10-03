@@ -16,7 +16,8 @@ import { View, Text, Alert } from 'react-native';
 import {
   MIN_TEAMS, MAX_TEAMS, splitIntoTeams, teamAverage, teamComposition,
   generateLeagueMatches, leagueStandings, leaguePlayerStats, diagnoseLeague,
-  teamStyle, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
+  teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames, TEAM_NAME_MAX,
+  addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { TEAM_ROUND_TYPES } from '../lib/teamMatch';
@@ -39,6 +40,10 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
   /* 한 팀은 한 타임에 한 코트만 — 예전 기본. 이제는 끄는 것이 기본(팀보다 코트가 많으면 못 짠다) */
   const [oneCourtPerTeam, setOneCourtPerTeam] = useState(!!saved?.config?.oneCourtPerTeam);
   const [editing, setEditing] = useState(null);    // { id|null, draft } — 경기 추가·고치기 화면
+  /* 팀 이름 — 비어 있으면 A팀·B팀…(lib/teamLeague.js teamLook). 청팀·홍팀처럼 바꾸면 색도 따라간다 */
+  const [teamNames, setTeamNames] = useState(saved?.config?.teamNames || []);
+  const [renaming, setRenaming] = useState(null);  // { idx, text }
+  const look = (i) => teamLook(i, teamNames);
   const sheet = useOptionSheet();
 
   const cfg = {
@@ -46,6 +51,7 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
     rounds: Math.max(1, Number(nRounds) || 1),
     roundTypes,
     oneCourtPerTeam,
+    teamNames,
   };
 
   const nameOf = useMemo(() => {
@@ -60,12 +66,12 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
     return (id) => map[id] || '';
   }, [teams]);
 
-  const standings = useMemo(() => leagueStandings(teams, matches), [teams, matches]);
+  const standings = useMemo(() => leagueStandings(teams, matches, teamNames), [teams, matches, teamNames]);
   const mvp = useMemo(
-    () => leaguePlayerStats(teams, matches).filter((r) => r.games > 0).slice(0, 3),
-    [teams, matches],
+    () => leaguePlayerStats(teams, matches, teamNames).filter((r) => r.games > 0).slice(0, 3),
+    [teams, matches, teamNames],
   );
-  const check = useMemo(() => diagnoseLeague(teams, cfg), [teams, nCourts, nRounds, roundTypes, oneCourtPerTeam]);
+  const check = useMemo(() => diagnoseLeague(teams, cfg), [teams, nCourts, nRounds, roundTypes, oneCourtPerTeam, teamNames]);
 
   const persist = (next) => onSave?.({
     teams: next.teams ?? teams,
@@ -90,7 +96,7 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
       title: `${player.name} — 팀 옮기기`,
       options: teams.map((_, i) => ({
         key: String(i),
-        label: `${teamStyle(i).name}${i === fromIdx ? ' (현재)' : ''}`,
+        label: `${look(i).name}${i === fromIdx ? ' (현재)' : ''}`,
       })),
       onSelect: (o) => {
         const to = Number(o.key);
@@ -104,6 +110,23 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
         persist({ teams: next });
       },
     });
+  };
+
+  /* ---- 팀 이름 ---- */
+  const saveNames = (next, msg) => {
+    const dup = duplicateTeamNames(next, teams.length);
+    if (dup.length) { flash(`팀 이름이 겹칩니다: ${dup.join(', ')}`); return false; }
+    setTeamNames(next);
+    persist({ config: { ...cfg, teamNames: next } });
+    if (msg) flash(msg);
+    return true;
+  };
+  const saveRename = () => {
+    if (!renaming) return;
+    const next = [...teamNames];
+    while (next.length < teams.length) next.push('');
+    next[renaming.idx] = cleanTeamName(renaming.text);
+    if (saveNames(next, '팀 이름을 바꿨습니다')) setRenaming(null);
   };
 
   const setRoundType = (r, key) => {
@@ -162,8 +185,8 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
 
   const editScore = (m) => {
     if (!isAdmin) return;
-    const A = teamStyle(m.teamAIdx).name;
-    const B = teamStyle(m.teamBIdx).name;
+    const A = look(m.teamAIdx).name;
+    const B = look(m.teamBIdx).name;
     sheet.open({
       title: `${m.round}타임 코트${m.court} · ${A} vs ${B}`,
       options: [
@@ -208,7 +231,7 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
               <Text style={{ width: 44, fontSize: 10, color: C.faint, fontWeight: '700', textAlign: 'center' }}>득실</Text>
             </View>
             {standings.map((r) => {
-              const st = teamStyle(r.idx);
+              const st = look(r.idx);
               return (
                 <View key={r.idx} style={{
                   flexDirection: 'row', alignItems: 'center', paddingVertical: 9,
@@ -267,17 +290,32 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
             참가자 {roster.length}명 · {teamCount}팀이면 팀당 약 {Math.round(roster.length / teamCount)}명.
             누르면 실력·성비가 고르게 다시 나뉩니다(기존 대진은 지워집니다).
           </Text>
+
+          <Divider style={{ marginVertical: S.md }} />
+          <Label hint="아래 팀 카드의 이름을 누르면 직접 바꿀 수 있습니다">팀 이름</Label>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {teamNamePresets(teams.length).map((set) => (
+              <Chip key={set.join()} tone="outline" onPress={() => saveNames(set, `팀 이름을 ${set.join('·')}으로 바꿨습니다`)}>
+                {set.join(' · ')}
+              </Chip>
+            ))}
+            <Chip tone="outline" onPress={() => saveNames([], '기본 이름(A팀·B팀…)으로 되돌렸습니다')}>A팀 · B팀 … (기본)</Chip>
+          </View>
         </Card>
       )}
 
       <View style={{ gap: 8 }}>
         {teams.map((team, i) => {
-          const st = teamStyle(i);
+          const st = look(i);
           const comp = teamComposition(team);
           return (
             <Card key={i} style={{ borderLeftWidth: 4, borderLeftColor: st.color }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: 13.5, fontWeight: '800', color: st.color }}>{st.name}</Text>
+                <Touchable disabled={!isAdmin} onPress={() => setRenaming({ idx: i, text: cleanTeamName(teamNames[i]) || st.name })}>
+                  <Text style={{ fontSize: 13.5, fontWeight: '800', color: st.color }}>
+                    {st.name}{isAdmin ? ' ✎' : ''}
+                  </Text>
+                </Touchable>
                 <Text style={{ fontSize: 11.5, color: C.sub, flex: 1 }}>
                   {comp.total}명 (남 {comp.male} · 여 {comp.female})
                 </Text>
@@ -285,6 +323,16 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
                   평균 {teamAverage(team, { busuToNtrp })}
                 </Text>
               </View>
+              {renaming?.idx === i && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <Field value={renaming.text} maxLength={TEAM_NAME_MAX} placeholder="예: 청팀"
+                      onChangeText={(v) => setRenaming({ idx: i, text: v })} />
+                  </View>
+                  <AppButton small onPress={saveRename}>저장</AppButton>
+                  <AppButton small variant="text" onPress={() => setRenaming(null)}>취소</AppButton>
+                </View>
+              )}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
                 {team.map((p) => (
                   <Touchable key={p.id} onPress={() => movePlayer(p, i)}
@@ -399,7 +447,7 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
               onPressMatch={editScore} />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
               {teams.map((_, i) => {
-                const st = teamStyle(i);
+                const st = look(i);
                 return (
                   <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                     <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: st.color }} />
@@ -422,12 +470,12 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
                       paddingHorizontal: 7, paddingVertical: 3,
                       borderRadius: R.sm, backgroundColor: C.fill,
                     }}>
-                      <Text style={{ fontSize: 10.5, fontWeight: '700', color: teamStyle(m.teamAIdx).color }}>
-                        {teamStyle(m.teamAIdx).name}
+                      <Text style={{ fontSize: 10.5, fontWeight: '700', color: look(m.teamAIdx).color }}>
+                        {look(m.teamAIdx).name}
                       </Text>
                       <Text style={{ fontSize: 9, color: C.faint }}>vs</Text>
-                      <Text style={{ fontSize: 10.5, fontWeight: '700', color: teamStyle(m.teamBIdx).color }}>
-                        {teamStyle(m.teamBIdx).name}
+                      <Text style={{ fontSize: 10.5, fontWeight: '700', color: look(m.teamBIdx).color }}>
+                        {look(m.teamBIdx).name}
                       </Text>
                       <Text style={{ fontSize: 9, color: C.faint }}>
                         {m.score ? ` ${m.score.a}:${m.score.b}` : ` ${m.type}`}
@@ -476,6 +524,7 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
         open={editing}
         teams={teams}
         matches={matches}
+        teamNames={teamNames}
         onSave={saveEdit}
         onDelete={deleteMatch}
         onClose={() => setEditing(null)}

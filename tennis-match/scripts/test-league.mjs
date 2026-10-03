@@ -11,6 +11,7 @@ import {
   MIN_TEAMS, MAX_TEAMS, splitIntoTeams, teamAverage, teamComposition,
   allPairings, generateLeagueMatches, leagueStandings, leaguePlayerStats,
   diagnoseLeague, teamStyle, LEAGUE_TEAM_STYLES,
+  teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames,
   checkLeagueMatch, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft, sideSize,
 } from '../src/lib/teamLeague.js';
 import {
@@ -186,6 +187,26 @@ section('3팀 · 7면 — 쿤블던 모양 (한 타임에 두 팀이 코트를 �
   eq('세 조합이 고르게 (14·14·14)', Object.values(meet).sort().join(), '14,14,14');
   ok(!diagnoseLeague(T3, { courts: 7, rounds: 6, roundTypes: rt }).problems.some((p) => p.includes('최대')), '규칙을 끄면 "최대 1면" 경고가 없다');
   ok(diagnoseLeague(T3, { courts: 7, rounds: 1, roundTypes: { 1: 'MD' }, oneCourtPerTeam: true }).problems[0].includes('1면'), '켜면 경고한다');
+}
+
+section('팀 이름 바꾸기 — 청팀·홍팀·백팀');
+{
+  eq('이름이 없으면 기본', teamLook(1, []).name, 'B팀');
+  eq('이름을 넣으면 그 이름', teamLook(0, ['청팀']).name, '청팀');
+  eq('청 → 파랑', teamLook(2, ['', '', '청팀']).color, LEAGUE_TEAM_STYLES[0].color);
+  eq('홍 → 빨강', teamLook(0, ['홍팀']).color, LEAGUE_TEAM_STYLES[1].color);
+  eq('백 → 회색', teamLook(0, ['백팀']).color, LEAGUE_TEAM_STYLES[7].color);
+  eq('색 이름이 아니면 원래 색', teamLook(2, ['', '', '독수리']).color, LEAGUE_TEAM_STYLES[2].color);
+  eq('공백 정리·길이 제한', cleanTeamName('  청   팀이라고하는아주긴이름  '), '청 팀이라고하는아주');
+  eq('3팀이면 청·홍·백 묶음', teamNamePresets(3)[0], ['청팀', '홍팀', '백팀']);
+  eq('겹치는 이름을 찾는다', duplicateTeamNames(['청팀', '청팀', ''], 3), ['청팀']);
+  eq('기본 이름과 겹쳐도 찾는다', duplicateTeamNames(['B팀', '', ''], 3), ['B팀']);
+  const T3 = [[P('x1', 'x1', 'M'), P('x2', 'x2', 'M')], [P('y1', 'y1', 'M'), P('y2', 'y2', 'M')], [P('z1', 'z1', 'M'), P('z2', 'z2', 'M')]];
+  const ms = [{ id: 'q', round: 1, court: 1, teamAIdx: 0, teamBIdx: 2, teamA: ['x1', 'x2'], teamB: ['z1', 'z2'], score: { a: 6, b: 2 } }];
+  const names = ['청팀', '홍팀', '백팀'];
+  eq('순위표에 바꾼 이름', leagueStandings(T3, ms, names)[0].name, '청팀');
+  eq('MVP 표에 바꾼 팀 이름', leaguePlayerStats(T3, ms, names).find((r) => r.id === 'z1').team, '백팀');
+  ok(diagnoseLeague(T3, { courts: 1, rounds: 1, roundTypes: { 1: 'WD' }, teamNames: names }).problems[0].includes('청팀'), '진단 문구도 바꾼 이름');
 }
 
 section('손으로 넣기 · 고치기 · 지우기');

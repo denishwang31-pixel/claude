@@ -9,7 +9,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, Modal, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { teamStyle, checkLeagueMatch, sideSize, TEAM_ROUND_TYPES } from '../lib/teamLeague';
+import { teamLook, checkLeagueMatch, sideSize, TEAM_ROUND_TYPES } from '../lib/teamLeague';
 import { Card, Chip, Field, Btn } from './ui';
 import { Touchable } from './native';
 import { Label } from './pickers';
@@ -20,7 +20,7 @@ import { C, S, R, F } from '../lib/theme';
  * @param onSave    (id|null, draft) => string|undefined   실패 문구를 돌려주면 화면에 띄운다
  * @param onDelete  (id) => void
  */
-export function LeagueMatchEditor({ open, teams, matches, onSave, onDelete, onClose }) {
+export function LeagueMatchEditor({ open, teams, matches, teamNames, onSave, onDelete, onClose }) {
   const insets = useSafeAreaInsets();
   const [d, setD] = useState(null);
   const [round, setRound] = useState('');
@@ -75,14 +75,14 @@ export function LeagueMatchEditor({ open, teams, matches, onSave, onDelete, onCl
     const tIdx = s === 'A' ? d.teamAIdx : d.teamBIdx;
     const otherIdx = s === 'A' ? d.teamBIdx : d.teamAIdx;
     const picked = s === 'A' ? d.teamA : d.teamB;
-    const st = teamStyle(tIdx);
+    const st = teamLook(tIdx, teamNames);
     return (
       <Card style={{ marginTop: S.md, borderLeftWidth: 4, borderLeftColor: st.color }}>
         <Label hint={`${picked.length}/${need}명`}>{s === 'A' ? '왼쪽 팀' : '오른쪽 팀'}</Label>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {teams.map((_, i) => (
             <Chip key={i} tone={tIdx === i ? 'green' : 'outline'} style={i === otherIdx ? { opacity: 0.35 } : undefined}
-              onPress={i === otherIdx ? undefined : () => setTeam(s, i)}>{teamStyle(i).name}</Chip>
+              onPress={i === otherIdx ? undefined : () => setTeam(s, i)}>{teamLook(i, teamNames).name}</Chip>
           ))}
         </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>

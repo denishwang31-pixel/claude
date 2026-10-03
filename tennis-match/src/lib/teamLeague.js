@@ -49,6 +49,51 @@ export const LEAGUE_TEAM_STYLES = [
 
 export const teamStyle = (i) => LEAGUE_TEAM_STYLES[i % LEAGUE_TEAM_STYLES.length];
 
+/* ---------------- 팀 이름 바꾸기 ----------------
+   기본은 A팀·B팀…. 청팀·홍팀·백팀처럼 바꿀 수 있다(2026-10-03 앱 주인 — 쿤블던).
+   이름은 config.teamNames[i] 에 둔다. 비어 있으면 기본 이름.
+   이름이 색으로 시작하면 색도 따라간다 — 청팀이 빨강이면 헷갈린다. */
+const COLOR_WORDS = [
+  [/^(청|파랑|파란|블루|blue)/i, 0],
+  [/^(홍|적|빨강|빨간|레드|red)/i, 1],
+  [/^(녹|초록|그린|green)/i, 2],
+  [/^(황|노랑|노란|옐로|yellow)/i, 3],
+  [/^(보라|퍼플|purple)/i, 4],
+  [/^(백|흰|하양|화이트|white)/i, 7],
+];
+export const TEAM_NAME_MAX = 10;
+export const cleanTeamName = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, TEAM_NAME_MAX);
+
+/** i 번째 팀의 이름·색 — names 는 config.teamNames */
+export function teamLook(i, names) {
+  const name = cleanTeamName(names?.[i]);
+  const base = teamStyle(i);
+  if (!name) return base;
+  const hit = COLOR_WORDS.find(([re]) => re.test(name));
+  return { ...(hit ? LEAGUE_TEAM_STYLES[hit[1]] : base), name };
+}
+
+/** 팀 수에 맞는 이름 묶음 — 한 번 눌러 채우기 */
+export function teamNamePresets(count) {
+  const sets = [
+    ['청팀', '백팀'],
+    ['청팀', '홍팀', '백팀'],
+    ['청팀', '홍팀', '백팀', '황팀'],
+    ['청팀', '홍팀', '백팀', '황팀', '녹팀'],
+  ];
+  return sets.filter((x) => x.length === count);
+}
+
+/** 이름이 겹치면 순위표에서 구별이 안 된다 — 겹치는 이름 */
+export function duplicateTeamNames(names, count) {
+  const seen = {};
+  for (let i = 0; i < count; i += 1) {
+    const n = teamLook(i, names).name;
+    seen[n] = (seen[n] || 0) + 1;
+  }
+  return Object.keys(seen).filter((n) => seen[n] > 1);
+}
+
 const skillOf = (p, busuToNtrp) => {
   if (typeof p.ntrp === 'number' && p.ntrp > 0) return p.ntrp;
   const fromBusu = busuToNtrp ? busuToNtrp(p.busu) : null;
@@ -221,10 +266,10 @@ export function generateLeagueMatches(teams, { courts = 2, rounds = 4, roundType
  * 따로 센다 — 테니스는 동점으로 끝나는 일이 드물지만, 시간제로 하면
  * 생긴다. 그때 무승부를 승리로 쳐 주면 순위가 이상해진다.
  */
-export function leagueStandings(teams, matches) {
+export function leagueStandings(teams, matches, names) {
   const rows = teams.map((players, i) => ({
     idx: i,
-    name: teamStyle(i).name,
+    name: teamLook(i, names).name,
     players: players.length,
     wins: 0,
     losses: 0,
@@ -254,10 +299,10 @@ export function leagueStandings(teams, matches) {
 }
 
 /** 개인 기록 — MVP 뽑을 때 */
-export function leaguePlayerStats(teams, matches) {
+export function leaguePlayerStats(teams, matches, names) {
   const row = {};
   teams.forEach((players, ti) => players.forEach((p) => {
-    row[p.id] = { id: p.id, name: p.name, team: teamStyle(ti).name, games: 0, wins: 0, gf: 0, ga: 0 };
+    row[p.id] = { id: p.id, name: p.name, team: teamLook(ti, names).name, games: 0, wins: 0, gf: 0, ga: 0 };
   }));
   (matches || []).forEach((m) => {
     if (!m.score) return;
@@ -279,7 +324,7 @@ export function leaguePlayerStats(teams, matches) {
  * 짜기 전에 미리 본다 — 이 인원으로 이 설정이 되는지.
  * 눌러 놓고 빈 칸을 세는 일이 없도록.
  */
-export function diagnoseLeague(teams, { courts = 2, rounds = 4, roundTypes = {}, oneCourtPerTeam = false } = {}) {
+export function diagnoseLeague(teams, { courts = 2, rounds = 4, roundTypes = {}, oneCourtPerTeam = false, teamNames } = {}) {
   const problems = [];
   const nTeams = teams.length;
 
@@ -301,7 +346,7 @@ export function diagnoseLeague(teams, { courts = 2, rounds = 4, roundTypes = {},
       .filter(({ c }) => c.male < type.need.M || c.female < type.need.F);
     if (short.length) {
       problems.push(
-        `${r}타임 ${type.name} — ${short.map(({ i }) => teamStyle(i).name).join(', ')}에 `
+        `${r}타임 ${type.name} — ${short.map(({ i }) => teamLook(i, teamNames).name).join(', ')}에 `
         + `${[type.need.M ? `남 ${type.need.M}명` : '', type.need.F ? `여 ${type.need.F}명` : '']
           .filter(Boolean).join(' · ')}이 부족합니다`,
       );
