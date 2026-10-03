@@ -325,6 +325,18 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
   const isKdkFormat = format === TOURNAMENT_FORMAT.KDK;
   const isBracket = !isTeam && !isKdkFormat;
 
+  /* 개설하려면 무엇이 모자란가 — 없으면 '' (create() 안의 검사와 같은 기준) */
+  const needPeople = format === TOURNAMENT_FORMAT.TEAM_LEAGUE
+    || (format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE && bwCount === 3) ? 6 : 4;
+  const createBlocker = isBracket
+    ? (useSkillGroups
+      ? (!skillGroups?.length ? '먼저 위 「실력 그룹 나누기」의 [자동 배정]을 눌러 실력 그룹을 나눠 주세요.' : '')
+      : !events.length ? '종목(부)을 하나 이상 고르세요.'
+        : playerCount < 2 ? `위 「참가자 선택」에서 2명 이상 골라 주세요. (지금 ${playerCount}명)` : '')
+    : pickedList.length < needPeople
+      ? `위 「참가자 선택」에서 ${needPeople}명 이상 골라 주세요. (지금 ${pickedList.length}명)`
+      : '';
+
   return (
     <View>
       {/* 대회 형식 */}
@@ -687,18 +699,16 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
       </>
       )}
 
+      {/* ⚠️ 버튼을 잠그지 않는다 — 잠그면 눌러도 아무 반응이 없어 "버튼이 안 눌린다"가 된다(2026-10-03 앱 주인).
+            누르면 무엇이 모자란지 알려 주고, 버튼 아래에도 늘 적어 둔다. */}
       <View style={{ marginTop: S.lg }}>
-        <AppButton full
-          disabled={isBracket
-            ? (useSkillGroups ? !skillGroups?.length : playerCount < 2 || !events.length)
-            : pickedList.length < 4}
-          onPress={create}>
+        <AppButton full onPress={() => (createBlocker ? flash(createBlocker) : create())}>
           대회 개설
         </AppButton>
       </View>
-      {!isBracket && pickedList.length < 4 && (
-        <Text style={{ fontSize: 11.5, color: C.faint, textAlign: 'center', marginTop: 8 }}>
-          참가자를 4명 이상 선택해야 개설할 수 있습니다.
+      {!!createBlocker && (
+        <Text style={{ fontSize: 12, color: C.danger, textAlign: 'center', marginTop: 8, lineHeight: 18 }}>
+          {createBlocker}
         </Text>
       )}
     </View>
