@@ -23,7 +23,7 @@ import {
 import { TournamentDraw } from './TournamentDraw';
 import { TeamMatch } from './TeamMatchScreen';
 import { TeamLeague } from './TeamLeagueScreen';
-import { leagueFromRoster, BLUE_WHITE_RED } from '../lib/teamLeague';
+import { leagueFromRoster, BLUE_WHITE_RED, packLeague } from '../lib/teamLeague';
 import { MatchGrid } from './MatchGrid';
 import { DateField, Label } from './pickers';
 import { AppButton, Touchable, Segmented, useOptionSheet } from './native';
@@ -73,8 +73,8 @@ function BlueWhiteSwitch({ t, onSwitch }) {
       text: '3팀으로',
       onPress: () => onSwitch({
         stage: 'league',
-        league: t.league?.teams?.length ? t.league
-          : leagueFromRoster(t.roster || [], 3, { courts: t.courts || 2, teamNames: BLUE_WHITE_RED }, { busuToNtrp }),
+        league: t.league?.teams?.length ? packLeague(t.league)
+          : packLeague(leagueFromRoster(t.roster || [], 3, { courts: t.courts || 2, teamNames: BLUE_WHITE_RED }, { busuToNtrp })),
       }, '청·백·홍 3팀으로 바꿨습니다'),
     }]);
   const toTwo = () => Alert.alert('청·백 2팀으로 되돌릴까요?',
@@ -213,7 +213,16 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
     return flash(`대회 등급대로 ${gs.length}개 그룹`);
   };
 
+  /* ⚠️ 저장이 거부돼도 앱이 꺼지거나 "개설됐다"고 거짓말하지 않게 — 실패하면 그대로 알린다 */
   const create = async () => {
+    try {
+      await createInner();
+    } catch (e) {
+      flash('대회를 개설하지 못했습니다. 잠시 뒤 다시 해 주세요');
+    }
+  };
+
+  const createInner = async () => {
     const base = {
       name: name || `${date} 클럽대회`,
       date,
@@ -229,7 +238,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
        화면만 다르다. stage 로 갈라 둔다. */
     if (format === TOURNAMENT_FORMAT.TEAM_LEAGUE) {
       if (pickedList.length < 6) return flash('팀 리그는 6명 이상이 필요합니다');
-      addTournament(clubId, {
+      await addTournament(clubId, {
         ...base,
         stage: 'league',
         roster: pickedList.map(rosterOf),
@@ -244,11 +253,11 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
     if (format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE && bwCount === 3) {
       if (pickedList.length < 6) return flash('3팀 청백전은 6명 이상이 필요합니다');
       const roster = pickedList.map(rosterOf);
-      addTournament(clubId, {
+      await addTournament(clubId, {
         ...base,
         stage: 'league',
         roster,
-        league: leagueFromRoster(roster, 3, { courts: base.courts, teamNames: BLUE_WHITE_RED }, { busuToNtrp }),
+        league: packLeague(leagueFromRoster(roster, 3, { courts: base.courts, teamNames: BLUE_WHITE_RED }, { busuToNtrp })),
         team: null,
         entries: [], groups: [], bracket: null,
       });
@@ -258,7 +267,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
 
     if (format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE || format === TOURNAMENT_FORMAT.TEAM_CLUB) {
       if (pickedList.length < 4) return flash('참가자를 4명 이상 선택하세요');
-      addTournament(clubId, {
+      await addTournament(clubId, {
         ...base,
         stage: 'team',
         roster: pickedList.map(rosterOf),
@@ -274,7 +283,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
       if (pickedList.length < 4) return flash('KDK 는 4명 이상이 필요합니다');
       /* 대회 등급을 매겼으면 등급 순으로 세워 조를 자른다 — 같은 등급끼리 한 조가 되게 */
       const roster = (hasTg ? [...pickedList].sort((a, b) => skillIn(b) - skillIn(a)) : pickedList).map(rosterOf);
-      addTournament(clubId, {
+      await addTournament(clubId, {
         ...base,
         stage: 'kdk',
         roster,
@@ -287,7 +296,7 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
 
     if (useSkillGroups) {
       if (!skillGroups?.length) return flash('먼저 [자동 배정]을 실행하세요');
-      addTournament(clubId, {
+      await addTournament(clubId, {
         name: name || `${date} 클럽대회`,
         date,
         mode: 'skillGroups',
@@ -939,7 +948,9 @@ export function Tournaments({
         </Card>
 
         {isAdmin && t.format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE && (t.stage === 'team' || t.stage === 'league') && (
-          <BlueWhiteSwitch t={t} onSwitch={(patch, msg) => { updateTournament(clubId, t.id, patch); flash(msg); }} />
+          <BlueWhiteSwitch t={t} onSwitch={async (patch, msg) => {
+            try { await updateTournament(clubId, t.id, patch); flash(msg); } catch (e) { flash('바꾸지 못했습니다. 잠시 뒤 다시 해 주세요'); }
+          }} />
         )}
 
         {t.stage === 'league' ? (

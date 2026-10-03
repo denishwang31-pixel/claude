@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 /* ============================================================
    다팀 리그 + 수기 대진표 테스트
 
@@ -13,6 +14,7 @@ import {
   diagnoseLeague, teamStyle, LEAGUE_TEAM_STYLES,
   teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames,
   leagueFromRoster, BLUE_WHITE_RED, leagueBalanceNote, teamGameCounts,
+  packLeague, unpackLeague, nestedArrayPath,
   checkLeagueMatch, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft, sideSize,
 } from '../src/lib/teamLeague.js';
 import {
@@ -228,6 +230,24 @@ section('청백전 → 청·백·홍 3팀 — 세 팀이 고르게');
   ok(leagueBalanceNote(3, 4).includes('6타임'), '아니면 가까운 3의 배수를 권한다');
   eq('3팀이 아니면 안내 없음', leagueBalanceNote(4, 5), '');
   eq('팀별 경기 수 세기', teamGameCounts(3, [{ teamAIdx: 0, teamBIdx: 2 }, { teamAIdx: 0, teamBIdx: 1 }]), [2, 1, 1]);
+}
+
+section('Firestore 에 저장되는 모양 — 배열 안에 배열 금지');
+{
+  /* 2026-10-03: teams = [[선수…]] 를 그대로 저장해 매번 거부됐다(3팀 청백전 개설 실패 · 2팀→3팀에서 앱 꺼짐) */
+  const lg = leagueFromRoster(ROSTER, 3, { courts: 2, teamNames: BLUE_WHITE_RED });
+  lg.matches = generateLeagueMatches(lg.teams, { courts: 2, rounds: 3 }).matches;
+  ok(nestedArrayPath(lg) === 'teams[0]', '화면용 모양은 배열 안 배열(그대로 저장하면 안 됨)');
+  eq('저장용(pack)에는 배열 안 배열이 없다', nestedArrayPath(packLeague(lg)), '');
+  eq('pack → unpack 하면 그대로', JSON.stringify(unpackLeague(packLeague(lg))), JSON.stringify(lg));
+  eq('예전 모양(배열의 배열)도 읽는다', unpackLeague({ teams: [[{ id: 'a' }]] }).teams[0][0].id, 'a');
+  eq('null 은 그대로', packLeague(null), null);
+  const scr = readFileSync(new URL('../src/components/TeamLeagueScreen.jsx', import.meta.url), 'utf8');
+  ok(/onSave\?\.\(packLeague\(/.test(scr) && /unpackLeague\(savedRaw\)/.test(scr), '팀 리그 화면은 pack 해서 저장하고 unpack 해서 읽는다');
+  ok(/r\.catch\(/.test(scr) && /catch \(e\) \{\s*flash\('저장하지 못했습니다/.test(scr), '저장 실패는 알리기만 — 버튼 처리 안에서 터져 앱이 꺼지지 않게');
+  const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
+  ok((ts.match(/packLeague\(leagueFromRoster/g) || []).length === 2 && /packLeague\(t\.league\)/.test(ts), '3팀 개설·2→3팀 전환도 pack 해서 저장');
+  ok(!/\n      addTournament\(clubId/.test(ts) && /await createInner\(\)/.test(ts), '대회 개설은 저장이 끝난 뒤에 "개설됐다"고 알리고, 실패는 잡는다');
 }
 
 section('손으로 넣기 · 고치기 · 지우기');

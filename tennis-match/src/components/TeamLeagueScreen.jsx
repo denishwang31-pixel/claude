@@ -19,6 +19,7 @@ import {
   teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames, TEAM_NAME_MAX,
   leagueBalanceNote, teamGameCounts,
   addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
+  packLeague, unpackLeague,
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { TEAM_ROUND_TYPES } from '../lib/teamMatch';
@@ -29,7 +30,9 @@ import { Card, SectionTitle, Chip, Field, Divider, EmptyState } from './ui';
 import { Label } from './pickers';
 import { C, S, R, F } from '../lib/theme';
 
-export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
+export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, flash }) {
+  /* 저장된 모양은 teams:[{players}] — 화면에서는 [[선수…]] 로 푼다(lib/teamLeague.js packLeague 머리말) */
+  const saved = useMemo(() => unpackLeague(savedRaw), [savedRaw]);
   const [teamCount, setTeamCount] = useState(saved?.teams?.length || 4);
   const [teams, setTeams] = useState(
     () => saved?.teams || splitIntoTeams(roster, 4, { busuToNtrp }),
@@ -74,11 +77,19 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
   );
   const check = useMemo(() => diagnoseLeague(teams, cfg), [teams, nCourts, nRounds, roundTypes, oneCourtPerTeam, teamNames]);
 
-  const persist = (next) => onSave?.({
-    teams: next.teams ?? teams,
-    matches: next.matches ?? matches,
-    config: next.config ?? cfg,
-  });
+  /* ⚠️ 저장 실패가 버튼 처리 안에서 터지면 앱이 꺼진다 — 여기서 받아 알리기만 한다 */
+  const persist = (next) => {
+    try {
+      const r = onSave?.(packLeague({
+        teams: next.teams ?? teams,
+        matches: next.matches ?? matches,
+        config: next.config ?? cfg,
+      }));
+      if (r && typeof r.catch === 'function') r.catch(() => flash('저장하지 못했습니다. 인터넷 연결을 확인해 주세요'));
+    } catch (e) {
+      flash('저장하지 못했습니다. 잠시 뒤 다시 해 주세요');
+    }
+  };
 
   const reshuffle = (n) => {
     const cnt = Math.min(MAX_TEAMS, Math.max(MIN_TEAMS, n));

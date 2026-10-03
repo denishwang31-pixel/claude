@@ -85,6 +85,41 @@ export function teamNamePresets(count) {
   return sets.filter((x) => x.length === count);
 }
 
+/* ---------------- 저장 모양 (Firestore) ----------------
+   ⚠️ Firestore 는 "배열 안의 배열"을 저장하지 못한다(Nested arrays are not supported).
+      화면에서는 teams = [[선수…], [선수…]] 가 편하지만, 그대로 저장하면 매번 거부됐다 —
+      팀 리그 저장이 한 번도 안 됐고, 3팀 청백전 개설이 안 되고, 2팀→3팀 전환에서는
+      그 오류가 버튼 처리 중에 터져 앱이 꺼졌다(2026-10-03 앱 주인).
+      그래서 저장할 때는 [{ players:[…] }, …] 로 감싸고(pack), 읽을 때 푼다(unpack).
+      예전 모양(배열의 배열)도 읽을 수 있게 둔다. */
+export function packLeague(lg) {
+  if (!lg) return lg;
+  return { ...lg, teams: (lg.teams || []).map((t) => (Array.isArray(t) ? { players: t } : t)) };
+}
+export function unpackLeague(lg) {
+  if (!lg) return lg;
+  return { ...lg, teams: (lg.teams || []).map((t) => (Array.isArray(t) ? t : (t?.players || []))) };
+}
+
+/** 저장 전에 확인 — 배열 안에 배열이 있으면 그 경로를 돌려준다(없으면 '') */
+export function nestedArrayPath(v, path = '') {
+  if (Array.isArray(v)) {
+    for (let i = 0; i < v.length; i += 1) {
+      if (Array.isArray(v[i])) return `${path}[${i}]`;
+      const inner = nestedArrayPath(v[i], `${path}[${i}]`);
+      if (inner) return inner;
+    }
+    return '';
+  }
+  if (v && typeof v === 'object') {
+    for (const k of Object.keys(v)) {
+      const inner = nestedArrayPath(v[k], path ? `${path}.${k}` : k);
+      if (inner) return inner;
+    }
+  }
+  return '';
+}
+
 /* ---------------- 청백전을 3팀(청·백·홍)으로 ----------------
    청백전은 두 팀(lib/teamMatch.js)이다. 세 팀으로 늘리면 팀 리그 엔진을 그대로 쓴다 —
    팀끼리 덜 만난 조합부터 붙이므로 세 팀이 고르게 돈다(2026-10-03 앱 주인). */
