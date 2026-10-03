@@ -13,7 +13,7 @@
     "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-rules.mjs\"",
     "test:kdk": "node scripts/test-kdk.mjs",
     "test:team": "node scripts/test-team.mjs",
-    "test:all": "npm run test:imports && npm run test:labels && npm run test:engine && npm run test:kdk && npm run test:team && npm run test:tournament && npm run test:schedule && npm run test:courts && npm run test:venue && npm run test:reconcile && npm run test:manager && npm run test:duespool && npm run test:rsvp && npm run test:clubmatch && npm run test:league && npm run test:scheduleview && npm run test:roles && npm run test:coach && npm run test:delete && npm run test:scope && npm run test:agenda && npm run test:scale && npm run test:opens && npm run test:opensync && npm run test:board && npm run test:courtnames && npm run test:scorereport && npm run test:rsvplink && npm run test:onepoint && npm run test:gearview && npm run test:merge && npm run test:feeview && npm run test:social && npm run test:verify && npm run test:socialauth && npm run test:review && npm run test:attendance && npm run test:grades && npm run test:profile && npm run test:birthyear && npm run test:openparse && npm run test:groupleague && npm run test:leaguesample",
+    "test:all": "npm run test:imports && npm run test:labels && npm run test:engine && npm run test:kdk && npm run test:team && npm run test:tournament && npm run test:schedule && npm run test:courts && npm run test:venue && npm run test:reconcile && npm run test:manager && npm run test:duespool && npm run test:rsvp && npm run test:clubmatch && npm run test:league && npm run test:scheduleview && npm run test:roles && npm run test:coach && npm run test:delete && npm run test:scope && npm run test:agenda && npm run test:scale && npm run test:opens && npm run test:opensync && npm run test:board && npm run test:courtnames && npm run test:scorereport && npm run test:rsvplink && npm run test:onepoint && npm run test:gearview && npm run test:merge && npm run test:feeview && npm run test:social && npm run test:verify && npm run test:socialauth && npm run test:review && npm run test:attendance && npm run test:grades && npm run test:profile && npm run test:birthyear && npm run test:openparse && npm run test:groupleague",
     "courts:seoul": "node scripts/fetch-courts.mjs",
     "test:courts": "node scripts/test-courts.mjs",
     "test:venue": "node scripts/test-venue-scope.mjs",
@@ -52,8 +52,7 @@
     "test:profile": "node scripts/test-profile.mjs",
     "test:birthyear": "node scripts/test-birthyear.mjs",
     "test:openparse": "node scripts/test-openparse.mjs",
-    "test:groupleague": "node scripts/test-groupleague.mjs",
-    "test:leaguesample": "node scripts/test-leaguesample.mjs"
+    "test:groupleague": "node scripts/test-groupleague.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
