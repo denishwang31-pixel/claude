@@ -13,11 +13,18 @@
 
    대진을 짤 때 지키는 것
      · 한 타임에 같은 사람이 두 코트에 들어가지 않는다
-     · 한 타임에 같은 팀이 두 코트에 들어가지 않는다
-       (팀원이 갈라져 서로 다른 코트에 있으면 응원도 교대도 안 된다)
+     · 한 타임에는 되도록 서로 다른 팀끼리 코트를 나눠 쓴다 — 그래도 코트가
+       남으면 **같은 팀이 여러 코트**에 들어간다(이번 타임에 이미 붙은 두 팀이 먼저).
+       3팀에 7면처럼 팀보다 코트가 많은 대회(쿤블던: 한 타임에 두 팀이 7면을 다 씀)가
+       "팀당 한 코트" 규칙 때문에 한 타임 1면밖에 못 짜던 문제(2026-10-03 앱 주인).
+       예전처럼 막고 싶으면 config.oneCourtPerTeam = true (응원·교대가 편하다)
      · 아직 안 만난 팀끼리 먼저 붙인다 — 특정 두 팀만 계속 만나면
        리그가 아니라 그냥 연습 경기가 된다
      · 팀 안에서 출전 횟수를 고르게
+
+   손으로 넣기·고치기 — addLeagueMatch / updateLeagueMatch / removeLeagueMatch
+     자동으로 짠 뒤 고치거나, 처음부터 손으로 넣는다. 사람 겹침·칸 겹침은 막고,
+     유형과 성별이 안 맞는 것은 경고만 한다(잡복 같은 것도 손으로는 넣을 수 있게).
 
    순위는 승점(경기 승) → 게임 득실 → 총 득점 순.
    승점만으로 가르면 동점이 너무 자주 나와서 결국 사람이 눈치로 정하게 된다.
@@ -129,7 +136,7 @@ function pickFromTeam(team, type, played, busy) {
  * shortages 는 인원이 모자라 못 채운 칸이다. 조용히 빼먹으면
  * "4면 잡았는데 3면만 나왔다"가 되므로 왜 못 채웠는지 같이 돌려준다.
  */
-export function generateLeagueMatches(teams, { courts = 2, rounds = 4, roundTypes = {} } = {}) {
+export function generateLeagueMatches(teams, { courts = 2, rounds = 4, roundTypes = {}, oneCourtPerTeam = false } = {}) {
   const nCourts = Math.max(1, Number(courts) || 1);
   const nRounds = Math.max(1, Number(rounds) || 1);
   const nTeams = teams.length;
@@ -147,13 +154,19 @@ export function generateLeagueMatches(teams, { courts = 2, rounds = 4, roundType
     const type = teamRoundType(roundTypes[r] || roundTypes[String(r)] || 'MX');
     const busyPlayers = new Set();
     const busyTeams = new Set();
+    const roundPairs = new Set();       // 이번 타임에 이미 붙은 팀 조합
 
     for (let c = 1; c <= nCourts; c += 1) {
-      /* 아직 덜 만난 팀 조합부터. 같은 타임에 이미 뛰는 팀은 뺀다 —
-         팀원이 두 코트로 갈라지면 응원도 교대도 안 된다. */
+      /* 고르는 순서
+           1) 이번 타임에 아직 안 뛰는 팀끼리 (예전 규칙과 같은 결과)
+           2) 코트가 남으면 이번 타임에 이미 붙은 두 팀이 한 코트 더 (같은 팀이 옆 코트에 모인다)
+           3) 그다음 다른 조합
+         각 단계 안에서는 덜 만난 조합부터. oneCourtPerTeam 이면 1) 만. */
+      const busyCount = ([a, b]) => (busyTeams.has(a) ? 1 : 0) + (busyTeams.has(b) ? 1 : 0);
+      const stage = (p) => (busyCount(p) === 0 ? 0 : roundPairs.has(pairKey(p[0], p[1])) ? 1 : 2);
       const candidates = allPairings(nTeams)
-        .filter(([a, b]) => !busyTeams.has(a) && !busyTeams.has(b))
-        .sort((x, y) => met(x[0], x[1]) - met(y[0], y[1]));
+        .filter((p) => !oneCourtPerTeam || busyCount(p) === 0)
+        .sort((x, y) => stage(x) - stage(y) || met(x[0], x[1]) - met(y[0], y[1]));
 
       let placed = false;
       for (const [a, b] of candidates) {
@@ -165,6 +178,7 @@ export function generateLeagueMatches(teams, { courts = 2, rounds = 4, roundType
         pb.forEach((p) => busyPlayers.add(p.id));
 
         busyTeams.add(a); busyTeams.add(b);
+        roundPairs.add(pairKey(a, b));
         metCount[pairKey(a, b)] = met(a, b) + 1;
         [...pa, ...pb].forEach((p) => { played[p.id] += 1; });
 
@@ -190,8 +204,8 @@ export function generateLeagueMatches(teams, { courts = 2, rounds = 4, roundType
           round: r,
           court: c,
           type: type.singles ? '단식' : type.name,
-          reason: busyTeams.size >= nTeams - 1
-            ? '남은 팀이 없습니다'
+          reason: oneCourtPerTeam && busyTeams.size >= nTeams - 1
+            ? '남은 팀이 없습니다 (한 팀은 한 타임에 한 코트만)'
             : '이 유형에 낼 선수가 부족합니다',
         });
       }
@@ -265,7 +279,7 @@ export function leaguePlayerStats(teams, matches) {
  * 짜기 전에 미리 본다 — 이 인원으로 이 설정이 되는지.
  * 눌러 놓고 빈 칸을 세는 일이 없도록.
  */
-export function diagnoseLeague(teams, { courts = 2, rounds = 4, roundTypes = {} } = {}) {
+export function diagnoseLeague(teams, { courts = 2, rounds = 4, roundTypes = {}, oneCourtPerTeam = false } = {}) {
   const problems = [];
   const nTeams = teams.length;
 
@@ -274,7 +288,7 @@ export function diagnoseLeague(teams, { courts = 2, rounds = 4, roundTypes = {} 
   /* 한 타임에 팀 하나는 코트 하나 — 팀 수의 절반보다 코트가 많으면
      남는 코트는 어차피 못 쓴다 */
   const usable = Math.floor(nTeams / 2);
-  if (usable < courts) {
+  if (oneCourtPerTeam && usable < courts) {
     problems.push(`${nTeams}팀이면 한 타임에 최대 ${usable}면까지 씁니다 (지금 ${courts}면)`);
   }
 
@@ -294,6 +308,118 @@ export function diagnoseLeague(teams, { courts = 2, rounds = 4, roundTypes = {} 
     }
   }
   return { ok: problems.length === 0, problems };
+}
+
+/* ============================================================
+   손으로 넣기 · 고치기 · 지우기
+   ============================================================ */
+
+/** 유형별로 한쪽에 몇 명 — 단식 1, 복식 2 */
+export const sideSize = (typeKey) => (teamRoundType(typeKey).singles ? 1 : 2);
+
+/**
+ * 손으로 넣는 경기를 검사한다.
+ * @param draft  { round, court, typeKey, teamAIdx, teamBIdx, teamA:[id], teamB:[id] }
+ * @param exceptId  고치는 중인 경기(자기 자신과는 겹침을 따지지 않는다)
+ * @returns { error?: string, warnings: string[] }
+ */
+export function checkLeagueMatch(teams, matches, draft, exceptId = null) {
+  const warnings = [];
+  const d = draft || {};
+  const round = Number(d.round);
+  const court = Number(d.court);
+  if (!(round >= 1)) return { error: '타임을 고르세요', warnings };
+  if (!(court >= 1)) return { error: '코트를 고르세요', warnings };
+  const nT = (teams || []).length;
+  if (!(d.teamAIdx >= 0 && d.teamAIdx < nT) || !(d.teamBIdx >= 0 && d.teamBIdx < nT)) return { error: '두 팀을 고르세요', warnings };
+  if (d.teamAIdx === d.teamBIdx) return { error: '서로 다른 두 팀을 고르세요', warnings };
+  const type = teamRoundType(d.typeKey);
+  const need = sideSize(type.key);
+  const A = d.teamA || []; const B = d.teamB || [];
+  if (A.length !== need || B.length !== need) return { error: `양쪽에 ${need}명씩 고르세요`, warnings };
+  const inTeam = (idx, id) => (teams[idx] || []).some((p) => p.id === id);
+  if (!A.every((id) => inTeam(d.teamAIdx, id)) || !B.every((id) => inTeam(d.teamBIdx, id))) {
+    return { error: '선수는 자기 팀에서만 고를 수 있습니다', warnings };
+  }
+  const others = (matches || []).filter((m) => m.id !== exceptId && Number(m.round) === round);
+  const clash = others.find((m) => Number(m.court) === court);
+  if (clash) return { error: `${round}타임 코트${court}에는 이미 경기가 있습니다`, warnings };
+  const busy = new Set(others.flatMap((m) => [...(m.teamA || []), ...(m.teamB || [])]));
+  const dup = [...A, ...B].find((id) => busy.has(id));
+  if (dup) {
+    const who = teams.flat().find((p) => p.id === dup)?.name || '한 선수';
+    return { error: `${who} 님은 ${round}타임에 다른 코트 경기가 있습니다`, warnings };
+  }
+  if (!type.singles) {
+    const g = (id) => teams.flat().find((p) => p.id === id)?.gender === 'F' ? 'F' : 'M';
+    const fits = (side) => {
+      const f = side.filter((id) => g(id) === 'F').length;
+      return f === type.need.F && side.length - f === type.need.M;
+    };
+    if (!fits(A) || !fits(B)) warnings.push(`${type.name} 구성(남 ${type.need.M} · 여 ${type.need.F})과 성별이 다릅니다`);
+  }
+  return { warnings };
+}
+
+const draftToMatch = (d, id, score = null) => {
+  const type = teamRoundType(d.typeKey);
+  return {
+    id,
+    round: Number(d.round),
+    court: Number(d.court),
+    league: true,
+    manual: true,
+    teamAIdx: d.teamAIdx,
+    teamBIdx: d.teamBIdx,
+    typeKey: type.key,
+    type: type.singles ? '단식' : type.name,
+    teamA: [...d.teamA],
+    teamB: [...d.teamB],
+    score,
+  };
+};
+
+const sortMatches = (ms) => [...ms].sort((x, y) => x.round - y.round || x.court - y.court);
+
+/** 경기 하나 넣기 → { matches } 또는 { error } */
+export function addLeagueMatch(teams, matches, draft, newId = `lm-${Date.now().toString(36)}`) {
+  const chk = checkLeagueMatch(teams, matches, draft);
+  if (chk.error) return { error: chk.error };
+  return { matches: sortMatches([...(matches || []), draftToMatch(draft, newId)]), warnings: chk.warnings };
+}
+
+/** 경기 고치기 — 선수·팀·유형이 바뀌면 지난 점수는 지운다(다른 경기가 됐다) */
+export function updateLeagueMatch(teams, matches, id, draft) {
+  const old = (matches || []).find((m) => m.id === id);
+  if (!old) return { error: '고칠 경기를 찾지 못했습니다' };
+  const chk = checkLeagueMatch(teams, matches, draft, id);
+  if (chk.error) return { error: chk.error };
+  const same = old.teamAIdx === draft.teamAIdx && old.teamBIdx === draft.teamBIdx
+    && old.typeKey === teamRoundType(draft.typeKey).key
+    && [...old.teamA].sort().join() === [...draft.teamA].sort().join()
+    && [...old.teamB].sort().join() === [...draft.teamB].sort().join();
+  const next = draftToMatch(draft, id, same ? old.score : null);
+  return { matches: sortMatches(matches.map((m) => (m.id === id ? next : m))), warnings: chk.warnings, scoreCleared: !same && !!old.score };
+}
+
+/** 경기 지우기 */
+export const removeLeagueMatch = (matches, id) => (matches || []).filter((m) => m.id !== id);
+
+/** 경기 → 고치는 화면에 넣을 초안 */
+export const matchToDraft = (m) => ({
+  round: m.round, court: m.court, typeKey: m.typeKey || 'MX',
+  teamAIdx: m.teamAIdx, teamBIdx: m.teamBIdx, teamA: [...(m.teamA || [])], teamB: [...(m.teamB || [])],
+});
+
+/** 새 경기 초안 — 비어 있는 첫 칸(타임·코트)을 찾아 준다 */
+export function emptyDraft(matches, { courts = 2, rounds = 4 } = {}, teamsCount = 2) {
+  const used = new Set((matches || []).map((m) => `${m.round}|${m.court}`));
+  for (let r = 1; r <= Math.max(1, rounds); r += 1) {
+    for (let c = 1; c <= Math.max(1, courts); c += 1) {
+      if (!used.has(`${r}|${c}`)) return { round: r, court: c, typeKey: 'MX', teamAIdx: 0, teamBIdx: teamsCount > 1 ? 1 : 0, teamA: [], teamB: [] };
+    }
+  }
+  return { round: Math.max(1, rounds) + 1, court: 1, typeKey: 'MX', teamAIdx: 0, teamBIdx: teamsCount > 1 ? 1 : 0, teamA: [], teamB: [] };
 }
 
 export { TEAM_ROUND_TYPES };

@@ -11,6 +11,7 @@ import {
   MIN_TEAMS, MAX_TEAMS, splitIntoTeams, teamAverage, teamComposition,
   allPairings, generateLeagueMatches, leagueStandings, leaguePlayerStats,
   diagnoseLeague, teamStyle, LEAGUE_TEAM_STYLES,
+  checkLeagueMatch, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft, sideSize,
 } from '../src/lib/teamLeague.js';
 import {
   slotSize, blankDraw, labelOf, toggleInSlot, busyInRound, playCounts, reviewDraw,
@@ -78,6 +79,7 @@ eq('넘치면 돌려 쓴다', teamStyle(8).name, 'A팀');
 section('리그 대진 — 규칙을 지킨다');
 const TEAMS4 = splitIntoTeams(ROSTER, 4);
 const cfg = { courts: 2, rounds: 6, roundTypes: { 1: 'MX', 2: 'MD', 3: 'WD', 4: 'MX', 5: 'MD', 6: 'WD' } };
+/* 팀 수가 코트의 두 배 이상이면 규칙을 꺼도 팀이 갈라지지 않는다(남는 팀부터 쓰므로) */
 const { matches, shortages } = generateLeagueMatches(TEAMS4, cfg);
 
 ok(matches.length > 0, '경기가 생성된다');
@@ -148,10 +150,79 @@ section('리그 대진 — 모자라면 알린다');
   ok(!!r.shortages[0].reason, '이유가 붙어 있다');
 }
 {
-  /* 4팀인데 3면이면 한 면은 남는다 (팀 둘이 한 코트를 쓰므로 최대 2면) */
+  /* [한 팀은 한 타임에 한 코트만]을 켜면: 4팀 3면이면 한 면은 남는다 (팀 둘이 한 코트를 쓰므로 최대 2면) */
+  const r = generateLeagueMatches(TEAMS4, { courts: 3, rounds: 1, roundTypes: { 1: 'MX' }, oneCourtPerTeam: true });
+  eq('규칙 켬: 4팀 3면이면 2경기만', r.matches.length, 2);
+  eq('규칙 켬: 남는 면은 사유와 함께', r.shortages.length, 1);
+}
+{
+  /* 기본(규칙 끔): 코트를 다 채운다 — 남는 코트는 이미 붙은 두 팀이 한 번 더 */
   const r = generateLeagueMatches(TEAMS4, { courts: 3, rounds: 1, roundTypes: { 1: 'MX' } });
-  eq('4팀 3면이면 2경기만', r.matches.length, 2);
-  eq('남는 면은 사유와 함께', r.shortages.length, 1);
+  eq('규칙 끔: 4팀 3면이면 3경기', r.matches.length, 3);
+  const ids = r.matches.flatMap((m) => [...m.teamA, ...m.teamB]);
+  ok(ids.length === new Set(ids).size, '규칙 끔에도 한 사람이 두 코트에 서지 않는다');
+  const pairs = r.matches.map((m) => [m.teamAIdx, m.teamBIdx].sort().join('-'));
+  ok(new Set(pairs).size === 2, '세 번째 코트는 이미 붙은 두 팀 중 하나가 한 번 더(옆 코트에 모인다)', pairs.join(' '));
+}
+section('3팀 · 7면 — 쿤블던 모양 (한 타임에 두 팀이 코트를 다 씀)');
+{
+  const big = [];
+  ['a', 'b', 'c'].forEach((t) => {
+    for (let i = 0; i < 18; i += 1) big.push(P(`${t}m${i}`, `${t}m${i}`, 'M'));
+    for (let i = 0; i < 10; i += 1) big.push(P(`${t}f${i}`, `${t}f${i}`, 'F'));
+  });
+  const T3 = [0, 1, 2].map((k) => big.filter((p) => p.id[0] === 'abc'[k]));
+  const rt = {}; for (let r = 1; r <= 6; r += 1) rt[r] = 'MD';
+  const r = generateLeagueMatches(T3, { courts: 7, rounds: 6, roundTypes: rt });
+  eq('3팀 7면 6타임 남복 → 42경기 다 채움', r.matches.length, 42);
+  eq('빈 칸 없음', r.shortages.length, 0);
+  [...new Set(r.matches.map((m) => m.round))].forEach((rd) => {
+    const inR = r.matches.filter((m) => m.round === rd);
+    const ids = inR.flatMap((m) => [...m.teamA, ...m.teamB]);
+    ok(ids.length === new Set(ids).size, `${rd}타임 — 사람은 겹치지 않는다`);
+    ok(new Set(inR.map((m) => [m.teamAIdx, m.teamBIdx].sort().join('-'))).size === 1, `${rd}타임 — 한 조합이 7면을 다 쓴다(쉬는 팀 하나)`);
+  });
+  const meet = {}; r.matches.forEach((m) => { const k = [m.teamAIdx, m.teamBIdx].sort().join('-'); meet[k] = (meet[k] || 0) + 1; });
+  eq('세 조합이 고르게 (14·14·14)', Object.values(meet).sort().join(), '14,14,14');
+  ok(!diagnoseLeague(T3, { courts: 7, rounds: 6, roundTypes: rt }).problems.some((p) => p.includes('최대')), '규칙을 끄면 "최대 1면" 경고가 없다');
+  ok(diagnoseLeague(T3, { courts: 7, rounds: 1, roundTypes: { 1: 'MD' }, oneCourtPerTeam: true }).problems[0].includes('1면'), '켜면 경고한다');
+}
+
+section('손으로 넣기 · 고치기 · 지우기');
+{
+  const T = [
+    [P('a1', '가1', 'M'), P('a2', '가2', 'F'), P('a3', '가3', 'M'), P('a4', '가4', 'F')],
+    [P('b1', '나1', 'M'), P('b2', '나2', 'F'), P('b3', '나3', 'M'), P('b4', '나4', 'F')],
+    [P('c1', '다1', 'M'), P('c2', '다2', 'F')],
+  ];
+  const d1 = { round: 1, court: 1, typeKey: 'MX', teamAIdx: 0, teamBIdx: 1, teamA: ['a1', 'a2'], teamB: ['b1', 'b2'] };
+  let r = addLeagueMatch(T, [], d1, 'm1');
+  ok(!r.error && r.matches.length === 1 && r.matches[0].manual && r.matches[0].type === '혼복', '혼복 한 경기 넣기');
+  let ms = r.matches;
+  eq('같은 칸(1타임 코트1)은 막는다', addLeagueMatch(T, ms, { ...d1, teamAIdx: 0, teamBIdx: 2, teamA: ['a3', 'a4'], teamB: ['c1', 'c2'] }).error, '1타임 코트1에는 이미 경기가 있습니다');
+  ok(/다른 코트 경기가 있습니다/.test(addLeagueMatch(T, ms, { ...d1, court: 2, teamA: ['a1', 'a4'], teamB: ['b3', 'b4'] }).error), '같은 타임에 같은 사람은 막는다');
+  r = addLeagueMatch(T, ms, { round: 1, court: 2, typeKey: 'MX', teamAIdx: 0, teamBIdx: 1, teamA: ['a3', 'a4'], teamB: ['b3', 'b4'] }, 'm2');
+  ok(!r.error && r.matches.length === 2, '같은 타임에 같은 두 팀이 다른 코트 — 된다');
+  ms = r.matches;
+  eq('양쪽 인원', addLeagueMatch(T, ms, { round: 2, court: 1, typeKey: 'MD', teamAIdx: 0, teamBIdx: 1, teamA: ['a1'], teamB: ['b1', 'b3'] }).error, '양쪽에 2명씩 고르세요');
+  eq('같은 팀끼리는 막는다', addLeagueMatch(T, ms, { round: 2, court: 1, typeKey: 'MX', teamAIdx: 1, teamBIdx: 1, teamA: ['b1', 'b2'], teamB: ['b3', 'b4'] }).error, '서로 다른 두 팀을 고르세요');
+  eq('다른 팀 선수는 못 넣는다', addLeagueMatch(T, ms, { round: 2, court: 1, typeKey: 'MX', teamAIdx: 0, teamBIdx: 1, teamA: ['a1', 'b2'], teamB: ['b1', 'b4'] }).error, '선수는 자기 팀에서만 고를 수 있습니다');
+  const w = addLeagueMatch(T, ms, { round: 2, court: 1, typeKey: 'MD', teamAIdx: 0, teamBIdx: 1, teamA: ['a1', 'a2'], teamB: ['b1', 'b3'] }, 'm3');
+  ok(!w.error && w.warnings.length === 1, '남복에 여자가 섞이면 경고만 하고 넣는다(잡복도 손으로는 가능)');
+  ok(addLeagueMatch(T, ms, { round: 2, court: 1, typeKey: 'SG', teamAIdx: 0, teamBIdx: 2, teamA: ['a1'], teamB: ['c1'] }).matches.length === 3 && sideSize('SG') === 1, '단식은 한 명씩');
+
+  ms = ms.map((m) => (m.id === 'm1' ? { ...m, score: { a: 6, b: 4 } } : m));
+  let u = updateLeagueMatch(T, ms, 'm1', { ...matchToDraft(ms[0]), court: 3 });
+  ok(!u.error && u.matches.find((m) => m.id === 'm1').court === 3 && u.matches.find((m) => m.id === 'm1').score?.a === 6 && !u.scoreCleared, '코트만 옮기면 점수는 그대로');
+  u = updateLeagueMatch(T, ms, 'm1', { ...matchToDraft(ms[0]), teamA: ['a1', 'a4'] });
+  ok(/다른 코트 경기/.test(u.error || ''), '고칠 때도 같은 타임 겹침은 막는다(a4 는 코트2)');
+  u = updateLeagueMatch(T, ms, 'm1', { ...matchToDraft(ms[0]), round: 3, teamA: ['a1', 'a4'] });
+  ok(!u.error && u.scoreCleared && u.matches.find((m) => m.id === 'm1').score === null, '선수가 바뀌면 점수는 지운다');
+  ok(updateLeagueMatch(T, ms, 'm1', matchToDraft(ms[0])).matches.length === 2, '자기 자신과는 겹침을 따지지 않는다');
+  eq('지우기', removeLeagueMatch(ms, 'm2').map((m) => m.id), ['m1']);
+  const e = emptyDraft(ms, { courts: 2, rounds: 3 }, 3);
+  ok(e.round === 2 && e.court === 1, '새 경기는 비어 있는 첫 칸(2타임 코트1)에서 시작');
+  ok(checkLeagueMatch(T, ms, { ...d1, round: 0 }).error === '타임을 고르세요', '타임 없으면 막는다');
 }
 eq('팀이 하나면 아무것도 안 나온다',
   generateLeagueMatches([[P('a', 'a', 'M')]], { courts: 1, rounds: 1 }).matches.length, 0);
@@ -159,8 +230,8 @@ eq('팀이 하나면 아무것도 안 나온다',
 section('사전 진단');
 ok(diagnoseLeague(TEAMS4, cfg).ok, '충분하면 문제 없음');
 {
-  const d = diagnoseLeague(TEAMS4, { courts: 4, rounds: 1, roundTypes: { 1: 'MX' } });
-  ok(!d.ok, '4팀에 4면은 과하다고 짚는다');
+  const d = diagnoseLeague(TEAMS4, { courts: 4, rounds: 1, roundTypes: { 1: 'MX' }, oneCourtPerTeam: true });
+  ok(!d.ok, '[한 팀 한 코트]를 켰을 때 4팀에 4면은 과하다고 짚는다');
   ok(d.problems[0].includes('2면'), '쓸 수 있는 면수를 알려준다', d.problems[0]);
 }
 {

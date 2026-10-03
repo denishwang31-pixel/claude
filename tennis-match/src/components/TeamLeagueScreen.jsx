@@ -7,16 +7,18 @@
    화면 흐름
      1. 팀 수를 정하고 [자동 편성] — 실력·성비가 고르게 나뉜다
      2. 마음에 안 들면 선수를 눌러 다른 팀으로 옮긴다
-     3. 코트·타임·타임별 유형을 정하고 [대진 자동 작성]
+     3. 코트·타임·타임별 유형을 정하고 [대진 자동 작성] — 또는 [경기 직접 추가]로 손으로 넣는다
      4. 경기를 눌러 결과 입력 → 팀 순위가 자동으로 갱신된다
+        같은 자리에서 [경기 고치기]·[삭제] — 자동으로 짠 뒤 손보기(2026-10-03 앱 주인)
    ============================================================ */
 import React, { useMemo, useState } from 'react';
 import { View, Text, Alert } from 'react-native';
 import {
   MIN_TEAMS, MAX_TEAMS, splitIntoTeams, teamAverage, teamComposition,
   generateLeagueMatches, leagueStandings, leaguePlayerStats, diagnoseLeague,
-  teamStyle,
+  teamStyle, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
 } from '../lib/teamLeague';
+import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { TEAM_ROUND_TYPES } from '../lib/teamMatch';
 import { busuToNtrp } from '../lib/constants';
 import { MatchGrid } from './MatchGrid';
@@ -34,12 +36,16 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
   const [nCourts, setNCourts] = useState(String(saved?.config?.courts || courts || 2));
   const [nRounds, setNRounds] = useState(String(saved?.config?.rounds || 6));
   const [roundTypes, setRoundTypes] = useState(saved?.config?.roundTypes || {});
+  /* 한 팀은 한 타임에 한 코트만 — 예전 기본. 이제는 끄는 것이 기본(팀보다 코트가 많으면 못 짠다) */
+  const [oneCourtPerTeam, setOneCourtPerTeam] = useState(!!saved?.config?.oneCourtPerTeam);
+  const [editing, setEditing] = useState(null);    // { id|null, draft } — 경기 추가·고치기 화면
   const sheet = useOptionSheet();
 
   const cfg = {
     courts: Math.max(1, Number(nCourts) || 1),
     rounds: Math.max(1, Number(nRounds) || 1),
     roundTypes,
+    oneCourtPerTeam,
   };
 
   const nameOf = useMemo(() => {
@@ -59,7 +65,7 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
     () => leaguePlayerStats(teams, matches).filter((r) => r.games > 0).slice(0, 3),
     [teams, matches],
   );
-  const check = useMemo(() => diagnoseLeague(teams, cfg), [teams, nCourts, nRounds, roundTypes]);
+  const check = useMemo(() => diagnoseLeague(teams, cfg), [teams, nCourts, nRounds, roundTypes, oneCourtPerTeam]);
 
   const persist = (next) => onSave?.({
     teams: next.teams ?? teams,
@@ -110,6 +116,17 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
     if (teams.filter((t) => t.length).length < MIN_TEAMS) {
       return flash(`선수가 있는 팀이 ${MIN_TEAMS}개 이상 필요합니다`);
     }
+    /* 손으로 고친 것·점수가 있으면 한 번 묻는다 — 다시 짜면 전부 새로 만든다 */
+    if (matches.length) {
+      Alert.alert('대진을 다시 짤까요?',
+        `지금 대진 ${matches.length}경기${matches.some((m) => m.score) ? '와 넣은 점수' : ''}가 지워지고 새로 만들어집니다.`,
+        [{ text: '취소', style: 'cancel' }, { text: '다시 짜기', style: 'destructive', onPress: runGenerate }]);
+      return undefined;
+    }
+    return runGenerate();
+  };
+
+  const runGenerate = () => {
     const { matches: ms, shortages } = generateLeagueMatches(teams, cfg);
     if (!ms.length) return flash('편성 가능한 구성이 없습니다. 팀 인원과 타임 유형을 확인하세요');
     setMatches(ms);
@@ -124,6 +141,25 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
     return flash(`${ms.length}경기를 편성했습니다`);
   };
 
+  /* ---- 손으로 넣기·고치기·지우기 ---- */
+  const openAdd = () => setEditing({ id: null, draft: emptyDraft(matches, cfg, teams.length) });
+  const saveEdit = (id, draft) => {
+    const r = id ? updateLeagueMatch(teams, matches, id, draft) : addLeagueMatch(teams, matches, draft);
+    if (r.error) return r.error;
+    setMatches(r.matches);
+    persist({ matches: r.matches });
+    setEditing(null);
+    flash(id ? (r.scoreCleared ? '경기를 고쳤습니다 (점수는 지움)' : '경기를 고쳤습니다') : '경기를 넣었습니다');
+    return undefined;
+  };
+  const deleteMatch = (id) => {
+    const next = removeLeagueMatch(matches, id);
+    setMatches(next);
+    persist({ matches: next });
+    setEditing(null);
+    flash('경기를 지웠습니다');
+  };
+
   const editScore = (m) => {
     if (!isAdmin) return;
     const A = teamStyle(m.teamAIdx).name;
@@ -135,9 +171,17 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
         { key: 'b', label: `${B} 승 (4:6)` },
         { key: 'a2', label: `${A} 승 (6:2)` },
         { key: 'b2', label: `${B} 승 (2:6)` },
-        { key: 'clear', label: '기록 지우기', destructive: true },
+        { key: 'clear', label: '기록 지우기' },
+        { key: 'edit', label: '경기 고치기 (타임·코트·선수)' },
+        { key: 'del', label: '경기 삭제', destructive: true },
       ],
       onSelect: (o) => {
+        if (o.key === 'edit') { setEditing({ id: m.id, draft: matchToDraft(m) }); return; }
+        if (o.key === 'del') {
+          Alert.alert('이 경기를 지울까요?', `${m.round}타임 코트${m.court} · ${A} vs ${B}`,
+            [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: () => deleteMatch(m.id) }]);
+          return;
+        }
         const map = {
           a: { a: 6, b: 4 }, b: { a: 4, b: 6 },
           a2: { a: 6, b: 2 }, b2: { a: 2, b: 6 },
@@ -319,14 +363,26 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
               </View>
             )}
 
-            <View style={{ marginTop: S.lg }}>
+            <Divider style={{ marginVertical: S.md }} />
+            <Label hint="켜면 응원·교대가 편하지만, 팀보다 코트가 많으면 코트가 남습니다">한 팀은 한 타임에 한 코트만</Label>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <Chip tone={!oneCourtPerTeam ? 'green' : 'outline'} onPress={() => { setOneCourtPerTeam(false); persist({ config: { ...cfg, oneCourtPerTeam: false } }); }}>
+                끄기 (코트를 다 채움)
+              </Chip>
+              <Chip tone={oneCourtPerTeam ? 'green' : 'outline'} onPress={() => { setOneCourtPerTeam(true); persist({ config: { ...cfg, oneCourtPerTeam: true } }); }}>
+                켜기
+              </Chip>
+            </View>
+
+            <View style={{ marginTop: S.lg, gap: 8 }}>
               <AppButton full onPress={generate}>
                 {matches.length ? '대진 다시 작성' : '대진 자동 작성'}
               </AppButton>
+              <AppButton full variant="outlined" onPress={openAdd}>경기 직접 추가</AppButton>
             </View>
             <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 16 }}>
-              아직 안 만난 팀끼리 먼저 붙입니다. 한 타임에 같은 팀이 두 코트로
-              갈라지지 않으므로, 한 팀은 한 코트에 모여 있습니다.
+              아직 안 만난 팀끼리 먼저 붙입니다. 코트가 남으면 그 타임에 이미 붙은 두 팀이 옆 코트를 더 씁니다.
+              자동으로 짠 뒤에도 경기를 눌러 고치거나 지울 수 있고, [경기 직접 추가]로 손으로 넣을 수도 있습니다.
             </Text>
           </Card>
         </>
@@ -335,7 +391,7 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
       {/* 대진표 */}
       {matches.length > 0 ? (
         <>
-          <SectionTitle hint={isAdmin ? '경기를 누르면 결과를 기록합니다.' : undefined}>
+          <SectionTitle hint={isAdmin ? '경기를 누르면 결과 기록 · 고치기 · 삭제' : undefined}>
             대진표
           </SectionTitle>
           <Card style={{ padding: 10 }}>
@@ -409,13 +465,21 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
             icon="🚩"
             title="아직 대진이 없습니다"
             body={isAdmin
-              ? '팀 편성을 확인한 뒤 [대진 자동 작성]을 누르세요.'
+              ? '팀 편성을 확인한 뒤 [대진 자동 작성]을 누르거나, [경기 직접 추가]로 손으로 넣으세요.'
               : '운영진이 편성하면 여기에 표시됩니다.'}
           />
         </View>
       )}
 
       {sheet.node}
+      <LeagueMatchEditor
+        open={editing}
+        teams={teams}
+        matches={matches}
+        onSave={saveEdit}
+        onDelete={deleteMatch}
+        onClose={() => setEditing(null)}
+      />
     </View>
   );
 }
