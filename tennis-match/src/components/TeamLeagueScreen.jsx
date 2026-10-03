@@ -17,6 +17,7 @@ import {
   MIN_TEAMS, MAX_TEAMS, splitIntoTeams, teamAverage, teamComposition,
   generateLeagueMatches, leagueStandings, leaguePlayerStats, diagnoseLeague,
   teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames, TEAM_NAME_MAX,
+  leagueBalanceNote, teamGameCounts,
   addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
@@ -265,6 +266,9 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
                 </View>
               );
             })}
+            <Text style={{ fontSize: 10.5, color: C.faint, paddingVertical: 6 }}>
+              팀별 경기 수 · {teamGameCounts(teams.length, matches).map((n, i) => `${look(i).name} ${n}`).join(' · ')}
+            </Text>
           </Card>
         </>
       )}
@@ -421,6 +425,12 @@ export function TeamLeague({ roster, courts, saved, isAdmin, onSave, flash }) {
                 켜기
               </Chip>
             </View>
+
+            {!!leagueBalanceNote(teams.length, cfg.rounds) && (
+              <Text style={{ fontSize: 11.5, color: C.warn, marginTop: S.md, lineHeight: 17 }}>
+                {leagueBalanceNote(teams.length, cfg.rounds)}
+              </Text>
+            )}
 
             <View style={{ marginTop: S.lg, gap: 8 }}>
               <AppButton full onPress={generate}>

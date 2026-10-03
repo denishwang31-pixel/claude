@@ -12,6 +12,7 @@ import {
   allPairings, generateLeagueMatches, leagueStandings, leaguePlayerStats,
   diagnoseLeague, teamStyle, LEAGUE_TEAM_STYLES,
   teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames,
+  leagueFromRoster, BLUE_WHITE_RED, leagueBalanceNote, teamGameCounts,
   checkLeagueMatch, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft, sideSize,
 } from '../src/lib/teamLeague.js';
 import {
@@ -198,7 +199,7 @@ section('팀 이름 바꾸기 — 청팀·홍팀·백팀');
   eq('백 → 회색', teamLook(0, ['백팀']).color, LEAGUE_TEAM_STYLES[7].color);
   eq('색 이름이 아니면 원래 색', teamLook(2, ['', '', '독수리']).color, LEAGUE_TEAM_STYLES[2].color);
   eq('공백 정리·길이 제한', cleanTeamName('  청   팀이라고하는아주긴이름  '), '청 팀이라고하는아주');
-  eq('3팀이면 청·홍·백 묶음', teamNamePresets(3)[0], ['청팀', '홍팀', '백팀']);
+  ok(teamNamePresets(3).some((x) => x.join() === '청팀,백팀,홍팀') && teamNamePresets(3).some((x) => x.join() === '청팀,홍팀,백팀'), '3팀이면 청·백·홍 / 청·홍·백 묶음');
   eq('겹치는 이름을 찾는다', duplicateTeamNames(['청팀', '청팀', ''], 3), ['청팀']);
   eq('기본 이름과 겹쳐도 찾는다', duplicateTeamNames(['B팀', '', ''], 3), ['B팀']);
   const T3 = [[P('x1', 'x1', 'M'), P('x2', 'x2', 'M')], [P('y1', 'y1', 'M'), P('y2', 'y2', 'M')], [P('z1', 'z1', 'M'), P('z2', 'z2', 'M')]];
@@ -207,6 +208,26 @@ section('팀 이름 바꾸기 — 청팀·홍팀·백팀');
   eq('순위표에 바꾼 이름', leagueStandings(T3, ms, names)[0].name, '청팀');
   eq('MVP 표에 바꾼 팀 이름', leaguePlayerStats(T3, ms, names).find((r) => r.id === 'z1').team, '백팀');
   ok(diagnoseLeague(T3, { courts: 1, rounds: 1, roundTypes: { 1: 'WD' }, teamNames: names }).problems[0].includes('청팀'), '진단 문구도 바꾼 이름');
+}
+
+section('청백전 → 청·백·홍 3팀 — 세 팀이 고르게');
+{
+  const lg = leagueFromRoster(ROSTER, 3, { courts: 2, teamNames: BLUE_WHITE_RED });
+  eq('세 팀', lg.teams.length, 3);
+  eq('이름은 청·백·홍', [0, 1, 2].map((i) => teamLook(i, lg.config.teamNames).name), ['청팀', '백팀', '홍팀']);
+  ok(lg.matches.length === 0 && lg.config.oneCourtPerTeam === false, '대진은 비어서 시작, 코트는 다 채우는 쪽');
+  ok(Math.max(...lg.teams.map((t) => t.length)) - Math.min(...lg.teams.map((t) => t.length)) <= 1, '인원이 고르게 나뉜다');
+  for (const [courts, rounds] of [[1, 3], [2, 6], [3, 9]]) {
+    const r = generateLeagueMatches(lg.teams, { courts, rounds, roundTypes: {} });
+    const per = teamGameCounts(3, r.matches);
+    ok(Math.max(...per) === Math.min(...per), `${courts}면 ${rounds}타임 — 세 팀 경기 수가 같다`, per.join(','));
+    const meet = {}; r.matches.forEach((m) => { const k = [m.teamAIdx, m.teamBIdx].sort().join('-'); meet[k] = (meet[k] || 0) + 1; });
+    ok(Object.keys(meet).length === 3 && new Set(Object.values(meet)).size === 1, `${courts}면 ${rounds}타임 — 세 조합을 똑같이 만난다`, JSON.stringify(meet));
+  }
+  eq('3의 배수면 안내 없음', leagueBalanceNote(3, 6), '');
+  ok(leagueBalanceNote(3, 4).includes('6타임'), '아니면 가까운 3의 배수를 권한다');
+  eq('3팀이 아니면 안내 없음', leagueBalanceNote(4, 5), '');
+  eq('팀별 경기 수 세기', teamGameCounts(3, [{ teamAIdx: 0, teamBIdx: 2 }, { teamAIdx: 0, teamBIdx: 1 }]), [2, 1, 1]);
 }
 
 section('손으로 넣기 · 고치기 · 지우기');

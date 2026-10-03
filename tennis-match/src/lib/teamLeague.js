@@ -77,11 +77,45 @@ export function teamLook(i, names) {
 export function teamNamePresets(count) {
   const sets = [
     ['청팀', '백팀'],
+    ['청팀', '백팀', '홍팀'],
     ['청팀', '홍팀', '백팀'],
     ['청팀', '홍팀', '백팀', '황팀'],
     ['청팀', '홍팀', '백팀', '황팀', '녹팀'],
   ];
   return sets.filter((x) => x.length === count);
+}
+
+/* ---------------- 청백전을 3팀(청·백·홍)으로 ----------------
+   청백전은 두 팀(lib/teamMatch.js)이다. 세 팀으로 늘리면 팀 리그 엔진을 그대로 쓴다 —
+   팀끼리 덜 만난 조합부터 붙이므로 세 팀이 고르게 돈다(2026-10-03 앱 주인). */
+export const BLUE_WHITE_RED = ['청팀', '백팀', '홍팀'];
+
+/** 명단으로 리그 시작 상태 — 대회 문서의 league 칸에 그대로 넣는다 */
+export function leagueFromRoster(roster, count, { courts = 2, rounds = 6, teamNames = [] } = {}, opts = {}) {
+  return {
+    teams: splitIntoTeams(roster || [], count, opts),
+    matches: [],
+    config: { courts: Math.max(1, Number(courts) || 1), rounds, roundTypes: {}, teamNames, oneCourtPerTeam: false },
+  };
+}
+
+/**
+ * 세 팀이 똑같이 뛰는지 — 한 타임에 한 조합이 코트를 다 쓰면 한 팀은 쉰다.
+ * 그래서 3팀은 타임 수가 3의 배수일 때 세 팀의 출전 타임이 같다.
+ * @returns 안내 문구 또는 ''
+ */
+export function leagueBalanceNote(teamCount, rounds) {
+  const r = Number(rounds) || 0;
+  if (teamCount !== 3 || r <= 0 || r % 3 === 0) return '';
+  const up = Math.ceil(r / 3) * 3;
+  return `3팀은 타임 수를 3의 배수로 하면 세 팀이 똑같이 뜁니다 — 지금 ${r}타임이면 팀마다 뛰는 타임이 하나씩 다를 수 있습니다(${up}타임 권장).`;
+}
+
+/** 팀별 경기 수 — 고르게 돌았는지 화면에서 보여 줄 때 */
+export function teamGameCounts(teamCount, matches) {
+  const n = Array.from({ length: teamCount }, () => 0);
+  (matches || []).forEach((m) => { if (n[m.teamAIdx] != null) n[m.teamAIdx] += 1; if (n[m.teamBIdx] != null) n[m.teamBIdx] += 1; });
+  return n;
 }
 
 /** 이름이 겹치면 순위표에서 구별이 안 된다 — 겹치는 이름 */

@@ -1,7 +1,7 @@
 /* 대회 — 조별+토너먼트 · KDK · 청백전 · 팀 리그 개설 · 진행 · 기록 보관
    (클럽 교류전은 두 클럽이 같이 보는 문서라 [클럽 교류전] 화면에 따로 있다) */
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, Share } from 'react-native';
+import { View, Text, Pressable, Share, Alert } from 'react-native';
 import {
   addTournament, updateTournament, deleteTournament,
 } from '../lib/firestore';
@@ -23,6 +23,7 @@ import {
 import { TournamentDraw } from './TournamentDraw';
 import { TeamMatch } from './TeamMatchScreen';
 import { TeamLeague } from './TeamLeagueScreen';
+import { leagueFromRoster, BLUE_WHITE_RED } from '../lib/teamLeague';
 import { MatchGrid } from './MatchGrid';
 import { DateField, Label } from './pickers';
 import { AppButton, Touchable, Segmented, useOptionSheet } from './native';
@@ -44,6 +45,8 @@ function formatLabel(t) {
   const f = TOURNAMENT_FORMATS.find((x) => x.key === t.format);
   if (t.stage === 'league') {
     const n = (t.league?.teams || []).length;
+    /* 청백전을 3팀(청·백·홍)으로 늘린 것 — 엔진은 팀 리그지만 이름은 청백전 */
+    if (t.format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE) return `🔵 청백전 · ${n || 3}팀 · ${(t.roster || []).length}명`;
     return `🚩 팀 리그${n ? ` · ${n}팀` : ''} · ${(t.roster || []).length}명`;
   }
   if (t.stage === 'team') return `${f?.icon || ''} ${f?.label || '단체전'} · ${(t.roster || []).length}명`;
@@ -59,9 +62,43 @@ function formatLabel(t) {
   return `${t.entries?.length || 0}팀 · ${t.useGroupStage ? '예선 + 토너먼트' : '토너먼트'}`;
 }
 
+/* ---------------- 청백전 2팀 ↔ 3팀(청·백·홍) ----------------
+   3팀으로 늘리면 팀 리그 엔진(lib/teamLeague.js)으로 돈다 — 덜 만난 팀끼리 먼저 붙여 세 팀이 고르게.
+   양쪽 편성·대진은 지우지 않고 보관한다(team = 2팀, league = 3팀). 되돌리면 그대로 다시 보인다. */
+function BlueWhiteSwitch({ t, onSwitch }) {
+  const three = t.stage === 'league';
+  const toThree = () => Alert.alert('청·백·홍 3팀으로 늘릴까요?',
+    '지금의 2팀 편성과 대진은 그대로 보관됩니다. 3팀은 실력·성비를 고르게 새로 나누고, 세 팀이 고르게 돌아가며 붙습니다. 언제든 2팀으로 되돌릴 수 있습니다.',
+    [{ text: '취소', style: 'cancel' }, {
+      text: '3팀으로',
+      onPress: () => onSwitch({
+        stage: 'league',
+        league: t.league?.teams?.length ? t.league
+          : leagueFromRoster(t.roster || [], 3, { courts: t.courts || 2, teamNames: BLUE_WHITE_RED }, { busuToNtrp }),
+      }, '청·백·홍 3팀으로 바꿨습니다'),
+    }]);
+  const toTwo = () => Alert.alert('청·백 2팀으로 되돌릴까요?',
+    '3팀 편성·대진은 보관되고, 전에 쓰던 2팀 화면으로 돌아갑니다.',
+    [{ text: '취소', style: 'cancel' }, { text: '2팀으로', onPress: () => onSwitch({ stage: 'team' }, '청·백 2팀으로 되돌렸습니다') }]);
+  return (
+    <Card style={{ marginTop: S.sm, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <Text style={{ flex: 1, fontSize: 12, color: C.sub, lineHeight: 18 }}>
+        {three
+          ? '청·백·홍 3팀으로 진행 중입니다. 팀 이름·대진은 아래에서 고칩니다.'
+          : '인원이 많으면 홍팀을 더해 청·백·홍 3팀으로 늘릴 수 있습니다. 세 팀이 고르게 돌아가며 붙습니다.'}
+      </Text>
+      <Btn small tone={three ? 'ghost' : 'primary'} onPress={three ? toTwo : toThree}>
+        {three ? '2팀으로 되돌리기' : '3팀으로 늘리기'}
+      </Btn>
+    </Card>
+  );
+}
+
 /* ---------------- 대회 개설 ---------------- */
 function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
   const [format, setFormat] = useState(TOURNAMENT_FORMAT.GROUP_BRACKET);
+  /* 청백전 팀 수 — 2(청·백) 또는 3(청·백·홍). 3팀이면 팀 리그 엔진으로 고르게 돌린다 */
+  const [bwCount, setBwCount] = useState(2);
   const [name, setName] = useState('');
   const [date, setDate] = useState(today());
   const [courts, setCourts] = useState('2');
@@ -200,6 +237,22 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
         entries: [], groups: [], bracket: null,
       });
       flash('팀 리그가 개설되었습니다');
+      return onDone();
+    }
+
+    /* 청백전 3팀(청·백·홍) — 팀 리그 엔진. 형식 이름은 청백전 그대로 */
+    if (format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE && bwCount === 3) {
+      if (pickedList.length < 6) return flash('3팀 청백전은 6명 이상이 필요합니다');
+      const roster = pickedList.map(rosterOf);
+      addTournament(clubId, {
+        ...base,
+        stage: 'league',
+        roster,
+        league: leagueFromRoster(roster, 3, { courts: base.courts, teamNames: BLUE_WHITE_RED }, { busuToNtrp }),
+        team: null,
+        entries: [], groups: [], bracket: null,
+      });
+      flash('청·백·홍 3팀 청백전이 개설되었습니다');
       return onDone();
     }
 
@@ -357,8 +410,16 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
           <Text style={{ fontSize: 12.5, color: C.green, lineHeight: 19 }}>
             {format === TOURNAMENT_FORMAT.TEAM_CLUB
               ? '참가자를 고르면 우리 클럽 팀이 됩니다. 상대 클럽 선수는 개설 후 다음 화면에서 등록합니다.'
-              : '참가자를 고르면 실력과 성별이 고르게 청팀·백팀으로 자동 분할됩니다. 개설 후 손으로 조정할 수 있습니다.'}
+              : format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE && bwCount === 3
+                ? '참가자를 고르면 실력과 성별이 고르게 청팀·백팀·홍팀으로 나뉩니다. 세 팀이 고르게 돌아가며 붙고, 개설 후 손으로 조정할 수 있습니다.'
+                : '참가자를 고르면 실력과 성별이 고르게 청팀·백팀으로 자동 분할됩니다. 개설 후 손으로 조정할 수 있습니다.'}
           </Text>
+          {format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE && (
+            <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
+              <Chip tone={bwCount === 2 ? 'green' : 'outline'} onPress={() => setBwCount(2)}>2팀 (청·백)</Chip>
+              <Chip tone={bwCount === 3 ? 'green' : 'outline'} onPress={() => setBwCount(3)}>3팀 (청·백·홍)</Chip>
+            </View>
+          )}
         </Card>
       )}
 
@@ -866,6 +927,10 @@ export function Tournaments({
             {t.status === 'finished' ? ' · 종료' : ' · 진행 중'}
           </Text>
         </Card>
+
+        {isAdmin && t.format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE && (t.stage === 'team' || t.stage === 'league') && (
+          <BlueWhiteSwitch t={t} onSwitch={(patch, msg) => { updateTournament(clubId, t.id, patch); flash(msg); }} />
+        )}
 
         {t.stage === 'league' ? (
           <TeamLeague
