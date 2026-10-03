@@ -607,5 +607,20 @@ console.log('[Expo SDK 54 — 업그레이드 때 바뀐 것들이 되돌아가�
     'SDK 54 코드는 0.3.0(SDK 51) 앱에 OTA 로 나가면 안 된다 — 버전(=runtimeVersion)을 올려 둔다');
 }
 
+console.log('[화면 오류를 잡아 기록한다 — 하얀 화면 대신 안내]');
+{
+  const { crashPayload } = await import('../src/lib/crashReport.js');
+  const p = crashPayload({ message: 'x'.repeat(500) + ' denis.hwang31@gmail.com', stack: 'at A\n'.repeat(1000) }, { uid: 'u1', where: 'boundary', path: '/(tabs)/more', app: { version: '1.0.0' } });
+  ok(p.message.length <= 400 && p.stack.length <= 2000, '문구·스택은 규칙의 길이 안으로 자른다');
+  const q = crashPayload({ message: 'fail for denis.hwang31@gmail.com' });
+  ok(!q.message.includes('denis.hwang31@') && q.message.includes('de***@gmail.com'), '이메일은 가린다');
+  ok(Object.keys(p).sort().join() === 'app,message,path,stack,uid,where', '규칙이 허용하는 칸만(at 은 보낼 때 붙임)');
+  const lay = readFileSync(resolve(ROOT, 'app/_layout.jsx'), 'utf8');
+  ok(/export function ErrorBoundary\(\{ error, retry \}\)/.test(lay) && /reportCrash\(error/.test(lay), '루트에 ErrorBoundary — 오류를 기록하고 [다시 시도]를 준다');
+  ok(/installCrashHandler\(\)/.test(lay), '화면 밖 치명적 오류도 기록');
+  const rules = readFileSync(resolve(ROOT, 'firestore.rules'), 'utf8');
+  ok(/match \/clientErrors\/\{id\}/.test(rules) && /request\.resource\.data\.uid == request\.auth\.uid/.test(rules), '규칙: 자기 uid 로만 남긴다');
+}
+
 console.log(`\n임포트 검증: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

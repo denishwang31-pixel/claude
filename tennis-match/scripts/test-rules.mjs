@@ -1365,6 +1365,26 @@ console.log('\n[오프라인 회원 합치기 일감 — 회장·총무만]');
     assertFails(getDoc(doc(outsider, 'clubs', CLUB, 'memberJobs', 'j1'))));
 }
 
+/* ---------- 앱 오류 기록 ---------- */
+{
+  const { serverTimestamp, addDoc, collection } = await import('firebase/firestore');
+  const ok = (uid) => ({ uid, message: 'TypeError: x is undefined', stack: 'at Foo', where: 'boundary', path: '/(tabs)/more', app: { version: '1.0.0', updateId: 'u', platform: 'android', os: '36' }, at: serverTimestamp() });
+  await T('자기 오류 기록 남기기 허용',
+    assertSucceeds(addDoc(collection(mem1, 'clientErrors'), ok('mem1'))));
+  await T('남의 uid 로 남기기 거부',
+    assertFails(addDoc(collection(mem1, 'clientErrors'), ok('owner1'))));
+  await T('로그인 안 한 사람 거부',
+    assertFails(addDoc(collection(anon, 'clientErrors'), ok(''))));
+  await T('정해진 칸 밖 거부',
+    assertFails(addDoc(collection(mem1, 'clientErrors'), { ...ok('mem1'), extra: 'x' })));
+  await T('너무 긴 문구 거부',
+    assertFails(addDoc(collection(mem1, 'clientErrors'), { ...ok('mem1'), message: 'x'.repeat(401) })));
+  await T('회원은 오류 기록 읽기 거부',
+    assertFails(getDocs(collection(mem1, 'clientErrors'))));
+  await T('앱 관리자는 읽기 허용',
+    assertSucceeds(getDocs(collection(env.authenticatedContext('appboss').firestore(), 'clientErrors'))));
+}
+
 await env.cleanup();
 if (failures.length) {
   console.log('\n실패한 검사 —');

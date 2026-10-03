@@ -16,6 +16,7 @@
    입력(환경 변수)
      ADMIN_ACTION  grant | revoke | list | info(로그인 방식·인증 상태 보기)
                    | social-log(카카오·네이버 로그인이 서버까지 왔는지 — 최근 요청·기록)
+                   | errors(앱 화면 오류 기록 최근 7일 — src/lib/crashReport.js)
      ADMIN_TARGET  이메일 또는 uid
    ============================================================ */
 const path = require('path');
@@ -89,6 +90,30 @@ async function socialLog(db) {
   });
 }
 
+/* 앱 화면 오류 기록 — 하얀 화면이 왜 났는지. ⚠️ 이 로그는 공개 저장소의 Actions 로그다:
+   이메일은 앱에서 이미 가렸고, uid 는 뒤 4자만, 문구·스택은 앞부분만 찍는다. */
+async function clientErrors(db) {
+  const since = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+  const snap = await db.collection('clientErrors').where('at', '>=', since).orderBy('at', 'desc').limit(30).get();
+  console.log(`앱 오류 기록 (최근 7일) ${snap.size}건`);
+  const groups = {};
+  snap.docs.forEach((d) => {
+    const x = d.data();
+    const k = String(x.message || '').slice(0, 120);
+    (groups[k] = groups[k] || []).push(x);
+  });
+  Object.entries(groups).forEach(([msg, rows]) => {
+    const x = rows[0];
+    const kst = (t) => (t?.toDate ? new Date(t.toDate().getTime() + 9 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ') : '?');
+    console.log('');
+    console.log(`■ ${rows.length}번 · 최근 ${kst(x.at)} KST · ${x.where || '?'} · 화면 ${x.path || '?'}`);
+    console.log(`  앱 ${x.app?.version || '?'} · 업데이트 ${String(x.app?.updateId || '').slice(0, 8) || '?'} · ${x.app?.platform || '?'} ${x.app?.os || ''} · 사용자 …${String(x.uid || '').slice(-4)}`);
+    console.log(`  문구: ${msg}`);
+    String(x.stack || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 6)
+      .forEach((l) => console.log(`    ${l.slice(0, 160)}`));
+  });
+}
+
 async function main() {
   initializeApp();
   const auth = getAuth();
@@ -106,6 +131,7 @@ async function main() {
   }
 
   if (action === 'social-log') { await socialLog(db); return; }
+  if (action === 'errors') { await clientErrors(db); return; }
 
   const user = await resolveUser(auth, process.env.ADMIN_TARGET);
   const ref = db.collection('appAdmins').doc(user.uid);

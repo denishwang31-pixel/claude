@@ -559,6 +559,25 @@ service cloud.firestore {
       allow delete: if isAppAdmin() && request.auth.uid != uid;
     }
 
+    /* ---------- 앱 오류 기록(루트) ----------
+       화면이 하얗게 비는 오류를 기록으로 보려고 남긴다(src/lib/crashReport.js).
+       - 로그인한 사람이 **자기 uid 로만** 하나씩 남긴다. 고치기·지우기 없음
+       - 정해진 칸·길이만(문구 400자, 스택 2000자) — 큰 글을 쌓아 두는 통로가 되지 않게
+       - 읽기는 앱 관리자만(관리 workflow 는 서버 권한으로 읽는다) */
+    match /clientErrors/{id} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'at', 'message', 'stack', 'where', 'path', 'app'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.message is string && request.resource.data.message.size() <= 400
+        && request.resource.data.stack is string && request.resource.data.stack.size() <= 2000
+        && request.resource.data.where is string && request.resource.data.where.size() <= 40
+        && request.resource.data.path is string && request.resource.data.path.size() <= 120
+        && request.resource.data.app is map && request.resource.data.app.size() <= 4
+        && request.resource.data.at == request.time;
+      allow read: if isAppAdmin();
+      allow update, delete: if false;
+    }
+
     /* ---------- 용품(루트, 앱 공용) ----------
        - 읽기: 로그인 사용자 전체(모든 클럽이 같은 목록을 본다)
        - 등록·수정·삭제: 앱 운영자만. 클럽 운영진도 쓸 수 없다. */

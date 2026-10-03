@@ -9,7 +9,7 @@
        단, "나중에 하기"를 누른 사용자는 클럽 없이도 /(tabs) 로 들어간다.
      초대 링크(tennismatch://join?code=…) → /join 이 코드를 받아 처리 */
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { View, ActivityIndicator, Linking, Alert, AppState } from 'react-native';
+import { View, Text, ActivityIndicator, Linking, Alert, AppState, ScrollView, Pressable } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -18,6 +18,44 @@ import { needsEmailVerify } from '../src/lib/verify';
 import { checkAppAdmin } from '../src/lib/firestore';
 import { C } from '../src/lib/theme';
 import { handleLateSocialUrl, checkPendingSocial } from '../src/lib/socialSignIn';
+import { reportCrash, installCrashHandler, setCrashPath } from '../src/lib/crashReport';
+
+/* ============================================================
+   화면을 그리다 오류가 나면 여기로 온다 (expo-router 의 ErrorBoundary)
+
+   예전엔 잡는 곳이 없어 하얀 화면만 남았다(2026-10-03 앱 주인 캡처).
+   이제는 무슨 일인지 짧게 알리고, [다시 시도] · [앱 다시 시작]을 준다.
+   오류 내용은 clientErrors 에 남는다(src/lib/crashReport.js) — 무엇이 문제였는지 기록으로 본다.
+   ============================================================ */
+export function ErrorBoundary({ error, retry }) {
+  useEffect(() => { reportCrash(error, { where: 'boundary' }); }, [error]);
+  const restart = async () => {
+    try { const U = await import('expo-updates'); await U.reloadAsync(); } catch (e) { retry?.(); }
+  };
+  const btn = (label, onPress, solid) => (
+    <Pressable onPress={onPress} style={{
+      flex: 1, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: solid ? C.green : C.surface, borderWidth: solid ? 0 : 1, borderColor: C.border,
+    }}>
+      <Text style={{ fontSize: 15, fontWeight: '700', color: solid ? '#fff' : C.text }}>{label}</Text>
+    </Pressable>
+  );
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg, justifyContent: 'center', padding: 24 }}>
+      <Text style={{ fontSize: 18, fontWeight: '800', color: C.text }}>화면을 여는 중에 문제가 생겼습니다</Text>
+      <Text style={{ fontSize: 13, color: C.sub, marginTop: 8, lineHeight: 20 }}>
+        [다시 시도]를 눌러 보고, 그래도 같으면 [앱 다시 시작]을 눌러 주세요. 무슨 문제였는지는 자동으로 기록되어 고치는 데 씁니다.
+      </Text>
+      <ScrollView style={{ maxHeight: 120, marginTop: 14, backgroundColor: C.fill, borderRadius: 10 }} contentContainerStyle={{ padding: 10 }}>
+        <Text selectable style={{ fontSize: 11, color: C.faint }}>{String(error?.message || error || '')}</Text>
+      </ScrollView>
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 18 }}>
+        {btn('다시 시도', () => retry?.(), true)}
+        {btn('앱 다시 시작', restart, false)}
+      </View>
+    </View>
+  );
+}
 
 export const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
@@ -46,6 +84,10 @@ export default function RootLayout() {
   const [onboardingIntent, setOnboardingIntent] = useState(false);
   const router = useRouter();
   const segments = useSegments();
+
+  /* 화면 밖에서 난 치명적 오류도 한 번 기록(src/lib/crashReport.js) · 지금 화면 경로를 기록에 붙인다 */
+  useEffect(() => { installCrashHandler(); }, []);
+  useEffect(() => { setCrashPath(`/${(segments || []).join('/')}`); }, [segments]);
 
   // 인증 상태 구독 → uid, 소속 clubId 해석
   useEffect(() => {
