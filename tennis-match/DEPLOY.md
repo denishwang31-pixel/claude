@@ -86,6 +86,15 @@ GitHub Secrets 에 아래 이름으로 넣는다. 이름이 한 글자라도 다
 **Create variable** → 이름은 위 표와 똑같이 → 값 붙여넣기 →
 환경은 **preview** (와 production) 체크 → 저장.
 
+✅ **2026-10-03 부터는 「테니스매치 빌드」가 빌드 직전에 자동으로 맞춘다** (「EAS 환경변수 맞추기」 단계).
+GitHub Secrets 의 `GOOGLE_WEB_CLIENT_ID` · `GOOGLE_ANDROID_CLIENT_ID` · `KAKAO_REST_KEY` · `NAVER_CLIENT_ID` 를
+preview · production 둘 다에 넣는다. 손으로 넣을 일은 없고, 그 단계가 실패했을 때만 위 화면을 본다.
+(전에는 preview 에 구글 키 둘뿐, production 에는 하나도 없었다 — 새로 깐 앱에서 카카오·네이버 버튼이 사라졌다.)
+
+⚠️ **OTA 가 빌드보다 오래되면 앱이 OTA 를 안 쓴다.** 앱은 "앱 안에 든 코드"와 "받은 업데이트" 중
+**더 새것**을 쓴다. 그래서 빌드 직후에는 그 빌드에 든 설정(키)이 그대로 보인다. 빌드에 키가 빠졌다면
+OTA 를 한 번 더 내보내야(푸시 한 번) 버튼이 돌아온다.
+
 ⚠️ **키는 빌드 시점에 앱 안에 박힌다.** 새로 넣거나 바꾸면 OTA 가 아니라
 **새 빌드**를 해야 반영된다.
 

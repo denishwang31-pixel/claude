@@ -123,6 +123,52 @@ jobs:
           APPLE_SERVICE_ID: ${{ secrets.APPLE_SERVICE_ID }}
         run: node scripts/social-status.mjs
 
+      # ⚠️ EAS 서버 환경변수를 GitHub Secrets 와 맞춘다 (preview · production 둘 다).
+      #    빌드는 EAS 서버에서 app.config.js 를 다시 읽는데, 거기엔 이 러너의 환경변수가 닿지 않는다.
+      #    손으로 expo.dev 에 넣어 두던 값이 preview 에는 구글 키 둘뿐이었고 production 에는 하나도 없었다
+      #    (2026-10-02 빌드 로그). 그래서 새로 깐 앱에는 카카오·네이버 버튼이 없고, OTA 가 와야만 생겼다 —
+      #    그런데 앱 안의 코드가 OTA 보다 새것이면 OTA 를 안 쓴다. 실제로 그렇게 버튼이 사라졌다.
+      #    매 빌드 직전에 여기서 맞춰 두면 빌드에 키가 박힌다.
+      #    값은 찍지 않는다(GitHub 도 secrets 값은 가린다). 실패해도 빌드는 막지 않고 경고만.
+      - name: EAS 환경변수 맞추기
+        id: easenv
+        continue-on-error: true
+        env:
+          EXPO_TOKEN_RAW: ${{ secrets.EXPO_TOKEN }}
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+        run: |
+          EXPO_TOKEN="$(printf '%s' "$EXPO_TOKEN_RAW" | tr -d '[:space:]')"
+          export EXPO_TOKEN
+          BAD=""
+          for NAME in GOOGLE_WEB_CLIENT_ID GOOGLE_ANDROID_CLIENT_ID KAKAO_REST_KEY NAVER_CLIENT_ID; do
+            VAL="${!NAME}"
+            if [ -z "$VAL" ]; then
+              echo "$NAME: GitHub Secrets 에 없음 — 건너뜀"
+              continue
+            fi
+            if npx --yes eas-cli@$EAS_CLI env:create \
+                --name "$NAME" --value "$VAL" \
+                --environment preview --environment production \
+                --visibility sensitive --scope project \
+                --force --non-interactive > "$RUNNER_TEMP/easenv.log" 2>&1; then
+              echo "$NAME: 맞춤 (preview · production)"
+            else
+              echo "$NAME: 실패 — $(tail -n 2 "$RUNNER_TEMP/easenv.log" | tr '\n' ' ' | cut -c1-200)"
+              BAD="$BAD $NAME"
+            fi
+          done
+          rm -f "$RUNNER_TEMP/easenv.log"
+          if [ -n "$BAD" ]; then
+            echo "::warning::EAS 환경변수를 맞추지 못한 키:$BAD — 이 빌드에는 그 로그인 버튼이 빠질 수 있습니다. expo.dev 프로젝트 환경변수에서 preview·production 을 확인하세요."
+            {
+              echo "### ⚠️ EAS 환경변수 맞추기 실패:$BAD"
+              echo "https://expo.dev/accounts/denis-hwang/projects/tennis-match/environment-variables"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: 빌드
         id: build
         continue-on-error: true
