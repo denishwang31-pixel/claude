@@ -21,7 +21,7 @@ import {
   updateMeeting, subGear, subJoinRequests, subServiceStats, setRsvp,
 } from '../../src/lib/firestore';
 import { dowName } from '../../src/lib/schedule';
-import { ddayOf } from '../../src/lib/agenda';
+import { ddayOf, tournamentState, T_STATE } from '../../src/lib/agenda';
 import { membersInScope } from '../../src/lib/scope';
 import { canRsvpSelf, rsvpBlockReason, splitByTie } from '../../src/lib/scheduleView';
 import { normalizeAsk, deadlineLabel } from '../../src/lib/rsvpAsk';
@@ -177,12 +177,19 @@ export default function Home() {
 
   /* 대회는 단발성 주요 이벤트다. [더보기] 안에 묻혀 있으면 아무도 못 본다.
      다음 모임 바로 아래에 둬서 접근성을 올린다. */
+  /* 일정 화면과 같은 기준(src/lib/agenda.js tournamentState) — 끝난 대회만 빼고, 날짜가 막 지났어도
+     [종료] 전이면 남긴다. 아무것도 안 정한 준비 중 대회는 운영진에게만. (예전엔 status 'done' 을 봤는데
+     실제 값은 'finished' 라 걸러지지 않았고, 날짜가 하루 지나면 사라졌다) */
   const upcomingTournaments = useMemo(
     () => (tournaments || [])
-      .filter((t) => t.status !== 'done' && (!t.date || t.date >= today()))
+      .filter((t) => {
+        const st = tournamentState(t, today());
+        if (st === T_STATE.DONE) return false;
+        return isAdmin || st !== T_STATE.DRAFT;
+      })
       .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
       .slice(0, 3),
-    [tournaments],
+    [tournaments, isAdmin],
   );
 
   const myStat = stats[me];

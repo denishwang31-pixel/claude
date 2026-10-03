@@ -7,7 +7,7 @@
      · 준비 중인 대회가 회원에게 새어 나가지 않을 것 */
 import {
   KIND, KINDS, T_STATE, T_STATE_LABEL,
-  signupCount, tournamentState, tournamentStatusLine, canApply,
+  signupCount, tournamentState, tournamentStatusLine, canApply, participantIds, UNCLOSED_DAYS,
   buildAgenda, filterAgenda, countByKind,
   monthMeta, shiftMonth, monthLabel, calendarGrid, dateHead, ddayOf, dowName,
   weekDays,
@@ -44,6 +44,23 @@ console.log('\n[대회 현황 — 신청할 수 있는 상태인가]');
   }, TODAY), T_STATE.CLOSED, '마감일이 지나면 접수 마감');
   eq(tournamentState({ ...base, date: TODAY, signup: { open: true, cap: 16 } }, TODAY),
     T_STATE.LIVE, '오늘이면 진행 — 정원이 남아 있어도 오늘이 이긴다');
+  /* 2026-10-03 — 명단을 정한 대회는 신청을 안 받아도 모두에게 보인다 / 날짜가 막 지난 대회는 며칠 남긴다 */
+  eq(tournamentState({ ...base, roster: [{ id: 'a' }, { id: 'b' }] }, TODAY), T_STATE.READY,
+    '신청은 안 받지만 명단을 골랐으면 참가자 확정(청백전·팀 리그)');
+  eq(tournamentStatusLine({ ...base, roster: [{ id: 'a' }, { id: 'b' }] }, TODAY), '참가자 2명 확정', '확정 인원');
+  eq([...participantIds({ roster: [{ id: 'a' }], entries: [{ players: ['b', 'c'] }], applicants: { d: {} } })].sort(), ['a', 'b', 'c', 'd'], '참가자 = 명단 + 조 편성 + 신청자');
+  eq(tournamentState({ ...base, date: '2026-09-09' }, TODAY), T_STATE.UNCLOSED,
+    '어제 날짜인데 안 닫았으면 진행 중 — 기본 날짜가 오늘이라 다음 날 일정에서 사라지던 문제');
+  eq(tournamentState({ ...base, date: '2026-09-07' }, TODAY), T_STATE.UNCLOSED, `${UNCLOSED_DAYS}일까지는 남긴다`);
+  eq(tournamentState({ ...base, date: '2026-09-06' }, TODAY), T_STATE.DONE, '그보다 오래되면 끝난 것으로');
+  eq(tournamentState({ ...base, date: '2026-09-09', status: 'finished' }, TODAY), T_STATE.DONE, '[종료]를 눌렀으면 바로 끝');
+  eq(canApply({ ...base, roster: [{ id: 'a' }] }, 'zz', TODAY).ok, false, '참가자 확정 대회는 신청 버튼이 없다');
+  {
+    const items = buildAgenda({ tournaments: [{ ...base, id: 'tR', roster: [{ id: 'me' }] }, { ...base, id: 'tD' }] }, { today: TODAY, me: 'me', isAdmin: false });
+    ok(items.some((x) => x.id === 'tR') && !items.some((x) => x.id === 'tD'), '회원에게: 명단이 정해진 대회는 보이고, 아무것도 안 정한 대회는 안 보인다');
+    ok(items.find((x) => x.id === 'tR').mine, '명단에 내가 있으면 내 대회');
+    ok(!items.find((x) => x.id === 'tR').applied, '명단에 있는 것은 신청한 것이 아니다(신청 취소 버튼이 뜨지 않게)');
+  }
   eq(tournamentState({ ...base, date: '2026-09-01' }, TODAY), T_STATE.DONE,
     '날짜가 지났으면 끝난 것으로 본다 — 운영진이 안 닫아도 목록이 깨끗해진다');
   eq(tournamentState({ ...base, status: 'finished' }, TODAY), T_STATE.DONE,

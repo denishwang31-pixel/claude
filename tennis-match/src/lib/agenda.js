@@ -65,15 +65,19 @@ export const dowName = (d) => {
 
 export const T_STATE = {
   DRAFT: 'draft',       // 아직 안 열었다 (운영진만 보인다)
+  READY: 'ready',       // 신청은 안 받지만 참가자가 정해졌다 (청백전·팀 리그처럼 운영진이 명단을 고른 대회) — 모두에게 보인다
   OPEN: 'open',         // 신청 받는 중 — 신청 버튼이 나온다
   FULL: 'full',         // 정원 찼다 — 대기 신청만
   CLOSED: 'closed',     // 접수 마감 (날짜는 아직 안 옴)
   LIVE: 'live',         // 오늘 열린다 — 중계로 들어가는 자리
+  UNCLOSED: 'unclosed', // 날짜는 지났는데 아직 [종료]를 안 눌렀다 — 며칠은 목록에 남긴다
   DONE: 'done',         // 끝났다 — 결과 보기
 };
 
 export const T_STATE_LABEL = {
   [T_STATE.DRAFT]: '준비 중',
+  [T_STATE.READY]: '참가자 확정',
+  [T_STATE.UNCLOSED]: '진행 중',
   [T_STATE.OPEN]: '모집 중',
   [T_STATE.FULL]: '정원 마감',
   [T_STATE.CLOSED]: '접수 마감',
@@ -83,6 +87,8 @@ export const T_STATE_LABEL = {
 
 export const T_STATE_TONE = {
   [T_STATE.DRAFT]: 'default',
+  [T_STATE.READY]: 'soft',
+  [T_STATE.UNCLOSED]: 'red',
   [T_STATE.OPEN]: 'lime',
   [T_STATE.FULL]: 'soft',
   [T_STATE.CLOSED]: 'default',
@@ -103,16 +109,35 @@ export function signupCount(t) {
  * 판단 순서가 중요하다. 끝난 대회는 모집 조건을 따지지 않고, 오늘
  * 열리는 대회는 정원이 찼든 말든 '오늘 진행'이다.
  */
+/* 날짜가 지나도 [종료]를 안 눌렀으면 이 기간은 「진행 중」으로 목록에 남긴다.
+   예전엔 하루만 지나도 목록에서 사라졌다 — 대회를 만들 때 날짜 칸 기본값이 "오늘"이라
+   다음 날이면 대회가 일정에서 없어졌다(2026-10-03 앱 주인: "클럽 대회가 일정에 안 보여"). */
+export const UNCLOSED_DAYS = 3;
+const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+
+/** 참가자가 정해진 사람들 — 명단(청백전·팀 리그·KDK) · 조 편성 · 신청자 */
+export function participantIds(t) {
+  const ids = new Set();
+  (t?.roster || []).forEach((p) => p?.id && ids.add(p.id));
+  (t?.entries || []).forEach((e) => (e?.players || []).forEach((id) => id && ids.add(id)));
+  Object.keys(t?.applicants || {}).forEach((id) => ids.add(id));
+  return ids;
+}
+
 export function tournamentState(t, today) {
   if (!t) return T_STATE.DRAFT;
   if (t.status === 'finished') return T_STATE.DONE;
 
   const date = String(t.date || '');
-  if (date && date < today) return T_STATE.DONE;      // 날짜가 지났는데 안 닫은 것
+  if (date && date < today) {
+    /* 날짜가 지났는데 안 닫은 것 — 며칠은 「진행 중」, 그 뒤는 끝난 것으로 본다(목록이 지저분해지지 않게) */
+    return daysBetween(date, today) <= UNCLOSED_DAYS ? T_STATE.UNCLOSED : T_STATE.DONE;
+  }
   if (date && date === today) return T_STATE.LIVE;
 
   const su = t.signup || {};
-  if (!su.open) return T_STATE.DRAFT;
+  /* 신청을 안 받는 대회 — 운영진이 명단을 이미 골랐으면 회원에게도 보인다 */
+  if (!su.open) return participantIds(t).size ? T_STATE.READY : T_STATE.DRAFT;
 
   const deadline = String(su.deadline || date || '');
   if (deadline && today > deadline) return T_STATE.CLOSED;
@@ -136,7 +161,9 @@ export function tournamentStatusLine(t, today) {
   }
   if (state === T_STATE.FULL) return `신청 ${n}/${cap}명 · 정원 마감`;
   if (state === T_STATE.CLOSED) return `신청 ${n}명 · 접수 마감`;
-  if (state === T_STATE.LIVE) return `참가 ${n}명 · 오늘 진행합니다`;
+  if (state === T_STATE.LIVE) return `참가 ${n || participantIds(t).size}명 · 오늘 진행합니다`;
+  if (state === T_STATE.READY) return `참가자 ${participantIds(t).size}명 확정`;
+  if (state === T_STATE.UNCLOSED) return `참가 ${n || participantIds(t).size}명 · 아직 끝내지 않은 대회`;
   if (state === T_STATE.DONE) return `참가 ${n}명 · 종료`;
   return '아직 모집을 시작하지 않았습니다';
 }
@@ -152,6 +179,7 @@ export function canApply(t, uid, today) {
   if (state === T_STATE.FULL) return { ok: false, reason: '정원이 찼습니다' };
   if (state === T_STATE.CLOSED) return { ok: false, reason: '접수가 마감되었습니다' };
   if (state === T_STATE.DRAFT) return { ok: false, reason: '아직 모집 전입니다' };
+  if (state === T_STATE.READY) return { ok: false, reason: '참가자를 운영진이 정한 대회입니다' };
   return { ok: false, reason: '이미 시작했거나 끝난 대회입니다' };
 }
 
@@ -239,7 +267,9 @@ export function buildAgenda({
       state,
       status: T_STATE_LABEL[state],
       tone: T_STATE_TONE[state],
-      mine: !!(t.applicants || {})[me],
+      /* applied = 내가 참가 신청함 · mine = 신청했거나 운영진이 명단에 넣음(「내 일정」 거르기) */
+      applied: !!(t.applicants || {})[me],
+      mine: !!(t.applicants || {})[me] || (!!me && participantIds(t).has(me)),
       raw: t,
     });
   });

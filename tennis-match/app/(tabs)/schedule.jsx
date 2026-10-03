@@ -15,7 +15,7 @@ import {
   applyToTournament, cancelTournamentApply, setRsvpLink,
 } from '../../src/lib/firestore';
 import {
-  KIND, KINDS, buildAgenda, filterAgenda, countByKind, canApply, weekDays,
+  KIND, KINDS, T_STATE, buildAgenda, filterAgenda, countByKind, canApply, weekDays,
   shiftMonth as shiftAgendaMonth,
 } from '../../src/lib/agenda';
 import {
@@ -407,7 +407,9 @@ export default function Schedule() {
   /* 목록 보기에서는 지난 것을 빼고 가까운 순서로. 달력 보기는 그 달
      전체를 보여 준다 — 지난 주에 무엇이 있었는지도 달력에서는 정보다. */
   const upcomingAgenda = useMemo(
-    () => agenda.filter((it) => it.kind !== KIND.MEETING && (!it.date || it.date >= today())),
+    /* 대회는 날짜가 지나도 [종료] 전 며칠은 남긴다(agenda.js UNCLOSED_DAYS) */
+    () => agenda.filter((it) => it.kind !== KIND.MEETING
+      && (!it.date || it.date >= today() || (it.kind === KIND.TOURNAMENT && it.state === T_STATE.UNCLOSED))),
     [agenda],
   );
   const dayItems = useMemo(

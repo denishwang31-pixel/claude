@@ -166,6 +166,12 @@ export function CalendarView({ monthKey, items, today, selected, onSelect }) {
 export function TournamentCard({ item, apply, cancel, onOpen, today }) {
   const t = item.raw;
   const live = item.state === T_STATE.LIVE;
+  /* 신청 버튼은 신청을 받는 대회에서만. 운영진이 명단을 정한 대회(청백전·팀 리그)에 「참가 신청」이
+     뜨면 회원이 헷갈린다 — 그런 대회는 「내가 참가」만 표시한다 */
+  const applied = item.applied ?? item.mine;
+  const signupOpen = item.state === T_STATE.OPEN || item.state === T_STATE.FULL;
+  const showApply = !applied && signupOpen;
+  const showCancel = applied && (signupOpen || item.state === T_STATE.CLOSED);
   const fee = Number(t?.signup?.fee) || 0;
   const dday = ddayOf(item.date, today);
 
@@ -182,7 +188,7 @@ export function TournamentCard({ item, apply, cancel, onOpen, today }) {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <Text style={{ fontWeight: '700', fontSize: 14.5 }}>{item.title}</Text>
               <Chip tone={item.tone}>{item.status}</Chip>
-              {item.mine && <Chip tone="soft">신청함</Chip>}
+              {applied ? <Chip tone="soft">신청함</Chip> : item.mine ? <Chip tone="soft">내가 참가</Chip> : null}
             </View>
             <Text style={{ fontSize: 12, color: C.sub, marginTop: 3 }}>
               {item.date ? dateHead(item.date) : '날짜 미정'}
@@ -203,11 +209,10 @@ export function TournamentCard({ item, apply, cancel, onOpen, today }) {
         </View>
       </Pressable>
 
-      {(apply || cancel) && (
+      {(apply || cancel) && (showApply || showCancel || live) && (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 11 }}>
-          {item.mine
-            ? <Btn small tone="ghost" onPress={cancel}>신청 취소</Btn>
-            : <Btn small onPress={apply}>참가 신청</Btn>}
+          {showCancel && <Btn small tone="ghost" onPress={cancel}>신청 취소</Btn>}
+          {showApply && <Btn small onPress={apply}>참가 신청</Btn>}
           {live && (
             <Btn small tone="outline" onPress={onOpen}>대진·중계 보기</Btn>
           )}
