@@ -70,7 +70,28 @@ const sessionStart = Date.now();
    2026-10-04: 하얀 화면이 난 실행은 정상 종료(백그라운드)로 끝나 '갑자기 꺼짐'에 안 잡혔다 —
    자바스크립트는 살아 있었다는 뜻. 그 실행의 동작 기록을 사람이 보내 줘야 볼 수 있다. */
 const HIST_MAX = 8;
-let writing = Promise.resolve();
+let writing = null;
+
+/* ⚠️ 지난 실행 기록은 이번 실행이 처음 쓰기 '전에' 읽어 둔다.
+   2026-10-04 버그: 켜자마자 이번 실행의 첫 기록(breadcrumb)이 먼저 써지면, checkLastRun 이 그걸
+   '지난 실행'으로 읽었다 — 진짜 지난 실행(하얀 화면이 난 실행)은 읽기도 전에 덮어써져 사라졌다.
+   그래서 '지난 실행'이 늘 첫 줄 하나뿐(시작=끝)이었고, 거짓 '갑자기 꺼짐'도 이 때문이었다.
+   이제 모든 쓰기는 이 읽기가 끝난 뒤에 줄을 선다. */
+let prevRun = null;
+let readPrev = null;
+function startReadPrev() {
+  if (!readPrev) {
+    readPrev = (async () => {
+      try {
+        const F = await loadFs();
+        if (!F || !runFile) return;
+        const info = await F.getInfoAsync(runFile);
+        if (info?.exists) prevRun = JSON.parse(await F.readAsStringAsync(runFile));
+      } catch (e) { prevRun = null; }
+    })();
+  }
+  return readPrev;
+}
 const hhmmss = () => { const d = new Date(); return [d.getHours(), d.getMinutes(), d.getSeconds()].map((x) => String(x).padStart(2, '0')).join(':'); };
 
 async function loadFs() {
@@ -84,6 +105,7 @@ async function loadFs() {
 }
 function writeRun(running) {
   const body = JSON.stringify({ running, at: Date.now(), startedAt: sessionStart, path: currentPath, crumbs });
+  if (!writing) writing = startReadPrev();
   writing = writing.then(async () => {
     try {
       const F = await loadFs();
@@ -175,10 +197,10 @@ export async function checkLastRun() {
   try {
     const F = await loadFs();
     if (!F || !runFile) return;
-    const info = await F.getInfoAsync(runFile);
-    let last = null;
-    if (info?.exists) { try { last = JSON.parse(await F.readAsStringAsync(runFile)); } catch (e) { last = null; } }
-    /* 지난 실행을 기록 묶음에 더해 둔다(최근 3개) */
+    await startReadPrev();
+    /* 혹시라도 이번 실행 것이면(시작 시각이 같다) 지난 실행이 아니다 */
+    const last = prevRun && Number(prevRun.startedAt) !== sessionStart ? prevRun : null;
+    /* 지난 실행을 기록 묶음에 더해 둔다(최근 8개) */
     if (last && histFile) {
       let hist = [];
       try {
