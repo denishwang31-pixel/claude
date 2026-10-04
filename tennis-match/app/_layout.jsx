@@ -19,7 +19,7 @@ import { checkAppAdmin } from '../src/lib/firestore';
 import { C } from '../src/lib/theme';
 import { handleLateSocialUrl, checkPendingSocial } from '../src/lib/socialSignIn';
 import {
-  reportCrash, installCrashHandler, setCrashPath, checkLastRun, markCleanExit, markRunning, startStallWatch,
+  reportCrash, installCrashHandler, setCrashPath, checkLastRun, markCleanExit, markRunning, startStallWatch, breadcrumb,
 } from '../src/lib/crashReport';
 
 /* ============================================================
@@ -94,9 +94,10 @@ export default function RootLayout() {
        뒤로 가면(백그라운드) 정상 종료로 적어 둔다 — 그 뒤 휴대폰이 앱을 정리해도 '갑자기 꺼짐'이 아니다. */
     checkLastRun();
     startStallWatch();
+    breadcrumb('앱 화면 시작');      // 같은 실행 안에서 또 찍히면 안드로이드가 화면을 새로 만든 것
     const sub = AppState.addEventListener('change', (st) => {
-      if (st === 'background') markCleanExit();
-      else if (st === 'active') markRunning();
+      if (st === 'background') { breadcrumb('앱 뒤로 감'); markCleanExit(); }
+      else if (st === 'active') { markRunning(); breadcrumb('앱으로 돌아옴'); }
     });
     return () => sub?.remove?.();
   }, []);
@@ -168,6 +169,19 @@ export default function RootLayout() {
       return;
     }
     if (root === 'verify') { router.replace('/'); return; }
+    /* ⚠️ 빈 주소("/" — 어느 화면도 아님)에 멈추면 홈 탭으로.
+       2026-10-04: 대회 화면을 보던 중 주소가 갑자기 "/" 로 바뀐 뒤(errors 기록 21:51·21:56) 하얀 화면에
+       뒤로가기도 안 먹었다. 이 가드에 빈 주소 규칙이 없어 아무도 홈으로 돌려보내지 않았다.
+       (빈 주소가 되는 까닭은 다른 앱에 다녀온 뒤 안드로이드가 화면을 새로 만드는 경우로 본다 —
+        breadcrumb '앱 화면 시작'·'앱으로 돌아옴' 으로 확인한다) */
+    /* 켜는 순간에도 잠깐 빈 주소일 수 있다(초대 링크 등이 아직 안 풀림) — 0.8초 넘게 그대로일 때만 옮긴다 */
+    if (!root) {
+      const t = setTimeout(() => {
+        breadcrumb('빈 화면 → 홈으로');
+        router.replace('/(tabs)');
+      }, 800);
+      return () => clearTimeout(t);
+    }
     // 클럽이 없고, 둘러보기도 선택하지 않았으면 온보딩으로
     if (!session.clubId && !session.skipped) {
       if (root !== 'onboarding') router.replace('/onboarding');
