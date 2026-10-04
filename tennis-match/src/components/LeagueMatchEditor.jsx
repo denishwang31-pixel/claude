@@ -53,7 +53,10 @@ export function LeagueMatchEditor({
   /* 고를 수 있는 코트 — 설정한 면수, 예전에 그보다 큰 번호로 넣은 경기가 있으면 거기까지 */
   const nCourtChips = Math.max(1, Number(courts) || 1, Number(court) || 0);
 
-  if (!open || !d) return null;
+  /* ⚠️ 닫을 때 창(Modal)을 통째로 없애지 않고 visible 만 끈다.
+     안드로이드(새 구조)에서 보이는 채로 없애면 창 껍데기가 남아 화면이 하얗게 덮이고
+     뒤로가기도 안 먹는 일이 있다(2026-10-04 앱 주인 — "하얀 화면, 앱은 안 꺼지는데 뒤로가기가 안 먹어"). */
+  if (!open || !d) return <Modal visible={false} animationType="slide" onRequestClose={onClose} />;
   const need = sideSize(d.typeKey);
 
   const setType = (key) => {

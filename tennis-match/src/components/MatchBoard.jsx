@@ -129,7 +129,8 @@ export function ScoreSheet({ target, onSave, onClose }) {
     setA(target.match?.score ? target.match.score.a : null);
     setB(target.match?.score ? target.match.score.b : null);
   }, [target]);
-  if (!target) return null;
+  /* ⚠️ 닫을 때 창을 없애지 않고 visible 만 끈다 — LeagueMatchEditor.jsx 같은 자리 주석 */
+  if (!target) return <Modal visible={false} transparent animationType="slide" onRequestClose={onClose} />;
 
   const row = (side, value, set) => (
     <View style={{ marginTop: S.md }}>

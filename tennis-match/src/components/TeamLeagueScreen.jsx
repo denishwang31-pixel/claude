@@ -739,35 +739,6 @@ export function TeamLeague({
             </Card>
           </Fold>
 
-          {/* 어느 팀끼리 붙는 경기인지 — 표에는 이름만 나온다 */}
-          <Card style={{ marginTop: S.sm, paddingVertical: 6 }}>
-            {[...new Set(shown.map((m) => m.round))].sort((a, b) => a - b).map((r) => (
-              <View key={r} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5 }}>
-                <Text style={{ width: 42, fontSize: 11, fontWeight: '700', color: C.sub }}>{r}타임</Text>
-                <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
-                  {shown.filter((m) => m.round === r).map((m) => (
-                    <View key={m.id} style={{
-                      flexDirection: 'row', alignItems: 'center', gap: 3,
-                      paddingHorizontal: 7, paddingVertical: 3,
-                      borderRadius: R.sm, backgroundColor: C.fill,
-                    }}>
-                      <Text style={{ fontSize: 10.5, fontWeight: '700', color: look(m.teamAIdx).color }}>
-                        {look(m.teamAIdx).name}
-                      </Text>
-                      <Text style={{ fontSize: 9, color: C.faint }}>vs</Text>
-                      <Text style={{ fontSize: 10.5, fontWeight: '700', color: look(m.teamBIdx).color }}>
-                        {look(m.teamBIdx).name}
-                      </Text>
-                      <Text style={{ fontSize: 9, color: C.faint }}>
-                        {m.score ? ` ${m.score.a}:${m.score.b}` : ` ${m.type}`}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ))}
-          </Card>
-
           {mvp.length > 0 && (
             <>
               <SectionTitle>오늘의 MVP</SectionTitle>
