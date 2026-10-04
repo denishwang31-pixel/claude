@@ -85,6 +85,8 @@
   .gs { font-size: 14px; font-weight: 900; color: #fff; padding: 1px 7px; border-radius: 6px; } .gs.wait { font-size: 10px; color: var(--faint); font-weight: 600; padding: 0; }
   /* 끝난 경기 — 이긴 팀 색으로 옅게 칠하고 왼쪽 띠·점수 상자(앱 대진표와 같은 규칙) */
   table.grid td.done { border-left-width: 5px; }
+  /* 끝난 경기는 점수만 또렷하게, 유형·팀·이름은 흐리게 — 남은 경기(특히 내 경기)가 먼저 보이게(앱과 같은 규칙) */
+  table.grid td.done .ty, table.grid td.done .tp, table.grid td.done .gn, table.grid td.done .gv { opacity: .45; }
   .gn { font-size: 12px; line-height: 1.45; margin-top: 2px; } .gn.win { color: var(--green); font-weight: 800; }
   .gv { font-size: 9px; color: var(--faint); margin: 2px 0; }
   .tp.sm { font-size: 10px; padding: 0 5px; }

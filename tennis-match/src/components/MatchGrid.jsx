@@ -187,6 +187,9 @@ export function MatchGrid({
                 const whiteWin = !!winSolid && winSolid.bg === '#ffffff';
                 const accent = draw ? '#d97706' : winSolid ? (whiteWin ? '#111827' : winSolid.bg) : C.green;
                 const tint = `${accent}${whiteWin ? '14' : '1F'}`;
+                /* 끝난 경기는 점수만 또렷하게, 유형·팀·이름은 흐리게 — 남은 경기(특히 내 경기)가 먼저 보이게
+                   (2026-10-04 앱 주인: "내 경기랑 결과 입력한 게 차이가 없어 보여") */
+                const fade = done && !picked ? 0.45 : 1;
                 return (
                   <Pressable key={c} onPress={() => onPressMatch?.(m)}
                     style={{
@@ -202,7 +205,7 @@ export function MatchGrid({
                       <Text style={{ position: 'absolute', right: 4, bottom: 2, fontSize: 10, fontWeight: '900', color: C.danger }}>✓ 지움</Text>
                     )}
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <View style={{ backgroundColor: tone.bg, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
+                      <View style={{ backgroundColor: tone.bg, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1, opacity: fade }}>
                         <Text style={{ fontSize: 9, fontWeight: '800', color: tone.fg }}>{m.type}</Text>
                       </View>
                       {/* ⚠️ 세 가지 상태를 구별해 보여 준다. 확정과 "확인
@@ -229,7 +232,7 @@ export function MatchGrid({
                           )
                           : <Text style={{ fontSize: 9, color: C.faint }}>경기 전</Text>}
                     </View>
-                    <View style={{ marginTop: 4 }}>
+                    <View style={{ marginTop: 4, opacity: fade }}>
                       {!!sideOf && <SideTag side={sideOf(m, 'A')} />}
                       <TeamText ids={m.teamA} nameOf={nameOf} genderOf={genderOf} me={me}
                         win={aWin} dim={m.score && !aWin} winColor={accent} />

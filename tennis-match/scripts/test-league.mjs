@@ -410,6 +410,13 @@ section('공개 웹 링크 — 내 경기 찾기');
   ok(/"mg' \+ \(i === nextIdx \? ' next' : ''\)/.test(lh) && /td\.mine/.test(lh) && /class="me"/.test(lh), '내 경기 목록(다음 경기 강조) · 대진표에서 내 칸·내 이름 칠하기');
 }
 
+section('끝난 경기는 흐리게 — 남은 내 경기가 먼저 보이게');
+{
+  const mg = readFileSync(new URL('../src/components/MatchGrid.jsx', import.meta.url), 'utf8');
+  ok(/const fade = done && !picked \? 0\.45 : 1;/.test(mg) && (mg.match(/opacity: fade/g) || []).length === 2, '앱: 끝난 경기는 유형·팀·이름을 흐리게(점수는 그대로)');
+  ok(/td\.done \.ty, table\.grid td\.done \.tp, table\.grid td\.done \.gn, table\.grid td\.done \.gv \{ opacity: \.45; \}/.test(readFileSync(new URL('../web/live.html', import.meta.url), 'utf8')), '웹: 같은 규칙');
+}
+
 section('DB 라이브러리 고장 — 하얀 화면 대신 앱을 다시 띄운다');
 {
   /* 2026-10-04 기록: 23:24:43 화면 /(tabs) → 23:24:44 "FIRESTORE (10.14.1) INTERNAL ASSERTION FAILED: Unexpected state".
