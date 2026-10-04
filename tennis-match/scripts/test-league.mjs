@@ -350,7 +350,7 @@ section('버튼 처리 오류가 앱을 끄지 않는다 · 알림창 안에서 
   ok(/if \(!root\) \{\s*const t = setTimeout\(\(\) => \{\s*breadcrumb\('빈 화면 → 홈으로'\);\s*router\.replace\('\/\(tabs\)'\);/.test(lay)
     && /return \(\) => \{ clearTimeout\(t\); clearTimeout\(t2\); \};/.test(lay), '빈 주소("/")에 0.8초 넘게 멈추면 홈 탭으로 — 하얀 화면에 갇히지 않게');
   ok(/restartApp\('빈 화면에서 홈으로 못 감'\), 3000/.test(lay) && /if \(rootMounts > 1\) setTimeout\(\(\) => restartApp\('화면이 새로 만들어짐'\)/.test(lay)
-    && /await markCleanExit\(\);\s*const U = await import\('expo-updates'\);\s*await U\.reloadAsync\(\);/.test(lay), '그래도 갇히면(홈으로 못 감·화면이 새로 만들어짐) 앱을 스스로 다시 시작');
+    && /await markRestart\(why, !sent\);\s*const U = await import\('expo-updates'\);\s*await U\.reloadAsync\(\);/.test(lay), '그래도 갇히면(홈으로 못 감·화면이 새로 만들어짐) 앱을 스스로 다시 시작');
   ok(/breadcrumb\(`앱 화면 시작 \$\{rootMounts\}`\)/.test(lay) && /breadcrumb\('앱 뒤로 감'\)/.test(lay), '화면 새로 만들기·앱 오가기도 동작 기록에');
   ok(/if \(!writing\) writing = startReadPrev\(\);/.test(cr) && /await startReadPrev\(\);/.test(cr), '지난 실행 기록은 이번 실행이 쓰기 전에 읽는다(덮어써서 사라지던 버그)');
   ok(/startStallWatch\(\)/.test(lay) && /where: 'stall'/.test(cr) && /if \(!appActive \|\| gap < 2500\) return;/.test(cr), '화면 멈춤 감지(2.5초 이상, 백그라운드 제외)');
@@ -362,6 +362,30 @@ section('버튼 처리 오류가 앱을 끄지 않는다 · 알림창 안에서 
   }
 
   ok(/reportCrash\(error, \{ where: 'global' \}\)\.then\(once, once\)/.test(cr) && /setTimeout\(once, 2000\)/.test(cr), '앱이 꺼지기 전에 기록이 서버에 닿을 틈(최대 2초)');
+}
+
+section('DB 라이브러리 고장 — 하얀 화면 대신 앱을 다시 띄운다');
+{
+  /* 2026-10-04 기록: 23:24:43 화면 /(tabs) → 23:24:44 "FIRESTORE (10.14.1) INTERNAL ASSERTION FAILED: Unexpected state".
+     Firebase 자체 버그(구독을 끊고 곧바로 다시 걸 때). 12.13 에서 고쳐졌다 → firebase 를 12 로 올림 */
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const major = Number(String(pkg.dependencies.firebase).replace(/^[^0-9]*/, '').split('.')[0]);
+  const minor = Number(String(pkg.dependencies.firebase).replace(/^[^0-9]*/, '').split('.')[1]);
+  ok(major > 12 || (major === 12 && minor >= 13), `firebase ${pkg.dependencies.firebase} — 구독 경쟁 버그가 고쳐진 12.13 이상`);
+  const { isDbBroken, dbBrokenText } = await import('../src/lib/crashReport.js');
+  ok(isDbBroken(new Error('FIRESTORE (10.14.1) INTERNAL ASSERTION FAILED: Unexpected state')), '예전 판 문구를 알아본다');
+  ok(isDbBroken('FIRESTORE (12.19.0) INTERNAL ASSERTION FAILED: Unexpected state (ID: ca9) CONTEXT: {}'), '새 판 문구(ID 붙음)도 알아본다');
+  ok(isDbBroken({ message: 'INTERNAL UNHANDLED ERROR: Error: x' }) && !isDbBroken(new Error('Missing or insufficient permissions.')) && !isDbBroken(null), '권한 오류 같은 보통 오류는 아니다');
+  eq('기록에는 FAILED: 뒤만 짧게', dbBrokenText('FIRESTORE (12.19.0) INTERNAL ASSERTION FAILED: Unexpected state (ID: ca9)'), 'Unexpected state (ID: ca9)');
+  const cr = readFileSync(new URL('../src/lib/crashReport.js', import.meta.url), 'utf8');
+  const lay = readFileSync(new URL('../app/_layout.jsx', import.meta.url), 'utf8');
+  ok(/onLog\(\(ev\) => \{ if \(isDbBroken\(ev\?\.message\)\) dbFatal\(ev\.message\); \}, \{ level: 'error' \}\)/.test(cr), '라이브러리가 고장을 알리는 순간을 듣는다(onLog)');
+  ok(/if \(dbFatalHook && isDbBroken\(error\)\) \{ dbFatal\(error\); return; \}/.test(cr), '화면 밖 치명적 오류가 DB 고장이면 앱을 내리지 않고 다시 띄우기로');
+  ok(/setDbFatalHook\(\(\) => \{\s*if \(restartedJustNow\(\)\) return;\s*setTimeout\(\(\) => restartApp\('DB 내부 오류', \{ dbBroken: true \}\), 300\);/.test(lay) && /watchDbFatal\(\);/.test(lay), '알아차리면 앱을 다시 띄운다 — 2분 안에 또면 되풀이하지 않는다');
+  ok(/if \(reportDbFatal\(error\)\) return;/.test(lay) && /isDbBroken\(error\) && !restartedJustNow\(\)/.test(lay), '오류 화면에서도 DB 고장이면 곧바로 다시 띄운다');
+  ok(/const sent = dbBroken \? false :/.test(lay) && /await markRestart\(why, !sent\);/.test(lay)
+    && /if \(last\?\.restart && last\.pending\)/.test(cr) && /자동 다시 시작\(지난 실행\)/.test(cr), 'DB 가 고장 나 못 보낸 기록은 다시 켜진 뒤에 보낸다');
+  ok(/return !!prevRun\?\.restart && at > 0 && Date\.now\(\) - at < 2 \* 60 \* 1000;/.test(cr), '되풀이 막기: 바로 전 실행이 2분 안에 스스로 다시 시작했는지');
 }
 
 section('자동으로 짠 뒤 손보기 · 대진 삭제 (2팀·3팀)');

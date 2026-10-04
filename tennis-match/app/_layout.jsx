@@ -20,6 +20,7 @@ import { C } from '../src/lib/theme';
 import { handleLateSocialUrl, checkPendingSocial } from '../src/lib/socialSignIn';
 import {
   reportCrash, installCrashHandler, setCrashPath, checkLastRun, markCleanExit, markRunning, startStallWatch, breadcrumb, recentCrumbs,
+  isDbBroken, setDbFatalHook, watchDbFatal, reportDbFatal, markRestart, restartedJustNow,
 } from '../src/lib/crashReport';
 
 /* ============================================================
@@ -32,7 +33,13 @@ import {
 export function ErrorBoundary({ error, retry }) {
   /* 그리는 순간에 남긴다 — 보내기(reportCrash)가 실패해도 다음 실행 기록에 '오류 화면'이 보이게 */
   breadcrumb(`오류 화면 ${String(error?.message || error || '').slice(0, 60)}`);
-  useEffect(() => { reportCrash(error, { where: 'boundary' }); }, [error]);
+  /* DB 라이브러리가 고장 난 것이면 [다시 시도]로는 못 살린다 — 곧바로 앱을 다시 띄운다(아래 restartApp).
+     2분 안에 또 그러면 되풀이하지 않고 이 화면을 그대로 둔다. */
+  const dbBroken = isDbBroken(error) && !restartedJustNow();
+  useEffect(() => {
+    if (reportDbFatal(error)) return;
+    reportCrash(error, { where: 'boundary' });
+  }, [error]);
   const restart = async () => {
     try { await markCleanExit(); const U = await import('expo-updates'); await U.reloadAsync(); } catch (e) { retry?.(); }
   };
@@ -46,9 +53,13 @@ export function ErrorBoundary({ error, retry }) {
   );
   return (
     <View style={{ flex: 1, backgroundColor: C.bg, justifyContent: 'center', padding: 24 }}>
-      <Text style={{ fontSize: 18, fontWeight: '800', color: C.text }}>화면을 여는 중에 문제가 생겼습니다</Text>
+      <Text style={{ fontSize: 18, fontWeight: '800', color: C.text }}>
+        {dbBroken ? '앱을 다시 시작하는 중입니다' : '화면을 여는 중에 문제가 생겼습니다'}
+      </Text>
       <Text style={{ fontSize: 13, color: C.sub, marginTop: 8, lineHeight: 20 }}>
-        [다시 시도]를 눌러 보고, 그래도 같으면 [앱 다시 시작]을 눌러 주세요. 무슨 문제였는지는 자동으로 기록되어 고치는 데 씁니다.
+        {dbBroken
+          ? '데이터 연결이 끊겨 앱을 새로 띄웁니다. 로그인은 그대로입니다. 몇 초 지나도 그대로면 [앱 다시 시작]을 눌러 주세요.'
+          : '[다시 시도]를 눌러 보고, 그래도 같으면 [앱 다시 시작]을 눌러 주세요. 무슨 문제였는지는 자동으로 기록되어 고치는 데 씁니다.'}
       </Text>
       <ScrollView style={{ maxHeight: 120, marginTop: 14, backgroundColor: C.fill, borderRadius: 10 }} contentContainerStyle={{ padding: 10 }}>
         <Text selectable style={{ fontSize: 11, color: C.faint }}>{String(error?.message || error || '')}</Text>
@@ -67,17 +78,18 @@ export function ErrorBoundary({ error, retry }) {
    로그인은 유지되므로 다시 켜지면 홈이 나온다. */
 let rootMounts = 0;
 let recovering = false;
-async function restartApp(why) {
+async function restartApp(why, { dbBroken = false } = {}) {
   if (recovering) return;
   recovering = true;
   try {
     breadcrumb(`앱 다시 시작 — ${why}`);
-    /* 무엇 때문에 갇혔는지 남긴다 — 동작 기록째로(최대 1.5초만 기다림) */
-    await Promise.race([
+    /* 무엇 때문에 갇혔는지 남긴다 — 동작 기록째로(최대 1.5초만 기다림).
+       DB 가 고장 난 때는 보내기도 안 되므로 기다리지 않는다 — 다음 실행이 켜지면서 대신 보낸다(markRestart) */
+    const sent = dbBroken ? false : await Promise.race([
       reportCrash({ message: `하얀 화면 탈출: ${why}`, stack: recentCrumbs() }, { where: 'recover' }),
-      new Promise((r) => setTimeout(r, 1500)),
+      new Promise((r) => setTimeout(() => r(false), 1500)),
     ]);
-    await markCleanExit();
+    await markRestart(why, !sent);
     const U = await import('expo-updates');
     await U.reloadAsync();
   } catch (e) {
@@ -116,6 +128,13 @@ export default function RootLayout() {
   /* 화면 밖에서 난 치명적 오류도 한 번 기록(src/lib/crashReport.js) · 지금 화면 경로를 기록에 붙인다 */
   useEffect(() => {
     installCrashHandler();
+    /* DB 라이브러리가 고장 나면(src/lib/crashReport.js 머리말) 하얀 화면에 갇히기 전에 앱을 다시 띄운다.
+       방금(2분 안) 다시 띄웠는데 또 그러면 되풀이하지 않는다 — 오류 화면의 버튼으로 넘긴다. */
+    setDbFatalHook(() => {
+      if (restartedJustNow()) return;
+      setTimeout(() => restartApp('DB 내부 오류', { dbBroken: true }), 300);
+    });
+    watchDbFatal();
     /* 지난번에 갑자기 꺼졌으면 마지막 화면·동작을 남긴다(src/lib/crashReport.js checkLastRun).
        뒤로 가면(백그라운드) 정상 종료로 적어 둔다 — 그 뒤 휴대폰이 앱을 정리해도 '갑자기 꺼짐'이 아니다. */
     checkLastRun();

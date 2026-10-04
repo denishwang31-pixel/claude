@@ -103,8 +103,9 @@ async function loadFs() {
   } catch (e) { fsMod = null; }
   return fsMod;
 }
+let restartMark = null;   // 스스로 다시 시작할 때 남기는 표시(아래 markRestart)
 function writeRun(running) {
-  const body = JSON.stringify({ running, at: Date.now(), startedAt: sessionStart, path: currentPath, crumbs });
+  const body = JSON.stringify({ running, at: Date.now(), startedAt: sessionStart, path: currentPath, crumbs, ...(restartMark || {}) });
   if (!writing) writing = startReadPrev();
   writing = writing.then(async () => {
     try {
@@ -131,6 +132,54 @@ export const recentCrumbs = () => crumbs.join('\n').slice(-1990);
 let appActive = true;
 export function markCleanExit() { appActive = false; return writeRun(false); }
 export function markRunning() { appActive = true; lastTick = Date.now(); return writeRun(true); }
+
+/** 앱이 스스로 다시 시작하기 직전 — 왜 그랬는지 적어 둔다.
+ *  pending 이면 지금 보내지 못한 것 — 다음 실행이 켜지자마자 대신 보낸다(checkLastRun). */
+export function markRestart(why, pending) {
+  appActive = false;
+  restartMark = { restart: String(why || ''), restartAt: Date.now(), pending: !!pending };
+  return writeRun(false);
+}
+
+/** 바로 전 실행이 2분 안에 스스로 다시 시작한 것이면 true — 다시 시작이 끝없이 되풀이되지 않게 */
+export function restartedJustNow() {
+  const at = Number(prevRun?.restartAt || 0);
+  return !!prevRun?.restart && at > 0 && Date.now() - at < 2 * 60 * 1000;
+}
+
+/* ============================================================
+   DB(Firestore) 라이브러리 내부 고장 — 2026-10-04 하얀 화면의 진짜 원인
+
+   기록: 23:24:43 화면 /(tabs) → 23:24:44 오류 화면 "FIRESTORE (10.14.1) INTERNAL ASSERTION FAILED: Unexpected state".
+   Firebase 라이브러리 자체의 버그다 — 구독(대회·일정 같은 화면이 데이터를 지켜보는 것)을 끊고
+   곧바로 다시 걸 때 서버 응답이 엉켜 라이브러리가 스스로 멈춘다(Firebase 12.13 에서 고쳐짐 —
+   firestore 4.14.1 "ca9 ... target creation race condition"). 그래서 firebase 를 12 로 올렸다.
+   한 번 멈추면 그 실행 안에서는 DB 를 더 쓸 수 없다(읽기·쓰기·오류 기록까지 전부) — 화면이 하얗게 남는다.
+   올린 뒤에도 같은 일이 생기면 갇혀 있지 않게, 알아차리는 즉시 앱을 다시 띄운다(app/_layout.jsx).
+   ============================================================ */
+export const isDbBroken = (e) => /INTERNAL ASSERTION FAILED|INTERNAL UNHANDLED ERROR|AsyncQueue is already failed/i
+  .test(String(e?.message || e || ''));
+/** 기록에 남길 짧은 모양 — 'FAILED:' 뒤만, 100자까지 */
+export const dbBrokenText = (e) => String(e?.message || e || '').replace(/^[\s\S]*?FAILED:\s*/, '').slice(0, 100);
+
+let dbFatalHook = null;
+let dbFatalSeen = false;
+/** DB 가 고장 났을 때 부를 것을 정한다(한 실행에 한 번만 부른다) */
+export function setDbFatalHook(fn) { dbFatalHook = fn; }
+function dbFatal(e) {
+  if (dbFatalSeen) return;
+  dbFatalSeen = true;
+  breadcrumb(`DB 내부 오류 ${dbBrokenText(e)}`);
+  try { dbFatalHook?.(e); } catch (x) { /* 그대로 */ }
+}
+/** 라이브러리가 고장을 '알리는' 순간을 듣는다 — 화면이 하얘지기 전에 */
+export async function watchDbFatal() {
+  try {
+    const { onLog } = await import('firebase/app');
+    onLog((ev) => { if (isDbBroken(ev?.message)) dbFatal(ev.message); }, { level: 'error' });
+  } catch (e) { /* 못 들어도 아래 처리기·ErrorBoundary 가 잡는다 */ }
+}
+export const reportDbFatal = (e) => { if (isDbBroken(e)) dbFatal(e); return isDbBroken(e); };
 
 /* ============================================================
    화면 멈춤 감지 — 앱은 살아 있는데 화면이 하얗고 뒤로가기가 안 먹을 때
@@ -215,6 +264,14 @@ export async function checkLastRun() {
       try { await F.writeAsStringAsync(histFile, JSON.stringify(hist)); } catch (e) { /* 그대로 */ }
     }
     await writeRun(true);
+    /* 지난 실행이 스스로 다시 시작했는데 그때 못 보낸 기록 — 지금 보낸다 */
+    if (last?.restart && last.pending) {
+      await whenSignedIn(() => reportCrash({
+        message: `자동 다시 시작(지난 실행): ${last.restart}`,
+        stack: (last.crumbs || []).join('\n').slice(-1990),
+      }, { where: 'recover', path: last.path || '' }));
+      return;
+    }
     if (!last?.running) return;
     /* ⚠️ 켜자마자(20초 안) 닫은 실행은 세지 않는다 — 업데이트를 받으려고 껐다 켜는 일이 잦다.
        그때는 시작 기록 하나뿐이라, 이걸 '갑자기 꺼짐'으로 올리면 거짓 경보만 쌓였다(2026-10-04 6건). */
@@ -226,16 +283,17 @@ export async function checkLastRun() {
       message: `앱이 갑자기 꺼짐(지난 실행 · ${when} KST) — 마지막 화면 ${last.path || '?'}`,
       stack: (last.crumbs || []).join('\n').slice(-1990),   // 넘치면 오래된 것부터 버린다 — 마지막 동작이 중요하다
     };
-    /* 켜자마자는 로그인 전이다 — 로그인될 때까지 잠깐씩 기다렸다가 보낸다(최대 1분) */
-    for (let i = 0; i < 20; i += 1) {
-      await new Promise((r) => setTimeout(r, 3000));
-      const { auth } = await import('../../firebaseConfig');
-      if (auth?.currentUser?.uid) {
-        await reportCrash(err, { where: 'last-run', path: last.path || '' });
-        return;
-      }
-    }
+    await whenSignedIn(() => reportCrash(err, { where: 'last-run', path: last.path || '' }));
   } catch (e) { /* 그대로 */ }
+}
+
+/* 켜자마자는 로그인 전이다 — 로그인될 때까지 잠깐씩 기다렸다가 보낸다(최대 1분) */
+async function whenSignedIn(fn) {
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const { auth } = await import('../../firebaseConfig');
+    if (auth?.currentUser?.uid) { await fn(); return; }
+  }
 }
 
 async function appInfo() {
@@ -293,6 +351,8 @@ export function installCrashHandler() {
     EU.setGlobalHandler((error, isFatal) => {
       const pass = () => { if (typeof prev === 'function') prev(error, isFatal); };
       if (!isFatal) { pass(); return; }
+      /* DB 라이브러리 고장이면 앱을 내리지 않고 다시 띄운다(setDbFatalHook) */
+      if (dbFatalHook && isDbBroken(error)) { dbFatal(error); return; }
       breadcrumb(`치명적 오류 ${String(error?.message || '').slice(0, 60)}`);
       let done = false;
       const once = () => { if (!done) { done = true; pass(); } };
@@ -337,6 +397,7 @@ export function later(fn, where = 'later', onFail) {
 }
 
 export default {
+  isDbBroken, dbBrokenText, setDbFatalHook, watchDbFatal, reportDbFatal, markRestart, restartedJustNow,
   crashPayload, reportCrash, installCrashHandler, setCrashPath, guard, later,
   breadcrumb, markCleanExit, markRunning, checkLastRun, startStallWatch, slowRender, sendRecentSessions, recentCrumbs,
 };
