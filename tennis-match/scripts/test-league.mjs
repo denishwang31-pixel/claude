@@ -450,7 +450,7 @@ section('청백전·팀 리그 외부 공개 보기 · 내 경기');
   ok(!/^import /m.test(readFileSync(new URL('../src/lib/teamLive.js', import.meta.url), 'utf8')), 'teamLive.js 는 다른 파일을 부르지 않는다(복사된 곳에서도 돈다)');
 
   ok(/t\.stage === 'team' \|\| t\.stage === 'league'/.test(fx) && /teamLiveView\(t, club\.name/.test(fx) && /t\.publicView !== true/.test(fx), '서버: 공개를 켠 청백전·팀 리그만 팀 대항 모양으로');
-  const html = readFileSync(new URL('../public/live.html', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../web/live.html', import.meta.url), 'utf8');
   ok(/d\.kind === 'teams'/.test(html) && /function renderTeams/.test(html) && /setTimeout\(load, 30000\)/.test(html), '웹: 팀 점수판·타임별 대진, 30초마다 새로 읽기');
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
   ok(/t\.stage === 'team' \|\| t\.stage === 'league'/.test(ts) && (ts.match(/me=\{me\}\n/g) || []).length >= 2, '앱: 청백전·팀 리그에도 [외부 공개 링크], 내 id 를 넘긴다');

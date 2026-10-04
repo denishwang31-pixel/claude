@@ -8,7 +8,7 @@
 <!--
   대회 외부 공개 페이지 — /live?c=클럽&t=대회
 
-  운영진이 앱에서 [외부 공개 링크]를 켜고 보낸 주소. 앱이 없는 외부 참가자·
+  운영진이 앱에서 [외부 공개 링크]를 켜고 보낸 주소. 청백전(2팀·3팀)·팀 리그는 팀 점수판·타임별 대진. 앱이 없는 외부 참가자·
   관중이 카톡 안 브라우저로 연다. 서버 함수 liveTournament(/api/live)가
   공개된 대회만, 이름·조·시간표·결과·순위만 돌려준다.
 
@@ -53,6 +53,21 @@
   .teams .win { color: var(--green); font-weight: 800; }
   .sc { font-size: 16px; font-weight: 800; }
   .sc.wait { font-size: 12px; color: var(--faint); font-weight: 600; }
+  /* 청백전·팀 리그 — 팀 점수판 · 타임별 대진 */
+  .tp { display: inline-block; padding: 1px 7px; border-radius: 5px; font-size: 12px; font-weight: 800; color: #fff; border: 1.5px solid transparent; }
+  .tp.white { background: #fff !important; color: #111827; border-color: #111827; }
+  .board { display: flex; align-items: center; justify-content: center; gap: 14px; background: var(--ink); color: #fff; border-radius: 16px; padding: 16px; margin-top: 14px; }
+  .board .side { text-align: center; min-width: 90px; }
+  .board .side b { display: block; font-size: 40px; line-height: 1.1; }
+  .board .side.lead b { color: #A3E635; }
+  .board .colon { font-size: 22px; opacity: .5; }
+  .rnd { font-size: 13px; font-weight: 800; color: var(--green); margin: 10px 0 2px; }
+  .tm { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--fill); }
+  .tm .ct { width: 54px; font-size: 12px; color: var(--sub); font-weight: 700; }
+  .tm .ct span { display: block; color: var(--faint); font-weight: 600; font-size: 11px; }
+  .tm .sides { flex: 1; font-size: 13.5px; line-height: 1.7; }
+  .tm .sides .win { color: var(--green); font-weight: 800; }
+  .sum { font-size: 13px; color: var(--sub); margin-top: 6px; }
   /* 본선 사다리 — 앱의 BracketTree 와 같은 모양(위·아래에서 가운데 결승으로) */
   .lad-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
   .lad { position: relative; }
@@ -170,8 +185,57 @@
   }
   function koAvail() { return Math.max(260, app.clientWidth - 32 - 30); }   // .wrap 좌우 16 + 카드 안쪽 15
 
+  /* 청백전(2팀·3팀)·팀 리그 — 서버 shared/teamLive.js 의 모양(kind 'teams') */
+  function teamPill(tm) {
+    if (!tm) return '';
+    return '<span class="tp' + (tm.white ? ' white' : '') + '" style="background:' + esc(tm.color) + '">' + esc(tm.name) + '</span>';
+  }
+  function renderTeams(d) {
+    var byIdx = {};
+    d.teams.forEach(function (x) { byIdx[x.idx] = x; });
+    var h = '<div class="club">' + esc(d.club) + '</div><h1>' + esc(d.name) + '</h1>' +
+      '<div class="meta">' + esc(d.date) + ' · ' + d.done + '/' + d.total + '경기 끝남</div>' +
+      '<div class="live"><span class="dot"></span>' + (d.status === 'finished' ? '대회 종료' : '실시간 — 30초마다 새로 고침') + '</div>';
+    var st = d.standings;
+    if (st.length === 2) {
+      /* 2팀 — 큰 점수판(이긴 경기 수) */
+      var A = st.filter(function (r) { return r.idx === 0; })[0] || st[0];
+      var B = st.filter(function (r) { return r.idx === 1; })[0] || st[1];
+      h += '<div class="board">' +
+        '<div class="side' + (A.wins > B.wins ? ' lead' : '') + '">' + teamPill(A) + '<b>' + A.wins + '</b></div>' +
+        '<div class="colon">:</div>' +
+        '<div class="side' + (B.wins > A.wins ? ' lead' : '') + '">' + teamPill(B) + '<b>' + B.wins + '</b></div></div>' +
+        '<div class="sum" style="text-align:center">총 게임 ' + A.gf + ' : ' + B.gf + (A.draws ? ' · 무승부 ' + A.draws : '') + '</div>';
+    }
+    h += '<div class="card"><h2>팀 순위</h2><table><tr><th>순위</th><th class="l">팀</th><th>경기</th><th>승</th><th>무</th><th>패</th><th>득실</th></tr>' +
+      st.map(function (r) {
+        return '<tr><td><span class="rk' + (r.rank === 1 && r.played ? ' up' : '') + '">' + r.rank + '</span></td>' +
+          '<td class="l">' + teamPill(r) + ' <small style="color:var(--faint)">' + r.players + '명</small></td>' +
+          '<td>' + r.played + '</td><td class="w">' + r.wins + '</td><td>' + r.draws + '</td><td>' + r.losses + '</td>' +
+          '<td class="' + (r.diff > 0 ? 'plus' : r.diff < 0 ? 'minus' : '') + '">' + (r.diff > 0 ? '+' : '') + r.diff + '</td></tr>';
+      }).join('') + '</table><p class="note">순위: 이긴 경기 → 게임 득실 → 딴 게임</p></div>';
+    var order = ['남복', '여복', '혼복', '잡복', '남단식', '여단식', '혼성단식'];
+    var typeLine = order.filter(function (k) { return d.types[k]; }).map(function (k) { return k + ' ' + d.types[k]; }).join(' · ');
+    h += '<div class="card"><h2>대진 · 결과</h2>' + (typeLine ? '<div class="sum">총 ' + d.total + '경기 · ' + esc(typeLine) + '</div>' : '');
+    d.rounds.forEach(function (r) {
+      h += '<div class="rnd">' + r.round + '타임</div>';
+      r.matches.forEach(function (m) {
+        var aw = m.score && m.score.a > m.score.b;
+        var bw = m.score && m.score.b > m.score.a;
+        h += '<div class="tm"><div class="ct">코트 ' + esc(m.court) + '<span>' + esc(m.type) + '</span></div>' +
+          '<div class="sides"><div class="' + (aw ? 'win' : '') + '">' + teamPill(byIdx[m.aTeam]) + ' ' + esc(m.a || '—') + '</div>' +
+          '<div class="' + (bw ? 'win' : '') + '">' + teamPill(byIdx[m.bTeam]) + ' ' + esc(m.b || '—') + '</div></div>' +
+          (m.score ? '<div class="sc">' + m.score.a + ':' + m.score.b + '</div>' : '<div class="sc wait">대기</div>') + '</div>';
+      });
+    });
+    if (!d.rounds.length) h += '<p class="note">아직 대진이 없습니다.</p>';
+    h += '</div><p class="foot">Court · 테니스 클럽 운영 앱</p>';
+    app.innerHTML = h;
+  }
+
   function render() {
     var d = data;
+    if (d.kind === 'teams') { renderTeams(d); return; }
     var tabs = [];
     if (d.bracket.length) tabs.push(['ko', '본선']);
     if (d.groups.length) tabs.push(['all', '전체 순위']);
