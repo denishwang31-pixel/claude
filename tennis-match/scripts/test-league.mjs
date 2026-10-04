@@ -20,7 +20,7 @@ import {
   checkLeagueMatch, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft, sideSize,
 } from '../src/lib/teamLeague.js';
 import { guard, ALERT_GAP_MS } from '../src/lib/crashReport.js';
-import { teamLiveView } from '../functions/shared/teamLive.js';
+import { teamLiveView } from '../src/lib/teamLive.js';
 import {
   slotSize, blankDraw, labelOf, toggleInSlot, busyInRound, playCounts, reviewDraw,
   sameDraw, draftChanges,
@@ -446,6 +446,9 @@ section('청백전·팀 리그 외부 공개 보기 · 내 경기');
   const v3 = teamLiveView({ stage: 'team', format: 'club_match', team: { teamA: A, teamB: B, opponentClub: '한강', matches: [] } });
   eq('교류전 이름', v3.teams.map((x) => x.name).join(','), '우리 클럽,한강');
   const fx = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  ok(/'teamLive\.js'/.test(readFileSync(new URL('./copy-functions-shared.mjs', import.meta.url), 'utf8')), '배포 때 서버로 복사하는 목록에 teamLive.js');
+  ok(!/^import /m.test(readFileSync(new URL('../src/lib/teamLive.js', import.meta.url), 'utf8')), 'teamLive.js 는 다른 파일을 부르지 않는다(복사된 곳에서도 돈다)');
+
   ok(/t\.stage === 'team' \|\| t\.stage === 'league'/.test(fx) && /teamLiveView\(t, club\.name/.test(fx) && /t\.publicView !== true/.test(fx), '서버: 공개를 켠 청백전·팀 리그만 팀 대항 모양으로');
   const html = readFileSync(new URL('../public/live.html', import.meta.url), 'utf8');
   ok(/d\.kind === 'teams'/.test(html) && /function renderTeams/.test(html) && /setTimeout\(load, 30000\)/.test(html), '웹: 팀 점수판·타임별 대진, 30초마다 새로 읽기');
