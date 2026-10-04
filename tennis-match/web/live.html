@@ -81,7 +81,9 @@
   .ty { font-size: 10px; font-weight: 800; padding: 1px 5px; border-radius: 4px; background: var(--fill); color: var(--sub); }
   .ty.혼복 { background: #ECFCCB; color: #3F6212; } .ty.남복 { background: #F0F9FF; color: #075985; }
   .ty.여복 { background: #FFF1F2; color: #BE123C; } .ty.잡복 { background: #FEF3C7; color: #92400E; }
-  .gs { font-size: 13px; font-weight: 900; color: var(--green); } .gs.wait { font-size: 10px; color: var(--faint); font-weight: 600; }
+  .gs { font-size: 14px; font-weight: 900; color: #fff; padding: 1px 7px; border-radius: 6px; } .gs.wait { font-size: 10px; color: var(--faint); font-weight: 600; padding: 0; }
+  /* 끝난 경기 — 이긴 팀 색으로 옅게 칠하고 왼쪽 띠·점수 상자(앱 대진표와 같은 규칙) */
+  table.grid td.done { border-left-width: 5px; }
   .gn { font-size: 12px; line-height: 1.45; margin-top: 2px; } .gn.win { color: var(--green); font-weight: 800; }
   .gv { font-size: 9px; color: var(--faint); margin: 2px 0; }
   .tp.sm { font-size: 10px; padding: 0 5px; }
@@ -244,15 +246,28 @@
       });
     });
     if (cols.every(function (x) { return x.n; })) cols.sort(function (a, b) { return a.n - b.n; });
+    /* 끝난 경기의 색 — 이긴 팀 색(백팀은 검정), 무승부 회색. 칸은 그 색을 옅게(끝 두 자리 = 투명도) */
+    var accentOf = function (m) {
+      if (!m.score) return '';
+      if (m.score.a === m.score.b) return '#64748b';
+      var w = byIdx[m.score.a > m.score.b ? m.aTeam : m.bTeam];
+      return !w ? '#0E6B4F' : w.white ? '#111827' : w.color;
+    };
     var cell = function (m) {
       var aw = m.score && m.score.a > m.score.b;
       var bw = m.score && m.score.b > m.score.a;
+      var ac = accentOf(m);
       var pill = function (tm) { return tm ? '<span class="tp sm' + (tm.white ? ' white' : '') + '" style="background:' + esc(tm.color) + '">' + esc(tm.name) + '</span>' : ''; };
       return '<div class="gt"><span class="ty ' + esc(m.type) + '">' + esc(m.type) + '</span>' +
-        (m.score ? '<span class="gs">' + m.score.a + ':' + m.score.b + '</span>' : '<span class="gs wait">대기</span>') + '</div>' +
-        pill(byIdx[m.aTeam]) + '<div class="gn' + (aw ? ' win' : '') + '">' + esc(m.a || '—') + '</div>' +
+        (m.score ? '<span class="gs" style="background:' + esc(ac) + '">' + m.score.a + ':' + m.score.b + '</span>' : '<span class="gs wait">경기 전</span>') + '</div>' +
+        pill(byIdx[m.aTeam]) + '<div class="gn"' + nameStyle(m, aw) + '>' + esc(m.a || '—') + '</div>' +
         '<div class="gv">vs</div>' +
-        pill(byIdx[m.bTeam]) + '<div class="gn' + (bw ? ' win' : '') + '">' + esc(m.b || '—') + '</div>';
+        pill(byIdx[m.bTeam]) + '<div class="gn"' + nameStyle(m, bw) + '>' + esc(m.b || '—') + '</div>';
+    };
+    /* 이긴 쪽 이름은 그 팀 색으로 굵게, 진 쪽은 흐리게 */
+    var nameStyle = function (m, won) {
+      if (!m.score) return '';
+      return won ? ' style="color:' + esc(accentOf(m)) + ';font-weight:800"' : ' style="color:var(--faint)"';
     };
     if (d.rounds.length) {
       h += '<div class="gscroll"><table class="grid"><tr><th></th>' + cols.map(function (c, i) {
@@ -261,10 +276,11 @@
       d.rounds.forEach(function (r) {
         h += '<tr><td class="r">' + r.round + 'T</td>' + cols.map(function (c) {
           var m = r.matches.filter(function (x) { return (x.c ? 'n' + x.c : 'l' + x.court) === c.key; })[0];
-          return m ? '<td>' + cell(m) + '</td>' : '<td class="e">—</td>';
+          var ac = m ? accentOf(m) : '';
+          return m ? (ac ? '<td class="done" style="background:' + esc(ac) + '1F;border-left-color:' + esc(ac) + '">' : '<td>') + cell(m) + '</td>' : '<td class="e">—</td>';
         }).join('') + '</tr>';
       });
-      h += '</table></div><p class="note">표가 넓으면 옆으로 밀어 보세요 · 초록 글씨 = 이긴 쪽</p>';
+      h += '</table></div><p class="note">표가 넓으면 옆으로 밀어 보세요 · 색칠된 칸 = 끝난 경기(이긴 팀 색) · 흰 칸 = 경기 전</p>';
     } else {
       h += '<p class="note">아직 대진이 없습니다.</p>';
     }

@@ -389,6 +389,8 @@ section('자동으로 짠 뒤 손보기 · 대진 삭제 (2팀·3팀)');
     '타임별 출전 현황: 팀별로 묶어(팀 이름 머리줄) 보여 준다');
   ok(/export function teamSolid/.test(read('MatchGrid.jsx')) && /WHITE_TEAM/.test(read('MatchGrid.jsx')) && /borderWidth: 2, borderColor: t\.border/.test(read('MatchGrid.jsx')),
     '팀 표시: 꽉 찬 색 상자(백팀은 흰 상자+검은 테두리) · 출전 현황은 팀마다 테두리 상자');
+  ok(/const tint = `\$\{accent\}1F`;/.test(read('MatchGrid.jsx')) && /borderLeftColor: done && !picked \? accent/.test(read('MatchGrid.jsx')) && />경기 전</.test(read('MatchGrid.jsx')),
+    '끝난 경기: 이긴 팀 색으로 옅게 칠하고 왼쪽 띠·색 점수 상자, 입력 전은 흰 칸 \'경기 전\'');
   const mb = read('MatchBoard.jsx');
   ok(/'결과 입력'/.test(mb) && /'대진표 수정'/.test(mb) && /대진 삭제/.test(mb) && /경기 추가/.test(mb), '버튼 줄: 결과 입력 · 대진표 수정(+ 경기 추가 · 대진 삭제)');
   ok(/<LeagueMatchEditor/.test(read('TeamMatchScreen.jsx')) && /twoTeamSide/.test(read('TeamMatchScreen.jsx')), '2팀 청백전에도 경기 고치기 화면');
@@ -456,6 +458,7 @@ section('청백전·팀 리그 외부 공개 보기 · 내 경기');
   const html = readFileSync(new URL('../web/live.html', import.meta.url), 'utf8');
   ok(/d\.kind === 'teams'/.test(html) && /function renderTeams/.test(html) && /setTimeout\(load, 30000\)/.test(html), '웹: 팀 점수판·타임별 대진, 30초마다 새로 읽기');
   ok(/document\.hidden/.test(html) && /visibilitychange/.test(html) && /s-maxage=15/.test(fx), '안 보는 동안은 새로 읽기를 쉬고, 같은 답은 15초 동안 나눠 쓴다(비용)');
+  ok(/var accentOf = function/.test(html) && /td class="done"/.test(html), '웹도 끝난 경기를 이긴 팀 색으로');
   ok(/table class="grid"/.test(html) && /코트 ' \+ esc\(c\.label\)/.test(html), '웹: 대진은 앱과 같은 대진표(가로 코트 × 세로 타임)');
   eq('대진표 열 순서용 코트 번호', v.rounds[0].matches[0].c, 1);
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');

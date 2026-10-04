@@ -28,7 +28,7 @@ const HEAD_W = 46;    // 타임 열 너비
 const nameColor = (gender) => (gender === 'F' ? C.female : gender === 'M' ? C.male : C.text);
 
 /** 팀 이름 표기 (단식이면 한 명). 내 이름은 배경까지 칠해 도드라지게 한다 */
-function TeamText({ ids, nameOf, genderOf, me, win, dim }) {
+function TeamText({ ids, nameOf, genderOf, me, win, dim, winColor }) {
   return (
     <View style={{
       flexDirection: 'row', flexWrap: 'wrap',
@@ -49,7 +49,7 @@ function TeamText({ ids, nameOf, genderOf, me, win, dim }) {
                    칸 배경(연초록) 위에서도 확실히 떠올라야 하므로
                    성별 색 대신 흰 글씨를 쓴다 — 내 이름을 찾는 것이
                    먼저고, 내 성별은 이미 알고 있다. */
-                color: mine ? '#fff' : dim ? C.faint : win ? C.green : nameColor(g),
+                color: mine ? '#fff' : dim ? C.faint : win ? (winColor || C.green) : nameColor(g),
                 backgroundColor: mine ? C.green : 'transparent',
                 borderRadius: mine ? 4 : 0,
                 paddingHorizontal: mine ? 4 : 0,
@@ -176,13 +176,23 @@ export function MatchGrid({
                 /* 내가 뛰는 칸 — 표가 넓어도 내 경기부터 눈에 들어와야 한다 */
                 const isMine = !!me && [...m.teamA, ...m.teamB].includes(me);
                 const picked = !!selected && selected.includes(m.id);
+                /* 끝난 경기는 한눈에 — 칸을 이긴 팀 색으로 옅게 칠하고, 왼쪽에 그 색 띠,
+                   점수는 그 색 상자에 흰 굵은 글씨. 입력 전은 흰 칸에 '경기 전'(2026-10-04 앱 주인).
+                   팀 대회가 아니면(sideOf 없음) 초록, 무승부는 회색 */
+                const done = !!m.score;
+                const draw = done && !aWin && !bWin;
+                const winSolid = done && !draw && sideOf ? teamSolid(sideOf(m, aWin ? 'A' : 'B')) : null;
+                const accent = draw ? '#64748b' : winSolid ? (winSolid.bg === '#ffffff' ? '#111827' : winSolid.bg) : C.green;
+                const tint = `${accent}1F`;
                 return (
                   <Pressable key={c} onPress={() => onPressMatch?.(m)}
                     style={{
                       width: CELL_W, minHeight: 62,
-                      backgroundColor: picked ? C.dangerBg : isMine ? C.greenSoft : '#fff',
+                      backgroundColor: picked ? C.dangerBg : done ? tint : isMine ? C.greenSoft : '#fff',
                       borderWidth: picked || isMine ? 2 : 1,
                       borderColor: picked ? C.danger : isMine ? C.green : '#f5f5f4',
+                      borderLeftWidth: done && !picked ? 5 : picked || isMine ? 2 : 1,
+                      borderLeftColor: done && !picked ? accent : picked ? C.danger : isMine ? C.green : '#f5f5f4',
                       padding: picked || isMine ? 5 : 6,
                     }}>
                     {picked && (
@@ -198,23 +208,27 @@ export function MatchGrid({
                           두 팀이 확인하는 방식 자체가 여기서 무너진다.
                           pending 을 안 넘기면 예전과 똑같이 동작한다. */}
                       {m.score
-                        ? <Text style={{ fontSize: 10, fontWeight: '700', color: C.green }}>{m.score.a}:{m.score.b}</Text>
+                        ? (
+                          <View style={{ backgroundColor: accent, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 }}>
+                            <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>{m.score.a}:{m.score.b}</Text>
+                          </View>
+                        )
                         : pending?.[m.id]
                           ? (
                             <Text style={{ fontSize: 9, fontWeight: '800', color: C.warn }}>
                               {pending[m.id].a}:{pending[m.id].b} 확인
                             </Text>
                           )
-                          : <Text style={{ fontSize: 9, color: C.faint }}>기록전</Text>}
+                          : <Text style={{ fontSize: 9, color: C.faint }}>경기 전</Text>}
                     </View>
                     <View style={{ marginTop: 4 }}>
                       {!!sideOf && <SideTag side={sideOf(m, 'A')} />}
                       <TeamText ids={m.teamA} nameOf={nameOf} genderOf={genderOf} me={me}
-                        win={aWin} dim={m.score && !aWin} />
+                        win={aWin} dim={m.score && !aWin} winColor={accent} />
                       <Text style={{ fontSize: 8, color: C.faint, textAlign: 'center', marginVertical: 1 }}>vs</Text>
                       {!!sideOf && <SideTag side={sideOf(m, 'B')} />}
                       <TeamText ids={m.teamB} nameOf={nameOf} genderOf={genderOf} me={me}
-                        win={bWin} dim={m.score && !bWin} />
+                        win={bWin} dim={m.score && !bWin} winColor={accent} />
                     </View>
                   </Pressable>
                 );
