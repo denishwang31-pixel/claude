@@ -396,6 +396,9 @@ section('자동으로 짠 뒤 손보기 · 대진 삭제 (2팀·3팀)');
     '팀 표시: 꽉 찬 색 상자(백팀은 흰 상자+검은 테두리) · 출전 현황은 팀마다 테두리 상자');
   ok(/const tint = `\$\{accent\}\$\{whiteWin \? '14' : '1F'\}`;/.test(read('MatchGrid.jsx')) && /borderLeftColor: done && !picked \? accent/.test(read('MatchGrid.jsx')) && />경기 전</.test(read('MatchGrid.jsx')),
     '끝난 경기: 이긴 팀 색으로 옅게 칠하고 왼쪽 띠·색 점수 상자, 입력 전은 흰 칸 \'경기 전\'');
+  const ab = read('AdBanner.jsx');
+  ok(/if \(list\.length < 2 \|\| !focused \|\| !active\) return undefined;/.test(ab) && /seenThisRun\.has\(ad\.id\)/.test(ab),
+    '광고 배너: 보고 있는 탭·앱이 앞일 때만 돌고, 노출은 광고마다 실행당 한 번만 기록');
   const mb = read('MatchBoard.jsx');
   ok(/'결과 입력'/.test(mb) && /'대진표 수정'/.test(mb) && /대진 삭제/.test(mb) && /경기 추가/.test(mb), '버튼 줄: 결과 입력 · 대진표 수정(+ 경기 추가 · 대진 삭제)');
   ok(/<LeagueMatchEditor/.test(read('TeamMatchScreen.jsx')) && /twoTeamSide/.test(read('TeamMatchScreen.jsx')), '2팀 청백전에도 경기 고치기 화면');

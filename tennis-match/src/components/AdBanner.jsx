@@ -3,24 +3,47 @@
    옐로우홀처럼 목록 위에 얇게 얹히는 형태(strip)와, 카드형(card) 두 가지를 쓴다.
    이동 링크는 src/lib/ads.js 가 만든다 — 나중에 제휴 코드를 붙일 때
    이 파일은 손대지 않아도 된다. */
-import React, { useEffect, useState } from 'react';
-import { View, Text, Image, Pressable } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, Image, Pressable, AppState } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { adsForSlot, openAd, logImpression, sellerName, AD_SLOTS } from '../lib/ads';
 import { C, R, SHADOW } from '../lib/theme';
+
+/* 이번 실행에서 이미 집계한 광고 — 노출은 광고마다 실행당 한 번만 센다 */
+const seenThisRun = new Set();
 
 export function AdBanner({ ads, slot = AD_SLOTS.HOME, interval = 5000, variant = 'card', style }) {
   const list = adsForSlot(ads, slot);
   const [i, setI] = useState(0);
+  const [focused, setFocused] = useState(true);
+  const [active, setActive] = useState(AppState.currentState === 'active');
+
+  /* ⚠️ 보고 있는 탭에서, 앱이 앞에 있을 때만 돈다.
+     하단 탭(홈·일정·대진)은 다른 탭으로 가도 화면이 살아 있어서, 예전에는 세 탭의 배너가
+     안 보이는 채로 5초마다 사진을 바꾸고 노출을 DB 에 써 댔다(분당 30건 넘게). 앱을 오래 켜 둘수록
+     쌓이는 일이라 '열어 둔 시간이 길면 하얀 화면' 의심 대상이었다(2026-10-04 앱 주인). */
+  useFocusEffect(useCallback(() => {
+    setFocused(true);
+    return () => setFocused(false);
+  }, []));
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => setActive(st === 'active'));
+    return () => sub?.remove?.();
+  }, []);
 
   useEffect(() => {
-    if (list.length < 2) return undefined;
+    if (list.length < 2 || !focused || !active) return undefined;
     const t = setInterval(() => setI((v) => (v + 1) % list.length), interval);
     return () => clearInterval(t);
-  }, [list.length, interval]);
+  }, [list.length, interval, focused, active]);
 
   const ad = list.length ? list[i % list.length] : null;
 
-  useEffect(() => { if (ad?.id) logImpression(ad.id); }, [ad?.id]);
+  useEffect(() => {
+    if (!ad?.id || !focused || seenThisRun.has(ad.id)) return;
+    seenThisRun.add(ad.id);
+    logImpression(ad.id);
+  }, [ad?.id, focused]);
 
   if (!ad) return null;
   const press = () => openAd(ad, slot);
