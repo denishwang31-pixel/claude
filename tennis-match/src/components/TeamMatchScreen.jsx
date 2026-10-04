@@ -15,7 +15,7 @@ import {
   splitTeams, teamStrength, generateTeamMatches, teamScore, teamPlayerStats,
 } from '../lib/teamMatch';
 import {
-  moveToTeam, UNASSIGNED, withTeamIdx, twoTeamSide,
+  moveToTeam, UNASSIGNED, withTeamIdx, twoTeamSide, actualMatchType, gridExtent,
   addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
@@ -23,9 +23,9 @@ import { courtLabel } from '../lib/courtNames';
 import { CourtNamesEditor } from './CourtNamesEditor';
 import { guard, later } from '../lib/crashReport';
 import { TOURNAMENT_FORMAT, TEAM_SIDES, BUSU_KEYS, busuToNtrp } from '../lib/constants';
-import { MatchGrid } from './MatchGrid';
+import { MatchGrid, AttendanceGrid } from './MatchGrid';
 import { AppButton, Segmented, Touchable } from './native';
-import { BoardModeBar, ScoreSheet, BOARD_MODE } from './MatchBoard';
+import { BoardModeBar, ScoreSheet, BOARD_MODE, Fold } from './MatchBoard';
 import { Card, SectionTitle, Chip, Field, Divider, EmptyState, CheckRow } from './ui';
 import { Label } from './pickers';
 import { C, S, R, F } from '../lib/theme';
@@ -61,7 +61,18 @@ export function TeamMatch({
   /* 경기 손보기 — 3팀 청백전과 같은 고치기 화면(LeagueMatchEditor)을 쓴다 */
   const [editing, setEditing] = useState(null);
   /* 대진표 위 [결과 입력]·[대진표 수정] — 고른 뒤 경기를 누르면 그 일을 한다(components/MatchBoard.jsx) */
-  const [mode, setMode] = useState(BOARD_MODE.NONE);
+  const [mode, setModeRaw] = useState(BOARD_MODE.NONE);
+  /* 여러 경기 골라 지우기 — [대진표 수정] 안에서 */
+  const [multi, setMultiRaw] = useState(false);
+  const [pickedGames, setPickedGames] = useState([]);
+  const setMulti = (on) => { setMultiRaw(on); setPickedGames([]); };
+  const setMode = (m) => { setModeRaw(m); setMulti(false); };
+  /* 접었다 펴는 구역 — 대진이 이미 있으면 설정들은 접힌 채로 시작한다 */
+  const hasDrawAtOpen = (saved?.matches || []).length > 0;
+  const [openSetup, setOpenSetup] = useState(!hasDrawAtOpen);
+  const [openTeams, setOpenTeams] = useState(!hasDrawAtOpen);
+  const [openConfig, setOpenConfig] = useState(!hasDrawAtOpen);
+  const [openAttend, setOpenAttend] = useState(false);
   const [scoring, setScoring] = useState(null);
   const [sameSexOnly, setSameSexOnly] = useState(false);
   const [nRounds, setNRounds] = useState(String(rounds || 4));
@@ -95,6 +106,9 @@ export function TeamMatch({
     [...teamA, ...teamB, ...unassigned].forEach((p) => { map[p.id] = p.gender; });
     return (id) => map[id] || '';
   }, [teamA, teamB, unassigned]);
+
+  /* 대진표·집계에 쓰는 경기 — 유형은 실제로 선 선수 성별로 */
+  const shown = useMemo(() => matches.map((m) => ({ ...m, type: actualMatchType(m, genderOf) })), [matches, genderOf]);
 
   const nameOf = useMemo(() => {
     const map = {};
@@ -220,16 +234,6 @@ export function TeamMatch({
 
   /* ---- 손으로 넣기·고치기·지우기 ---- */
   const both = [teamA, teamB];
-  /** 2팀 경기의 유형 이름 — 자동 편성과 같은 규칙(남복·여복·혼복·잡복) */
-  const genderIn = (id) => [...teamA, ...teamB].find((p) => p.id === id)?.gender === 'F' ? 'F' : 'M';
-  const typeName = (m) => {
-    if (m.typeKey === 'SG') return '단식';
-    const all = [...m.teamA, ...m.teamB].map(genderIn);
-    if (all.every((g) => g === 'M')) return '남복';
-    if (all.every((g) => g === 'F')) return '여복';
-    const mixed = (ids) => new Set(ids.map(genderIn)).size === 2;
-    return mixed(m.teamA) && mixed(m.teamB) ? '혼복' : '잡복';
-  };
   const openAdd = () => setEditing({ id: null, draft: emptyDraft(matches, { courts, rounds: Number(nRounds) || 4 }, 2) });
   const saveEdit = (id, draft) => {
     const lm = withTeamIdx(matches);
@@ -237,7 +241,7 @@ export function TeamMatch({
       ? updateLeagueMatch(both, lm, id, draft, { courtName: cn })
       : addLeagueMatch(both, lm, draft, undefined, { courtName: cn });
     if (r.error) return r.error;
-    const next = r.matches.map((m) => { const x = twoTeamSide(m); return { ...x, type: typeName(x) }; });
+    const next = r.matches.map((m) => { const x = twoTeamSide(m); return { ...x, type: actualMatchType(x, genderOf) }; });
     setMatches(next);
     persist({ matches: next });
     setEditing(null);
@@ -263,6 +267,10 @@ export function TeamMatch({
   /** 경기를 눌렀을 때 — 위에서 고른 버튼에 따라 */
   const onPressMatch = (m) => {
     if (!isAdmin) return;
+    if (mode === BOARD_MODE.EDIT && multi) {
+      setPickedGames((cur) => (cur.includes(m.id) ? cur.filter((x) => x !== m.id) : [...cur, m.id]));
+      return;
+    }
     if (mode === BOARD_MODE.EDIT) { openEdit(m); return; }
     if (mode === BOARD_MODE.SCORE) {
       setScoring({
@@ -275,6 +283,27 @@ export function TeamMatch({
     }
     flash('대진표 위에서 [결과 입력] 또는 [대진표 수정]을 먼저 누르세요');
   };
+  /** 빈칸을 눌렀을 때 — 그 타임·코트에 경기 넣기 */
+  const addAt = (round, court) => {
+    if (!(isAdmin && mode === BOARD_MODE.EDIT && !multi)) return;
+    setEditing({ id: null, draft: { ...emptyDraft(matches, { courts, rounds: Number(nRounds) || 4 }, 2), round, court } });
+  };
+  /** 고른 경기만 지우기 — 그 자리는 빈칸으로 남는다 */
+  const deletePicked = () => Alert.alert(`${pickedGames.length}경기를 지울까요?`,
+    '지운 자리는 대진표에 빈칸으로 남습니다. 빈칸을 누르면 다시 경기를 넣을 수 있습니다.',
+    [{ text: '취소', style: 'cancel' }, {
+      text: '지우기',
+      style: 'destructive',
+      onPress: guard(() => {
+        const n = pickedGames.length;
+        const next = matches.filter((m) => !pickedGames.includes(m.id));
+        setMatches(next);
+        persist({ matches: next });
+        setMulti(false);
+        flash(`${n}경기를 지웠습니다`);
+      }, 'team-delete-picked', fail),
+    }]);
+
   const saveScore = guard((score) => {
     const id = scoring?.match?.id;
     setScoring(null);
@@ -376,17 +405,10 @@ export function TeamMatch({
         </Card>
       )}
 
-      {/* 팀 편성 */}
-      <SectionTitle
-        hint={selectable ? '회원을 눌러 여러 명 고른 뒤, 옮길 팀을 누르세요.' : undefined}
-        right={selectable && placement === 'auto'
-          ? <Chip tone="soft" onPress={() => Alert.alert('다시 고르게 나눌까요?',
-            `모든 회원을 두 팀으로 새로 나눕니다.${matches.length ? ' 지금 대진은 지워집니다.' : ''}`,
-            [{ text: '취소', style: 'cancel' }, { text: '다시 나누기', onPress: guard(reshuffle, 'team-reshuffle', fail) }])}>다시 나누기</Chip>
-          : undefined}>
-        팀 편성
-      </SectionTitle>
+      {/* 팀 편성 — 설정 · 배치 현황을 따로 접는다 */}
       {selectable && (
+        <Fold title="팀 편성 설정" open={openSetup} onToggle={() => setOpenSetup(!openSetup)}
+          summary={placement === 'manual' ? '수동 배치' : '자동 배치'}>
         <Card style={{ marginBottom: 10 }}>
           <Label>배치 방식</Label>
           <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -398,7 +420,20 @@ export function TeamMatch({
               ? '실력·성비가 고르게 자동으로 나뉩니다. 나눈 뒤에도 여러 명을 골라 반대 팀으로 옮길 수 있습니다.'
               : '미배정 회원을 골라 청팀·백팀에 넣습니다.'}
           </Text>
+          {placement === 'auto' && (
+            <View style={{ marginTop: 8, alignSelf: 'flex-start' }}>
+              <Chip tone="soft" onPress={() => Alert.alert('다시 고르게 나눌까요?',
+                `모든 회원을 두 팀으로 새로 나눕니다.${matches.length ? ' 지금 대진은 지워집니다.' : ''}`,
+                [{ text: '취소', style: 'cancel' }, { text: '다시 나누기', onPress: guard(reshuffle, 'team-reshuffle', fail) }])}>다시 나누기</Chip>
+            </View>
+          )}
         </Card>
+        </Fold>
+      )}
+      <Fold title="팀 배치 현황" open={openTeams} onToggle={() => setOpenTeams(!openTeams)}
+        summary={`${sides[0].name} ${teamA.length}명 · ${sides[1].name} ${teamB.length}명${unassigned.length ? ` · 미배정 ${unassigned.length}명` : ''}`}>
+      {selectable && (
+        <Text style={{ fontSize: 11.5, color: C.sub, marginBottom: 8 }}>회원을 눌러 여러 명 고른 뒤, 옮길 팀을 누르세요.</Text>
       )}
       <Card>
         {(unassigned.length > 0 || (selectable && placement === 'manual')) && (
@@ -466,6 +501,7 @@ export function TeamMatch({
           </>
         )}
       </Card>
+      </Fold>
 
       {/* 상대 클럽 선수 입력 */}
       {isClubMatch && isAdmin && (
@@ -510,8 +546,8 @@ export function TeamMatch({
 
       {/* 편성 */}
       {isAdmin && (
-        <>
-          <SectionTitle>대진 생성</SectionTitle>
+        <Fold title="대진 설정" open={openConfig} onToggle={() => setOpenConfig(!openConfig)}
+          summary={`코트 ${courts}면 · ${Number(nRounds) || 4}타임${sameSexOnly ? ' · 같은 성별끼리' : ''}`}>
           <Card>
             <Label hint="몇 타임을 돌릴지">타임 수</Label>
             <Field keyboardType="number-pad" value={nRounds} onChangeText={setNRounds} suffix="타임" />
@@ -546,22 +582,37 @@ export function TeamMatch({
               팀 안에서 맞붙는 경기는 생기지 않습니다.
             </Text>
           </Card>
-        </>
+        </Fold>
       )}
 
       {/* 대진표 */}
-      {matches.length > 0 ? (
+      {matches.length > 0 || mode === BOARD_MODE.EDIT ? (
         <>
           <SectionTitle>대진표</SectionTitle>
           {isAdmin && (
-            <BoardModeBar mode={mode} onMode={setMode} onAdd={openAdd} onClearAll={clearAll} hasMatches={matches.length > 0} />
+            <BoardModeBar mode={mode} onMode={setMode} onAdd={openAdd} onClearAll={clearAll} hasMatches={matches.length > 0}
+              multi={multi} onMulti={setMulti} pickedCount={pickedGames.length} onDeletePicked={deletePicked} />
           )}
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={matches} nameOf={nameOf} genderOf={genderOf} venue={venue} onPressMatch={onPressMatch}
+            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} onPressMatch={onPressMatch}
+              roundCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).rounds} courtCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).courts}
+              onPressEmpty={isAdmin && mode === BOARD_MODE.EDIT && !multi ? addAt : undefined}
+              selected={multi ? pickedGames : null}
               sideOf={(m, side) => (side === 'A'
                 ? { ...sides[0], name: isClubMatch ? '우리' : sides[0].name }
                 : { ...sides[1], name: isClubMatch ? (oppClub || '상대') : sides[1].name })} />
           </Card>
+
+          {/* 타임별 출전 현황 — 누가 언제 뛰고 쉬는지, 몇 경기 · 유형별 몇 경기 */}
+          <Fold title="타임별 출전 현황" open={openAttend} onToggle={() => setOpenAttend(!openAttend)}
+            summary={`총 ${shown.length}경기 · 사람마다 몇 경기, 남복·여복·혼복 몇 경기씩`}>
+            <Card style={{ padding: 10 }}>
+              <AttendanceGrid attendees={[...teamA, ...teamB]} matches={shown} venue={venue}
+                roundCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).rounds}
+                typeOf={(m) => m.type}
+                tagOf={(p) => (teamA.some((x) => x.id === p.id) ? sides[0] : sides[1])} />
+            </Card>
+          </Fold>
 
           {mvp.length > 0 && (
             <>

@@ -87,11 +87,26 @@ function SideTag({ side }) {
    1·2·3 숫자이고, 그 코트장이 실제로 부르는 이름(A·B·C, 9·10·11)으로
    **보여 줄 때만** 바꾼다. 저장된 값을 바꾸면 쌓인 대진과 전적이
    어긋난다 — src/lib/courtNames.js 머리말 참고. */
-export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPressMatch, venue = null, pending, sideOf = null }) {
-  if (!matches?.length) return null;
+/* roundCount·courtCount 를 주면 1..N 을 모두 그린다 — 경기를 지워도 그 타임 줄·코트 칸이
+   사라지지 않고 빈칸으로 남는다(청백전·팀 리그, 2026-10-04 앱 주인). 안 주면 예전처럼 경기 있는 곳만.
+   onPressEmpty(round, court) — 빈칸을 눌렀을 때(그 자리에 경기 넣기).
+   selected — 고른 경기 id 목록(여러 경기 지우기). */
+const range = (n) => Array.from({ length: Math.max(0, n) }, (_, i) => i + 1);
+export function MatchGrid({
+  matches, nameOf, genderOf, me, roundTimes = [], onPressMatch, venue = null, pending, sideOf = null,
+  roundCount = 0, courtCount = 0, onPressEmpty, selected = null,
+}) {
+  const list = matches || [];
+  const fixed = roundCount > 0 && courtCount > 0;
+  if (!list.length && !fixed) return null;
+  matches = list;
 
-  const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
-  const courts = [...new Set(matches.map((m) => m.court))].sort((a, b) => a - b);
+  const rounds = fixed
+    ? [...new Set([...range(roundCount), ...matches.map((m) => m.round)])].sort((a, b) => a - b)
+    : [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
+  const courts = fixed
+    ? [...new Set([...range(courtCount), ...matches.map((m) => m.court)])].sort((a, b) => a - b)
+    : [...new Set(matches.map((m) => m.court))].sort((a, b) => a - b);
   const at = (r, c) => matches.find((m) => m.round === r && m.court === c);
   const timeOf = (r) => roundTimes.find((t) => t.round === r);
 
@@ -131,29 +146,38 @@ export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPr
               {courts.map((c) => {
                 const m = at(r, c);
                 if (!m) {
-                  return (
-                    <View key={c} style={{
+                  const cell = (
+                    <View style={{
                       width: CELL_W, minHeight: 62, backgroundColor: '#fafaf9',
-                      borderWidth: 1, borderColor: '#f5f5f4', alignItems: 'center', justifyContent: 'center',
+                      borderWidth: 1, borderColor: onPressEmpty ? '#d6d3d1' : '#f5f5f4',
+                      borderStyle: onPressEmpty ? 'dashed' : 'solid',
+                      alignItems: 'center', justifyContent: 'center',
                     }}>
-                      <Text style={{ fontSize: 10, color: C.faint }}>—</Text>
+                      <Text style={{ fontSize: 10, color: C.faint }}>{onPressEmpty ? '＋ 경기 넣기' : '—'}</Text>
                     </View>
                   );
+                  return onPressEmpty
+                    ? <Pressable key={c} onPress={() => onPressEmpty(r, c)}>{cell}</Pressable>
+                    : <View key={c}>{cell}</View>;
                 }
                 const tone = TYPE_TONE[m.type] || { bg: '#fff', fg: C.sub };
                 const aWin = m.score && m.score.a > m.score.b;
                 const bWin = m.score && m.score.b > m.score.a;
                 /* 내가 뛰는 칸 — 표가 넓어도 내 경기부터 눈에 들어와야 한다 */
                 const isMine = !!me && [...m.teamA, ...m.teamB].includes(me);
+                const picked = !!selected && selected.includes(m.id);
                 return (
                   <Pressable key={c} onPress={() => onPressMatch?.(m)}
                     style={{
                       width: CELL_W, minHeight: 62,
-                      backgroundColor: isMine ? C.greenSoft : '#fff',
-                      borderWidth: isMine ? 2 : 1,
-                      borderColor: isMine ? C.green : '#f5f5f4',
-                      padding: isMine ? 5 : 6,
+                      backgroundColor: picked ? C.dangerBg : isMine ? C.greenSoft : '#fff',
+                      borderWidth: picked || isMine ? 2 : 1,
+                      borderColor: picked ? C.danger : isMine ? C.green : '#f5f5f4',
+                      padding: picked || isMine ? 5 : 6,
                     }}>
+                    {picked && (
+                      <Text style={{ position: 'absolute', right: 4, bottom: 2, fontSize: 10, fontWeight: '900', color: C.danger }}>✓ 지움</Text>
+                    )}
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <View style={{ backgroundColor: tone.bg, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
                         <Text style={{ fontSize: 9, fontWeight: '800', color: tone.fg }}>{m.type}</Text>
@@ -194,10 +218,28 @@ export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPr
 }
 
 /** 참석자별 출전 현황 — 언제 뛰고 언제 쉬는지 한눈에 */
-export function AttendanceGrid({ attendees, matches, roundTimes = [], me, venue = null }) {
+/* typeOf(m) 를 주면 줄 끝에 유형별(남복·여복·혼복…) 경기 수 칸과, 맨 아래 전체 합계 줄을 단다.
+   tagOf(p) → { name, color } 를 주면 이름 앞에 팀 색 점. roundCount 를 주면 1..N 타임을 모두 그린다.
+   (청백전·팀 리그, 2026-10-04 앱 주인 — "타임별 참가 여부와 총 몇 경기, 남복·여복·혼복 몇 경기씩") */
+export function AttendanceGrid({ attendees, matches, roundTimes = [], me, venue = null, typeOf = null, tagOf = null, roundCount = 0 }) {
   if (!attendees?.length) return null;
-  const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
+  matches = matches || [];
+  const rounds = [...new Set([...range(roundCount), ...matches.map((m) => m.round)])].sort((a, b) => a - b);
   if (!rounds.length) return null;
+
+  /* 유형별 — 사람마다 · 전체 */
+  const TYPE_COLS = ['남복', '여복', '혼복', '잡복', '남단식', '여단식', '혼성단식'];
+  const perType = {};
+  const allType = {};
+  if (typeOf) {
+    matches.forEach((m) => {
+      const t = typeOf(m);
+      allType[t] = (allType[t] || 0) + 1;
+      [...m.teamA, ...m.teamB].forEach((id) => { ((perType[id] ||= {})[t] = (perType[id]?.[t] || 0) + 1); });
+    });
+  }
+  const typeCols = typeOf ? TYPE_COLS.filter((t) => allType[t]) : [];
+  const TYPE_W = 30;
 
   /* playing[playerId][round] = 코트번호 */
   const playing = {};
@@ -234,6 +276,11 @@ export function AttendanceGrid({ attendees, matches, roundTimes = [], me, venue 
             <View style={{ width: 38, alignItems: 'center', paddingBottom: 4 }}>
               <Text style={{ fontSize: 10, fontWeight: '800', color: C.sub }}>합계</Text>
             </View>
+            {typeCols.map((t) => (
+              <View key={t} style={{ width: TYPE_W, alignItems: 'center', paddingBottom: 4 }}>
+                <Text style={{ fontSize: 9, fontWeight: '800', color: (TYPE_TONE[t] || {}).fg || C.sub }}>{t.replace('단식', '단')}</Text>
+              </View>
+            ))}
           </View>
 
           {sorted.map((p, i) => {
@@ -248,10 +295,16 @@ export function AttendanceGrid({ attendees, matches, roundTimes = [], me, venue 
                 borderWidth: mine ? 1.5 : 0, borderColor: C.green,
               }}>
                 <View style={{ width: NAME_W, paddingVertical: 5, paddingLeft: 4 }}>
-                  <Text numberOfLines={1} style={{
-                    fontSize: 11, fontWeight: mine ? '900' : '700',
-                    color: nameColor(p.gender),
-                  }}>{mine ? `${p.name} (나)` : p.name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    {!!tagOf && !!tagOf(p) && (
+                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: tagOf(p).color }} />
+                    )}
+                    <Text numberOfLines={1} style={{
+                      flexShrink: 1,
+                      fontSize: 11, fontWeight: mine ? '900' : '700',
+                      color: nameColor(p.gender),
+                    }}>{mine ? `${p.name} (나)` : p.name}</Text>
+                  </View>
                 </View>
 
                 {rounds.map((r) => {
@@ -284,11 +337,41 @@ export function AttendanceGrid({ attendees, matches, roundTimes = [], me, venue 
                       : n === minGames && maxGames !== minGames ? '#b45309' : C.sub,
                   }}>{n}</Text>
                 </View>
+                {typeCols.map((t) => (
+                  <View key={t} style={{ width: TYPE_W, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 11, color: perType[p.id]?.[t] ? C.text : '#d6d3d1' }}>{perType[p.id]?.[t] || 0}</Text>
+                  </View>
+                ))}
               </View>
             );
           })}
+
+          {/* 맨 아래 — 전체 경기 수 · 유형별 */}
+          {!!typeOf && (
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', marginTop: 4,
+              borderTopWidth: 1.5, borderTopColor: C.border, paddingTop: 4,
+            }}>
+              <View style={{ width: NAME_W + COL_W * rounds.length, paddingLeft: 4 }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: C.text }}>전체 경기</Text>
+              </View>
+              <View style={{ width: 38, alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, fontWeight: '900', color: C.green }}>{matches.length}</Text>
+              </View>
+              {typeCols.map((t) => (
+                <View key={t} style={{ width: TYPE_W, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.text }}>{allType[t]}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
+      {!!typeOf && matches.length > 0 && (
+        <Text style={{ fontSize: 12, fontWeight: '800', color: C.text, marginTop: 8 }}>
+          총 {matches.length}경기 · {typeCols.map((t) => `${t} ${allType[t]}`).join(' · ')}
+        </Text>
+      )}
 
       <Text style={{ fontSize: 9, color: C.faint, marginTop: 6 }}>
         숫자 = 배정된 코트 번호 · 회색 "휴" = 그 타임 휴식

@@ -16,6 +16,7 @@ import {
   leagueFromRoster, BLUE_WHITE_RED, leagueBalanceNote, teamGameCounts,
   packLeague, unpackLeague, nestedArrayPath,
   moveToTeam, emptyTeams, resizeTeams, UNASSIGNED, withTeamIdx, twoTeamSide,
+  actualMatchType, typeCounts, gridExtent,
   checkLeagueMatch, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft, sideSize,
 } from '../src/lib/teamLeague.js';
 import { guard, ALERT_GAP_MS } from '../src/lib/crashReport.js';
@@ -370,6 +371,33 @@ section('자동으로 짠 뒤 손보기 · 대진 삭제 (2팀·3팀)');
   const mb = read('MatchBoard.jsx');
   ok(/'결과 입력'/.test(mb) && /'대진표 수정'/.test(mb) && /대진 삭제/.test(mb) && /경기 추가/.test(mb), '버튼 줄: 결과 입력 · 대진표 수정(+ 경기 추가 · 대진 삭제)');
   ok(/<LeagueMatchEditor/.test(read('TeamMatchScreen.jsx')) && /twoTeamSide/.test(read('TeamMatchScreen.jsx')), '2팀 청백전에도 경기 고치기 화면');
+}
+
+section('실제 편성 기준 유형 · 빈칸 유지 · 골라서 삭제 · 접기 · 출전 현황');
+{
+  /* 2026-10-04 앱 주인 */
+  const G = { m1: 'M', m2: 'M', m3: 'M', m4: 'M', f1: 'F', f2: 'F', f3: 'F', f4: 'F' };
+  const g = (id) => G[id];
+  eq('남자 넷이면 남복', actualMatchType({ teamA: ['m1', 'm2'], teamB: ['m3', 'm4'] }, g), '남복');
+  eq('여자 넷이면 여복', actualMatchType({ teamA: ['f1', 'f2'], teamB: ['f3', 'f4'] }, g), '여복');
+  eq('양쪽 다 남녀 한 쌍이면 혼복', actualMatchType({ teamA: ['m1', 'f1'], teamB: ['m2', 'f2'] }, g), '혼복');
+  eq('설정이 혼복이어도 실제가 남남 vs 남녀면 잡복', actualMatchType({ type: '혼복', teamA: ['m1', 'm2'], teamB: ['m3', 'f1'] }, g), '잡복');
+  eq('단식', actualMatchType({ teamA: ['m1'], teamB: ['f1'] }, g), '혼성단식');
+  const tc = typeCounts([{ type: '혼복' }, { type: '남복' }, { type: '혼복' }]);
+  eq('유형별 경기 수(남복 먼저)', `${tc.total}|${tc.order.join(',')}|${tc.by['혼복']}`, '3|남복,혼복|2');
+  eq('표 크기: 설정과 실제 중 큰 쪽 — 지워도 줄·칸이 남는다', JSON.stringify(gridExtent([{ round: 2, court: 1 }], { rounds: 6, courts: 2 })), '{"rounds":6,"courts":2}');
+  eq('설정보다 큰 번호의 경기가 있으면 거기까지', JSON.stringify(gridExtent([{ round: 9, court: 3 }], { rounds: 6, courts: 2 })), '{"rounds":9,"courts":3}');
+  const read = (f) => readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8');
+  const mg = read('MatchGrid.jsx');
+  ok(/roundCount = 0, courtCount = 0, onPressEmpty, selected = null/.test(mg) && /＋ 경기 넣기/.test(mg), '대진표: 정한 타임·코트를 다 그리고 빈칸을 누르면 경기 넣기');
+  ok(/typeOf = null, tagOf = null, roundCount = 0/.test(mg) && /전체 경기/.test(mg), '출전 현황: 유형별 칸 + 맨 아래 전체 합계');
+  ok(/골라서 삭제/.test(read('MatchBoard.jsx')) && /export function Fold/.test(read('MatchBoard.jsx')), '골라서 삭제 · 접는 구역');
+  for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
+    const src = read(f);
+    ok(/actualMatchType\(m, genderOf\)/.test(src) && /matches=\{shown\}/.test(src), `${f}: 대진표 유형은 실제 편성 기준`);
+    ok(/const deletePicked = /.test(src) && /onDeletePicked=\{deletePicked\}/.test(src) && /matches\.length > 0 \|\| mode === BOARD_MODE\.EDIT/.test(src), `${f}: 골라서 삭제, 다 지워도 수정 중엔 표가 남는다`);
+    ok((src.match(/<Fold title=/g) || []).length >= 4 && /<AttendanceGrid/.test(src), `${f}: 팀 편성 설정·배치 현황·대진 설정·출전 현황 접기`);
+  }
 }
 
 section('손으로 넣기 · 고치기 · 지우기');

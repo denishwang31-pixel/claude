@@ -22,15 +22,16 @@ import {
   leagueBalanceNote, teamGameCounts,
   addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
   packLeague, unpackLeague, moveToTeam, emptyTeams, resizeTeams, UNASSIGNED,
+  actualMatchType, gridExtent,
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { CourtNamesEditor } from './CourtNamesEditor';
 import { courtLabel } from '../lib/courtNames';
 import { TEAM_ROUND_TYPES } from '../lib/teamMatch';
 import { busuToNtrp } from '../lib/constants';
-import { MatchGrid } from './MatchGrid';
+import { MatchGrid, AttendanceGrid } from './MatchGrid';
 import { AppButton, Touchable } from './native';
-import { BoardModeBar, ScoreSheet, BOARD_MODE } from './MatchBoard';
+import { BoardModeBar, ScoreSheet, BOARD_MODE, Fold } from './MatchBoard';
 import { Card, SectionTitle, Chip, Field, Divider, EmptyState } from './ui';
 import { Label } from './pickers';
 import { C, S, R, F } from '../lib/theme';
@@ -61,8 +62,19 @@ export function TeamLeague({
   const [editing, setEditing] = useState(null);     // { id|null, draft } — 경기 추가·고치기 화면
   const [shortNote, setShortNote] = useState([]);  // 대진을 짤 때 못 채운 코트 — 창 대신 화면에
   /* 대진표 위 [결과 입력]·[대진표 수정] — 고른 뒤 경기를 누르면 그 일을 한다(components/MatchBoard.jsx) */
-  const [mode, setMode] = useState(BOARD_MODE.NONE);
+  const [mode, setModeRaw] = useState(BOARD_MODE.NONE);
   const [scoring, setScoring] = useState(null);    // 점수 창 대상
+  /* 여러 경기 골라 지우기 — [대진표 수정] 안에서 */
+  const [multi, setMultiRaw] = useState(false);
+  const [pickedGames, setPickedGames] = useState([]);
+  const setMulti = (on) => { setMultiRaw(on); setPickedGames([]); };
+  const setMode = (m) => { setModeRaw(m); setMulti(false); };
+  /* 접었다 펴는 구역 — 대진이 이미 있으면 설정들은 접힌 채로 시작한다 */
+  const hasDrawAtOpen = (saved?.matches || []).length > 0;
+  const [openSetup, setOpenSetup] = useState(!hasDrawAtOpen);
+  const [openTeams, setOpenTeams] = useState(!hasDrawAtOpen);
+  const [openConfig, setOpenConfig] = useState(!hasDrawAtOpen);
+  const [openAttend, setOpenAttend] = useState(false);
   /* 팀 이름 — 비어 있으면 A팀·B팀…(lib/teamLeague.js teamLook). 청팀·홍팀처럼 바꾸면 색도 따라간다 */
   const [teamNames, setTeamNames] = useState(saved?.config?.teamNames || []);
   const [renaming, setRenaming] = useState(null);  // { idx, text }
@@ -91,6 +103,14 @@ export function TeamLeague({
     const map = {};
     teams.forEach((t) => t.forEach((p) => { map[p.id] = p.gender; }));
     return (id) => map[id] || '';
+  }, [teams]);
+
+  /* 대진표·집계에 쓰는 경기 — 유형은 실제로 선 선수 성별로(설정한 유형이 아니라) */
+  const shown = useMemo(() => matches.map((m) => ({ ...m, type: actualMatchType(m, genderOf) })), [matches, genderOf]);
+  const teamIdxOf = useMemo(() => {
+    const map = {};
+    teams.forEach((t, i) => t.forEach((p) => { map[p.id] = i; }));
+    return map;
   }, [teams]);
 
   const standings = useMemo(() => leagueStandings(teams, matches, teamNames), [teams, matches, teamNames]);
@@ -303,6 +323,10 @@ export function TeamLeague({
   /** 경기를 눌렀을 때 — 위에서 고른 버튼에 따라 */
   const onPressMatch = (m) => {
     if (!isAdmin) return;
+    if (mode === BOARD_MODE.EDIT && multi) {
+      setPickedGames((cur) => (cur.includes(m.id) ? cur.filter((x) => x !== m.id) : [...cur, m.id]));
+      return;
+    }
     if (mode === BOARD_MODE.EDIT) { setEditing({ id: m.id, draft: matchToDraft(m) }); return; }
     if (mode === BOARD_MODE.SCORE) {
       setScoring({
@@ -315,6 +339,27 @@ export function TeamLeague({
     }
     flash('대진표 위에서 [결과 입력] 또는 [대진표 수정]을 먼저 누르세요');
   };
+  /** 빈칸을 눌렀을 때 — 그 타임·코트에 경기 넣기 */
+  const addAt = (round, court) => {
+    if (!(isAdmin && mode === BOARD_MODE.EDIT && !multi)) return;
+    setEditing({ id: null, draft: { ...emptyDraft(matches, cfg, teams.length), round, court } });
+  };
+  /** 고른 경기만 지우기 — 그 자리는 빈칸으로 남는다 */
+  const deletePicked = () => Alert.alert(`${pickedGames.length}경기를 지울까요?`,
+    '지운 자리는 대진표에 빈칸으로 남습니다. 빈칸을 누르면 다시 경기를 넣을 수 있습니다.',
+    [{ text: '취소', style: 'cancel' }, {
+      text: '지우기',
+      style: 'destructive',
+      onPress: guard(() => {
+        const n = pickedGames.length;
+        const next = matches.filter((m) => !pickedGames.includes(m.id));
+        setMatches(next);
+        persist({ matches: next });
+        setMulti(false);
+        flash(`${n}경기를 지웠습니다`);
+      }, 'league-delete-picked', fail),
+    }]);
+
   const saveScore = guard((score) => {
     const id = scoring?.match?.id;
     setScoring(null);
@@ -429,13 +474,10 @@ export function TeamLeague({
         </>
       )}
 
-      {/* 팀 편성 */}
-      <SectionTitle
-        hint={isAdmin ? '회원을 눌러 여러 명 고른 뒤, 옮길 팀을 누르세요.' : undefined}>
-        팀 편성
-      </SectionTitle>
-
+      {/* 팀 편성 — 설정 · 배치 현황을 따로 접는다 */}
       {isAdmin && (
+        <Fold title="팀 편성 설정" open={openSetup} onToggle={() => setOpenSetup(!openSetup)}
+          summary={`${placement === 'manual' ? '수동 배치' : '자동 배치'} · ${teams.length}팀 · ${teams.map((_, i) => look(i).name).join('·')}`}>
         <Card style={{ marginBottom: 10 }}>
           <Label>배치 방식</Label>
           <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -481,8 +523,14 @@ export function TeamLeague({
             <Chip tone="outline" onPress={() => saveNames([], '기본 이름(A팀·B팀…)으로 되돌렸습니다')}>A팀 · B팀 … (기본)</Chip>
           </View>
         </Card>
+        </Fold>
       )}
 
+      <Fold title="팀 배치 현황" open={openTeams} onToggle={() => setOpenTeams(!openTeams)}
+        summary={teams.map((t, i) => `${look(i).name} ${t.length}명`).join(' · ') + (unassigned.length ? ` · 미배정 ${unassigned.length}명` : '')}>
+      {isAdmin && (
+        <Text style={{ fontSize: 11.5, color: C.sub, marginBottom: 8 }}>회원을 눌러 여러 명 고른 뒤, 옮길 팀을 누르세요.</Text>
+      )}
       <View style={{ gap: 8 }}>
         {(unassigned.length > 0 || (isAdmin && placement === 'manual')) && (
           <Card style={{ borderLeftWidth: 4, borderLeftColor: C.faint }}>
@@ -551,11 +599,12 @@ export function TeamLeague({
           );
         })}
       </View>
+      </Fold>
 
       {/* 대진 설정 */}
       {isAdmin && (
-        <>
-          <SectionTitle>대진 설정</SectionTitle>
+        <Fold title="대진 설정" open={openConfig} onToggle={() => setOpenConfig(!openConfig)}
+          summary={`코트 ${cfg.courts}면 · ${cfg.rounds}타임${oneCourtPerTeam ? ' · 한 팀 한 코트' : ''}`}>
           <Card>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <View style={{ flex: 1 }}>
@@ -638,15 +687,16 @@ export function TeamLeague({
               자동으로 짠 뒤에는 대진표 위 [대진표 수정]을 누르고 경기를 누르면 고치거나 지울 수 있고, [결과 입력]을 누르고 경기를 누르면 점수를 넣습니다.
             </Text>
           </Card>
-        </>
+        </Fold>
       )}
 
       {/* 대진표 */}
-      {matches.length > 0 ? (
+      {matches.length > 0 || mode === BOARD_MODE.EDIT ? (
         <>
           <SectionTitle>대진표</SectionTitle>
           {isAdmin && (
-            <BoardModeBar mode={mode} onMode={setMode} onAdd={openAdd} onClearAll={clearAll} hasMatches={matches.length > 0} />
+            <BoardModeBar mode={mode} onMode={setMode} onAdd={openAdd} onClearAll={clearAll} hasMatches={matches.length > 0}
+              multi={multi} onMulti={setMulti} pickedCount={pickedGames.length} onDeletePicked={deletePicked} />
           )}
           {shortNote.length > 0 && (
             <View style={{ marginBottom: S.sm, padding: 10, borderRadius: R.md, backgroundColor: C.warnBg }}>
@@ -658,8 +708,11 @@ export function TeamLeague({
             </View>
           )}
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={matches} nameOf={nameOf} genderOf={genderOf} venue={venue}
+            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue}
               sideOf={(m, side) => look(side === 'A' ? m.teamAIdx : m.teamBIdx)}
+              roundCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).rounds} courtCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).courts}
+              onPressEmpty={isAdmin && mode === BOARD_MODE.EDIT && !multi ? addAt : undefined}
+              selected={multi ? pickedGames : null}
               onPressMatch={onPressMatch} />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
               {teams.map((_, i) => {
@@ -674,13 +727,24 @@ export function TeamLeague({
             </View>
           </Card>
 
+          {/* 타임별 출전 현황 — 누가 언제 뛰고 쉬는지, 몇 경기 · 유형별 몇 경기 */}
+          <Fold title="타임별 출전 현황" open={openAttend} onToggle={() => setOpenAttend(!openAttend)}
+            summary={`총 ${shown.length}경기 · 사람마다 몇 경기, 남복·여복·혼복 몇 경기씩`}>
+            <Card style={{ padding: 10 }}>
+              <AttendanceGrid attendees={teams.flat()} matches={shown} venue={venue}
+                roundCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).rounds}
+                typeOf={(m) => m.type}
+                tagOf={(p) => (teamIdxOf[p.id] != null ? look(teamIdxOf[p.id]) : null)} />
+            </Card>
+          </Fold>
+
           {/* 어느 팀끼리 붙는 경기인지 — 표에는 이름만 나온다 */}
           <Card style={{ marginTop: S.sm, paddingVertical: 6 }}>
-            {[...new Set(matches.map((m) => m.round))].sort((a, b) => a - b).map((r) => (
+            {[...new Set(shown.map((m) => m.round))].sort((a, b) => a - b).map((r) => (
               <View key={r} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5 }}>
                 <Text style={{ width: 42, fontSize: 11, fontWeight: '700', color: C.sub }}>{r}타임</Text>
                 <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
-                  {matches.filter((m) => m.round === r).map((m) => (
+                  {shown.filter((m) => m.round === r).map((m) => (
                     <View key={m.id} style={{
                       flexDirection: 'row', alignItems: 'center', gap: 3,
                       paddingHorizontal: 7, paddingVertical: 3,

@@ -561,6 +561,43 @@ export function updateLeagueMatch(teams, matches, id, draft, opts = {}) {
 /** 경기 지우기 */
 export const removeLeagueMatch = (matches, id) => (matches || []).filter((m) => m.id !== id);
 
+/* ---------------- 실제 편성 기준 경기 유형 ----------------
+   타임별 유형(혼복 등)은 '이렇게 짜 달라'는 설정이다. 사람이 모자라면 다른 구성으로 채워지고,
+   손으로 고치면 또 바뀐다. 대진표·집계에는 실제로 선 선수 성별로 다시 매긴다(2026-10-04 앱 주인). */
+export function actualMatchType(m, genderOf) {
+  const A = m?.teamA || [];
+  const B = m?.teamB || [];
+  const g = (id) => (genderOf?.(id) === 'F' ? 'F' : 'M');
+  if (A.length <= 1 && B.length <= 1) {
+    const all = [...A, ...B].map(g);
+    if (all.every((x) => x === 'M')) return '남단식';
+    if (all.every((x) => x === 'F')) return '여단식';
+    return '혼성단식';
+  }
+  const all = [...A, ...B].map(g);
+  if (all.every((x) => x === 'M')) return '남복';
+  if (all.every((x) => x === 'F')) return '여복';
+  const mixed = (ids) => ids.length === 2 && new Set(ids.map(g)).size === 2;
+  return mixed(A) && mixed(B) ? '혼복' : '잡복';
+}
+
+/** 유형별 경기 수 — 대진 맨 끝 요약. 순서는 늘 같게 */
+export const TYPE_ORDER = ['남복', '여복', '혼복', '잡복', '남단식', '여단식', '혼성단식'];
+export function typeCounts(matches, typeOf = (m) => m.type) {
+  const by = {};
+  (matches || []).forEach((m) => { const t = typeOf(m); by[t] = (by[t] || 0) + 1; });
+  const order = [...TYPE_ORDER.filter((t) => by[t]), ...Object.keys(by).filter((t) => !TYPE_ORDER.includes(t))];
+  return { total: (matches || []).length, by, order };
+}
+
+/** 표의 크기 — 설정한 타임·코트 수와 실제 경기 중 큰 쪽. 경기를 지워도 줄·칸이 남는다 */
+export function gridExtent(matches, { rounds = 0, courts = 0 } = {}) {
+  const ms = matches || [];
+  const maxR = ms.reduce((x, m) => Math.max(x, Number(m.round) || 0), 0);
+  const maxC = ms.reduce((x, m) => Math.max(x, Number(m.court) || 0), 0);
+  return { rounds: Math.max(Number(rounds) || 0, maxR), courts: Math.max(Number(courts) || 0, maxC) };
+}
+
 /* ---------------- 2팀 청백전도 같은 고치기 화면으로 ----------------
    2팀 경기(lib/teamMatch.js)에는 팀 번호가 없다 — 늘 teamA = 청팀(0), teamB = 백팀(1).
    고치기 화면은 팀 번호로 움직이므로 넣을 때 붙이고, 저장할 때 청팀이 왼쪽(teamA)에

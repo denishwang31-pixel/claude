@@ -17,12 +17,47 @@ import { View, Text, Modal, Pressable, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppButton } from './native';
 import { Chip } from './ui';
-import { C, S, R } from '../lib/theme';
+import { C, S, R, F } from '../lib/theme';
 
 export const BOARD_MODE = { NONE: null, SCORE: 'score', EDIT: 'edit' };
 
-/** 대진표 위 버튼 줄 */
-export function BoardModeBar({ mode, onMode, onAdd, onClearAll, hasMatches = true }) {
+/**
+ * 접었다 펴는 구역 — 팀 편성·대진 설정 등이 길게 이어져 대진표까지 한참 내려가야 했다
+ * (2026-10-04 앱 주인 "드롭다운으로 가릴 수 있는 건 정리"). 제목 줄을 누르면 접고 편다.
+ * summary 는 접혀 있을 때 제목 아래 한 줄로 보인다.
+ */
+export function Fold({ title, summary, open, onToggle, children }) {
+  return (
+    <View>
+      <Pressable onPress={onToggle} hitSlop={6}
+        style={({ pressed }) => ({
+          marginTop: S.xl, marginBottom: S.sm, opacity: pressed ? 0.6 : 1,
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+        })}>
+        <View style={{ flex: 1 }}>
+          <Text style={F.h3}>{title}</Text>
+          {!open && !!summary && (
+            <Text numberOfLines={2} style={{ fontSize: 11.5, color: C.sub, marginTop: 2 }}>{summary}</Text>
+          )}
+        </View>
+        <View style={{
+          paddingHorizontal: 10, paddingVertical: 5, borderRadius: R.pill,
+          backgroundColor: open ? C.fill : C.greenSoft,
+        }}>
+          <Text style={{ fontSize: 11.5, fontWeight: '800', color: open ? C.sub : C.green }}>{open ? '접기 ▲' : '펼치기 ▼'}</Text>
+        </View>
+      </Pressable>
+      {open ? children : null}
+    </View>
+  );
+}
+
+/** 대진표 위 버튼 줄
+ *  multi — 여러 경기 지우기 중인지. 그때 경기를 누르면 고르기만 하고, [선택한 N경기 삭제]로 지운다 */
+export function BoardModeBar({
+  mode, onMode, onAdd, onClearAll, hasMatches = true,
+  multi = false, onMulti, pickedCount = 0, onDeletePicked,
+}) {
   const btn = (key, label) => (
     <View style={{ flex: 1 }}>
       <AppButton full small variant={mode === key ? 'filled' : 'outlined'}
@@ -41,19 +76,36 @@ export function BoardModeBar({ mode, onMode, onAdd, onClearAll, hasMatches = tru
         {mode === BOARD_MODE.SCORE
           ? '경기를 누르면 점수를 넣습니다.'
           : mode === BOARD_MODE.EDIT
-            ? '경기를 누르면 타임·코트·선수를 고칩니다.'
+            ? (multi
+              ? `지울 경기를 누르세요 — ${pickedCount}경기 골랐습니다. 지운 자리는 빈칸으로 남습니다.`
+              : '경기를 누르면 타임·코트·선수를 고칩니다. 빈칸을 누르면 그 자리에 경기를 넣습니다.')
             : '위 버튼을 먼저 고른 뒤 경기를 누르세요.'}
       </Text>
-      {mode === BOARD_MODE.EDIT && (
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+      {mode === BOARD_MODE.EDIT && !multi && (
+        <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
           <View style={{ flex: 1 }}>
             <AppButton full small variant="tonal" onPress={onAdd}>＋ 경기 추가</AppButton>
           </View>
-          {hasMatches && (
+          {hasMatches && !!onMulti && (
             <View style={{ flex: 1 }}>
-              <AppButton full small variant="tonal" onPress={onClearAll}>대진 삭제</AppButton>
+              <AppButton full small variant="tonal" onPress={() => onMulti(true)}>골라서 삭제</AppButton>
             </View>
           )}
+          {hasMatches && (
+            <View style={{ flex: 1 }}>
+              <AppButton full small variant="tonal" onPress={onClearAll}>전체 삭제</AppButton>
+            </View>
+          )}
+        </View>
+      )}
+      {mode === BOARD_MODE.EDIT && multi && (
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+          <View style={{ flex: 1 }}>
+            <AppButton full small variant="danger" disabled={!pickedCount} onPress={onDeletePicked}>
+              {pickedCount ? `고른 ${pickedCount}경기 삭제` : '지울 경기를 고르세요'}
+            </AppButton>
+          </View>
+          <AppButton small variant="outlined" onPress={() => onMulti(false)}>그만 고르기</AppButton>
         </View>
       )}
     </View>
