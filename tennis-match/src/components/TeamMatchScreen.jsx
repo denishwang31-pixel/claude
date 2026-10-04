@@ -22,7 +22,7 @@ import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { courtLabel } from '../lib/courtNames';
 import { CourtNamesEditor } from './CourtNamesEditor';
 import { RoundTimingEditor } from './RoundTimingEditor';
-import { tournamentRoundTimes } from '../lib/schedule';
+import { tournamentRoundTimes, timingRounds } from '../lib/schedule';
 import { guard, later, breadcrumb, slowRender } from '../lib/crashReport';
 import { TOURNAMENT_FORMAT, TEAM_SIDES, BUSU_KEYS, busuToNtrp } from '../lib/constants';
 import { MatchGrid, AttendanceGrid } from './MatchGrid';
@@ -80,7 +80,8 @@ export function TeamMatch({
   const [openAttend, setOpenAttend] = useState(false);
   const [scoring, setScoring] = useState(null);
   const [sameSexOnly, setSameSexOnly] = useState(false);
-  const [nRounds, setNRounds] = useState(String(rounds || 4));
+  /* 타임 수 — 대회 시작~종료 시간으로 계산(RoundTimingEditor), 없으면 기본 */
+  const [nRounds, setNRounds] = useState(String(timingRounds(timing) || rounds || 4));
 
   /* 상대 클럽 선수 입력 */
   const [opp, setOpp] = useState({ name: '', gender: 'M', busu: '' });
@@ -568,14 +569,13 @@ export function TeamMatch({
       {/* 편성 */}
       {isAdmin && (
         <Fold title="대진 설정" open={openConfig} onToggle={() => setOpenConfig(!openConfig)}
-          summary={`${timing?.startTime ? `${timing.startTime} 시작 · ` : ''}코트 ${courts}면 · ${Number(nRounds) || 4}타임${sameSexOnly ? ' · 같은 성별끼리' : ''}`}>
+          summary={`${timing?.startTime ? `${timing.startTime}${timing.endTime ? `~${timing.endTime}` : ' 시작'} · ` : ''}코트 ${courts}면 · ${Number(nRounds) || 4}타임${sameSexOnly ? ' · 같은 성별끼리' : ''}`}>
           <Card>
-            <Label hint="몇 타임을 돌릴지">타임 수</Label>
-            <Field keyboardType="number-pad" value={nRounds} onChangeText={setNRounds} suffix="타임" />
+            <RoundTimingEditor value={timing} onSave={saveTiming} onRounds={(n) => setNRounds(String(n))} />
+            <Divider style={{ marginVertical: S.md }} />
 
-            <View style={{ marginTop: S.lg }}>
-              <RoundTimingEditor value={timing} rounds={gridRounds} onSave={saveTiming} />
-            </View>
+            <Label hint="시작~종료 시간을 정하면 저절로 맞춰집니다">타임 수</Label>
+            <Field keyboardType="number-pad" value={nRounds} onChangeText={setNRounds} suffix="타임" />
 
             {!isClubMatch && (
               <View style={{ marginTop: S.lg }}>

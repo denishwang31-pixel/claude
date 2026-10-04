@@ -374,6 +374,14 @@ section('대회 시간 — 시작 시간 · 한 타임 길이 → 타임 아래 
   ok(tt.length === 4 && tt[0].start === '09:00' && tt[1].start === '09:30' && tt[3].end === '11:00', '09:00 시작 · 30분 → 09:00 / 09:30 / … / 11:00 끝');
   eq('타임 길이를 안 정하면 30분', tournamentRoundTimes({ startTime: '10:00' }, 2)[1].start, '10:30');
   eq('45분 타임', tournamentRoundTimes({ startTime: '18:30', roundMinutes: 45 }, 3)[2].start, '20:00');
+  /* "시작 시간 종료 시간이 있어야지" — 일정처럼 시작~종료 ÷ 한 타임 = 타임 수 */
+  const { timingRounds } = await import('../src/lib/schedule.js');
+  eq('09:00~13:00 · 40분 → 6타임', timingRounds({ startTime: '09:00', endTime: '13:00', roundMinutes: 40 }), 6);
+  eq('09:00~12:00 · 40분 → 4타임(20분 남음)', timingRounds({ startTime: '09:00', endTime: '12:00', roundMinutes: 40 }), 4);
+  eq('밤 22:00~01:00 · 30분 → 6타임(자정 넘김)', timingRounds({ startTime: '22:00', endTime: '01:00', roundMinutes: 30 }), 6);
+  eq('종료 시간이 없으면 타임 수는 직접 적은 값', timingRounds({ startTime: '09:00', roundMinutes: 30 }), null);
+  const ed = readFileSync(new URL('../src/components/RoundTimingEditor.jsx', import.meta.url), 'utf8');
+  ok(/<Label>시작 시간<\/Label>/.test(ed) && /<Label>종료 시간<\/Label>/.test(ed) && /if \(n\) onRounds\?\.\(n\);/.test(ed), '시작·종료 시간을 고르면 타임 수 칸이 저절로 맞춰진다');
   const lv = teamLiveView({ stage: 'team', format: 'blue_white', timing: { startTime: '09:00', roundMinutes: 40 },
     team: { teamA: [P('a1', '청1', 'M')], teamB: [P('b1', '백1', 'M')], matches: [
       { round: 1, court: 1, teamA: ['a1'], teamB: ['b1'], score: null }, { round: 3, court: 1, teamA: ['a1'], teamB: ['b1'], score: null }] } });
@@ -382,7 +390,8 @@ section('대회 시간 — 시작 시간 · 한 타임 길이 → 타임 아래 
   const rd = (f) => readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8');
   for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
     const src = rd(f);
-    ok(/<RoundTimingEditor value=\{timing\} rounds=\{gridRounds\} onSave=\{saveTiming\} \/>/.test(src)
+    ok(/<RoundTimingEditor value=\{timing\} onSave=\{saveTiming\} onRounds=\{\(n\) => setNRounds\(String\(n\)\)\} \/>/.test(src)
+      && /useState\(String\([^)]*timingRounds\(timing\)/.test(src)
       && (src.match(/roundTimes=\{times\}/g) || []).length === 2 && /time: timeOf\(m\.round\)/.test(src), `${f}: 대진 설정에서 정하고 → 대진표·출전 현황·내 경기에 시각`);
   }
   const ts = rd('TournamentScreen.jsx');

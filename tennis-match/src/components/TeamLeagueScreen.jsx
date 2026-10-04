@@ -27,7 +27,7 @@ import {
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { CourtNamesEditor } from './CourtNamesEditor';
 import { RoundTimingEditor } from './RoundTimingEditor';
-import { tournamentRoundTimes } from '../lib/schedule';
+import { tournamentRoundTimes, timingRounds } from '../lib/schedule';
 import { courtLabel } from '../lib/courtNames';
 import { TEAM_ROUND_TYPES } from '../lib/teamMatch';
 import { busuToNtrp } from '../lib/constants';
@@ -60,7 +60,8 @@ export function TeamLeague({
   const [unassigned, setUnassigned] = useState(saved?.unassigned || []);
   const [picked, setPicked] = useState([]);       // 골라 둔 회원 id — 한꺼번에 옮길 사람
   const [nCourts, setNCourts] = useState(String(saved?.config?.courts || courts || 2));
-  const [nRounds, setNRounds] = useState(String(saved?.config?.rounds || 6));
+  /* 타임 수 — 저장된 대진 설정, 없으면 대회 시작~종료 시간으로 계산(RoundTimingEditor), 그도 없으면 6 */
+  const [nRounds, setNRounds] = useState(String(saved?.config?.rounds || timingRounds(timing) || 6));
   const [roundTypes, setRoundTypes] = useState(saved?.config?.roundTypes || {});
   /* 한 팀은 한 타임에 한 코트만 — 예전 기본. 이제는 끄는 것이 기본(팀보다 코트가 많으면 못 짠다) */
   const [oneCourtPerTeam, setOneCourtPerTeam] = useState(!!saved?.config?.oneCourtPerTeam);
@@ -625,8 +626,11 @@ export function TeamLeague({
       {/* 대진 설정 */}
       {isAdmin && (
         <Fold title="대진 설정" open={openConfig} onToggle={() => setOpenConfig(!openConfig)}
-          summary={`${timing?.startTime ? `${timing.startTime} 시작 · ` : ''}코트 ${cfg.courts}면 · ${cfg.rounds}타임${oneCourtPerTeam ? ' · 한 팀 한 코트' : ''}`}>
+          summary={`${timing?.startTime ? `${timing.startTime}${timing.endTime ? `~${timing.endTime}` : ' 시작'} · ` : ''}코트 ${cfg.courts}면 · ${cfg.rounds}타임${oneCourtPerTeam ? ' · 한 팀 한 코트' : ''}`}>
           <Card>
+            <RoundTimingEditor value={timing} onSave={saveTiming} onRounds={(n) => setNRounds(String(n))} />
+            <Divider style={{ marginVertical: S.md }} />
+
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <View style={{ flex: 1 }}>
                 <Label hint="동시에 쓰는 코트">코트 면수</Label>
@@ -644,9 +648,6 @@ export function TeamLeague({
               <CourtNamesEditor count={cfg.courts} value={courtNames} onSave={saveCourtNames} />
             </View>
 
-            <View style={{ marginTop: S.md }}>
-              <RoundTimingEditor value={timing} rounds={gridRounds} onSave={saveTiming} />
-            </View>
 
             <Divider style={{ marginVertical: S.md }} />
 

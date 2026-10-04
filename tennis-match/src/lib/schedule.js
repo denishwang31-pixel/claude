@@ -71,7 +71,22 @@ export function roundTimes(settings, rounds) {
 }
 
 /**
- * 대회 타임별 시각 — 대회 문서 timing = { startTime:'HH:MM', roundMinutes }
+ * 대회 시작~종료 시간으로 타임 수 — 일정(roundsFromSettings)과 같은 계산.
+ * 시작·종료를 둘 다 안 정했으면 null(타임 수는 직접 적은 값 그대로).
+ * 앱 주인(2026-10-04): "시작 시간 종료 시간이 있어야지"
+ */
+export function timingRounds(timing) {
+  const start = toMinutes(timing?.startTime);
+  const end = toMinutes(timing?.endTime);
+  if (start == null || end == null) return null;
+  const per = Math.min(180, Math.max(5, Number(timing.roundMinutes) || TOURNAMENT_ROUND_MINUTES));
+  let span = end - start;
+  if (span <= 0) span += 1440;
+  return Math.max(1, Math.floor(span / per));
+}
+
+/**
+ * 대회 타임별 시각 — 대회 문서 timing = { startTime:'HH:MM', endTime:'HH:MM', roundMinutes }
  * 일정(모임)과 같은 계산(roundTimes). 시작 시간을 아직 안 정했으면 빈 목록 → 대진표에 시각을 안 그린다.
  * (2026-10-04 앱 주인: "일정 설정할 때처럼 대회도 시간·타임당 소요시간을 정해 타임 아래 시간 표시")
  */

@@ -942,7 +942,7 @@ export function Tournaments({
         <Card>
           <Text style={{ fontSize: 16, fontWeight: '700' }}>{t.name}</Text>
           <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
-            {t.date}{t.timing?.startTime ? ` ${t.timing.startTime}` : ''} · {formatLabel(t)}
+            {t.date}{t.timing?.startTime ? ` ${t.timing.startTime}${t.timing.endTime ? `~${t.timing.endTime}` : ''}` : ''} · {formatLabel(t)}
             {t.busuLimit ? ` · ${t.busuLimit} 이하` : ''}
             {t.status === 'finished' ? ' · 종료' : ' · 진행 중'}
           </Text>
