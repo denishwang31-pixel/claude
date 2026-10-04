@@ -290,6 +290,11 @@ section('팀 편성 — 자동/수동 배치 · 여러 명 한꺼번에 옮기�
   const scr = readFileSync(new URL('../src/components/TeamLeagueScreen.jsx', import.meta.url), 'utf8');
   ok(/unassigned: next\.unassigned \?\? unassigned/.test(scr), '저장할 때 미배정 명단도 함께');
   ok(/자동 배치/.test(scr) && /수동 배치/.test(scr) && /moveToTeam\(teams, unassigned, picked, to\)/.test(scr), '화면: 배치 방식 두 가지 + 고른 사람 한꺼번에 옮기기');
+  const tm = readFileSync(new URL('../src/components/TeamMatchScreen.jsx', import.meta.url), 'utf8');
+  ok(/자동 배치/.test(tm) && /수동 배치/.test(tm) && /moveToTeam\(\[teamA, teamB\], unassigned, picked, to\)/.test(tm), '2팀 청백전도 같은 방식(자동/수동 · 여러 명 옮기기)');
+  ok(/unassigned: next\.unassigned \?\? unassigned/.test(tm) && /r\.catch\(/.test(tm), '2팀 화면도 옮길 때마다 저장 · 실패는 알리기만');
+  const r2 = moveToTeam([[P('a', '청', 'M')], [P('b', '백1', 'M'), P('c', '백2', 'F')]], [], ['b', 'c'], 0);
+  eq('2팀: 백팀 둘을 청팀으로', `${ids(r2.teams[0])}|${r2.teams[1].length}`, 'a,b,c|0');
 }
 
 section('손으로 넣기 · 고치기 · 지우기');

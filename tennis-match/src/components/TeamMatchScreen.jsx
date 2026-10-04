@@ -3,7 +3,10 @@
 
    두 형식이 거의 같아서 한 화면으로 처리한다. 차이는 B팀을 어디서
    데려오느냐뿐이다.
-     청백전     : 참석 회원을 실력·성별이 고르게 두 팀으로 자동 분할
+     청백전     : 참석 회원을 실력·성별이 고르게 두 팀으로 자동 분할(자동 배치),
+                  또는 모두 '미배정'에서 시작해 운영진이 넣는다(수동 배치).
+                  회원을 여러 명 골라 한 번에 반대 팀·미배정으로 옮긴다 — 3팀 청백전과 같은 방식
+                  (lib/teamLeague.js moveToTeam · 2026-10-04 앱 주인)
      클럽교류전 : A팀은 우리 회원, B팀은 상대 클럽 선수를 직접 입력
    ============================================================ */
 import React, { useMemo, useState } from 'react';
@@ -11,6 +14,7 @@ import { View, Text, Alert } from 'react-native';
 import {
   splitTeams, teamStrength, generateTeamMatches, teamScore, teamPlayerStats,
 } from '../lib/teamMatch';
+import { moveToTeam, UNASSIGNED } from '../lib/teamLeague';
 import { TOURNAMENT_FORMAT, TEAM_SIDES, BUSU_KEYS, busuToNtrp } from '../lib/constants';
 import { MatchGrid } from './MatchGrid';
 import { AppButton, Segmented, Touchable, useOptionSheet } from './native';
@@ -41,6 +45,11 @@ export function TeamMatch({
   const [teamB, setTeamB] = useState(() => saved?.teamB
     || (isClubMatch ? [] : splitTeams(attendees, { busuToNtrp }).teamB));
   const [matches, setMatches] = useState(saved?.matches || []);
+  /* 배치 방식 · 미배정 · 골라 둔 회원 — 청백전만(교류전 B팀은 상대 클럽 선수라 옮길 일이 없다) */
+  const [placement, setPlacement] = useState(saved?.placement === 'manual' ? 'manual' : 'auto');
+  const [unassigned, setUnassigned] = useState(saved?.unassigned || []);
+  const [picked, setPicked] = useState([]);
+  const selectable = isAdmin && !isClubMatch;
   const [sameSexOnly, setSameSexOnly] = useState(false);
   const [nRounds, setNRounds] = useState(String(rounds || 4));
 
@@ -63,13 +72,77 @@ export function TeamMatch({
     return (id) => map[id] || '?';
   }, [teamA, teamB]);
 
-  const reshuffle = () => {
-    const { teamA: a, teamB: b } = splitTeams(attendees, { busuToNtrp });
-    setTeamA(a); setTeamB(b);
-    flash('팀을 다시 나눴습니다');
+  /* ⚠️ 저장 실패가 버튼 처리 안에서 터지면 앱이 꺼진다 — 받아서 알리기만 한다 */
+  const persist = (next = {}) => {
+    try {
+      const r = onSave?.({
+        teamA: next.teamA ?? teamA,
+        teamB: next.teamB ?? teamB,
+        matches: next.matches ?? matches,
+        unassigned: next.unassigned ?? unassigned,
+        placement: next.placement ?? placement,
+        opponentClub: oppClub,
+        format,
+      });
+      if (r && typeof r.catch === 'function') r.catch(() => flash('저장하지 못했습니다. 인터넷 연결을 확인해 주세요'));
+    } catch (e) {
+      flash('저장하지 못했습니다. 잠시 뒤 다시 해 주세요');
+    }
   };
 
-  /** 사람을 반대편으로 옮기기 */
+  /** 자동 배치 — 실력·성비 고르게. 팀이 바뀌면 옛 대진은 의미가 없어 지운다 */
+  const reshuffle = () => {
+    const { teamA: a, teamB: b } = splitTeams(attendees, { busuToNtrp });
+    setTeamA(a); setTeamB(b); setUnassigned([]); setPicked([]); setMatches([]); setPlacement('auto');
+    persist({ teamA: a, teamB: b, unassigned: [], matches: [], placement: 'auto' });
+    flash('팀을 고르게 다시 나눴습니다');
+  };
+
+  const startManual = () => {
+    setTeamA([]); setTeamB([]); setUnassigned([...attendees]); setPicked([]); setMatches([]); setPlacement('manual');
+    persist({ teamA: [], teamB: [], unassigned: [...attendees], matches: [], placement: 'manual' });
+    flash('모두 미배정으로 돌렸습니다. 회원을 골라 팀에 넣으세요');
+  };
+
+  const choosePlacement = (mode) => {
+    if (mode === placement) return;
+    const wipe = matches.length ? ' 지금 대진도 지워집니다.' : '';
+    if (mode === 'auto') {
+      Alert.alert('자동 배치로 바꿀까요?', `모든 회원을 실력·성비가 고르게 두 팀으로 다시 나눕니다.${wipe}`,
+        [{ text: '취소', style: 'cancel' }, { text: '자동 배치', onPress: reshuffle }]);
+      return;
+    }
+    Alert.alert('수동 배치', `모든 회원을 미배정으로 돌리고 직접 팀에 넣을까요?${wipe}\n\n지금 편성을 그대로 두고 고치기만 할 수도 있습니다.`, [
+      { text: '취소', style: 'cancel' },
+      { text: '지금 편성 그대로', onPress: () => { setPlacement('manual'); persist({ placement: 'manual' }); } },
+      { text: '미배정에서 시작', onPress: startManual },
+    ]);
+  };
+
+  /* ---- 여러 명 골라 한꺼번에 옮기기 ---- */
+  const togglePick = (id) => setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  const pickAll = (list) => {
+    const ids = list.map((p) => p.id);
+    setPicked((cur) => (ids.every((id) => cur.includes(id))
+      ? cur.filter((id) => !ids.includes(id))
+      : [...new Set([...cur, ...ids])]));
+  };
+  /** to: 0 = 청팀(A) · 1 = 백팀(B) · UNASSIGNED = 미배정 */
+  const moveTo = (to) => {
+    const r = moveToTeam([teamA, teamB], unassigned, picked, to);
+    setPicked([]);
+    if (!r.moved) return;
+    const [a, b] = r.teams;
+    setTeamA(a); setTeamB(b); setUnassigned(r.unassigned);
+    persist({ teamA: a, teamB: b, unassigned: r.unassigned });
+    const inMatches = matches.some((m) => [...(m.teamA || []), ...(m.teamB || [])].some((id) => picked.includes(id)));
+    const where = to === UNASSIGNED ? '미배정' : sides[to].name;
+    flash(inMatches
+      ? `${r.moved}명을 ${where}(으)로 옮겼습니다 — 이미 짠 대진은 그대로라 [대진 다시 생성]으로 반영하세요`
+      : `${r.moved}명을 ${where}(으)로 옮겼습니다`);
+  };
+
+  /** 교류전: 사람을 반대편으로 옮기기(예전 그대로) */
   const move = (p, from) => {
     if (from === 'A') { setTeamA(teamA.filter((x) => x.id !== p.id)); setTeamB([...teamB, p]); }
     else { setTeamB(teamB.filter((x) => x.id !== p.id)); setTeamA([...teamA, p]); }
@@ -94,11 +167,22 @@ export function TeamMatch({
         `${sides[0].name} ${teamA.length}명 · ${sides[1].name} ${teamB.length}명\n\n`
         + '단체전은 양 팀 모두 최소 2명이 필요합니다.');
     }
-    const ms = generateTeamMatches(teamA, teamB, courts, Number(nRounds) || 4, { sameSexOnly });
-    if (!ms.length) return flash('편성 가능한 구성이 없습니다');
-    setMatches(ms);
-    onSave?.({ teamA, teamB, matches: ms, opponentClub: oppClub, format });
-    return flash(`${ms.length}경기 생성`);
+    const run = () => {
+      const ms = generateTeamMatches(teamA, teamB, courts, Number(nRounds) || 4, { sameSexOnly });
+      if (!ms.length) { flash('편성 가능한 구성이 없습니다'); return; }
+      setMatches(ms);
+      persist({ matches: ms });
+      flash(`${ms.length}경기 생성`);
+    };
+    /* 미배정이 남았으면 그 사람들은 대진에 안 들어간다 — 먼저 알린다 */
+    if (unassigned.length) {
+      Alert.alert('미배정 회원이 있습니다',
+        `${unassigned.length}명이 아직 팀에 없어 대진에 들어가지 않습니다. 그래도 짤까요?`,
+        [{ text: '취소', style: 'cancel' }, { text: '그대로 짜기', onPress: run }]);
+      return undefined;
+    }
+    run();
+    return undefined;
   };
 
   const editScore = (m) => {
@@ -117,44 +201,66 @@ export function TeamMatch({
           return { ...x, score: o.key === 'a' ? { a: 6, b: 4 } : { a: 4, b: 6 } };
         });
         setMatches(next);
-        onSave?.({ teamA, teamB, matches: next, opponentClub: oppClub, format });
+        persist({ matches: next });
       },
     });
   };
+
+  /* 회원 한 줄 — 청백전 운영진은 눌러서 고른다(✓), 교류전은 예전처럼 눌러 반대편으로 */
+  const PlayerRow = ({ p, side, which }) => {
+    const on = picked.includes(p.id);
+    const onPress = selectable ? () => togglePick(p.id)
+      : (isAdmin && !p.external && which !== 'U' ? () => move(p, which) : undefined);
+    return (
+      <Touchable onPress={onPress} disabled={!onPress}
+        style={{
+          backgroundColor: on ? C.fill : side.bg, borderRadius: R.sm,
+          borderWidth: 1.5, borderColor: on ? C.green : 'transparent',
+          paddingHorizontal: 9, paddingVertical: 7,
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+        <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: on ? '800' : '700', color: side.color, flex: 1 }}>
+          {on ? '✓ ' : ''}{p.name}
+          <Text style={{ fontWeight: '400', fontSize: 11 }}>
+            {p.gender === 'F' ? ' 여' : ' 남'}{p.busu ? ` · ${p.busu}` : ''}
+          </Text>
+        </Text>
+        {!selectable && isAdmin && !p.external && (
+          <Text style={{ fontSize: 12, color: side.color, opacity: 0.5 }}>
+            {which === 'A' ? '→' : '←'}
+          </Text>
+        )}
+      </Touchable>
+    );
+  };
+
+  const PickAll = ({ list }) => (selectable && list.length > 0 ? (
+    <Touchable onPress={() => pickAll(list)}>
+      <Text style={{ fontSize: 11.5, fontWeight: '700', color: C.green2 }}>
+        {list.every((p) => picked.includes(p.id)) ? '풀기' : '모두'}
+      </Text>
+    </Touchable>
+  ) : null);
 
   const TeamColumn = ({ team, side, which }) => (
     <View style={{ flex: 1 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
         <TeamTag side={side}>{side.name}</TeamTag>
-        <Text style={{ fontSize: 11.5, color: C.sub }}>{team.length}명</Text>
+        <Text style={{ fontSize: 11.5, color: C.sub, flex: 1 }}>{team.length}명</Text>
+        <PickAll list={team} />
       </View>
       <View style={{ gap: 5 }}>
-        {team.map((p) => (
-          <Touchable key={p.id} onPress={() => isAdmin && !p.external && move(p, which)}
-            style={{
-              backgroundColor: side.bg, borderRadius: R.sm,
-              paddingHorizontal: 9, paddingVertical: 7,
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            }}>
-            <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '700', color: side.color, flex: 1 }}>
-              {p.name}
-              <Text style={{ fontWeight: '400', fontSize: 11 }}>
-                {p.gender === 'F' ? ' 여' : ' 남'}{p.busu ? ` · ${p.busu}` : ''}
-              </Text>
-            </Text>
-            {isAdmin && !p.external && (
-              <Text style={{ fontSize: 12, color: side.color, opacity: 0.5 }}>
-                {which === 'A' ? '→' : '←'}
-              </Text>
-            )}
-          </Touchable>
-        ))}
+        {team.map((p) => <PlayerRow key={p.id} p={p} side={side} which={which} />)}
         {team.length === 0 && (
           <Text style={{ fontSize: 11.5, color: C.faint }}>선수가 없습니다.</Text>
         )}
       </View>
     </View>
   );
+
+  /* 골라 둔 사람이 어디에 있는지 — 옮길 곳에서 '지금 있는 곳'은 뺀다 */
+  const pickedIn = (list) => list.some((p) => picked.includes(p.id));
+  const UNSIDE = { name: '미배정', color: C.sub, bg: C.fill };
 
   return (
     <View>
@@ -192,20 +298,76 @@ export function TeamMatch({
 
       {/* 팀 편성 */}
       <SectionTitle
-        hint={isAdmin && !isClubMatch ? '선수를 누르면 반대 팀으로 옮겨집니다.' : undefined}
-        right={isAdmin && !isClubMatch
-          ? <Chip tone="soft" onPress={reshuffle}>다시 나누기</Chip>
+        hint={selectable ? '회원을 눌러 여러 명 고른 뒤, 옮길 팀을 누르세요.' : undefined}
+        right={selectable && placement === 'auto'
+          ? <Chip tone="soft" onPress={() => Alert.alert('다시 고르게 나눌까요?',
+            `모든 회원을 두 팀으로 새로 나눕니다.${matches.length ? ' 지금 대진은 지워집니다.' : ''}`,
+            [{ text: '취소', style: 'cancel' }, { text: '다시 나누기', onPress: reshuffle }])}>다시 나누기</Chip>
           : undefined}>
         팀 편성
       </SectionTitle>
+      {selectable && (
+        <Card style={{ marginBottom: 10 }}>
+          <Label>배치 방식</Label>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <Chip tone={placement === 'auto' ? 'green' : 'outline'} onPress={() => choosePlacement('auto')}>자동 배치</Chip>
+            <Chip tone={placement === 'manual' ? 'green' : 'outline'} onPress={() => choosePlacement('manual')}>수동 배치</Chip>
+          </View>
+          <Text style={{ fontSize: 11, color: C.faint, marginTop: 6, lineHeight: 16 }}>
+            {placement === 'auto'
+              ? '실력·성비가 고르게 자동으로 나뉩니다. 나눈 뒤에도 여러 명을 골라 반대 팀으로 옮길 수 있습니다.'
+              : '미배정 회원을 골라 청팀·백팀에 넣습니다.'}
+          </Text>
+        </Card>
+      )}
       <Card>
+        {(unassigned.length > 0 || (selectable && placement === 'manual')) && (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <TeamTag side={UNSIDE}>미배정</TeamTag>
+              <Text style={{ fontSize: 11.5, color: C.sub, flex: 1 }}>{unassigned.length}명</Text>
+              <PickAll list={unassigned} />
+            </View>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+              {unassigned.map((p) => (
+                <View key={p.id} style={{ width: '48%' }}><PlayerRow p={p} side={UNSIDE} which="U" /></View>
+              ))}
+              {unassigned.length === 0 && (
+                <Text style={{ fontSize: 11.5, color: C.faint }}>모든 회원이 팀에 들어갔습니다.</Text>
+              )}
+            </View>
+            <Divider style={{ marginVertical: S.md }} />
+          </>
+        )}
         <View style={{ flexDirection: 'row', gap: S.md }}>
           <TeamColumn team={teamA} side={sides[0]} which="A" />
           <View style={{ width: 1, backgroundColor: C.border }} />
           <TeamColumn team={teamB} side={sides[1]} which="B" />
         </View>
 
-        {!isClubMatch && (
+        {selectable && picked.length > 0 && (
+          <View style={{ marginTop: S.md, padding: 10, borderRadius: R.md, backgroundColor: C.fill }}>
+            <Text style={{ fontSize: 11.5, fontWeight: '800', color: C.text }}>고른 {picked.length}명을 옮길 곳</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {[0, 1].map((j) => {
+                const here = j === 0 ? teamA : teamB;
+                /* 고른 사람이 전부 이 팀이면 옮길 곳이 아니다 */
+                if (here.length && picked.every((id) => here.some((p) => p.id === id))) return null;
+                return (
+                  <Chip key={j} tone="outline" onPress={() => moveTo(j)}>
+                    <Text style={{ color: sides[j].color, fontWeight: '800' }}>{sides[j].name}</Text>
+                  </Chip>
+                );
+              })}
+              {!(pickedIn(unassigned) && picked.every((id) => unassigned.some((p) => p.id === id))) && (
+                <Chip tone="outline" onPress={() => moveTo(UNASSIGNED)}>미배정</Chip>
+              )}
+              <Chip tone="soft" onPress={() => setPicked([])}>선택 해제</Chip>
+            </View>
+          </View>
+        )}
+
+        {!isClubMatch && teamA.length > 0 && teamB.length > 0 && (
           <>
             <Divider style={{ marginVertical: S.md }} />
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -219,7 +381,7 @@ export function TeamMatch({
             <Text style={{ fontSize: 11, color: Math.abs(strengthA - strengthB) < 0.25 ? C.green2 : C.warn, marginTop: 4 }}>
               {Math.abs(strengthA - strengthB) < 0.25
                 ? '✓ 전력이 고르게 나뉘었습니다'
-                : `△ 실력 차 ${Math.abs(strengthA - strengthB).toFixed(2)} — 선수를 눌러 조정하세요`}
+                : `△ 실력 차 ${Math.abs(strengthA - strengthB).toFixed(2)} — 선수를 골라 옮겨 조정하세요`}
             </Text>
           </>
         )}
