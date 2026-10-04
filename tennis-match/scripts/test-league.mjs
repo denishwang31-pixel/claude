@@ -364,6 +364,9 @@ section('자동으로 짠 뒤 손보기 · 대진 삭제 (2팀·3팀)');
     ok(/const clearAll = \(\) => Alert\.alert\('대진을 모두 지울까요\?'/.test(src) && /onClearAll=\{clearAll\}/.test(src), `${f}: 대진 삭제(확인 후)`);
     ok(!/useOptionSheet/.test(src), `${f}: 점수·고치기·삭제가 섞인 메뉴는 없앴다`);
   }
+  ok(/sideOf=\{\(m, side\) => look\(side === 'A' \? m\.teamAIdx : m\.teamBIdx\)\}/.test(read('TeamLeagueScreen.jsx')), '3팀 대진표 칸마다 팀 꼬리표(청·백·홍)');
+  ok(/sideOf=\{\(m, side\) => \(side === 'A'/.test(read('TeamMatchScreen.jsx')), '2팀 대진표 칸마다 팀 꼬리표(청·백)');
+  ok(/function SideTag/.test(read('MatchGrid.jsx')) && /sideOf = null/.test(read('MatchGrid.jsx')), '꼬리표는 sideOf 를 줄 때만 — 다른 대진표는 그대로');
   const mb = read('MatchBoard.jsx');
   ok(/'결과 입력'/.test(mb) && /'대진표 수정'/.test(mb) && /대진 삭제/.test(mb) && /경기 추가/.test(mb), '버튼 줄: 결과 입력 · 대진표 수정(+ 경기 추가 · 대진 삭제)');
   ok(/<LeagueMatchEditor/.test(read('TeamMatchScreen.jsx')) && /twoTeamSide/.test(read('TeamMatchScreen.jsx')), '2팀 청백전에도 경기 고치기 화면');

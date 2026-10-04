@@ -90,6 +90,12 @@ export function TeamMatch({
     [teamA, teamB, matches],
   );
 
+  const genderOf = useMemo(() => {
+    const map = {};
+    [...teamA, ...teamB, ...unassigned].forEach((p) => { map[p.id] = p.gender; });
+    return (id) => map[id] || '';
+  }, [teamA, teamB, unassigned]);
+
   const nameOf = useMemo(() => {
     const map = {};
     [...teamA, ...teamB].forEach((p) => { map[p.id] = p.name; });
@@ -551,7 +557,10 @@ export function TeamMatch({
             <BoardModeBar mode={mode} onMode={setMode} onAdd={openAdd} onClearAll={clearAll} hasMatches={matches.length > 0} />
           )}
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={matches} nameOf={nameOf} venue={venue} onPressMatch={onPressMatch} />
+            <MatchGrid matches={matches} nameOf={nameOf} genderOf={genderOf} venue={venue} onPressMatch={onPressMatch}
+              sideOf={(m, side) => (side === 'A'
+                ? { ...sides[0], name: isClubMatch ? '우리' : sides[0].name }
+                : { ...sides[1], name: isClubMatch ? (oppClub || '상대') : sides[1].name })} />
           </Card>
 
           {mvp.length > 0 && (

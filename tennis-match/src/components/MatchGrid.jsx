@@ -64,11 +64,30 @@ function TeamText({ ids, nameOf, genderOf, me, win, dim }) {
   );
 }
 
-/* venue 를 받는 이유는 코트 이름 때문이다. 경기 문서의 court 는 계속
+/* 팀 꼬리표 — 청백전(2팀·3팀)·팀 리그에서 칸마다 어느 팀인지(청·백·홍).
+   이름 색은 남녀 구분에 쓰고 있어서, 팀은 이름 위 작은 꼬리표로 따로 보인다(2026-10-04 앱 주인).
+   백팀처럼 바탕이 흰 팀도 보이게 테두리를 팀 색으로 두른다. */
+function SideTag({ side }) {
+  if (!side) return null;
+  return (
+    <View style={{ alignItems: 'center', marginBottom: 1 }}>
+      <View style={{
+        backgroundColor: side.bg || '#fff', borderColor: side.color || C.border, borderWidth: 1,
+        borderRadius: 4, paddingHorizontal: 5, paddingVertical: 0,
+      }}>
+        <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: '800', color: side.color || C.sub }}>{side.name}</Text>
+      </View>
+    </View>
+  );
+}
+
+/* sideOf(m, 'A'|'B') → { name, color, bg } — 주면 칸마다 팀 꼬리표를 단다(없으면 예전과 같다)
+
+   venue 를 받는 이유는 코트 이름 때문이다. 경기 문서의 court 는 계속
    1·2·3 숫자이고, 그 코트장이 실제로 부르는 이름(A·B·C, 9·10·11)으로
    **보여 줄 때만** 바꾼다. 저장된 값을 바꾸면 쌓인 대진과 전적이
    어긋난다 — src/lib/courtNames.js 머리말 참고. */
-export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPressMatch, venue = null, pending}) {
+export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPressMatch, venue = null, pending, sideOf = null }) {
   if (!matches?.length) return null;
 
   const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
@@ -155,9 +174,11 @@ export function MatchGrid({ matches, nameOf, genderOf, me, roundTimes = [], onPr
                           : <Text style={{ fontSize: 9, color: C.faint }}>기록전</Text>}
                     </View>
                     <View style={{ marginTop: 4 }}>
+                      {!!sideOf && <SideTag side={sideOf(m, 'A')} />}
                       <TeamText ids={m.teamA} nameOf={nameOf} genderOf={genderOf} me={me}
                         win={aWin} dim={m.score && !aWin} />
                       <Text style={{ fontSize: 8, color: C.faint, textAlign: 'center', marginVertical: 1 }}>vs</Text>
+                      {!!sideOf && <SideTag side={sideOf(m, 'B')} />}
                       <TeamText ids={m.teamB} nameOf={nameOf} genderOf={genderOf} me={me}
                         win={bWin} dim={m.score && !bWin} />
                     </View>

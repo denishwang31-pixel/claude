@@ -659,6 +659,7 @@ export function TeamLeague({
           )}
           <Card style={{ padding: 10 }}>
             <MatchGrid matches={matches} nameOf={nameOf} genderOf={genderOf} venue={venue}
+              sideOf={(m, side) => look(side === 'A' ? m.teamAIdx : m.teamBIdx)}
               onPressMatch={onPressMatch} />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
               {teams.map((_, i) => {
