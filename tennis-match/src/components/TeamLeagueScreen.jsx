@@ -33,6 +33,7 @@ import { AppButton, Touchable, useOptionSheet } from './native';
 import { Card, SectionTitle, Chip, Field, Divider, EmptyState } from './ui';
 import { Label } from './pickers';
 import { C, S, R, F } from '../lib/theme';
+import { guard, later } from '../lib/crashReport';
 
 /**
  * @param courtNames       대회 문서의 코트 이름(2팀·3팀 청백전이 함께 쓴다)
@@ -56,7 +57,8 @@ export function TeamLeague({
   const [roundTypes, setRoundTypes] = useState(saved?.config?.roundTypes || {});
   /* 한 팀은 한 타임에 한 코트만 — 예전 기본. 이제는 끄는 것이 기본(팀보다 코트가 많으면 못 짠다) */
   const [oneCourtPerTeam, setOneCourtPerTeam] = useState(!!saved?.config?.oneCourtPerTeam);
-  const [editing, setEditing] = useState(null);    // { id|null, draft } — 경기 추가·고치기 화면
+  const [editing, setEditing] = useState(null);
+  const [shortNote, setShortNote] = useState([]);  // 대진을 짤 때 못 채운 코트 — 창 대신 화면에    // { id|null, draft } — 경기 추가·고치기 화면
   /* 팀 이름 — 비어 있으면 A팀·B팀…(lib/teamLeague.js teamLook). 청팀·홍팀처럼 바꾸면 색도 따라간다 */
   const [teamNames, setTeamNames] = useState(saved?.config?.teamNames || []);
   const [renaming, setRenaming] = useState(null);  // { idx, text }
@@ -94,6 +96,9 @@ export function TeamLeague({
     [teams, matches, teamNames],
   );
   const check = useMemo(() => diagnoseLeague(teams, cfg), [teams, nCourts, nRounds, roundTypes, oneCourtPerTeam, teamNames]);
+
+  /* 버튼·알림창 처리 중 오류 — 앱을 끄지 않고 알리기만(lib/crashReport.js guard) */
+  const fail = () => flash('문제가 생겨 멈췄습니다. 잠시 뒤 다시 해 주세요');
 
   /* ⚠️ 저장 실패가 버튼 처리 안에서 터지면 앱이 꺼진다 — 여기서 받아 알리기만 한다 */
   const persist = (next) => {
@@ -158,16 +163,16 @@ export function TeamLeague({
     const wipe = matches.length ? ' 지금 대진도 지워집니다.' : '';
     if (mode === 'auto') {
       Alert.alert('자동 배치로 바꿀까요?', `모든 회원을 실력·성비가 고르게 ${teams.length}팀으로 다시 나눕니다.${wipe}`,
-        [{ text: '취소', style: 'cancel' }, { text: '자동 배치', onPress: () => reshuffle(teams.length, 'auto') }]);
+        [{ text: '취소', style: 'cancel' }, { text: '자동 배치', onPress: guard(() => reshuffle(teams.length, 'auto'), 'league-placement', fail) }]);
       return;
     }
     Alert.alert('수동 배치', `모든 회원을 미배정으로 돌리고 직접 팀에 넣을까요?${wipe}\n\n지금 편성을 그대로 두고 고치기만 할 수도 있습니다.`, [
       { text: '취소', style: 'cancel' },
       {
         text: '지금 편성 그대로',
-        onPress: () => { setPlacement('manual'); persist({ config: { ...cfg, placement: 'manual' } }); },
+        onPress: guard(() => { setPlacement('manual'); persist({ config: { ...cfg, placement: 'manual' } }); }, 'league-placement', fail),
       },
-      { text: '미배정에서 시작', onPress: startManual },
+      { text: '미배정에서 시작', onPress: guard(startManual, 'league-placement', fail) },
     ]);
   };
 
@@ -229,41 +234,33 @@ export function TeamLeague({
     persist({ config: { ...cfg, roundTypes: next } });
   };
 
-  const generate = () => {
+  /* ⚠️ 알림창 안에서 알림창을 또 열지 않는다 — 안드로이드에서 앱이 통째로 꺼질 수 있다
+        (2026-10-04 3팀 청백전 [대진 다시 작성]에서 하얀 화면 · 앱 꺼짐).
+        확인은 한 번에 묻고, 못 채운 코트는 창이 아니라 화면(대진표 위)에 남긴다. */
+
+  const generate = guard(() => {
     if (teams.filter((t) => t.length).length < MIN_TEAMS) {
-      return flash(`선수가 있는 팀이 ${MIN_TEAMS}개 이상 필요합니다`);
+      flash(`선수가 있는 팀이 ${MIN_TEAMS}개 이상 필요합니다`);
+      return;
     }
-    /* 손으로 고친 것·점수가 있으면 한 번 묻는다 — 다시 짜면 전부 새로 만든다 */
-    const confirmRedo = () => {
-      if (!matches.length) { runGenerate(); return; }
-      Alert.alert('대진을 다시 짤까요?',
-        `지금 대진 ${matches.length}경기${matches.some((m) => m.score) ? '와 넣은 점수' : ''}가 지워지고 새로 만들어집니다.`,
-        [{ text: '취소', style: 'cancel' }, { text: '다시 짜기', style: 'destructive', onPress: runGenerate }]);
-    };
-    /* 미배정이 남았으면 그 사람들은 대진에 안 들어간다 — 먼저 알린다 */
-    if (unassigned.length) {
-      Alert.alert('미배정 회원이 있습니다',
-        `${unassigned.length}명이 아직 팀에 없어 대진에 들어가지 않습니다. 그래도 짤까요?`,
-        [{ text: '취소', style: 'cancel' }, { text: '그대로 짜기', onPress: confirmRedo }]);
-      return undefined;
-    }
-    confirmRedo();
-    return undefined;
-  };
+    const notes = [];
+    if (unassigned.length) notes.push(`미배정 ${unassigned.length}명은 팀에 없어 대진에 들어가지 않습니다.`);
+    if (matches.length) notes.push(`지금 대진 ${matches.length}경기${matches.some((m) => m.score) ? '와 넣은 점수' : ''}가 지워지고 새로 만들어집니다.`);
+    if (!notes.length) { runGenerate(); return; }
+    Alert.alert(matches.length ? '대진을 다시 짤까요?' : '대진을 짤까요?', notes.join('\n\n'), [
+      { text: '취소', style: 'cancel' },
+      { text: matches.length ? '다시 짜기' : '짜기', style: matches.length ? 'destructive' : 'default', onPress: () => later(runGenerate, 'league-generate', fail) },
+    ]);
+  }, 'league-generate', fail);
 
   const runGenerate = () => {
     const { matches: ms, shortages } = generateLeagueMatches(teams, cfg);
-    if (!ms.length) return flash('편성 가능한 구성이 없습니다. 팀 인원과 타임 유형을 확인하세요');
+    if (!ms.length) { flash('편성 가능한 구성이 없습니다. 팀 인원과 타임 유형을 확인하세요'); return; }
     setMatches(ms);
+    setShortNote(shortages.slice(0, 8).map((x) => `${x.round}타임 코트 ${cn(x.court)} ${x.type} — ${x.reason}`)
+      .concat(shortages.length > 8 ? [`외 ${shortages.length - 8}건`] : []));
     persist({ matches: ms, config: cfg });
-    if (shortages.length) {
-      Alert.alert('일부 코트를 채우지 못했습니다',
-        `${ms.length}경기를 만들었습니다.\n\n`
-        + shortages.slice(0, 6).map((s) => `${s.round}타임 코트 ${cn(s.court)} ${s.type} — ${s.reason}`).join('\n')
-        + (shortages.length > 6 ? `\n외 ${shortages.length - 6}건` : ''));
-      return undefined;
-    }
-    return flash(`${ms.length}경기를 편성했습니다`);
+    flash(shortages.length ? `${ms.length}경기를 편성했습니다 — 못 채운 코트 ${shortages.length}곳은 대진표 위에 적어 두었습니다` : `${ms.length}경기를 편성했습니다`);
   };
 
   /* ---- 손으로 넣기·고치기·지우기 ---- */
@@ -302,11 +299,13 @@ export function TeamLeague({
         { key: 'edit', label: '경기 고치기 (타임·코트·선수)' },
         { key: 'del', label: '경기 삭제', destructive: true },
       ],
-      onSelect: (o) => {
-        if (o.key === 'edit') { setEditing({ id: m.id, draft: matchToDraft(m) }); return; }
+      onSelect: guard((o) => {
+        /* 선택 시트가 닫히는 중에 또 다른 창(경기 고치기)을 바로 열지 않는다 */
+        if (o.key === 'edit') { later(() => setEditing({ id: m.id, draft: matchToDraft(m) }), 'league-edit', fail); return; }
         if (o.key === 'del') {
-          Alert.alert('이 경기를 지울까요?', `${m.round}타임 코트 ${cn(m.court)} · ${A} vs ${B}`,
-            [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: () => deleteMatch(m.id) }]);
+          /* 선택 시트가 닫히는 중이라 한 박자 뒤에 연다 */
+          later(() => Alert.alert('이 경기를 지울까요?', `${m.round}타임 코트 ${cn(m.court)} · ${A} vs ${B}`,
+            [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: guard(() => deleteMatch(m.id), 'league-delete', fail) }]), 'league-delete', fail);
           return;
         }
         const map = {
@@ -317,7 +316,7 @@ export function TeamLeague({
           (x.id === m.id ? { ...x, score: o.key === 'clear' ? null : map[o.key] } : x));
         setMatches(next);
         persist({ matches: next });
-      },
+      }, 'league-score', fail),
     });
   };
 
@@ -455,7 +454,7 @@ export function TeamLeague({
             {placement === 'auto' && (
               <Chip tone="soft" onPress={() => Alert.alert('다시 고르게 나눌까요?',
                 `모든 회원을 ${teams.length}팀으로 새로 나눕니다.${matches.length ? ' 지금 대진은 지워집니다.' : ''}`,
-                [{ text: '취소', style: 'cancel' }, { text: '다시 나누기', onPress: () => reshuffle(teams.length) }])}>
+                [{ text: '취소', style: 'cancel' }, { text: '다시 나누기', onPress: guard(() => reshuffle(teams.length), 'league-reshuffle', fail) }])}>
                 다시 나누기
               </Chip>
             )}
@@ -642,6 +641,15 @@ export function TeamLeague({
           <SectionTitle hint={isAdmin ? '경기를 누르면 결과 기록 · 고치기 · 삭제' : undefined}>
             대진표
           </SectionTitle>
+          {shortNote.length > 0 && (
+            <View style={{ marginBottom: S.sm, padding: 10, borderRadius: R.md, backgroundColor: C.warnBg }}>
+              <Text style={{ fontSize: 11.5, fontWeight: '800', color: C.warn }}>못 채운 코트가 있습니다</Text>
+              {shortNote.map((x) => (
+                <Text key={x} style={{ fontSize: 11, color: C.warn, marginTop: 3 }}>· {x}</Text>
+              ))}
+              <Text style={{ fontSize: 10.5, color: C.warn, marginTop: 4 }}>팀 인원·타임별 유형을 바꾸거나 [경기 직접 추가]로 채울 수 있습니다.</Text>
+            </View>
+          )}
           <Card style={{ padding: 10 }}>
             <MatchGrid matches={matches} nameOf={nameOf} genderOf={genderOf} venue={venue}
               onPressMatch={editScore} />

@@ -17,6 +17,7 @@ import {
 import { moveToTeam, UNASSIGNED } from '../lib/teamLeague';
 import { courtLabel } from '../lib/courtNames';
 import { CourtNamesEditor } from './CourtNamesEditor';
+import { guard, later } from '../lib/crashReport';
 import { TOURNAMENT_FORMAT, TEAM_SIDES, BUSU_KEYS, busuToNtrp } from '../lib/constants';
 import { MatchGrid } from './MatchGrid';
 import { AppButton, Segmented, Touchable, useOptionSheet } from './native';
@@ -86,6 +87,9 @@ export function TeamMatch({
     return (id) => map[id] || '?';
   }, [teamA, teamB]);
 
+  /* 버튼·알림창 처리 중 오류 — 앱을 끄지 않고 알리기만(lib/crashReport.js guard) */
+  const fail = () => flash('문제가 생겨 멈췄습니다. 잠시 뒤 다시 해 주세요');
+
   /* ⚠️ 저장 실패가 버튼 처리 안에서 터지면 앱이 꺼진다 — 받아서 알리기만 한다 */
   const persist = (next = {}) => {
     try {
@@ -123,13 +127,13 @@ export function TeamMatch({
     const wipe = matches.length ? ' 지금 대진도 지워집니다.' : '';
     if (mode === 'auto') {
       Alert.alert('자동 배치로 바꿀까요?', `모든 회원을 실력·성비가 고르게 두 팀으로 다시 나눕니다.${wipe}`,
-        [{ text: '취소', style: 'cancel' }, { text: '자동 배치', onPress: reshuffle }]);
+        [{ text: '취소', style: 'cancel' }, { text: '자동 배치', onPress: guard(reshuffle, 'team-placement', fail) }]);
       return;
     }
     Alert.alert('수동 배치', `모든 회원을 미배정으로 돌리고 직접 팀에 넣을까요?${wipe}\n\n지금 편성을 그대로 두고 고치기만 할 수도 있습니다.`, [
       { text: '취소', style: 'cancel' },
-      { text: '지금 편성 그대로', onPress: () => { setPlacement('manual'); persist({ placement: 'manual' }); } },
-      { text: '미배정에서 시작', onPress: startManual },
+      { text: '지금 편성 그대로', onPress: guard(() => { setPlacement('manual'); persist({ placement: 'manual' }); }, 'team-placement', fail) },
+      { text: '미배정에서 시작', onPress: guard(startManual, 'team-placement', fail) },
     ]);
   };
 
@@ -175,7 +179,7 @@ export function TeamMatch({
     return flash('상대 선수를 추가했습니다');
   };
 
-  const gen = () => {
+  const gen = guard(() => {
     if (teamA.length < 2 || teamB.length < 2) {
       return Alert.alert('인원이 부족합니다',
         `${sides[0].name} ${teamA.length}명 · ${sides[1].name} ${teamB.length}명\n\n`
@@ -192,12 +196,12 @@ export function TeamMatch({
     if (unassigned.length) {
       Alert.alert('미배정 회원이 있습니다',
         `${unassigned.length}명이 아직 팀에 없어 대진에 들어가지 않습니다. 그래도 짤까요?`,
-        [{ text: '취소', style: 'cancel' }, { text: '그대로 짜기', onPress: run }]);
+        [{ text: '취소', style: 'cancel' }, { text: '그대로 짜기', onPress: () => later(run, 'team-generate', fail) }]);
       return undefined;
     }
     run();
     return undefined;
-  };
+  }, 'team-generate', fail);
 
   const editScore = (m) => {
     if (!isAdmin) return;
@@ -208,7 +212,7 @@ export function TeamMatch({
         { key: 'b', label: `${sides[1].name} 승 (4:6)` },
         { key: 'clear', label: '기록 지우기' },
       ],
-      onSelect: (o) => {
+      onSelect: guard((o) => {
         const next = matches.map((x) => {
           if (x.id !== m.id) return x;
           if (o.key === 'clear') return { ...x, score: null };
@@ -216,7 +220,7 @@ export function TeamMatch({
         });
         setMatches(next);
         persist({ matches: next });
-      },
+      }, 'team-score', fail),
     });
   };
 
@@ -316,7 +320,7 @@ export function TeamMatch({
         right={selectable && placement === 'auto'
           ? <Chip tone="soft" onPress={() => Alert.alert('다시 고르게 나눌까요?',
             `모든 회원을 두 팀으로 새로 나눕니다.${matches.length ? ' 지금 대진은 지워집니다.' : ''}`,
-            [{ text: '취소', style: 'cancel' }, { text: '다시 나누기', onPress: reshuffle }])}>다시 나누기</Chip>
+            [{ text: '취소', style: 'cancel' }, { text: '다시 나누기', onPress: guard(reshuffle, 'team-reshuffle', fail) }])}>다시 나누기</Chip>
           : undefined}>
         팀 편성
       </SectionTitle>

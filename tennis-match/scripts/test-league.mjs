@@ -18,6 +18,7 @@ import {
   moveToTeam, emptyTeams, resizeTeams, UNASSIGNED,
   checkLeagueMatch, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft, sideSize,
 } from '../src/lib/teamLeague.js';
+import { guard, ALERT_GAP_MS } from '../src/lib/crashReport.js';
 import {
   slotSize, blankDraw, labelOf, toggleInSlot, busyInRound, playCounts, reviewDraw,
   sameDraw, draftChanges,
@@ -316,6 +317,30 @@ section('청백전 · 팀 리그 코트 이름');
   const ts = read('TournamentScreen.jsx');
   eq('대회 문서 courtNames 를 2팀·3팀 화면 둘 다에 넘긴다', (ts.match(/onSaveCourtNames=\{\(names\) => updateTournament\(clubId, t\.id, \{ courtNames: names \}\)\}/g) || []).length, 2);
   ok(/courtName\(c\)/.test(read('LeagueMatchEditor.jsx')), '경기 추가·고치기 화면의 코트도 이름으로 고른다');
+}
+
+section('버튼 처리 오류가 앱을 끄지 않는다 · 알림창 안에서 알림창 금지');
+{
+  /* 2026-10-04: 3팀 청백전 [대진 다시 작성] → 확인 창 안에서 '못 채운 코트' 창을 또 열다 앱이 꺼졌다 */
+  let failed = 0;
+  const g = guard(() => { throw new Error('x'); }, 'test', () => { failed += 1; });
+  ok(g() === undefined && failed === 1, 'guard: 안에서 오류가 나도 밖으로 던지지 않고 알린다');
+  eq('guard: 정상이면 값을 그대로', guard((a) => a * 2, 'test')(21), 42);
+  await guard(async () => { throw new Error('y'); }, 'test', () => { failed += 1; })();
+  await new Promise((r) => setTimeout(r, 0));
+  eq('guard: 비동기 실패도 알린다', failed, 2);
+  ok(ALERT_GAP_MS >= 250, '다음 창은 앞 창이 닫힐 틈을 두고');
+  const read = (f) => readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8');
+  const lg = read('TeamLeagueScreen.jsx');
+  ok(!/Alert\.alert\('일부 코트를 채우지 못했습니다'/.test(lg) && /못 채운 코트가 있습니다/.test(lg), '못 채운 코트는 창이 아니라 화면에');
+  ok(/later\(runGenerate, /.test(lg) && !/onPress: runGenerate/.test(lg) && !/onPress: confirmRedo/.test(lg), '확인 창 버튼에서 대진 짜기는 한 박자 뒤에');
+  ok(/later\(\(\) => setEditing\(/.test(lg) && /later\(\(\) => Alert\.alert\('이 경기를 지울까요\?'/.test(lg), '선택 시트가 닫히는 중에는 창을 바로 열지 않는다');
+  const tm = read('TeamMatchScreen.jsx');
+  ok(/const gen = guard\(/.test(tm) && /later\(run, /.test(tm), '2팀 화면도 같은 보호');
+  const ce = read('CourtNamesEditor.jsx');
+  ok(/onBlur=\{save\}/.test(ce) && /prevSaved/.test(ce), '코트 이름: 칸에서 벗어나면 저장, 옆 칸 입력은 지우지 않는다');
+  const cr = readFileSync(new URL('../src/lib/crashReport.js', import.meta.url), 'utf8');
+  ok(/reportCrash\(error, \{ where: 'global' \}\)\.then\(once, once\)/.test(cr) && /setTimeout\(once, 2000\)/.test(cr), '앱이 꺼지기 전에 기록이 서버에 닿을 틈(최대 2초)');
 }
 
 section('손으로 넣기 · 고치기 · 지우기');

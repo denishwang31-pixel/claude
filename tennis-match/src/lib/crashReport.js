@@ -83,7 +83,10 @@ export async function reportCrash(error, { where = '' } = {}) {
   }
 }
 
-/** 화면 밖에서 난 치명적 오류도 한 번 남긴다 — 원래 처리기는 그대로 부른다 */
+/** 화면 밖에서 난 치명적 오류도 한 번 남긴다 — 원래 처리기는 그대로 부른다.
+    ⚠️ 원래 처리기는 앱을 바로 내린다. 그 전에 기록이 서버에 닿을 틈을 준다(최대 2초).
+       2026-10-04: 3팀 청백전 [대진 다시 작성]에서 앱이 꺼졌는데 기록이 남지 않았다 —
+       기록을 보내는 중에 앱이 먼저 내려간 것으로 본다. */
 let installed = false;
 export function installCrashHandler() {
   if (installed) return;
@@ -93,10 +96,47 @@ export function installCrashHandler() {
     if (!EU?.setGlobalHandler) return;
     const prev = EU.getGlobalHandler?.();
     EU.setGlobalHandler((error, isFatal) => {
-      if (isFatal) reportCrash(error, { where: 'global' });
-      if (typeof prev === 'function') prev(error, isFatal);
+      const pass = () => { if (typeof prev === 'function') prev(error, isFatal); };
+      if (!isFatal) { pass(); return; }
+      let done = false;
+      const once = () => { if (!done) { done = true; pass(); } };
+      reportCrash(error, { where: 'global' }).then(once, once);
+      setTimeout(once, 2000);
     });
   } catch (e) { /* 없으면 넘어간다 */ }
 }
 
-export default { crashPayload, reportCrash, installCrashHandler, setCrashPath };
+/**
+ * 버튼·알림창 처리를 감싼다 — 그 안에서 오류가 나도 앱이 꺼지지 않게.
+ * 화면을 그리는 중의 오류는 ErrorBoundary 가 잡지만, 버튼을 누른 뒤의 오류는
+ * 잡는 곳이 없어 곧장 앱이 내려간다. 여기서 받아 기록하고(where 로 어디서 났는지),
+ * onFail 로 화면에 짧게 알린다.
+ */
+export function guard(fn, where, onFail) {
+  return (...args) => {
+    const fail = (e) => {
+      reportCrash(e, { where });
+      try { onFail?.(e); } catch (x) { /* 알리기가 실패해도 그대로 */ }
+    };
+    try {
+      const r = fn(...args);
+      if (r && typeof r.then === 'function') return r.then(undefined, (e) => { fail(e); return undefined; });
+      return r;
+    } catch (e) {
+      fail(e);
+      return undefined;
+    }
+  };
+}
+
+/**
+ * 알림창 버튼을 누른 뒤 또 알림창을 띄울 때 — 앞 창이 닫힐 틈을 두고 연다.
+ * ⚠️ 안드로이드는 닫히는 중인 창 위에 곧바로 새 창을 열면 앱이 통째로 꺼질 수 있다
+ *    (선택 시트·알림창 모두). 그래서 한 박자 늦게, 그리고 guard 로 감싸서 연다.
+ */
+export const ALERT_GAP_MS = 350;
+export function later(fn, where = 'later', onFail) {
+  setTimeout(guard(fn, where, onFail), ALERT_GAP_MS);
+}
+
+export default { crashPayload, reportCrash, installCrashHandler, setCrashPath, guard, later };
