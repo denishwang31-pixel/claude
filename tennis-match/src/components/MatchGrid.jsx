@@ -67,15 +67,25 @@ function TeamText({ ids, nameOf, genderOf, me, win, dim }) {
 /* 팀 꼬리표 — 청백전(2팀·3팀)·팀 리그에서 칸마다 어느 팀인지(청·백·홍).
    이름 색은 남녀 구분에 쓰고 있어서, 팀은 이름 위 작은 꼬리표로 따로 보인다(2026-10-04 앱 주인).
    백팀처럼 바탕이 흰 팀도 보이게 테두리를 팀 색으로 두른다. */
+/* 팀 표시는 꽉 찬 색 상자 — 연한 바탕에 글자색만 다르면 청팀(파랑)과 백팀(회색)이 잘 안 갈렸다
+   (2026-10-04 앱 주인). 백팀은 흰 상자에 검은 테두리·글자, 나머지는 팀 색 상자에 흰 글자. */
+const WHITE_TEAM = /^(백|흰|하양|화이트|white)/i;
+export function teamSolid(side) {
+  if (!side) return { bg: '#fff', fg: C.sub, border: C.border };
+  if (WHITE_TEAM.test(String(side.name || ''))) return { bg: '#ffffff', fg: '#111827', border: '#111827' };
+  return { bg: side.color || C.sub, fg: '#ffffff', border: side.color || C.sub };
+}
+
 function SideTag({ side }) {
   if (!side) return null;
+  const t = teamSolid(side);
   return (
     <View style={{ alignItems: 'center', marginBottom: 1 }}>
       <View style={{
-        backgroundColor: side.bg || '#fff', borderColor: side.color || C.border, borderWidth: 1,
+        backgroundColor: t.bg, borderColor: t.border, borderWidth: 1,
         borderRadius: 4, paddingHorizontal: 5, paddingVertical: 0,
       }}>
-        <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: '800', color: side.color || C.sub }}>{side.name}</Text>
+        <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: '800', color: t.fg }}>{side.name}</Text>
       </View>
     </View>
   );
@@ -290,17 +300,21 @@ export function AttendanceGrid({
             ))}
           </View>
 
-          {sections.map((sec) => (
-            <View key={sec.key}>
+          {sections.map((sec) => {
+            const t = teamSolid(sec);
+            /* 팀마다 테두리 상자 — 위에 팀 이름 띠. 이름 앞 점 대신 상자로 묶는다(2026-10-04 앱 주인) */
+            return (
+            <View key={sec.key} style={sec.name ? {
+              marginTop: 10, borderWidth: 2, borderColor: t.border, borderRadius: 8, overflow: 'hidden',
+            } : undefined}>
               {!!sec.name && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginBottom: 4, paddingLeft: 2 }}>
-                  <View style={{
-                    backgroundColor: sec.bg || '#fff', borderColor: sec.color || C.border, borderWidth: 1,
-                    borderRadius: 5, paddingHorizontal: 7, paddingVertical: 1,
-                  }}>
-                    <Text style={{ fontSize: 11.5, fontWeight: '800', color: sec.color || C.sub }}>{sec.name}</Text>
-                  </View>
-                  <Text style={{ fontSize: 10.5, color: C.faint }}>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 8,
+                  backgroundColor: t.bg, paddingHorizontal: 8, paddingVertical: 4,
+                  borderBottomWidth: t.bg === '#ffffff' ? 1 : 0, borderBottomColor: t.border,
+                }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '900', color: t.fg }}>{sec.name}</Text>
+                  <Text style={{ fontSize: 10.5, color: t.fg, opacity: 0.85 }}>
                     {sec.players.length}명{sec.games != null ? ` · 팀 경기 ${sec.games}` : ''}
                   </Text>
                 </View>
@@ -368,7 +382,8 @@ export function AttendanceGrid({
                 );
               })}
             </View>
-          ))}
+            );
+          })}
 
           {/* 맨 아래 — 전체 경기 수 · 유형별 */}
           {!!typeOf && (

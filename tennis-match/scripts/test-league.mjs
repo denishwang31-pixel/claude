@@ -343,6 +343,8 @@ section('버튼 처리 오류가 앱을 끄지 않는다 · 알림창 안에서 
   const cr = readFileSync(new URL('../src/lib/crashReport.js', import.meta.url), 'utf8');
   ok(/export async function checkLastRun/.test(cr) && /where: 'last-run'/.test(cr) && /\.slice\(-1990\)/.test(cr), '갑자기 꺼짐: 다음에 켤 때 마지막 화면·동작을 남긴다(넘치면 최근 것을 남김)');
   const lay = readFileSync(new URL('../app/_layout.jsx', import.meta.url), 'utf8');
+  ok(/startStallWatch\(\)/.test(lay) && /where: 'stall'/.test(cr) && /if \(!appActive \|\| gap < 2500\) return;/.test(cr), '화면 멈춤 감지(2.5초 이상, 백그라운드 제외)');
+
   ok(/checkLastRun\(\)/.test(lay) && /st === 'background'\) markCleanExit\(\)/.test(lay), '뒤로 가면 정상 종료로 적어 둔다');
   for (const f of ['src/components/UpdateBanner.jsx', 'src/components/UpdateStatus.jsx', 'app/login.jsx', 'app/_layout.jsx']) {
     const src = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
@@ -381,6 +383,8 @@ section('자동으로 짠 뒤 손보기 · 대진 삭제 (2팀·3팀)');
     '창은 없애지 않고 visible 만 끈다(안드로이드에서 하얀 껍데기가 남지 않게)');
   ok(/groups = null/.test(read('MatchGrid.jsx')) && /groups=\{teams\.map\(/.test(read('TeamLeagueScreen.jsx')) && /groups=\{\[/.test(read('TeamMatchScreen.jsx')),
     '타임별 출전 현황: 팀별로 묶어(팀 이름 머리줄) 보여 준다');
+  ok(/export function teamSolid/.test(read('MatchGrid.jsx')) && /WHITE_TEAM/.test(read('MatchGrid.jsx')) && /borderWidth: 2, borderColor: t\.border/.test(read('MatchGrid.jsx')),
+    '팀 표시: 꽉 찬 색 상자(백팀은 흰 상자+검은 테두리) · 출전 현황은 팀마다 테두리 상자');
   const mb = read('MatchBoard.jsx');
   ok(/'결과 입력'/.test(mb) && /'대진표 수정'/.test(mb) && /대진 삭제/.test(mb) && /경기 추가/.test(mb), '버튼 줄: 결과 입력 · 대진표 수정(+ 경기 추가 · 대진 삭제)');
   ok(/<LeagueMatchEditor/.test(read('TeamMatchScreen.jsx')) && /twoTeamSide/.test(read('TeamMatchScreen.jsx')), '2팀 청백전에도 경기 고치기 화면');

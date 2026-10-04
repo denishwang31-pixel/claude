@@ -19,7 +19,7 @@ import { checkAppAdmin } from '../src/lib/firestore';
 import { C } from '../src/lib/theme';
 import { handleLateSocialUrl, checkPendingSocial } from '../src/lib/socialSignIn';
 import {
-  reportCrash, installCrashHandler, setCrashPath, checkLastRun, markCleanExit, markRunning,
+  reportCrash, installCrashHandler, setCrashPath, checkLastRun, markCleanExit, markRunning, startStallWatch,
 } from '../src/lib/crashReport';
 
 /* ============================================================
@@ -93,6 +93,7 @@ export default function RootLayout() {
     /* 지난번에 갑자기 꺼졌으면 마지막 화면·동작을 남긴다(src/lib/crashReport.js checkLastRun).
        뒤로 가면(백그라운드) 정상 종료로 적어 둔다 — 그 뒤 휴대폰이 앱을 정리해도 '갑자기 꺼짐'이 아니다. */
     checkLastRun();
+    startStallWatch();
     const sub = AppState.addEventListener('change', (st) => {
       if (st === 'background') markCleanExit();
       else if (st === 'active') markRunning();

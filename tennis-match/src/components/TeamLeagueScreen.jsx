@@ -13,7 +13,7 @@
      4. 경기를 눌러 결과 입력 → 팀 순위가 자동으로 갱신된다
         대진표 위 [결과 입력]·[대진표 수정]을 고른 뒤 경기를 누른다(components/MatchBoard.jsx, 2026-10-04 앱 주인)
    ============================================================ */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Alert } from 'react-native';
 import {
   MIN_TEAMS, MAX_TEAMS, splitIntoTeams, teamAverage, teamComposition,
@@ -35,7 +35,7 @@ import { BoardModeBar, ScoreSheet, BOARD_MODE, Fold } from './MatchBoard';
 import { Card, SectionTitle, Chip, Field, Divider, EmptyState } from './ui';
 import { Label } from './pickers';
 import { C, S, R, F } from '../lib/theme';
-import { guard, later, breadcrumb } from '../lib/crashReport';
+import { guard, later, breadcrumb, slowRender } from '../lib/crashReport';
 
 /**
  * @param courtNames       대회 문서의 코트 이름(2팀·3팀 청백전이 함께 쓴다)
@@ -45,6 +45,8 @@ export function TeamLeague({
   roster, courts, saved: savedRaw, isAdmin, onSave, flash, courtNames = [], onSaveCourtNames,
 }) {
   /* 저장된 모양은 teams:[{players}] — 화면에서는 [[선수…]] 로 푼다(lib/teamLeague.js packLeague 머리말) */
+  /* 그리기에 걸린 시간 — 길면 동작 기록에(lib/crashReport.js slowRender) */
+  const renderStart = Date.now();
   const saved = useMemo(() => unpackLeague(savedRaw), [savedRaw]);
   const [teams, setTeams] = useState(
     () => saved?.teams || splitIntoTeams(roster, 4, { busuToNtrp }),
@@ -419,6 +421,8 @@ export function TeamLeague({
       </View>
     );
   };
+
+  useEffect(() => { slowRender('팀리그', Date.now() - renderStart, `경기 ${matches.length}`); });
 
   return (
     <View>

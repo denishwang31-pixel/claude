@@ -96,8 +96,42 @@ export function breadcrumb(text) {
 }
 
 /** 정상적으로 끝남 — 백그라운드로 갈 때, 업데이트 적용(reloadAsync) 직전에 */
-export function markCleanExit() { return writeRun(false); }
-export function markRunning() { return writeRun(true); }
+let appActive = true;
+export function markCleanExit() { appActive = false; return writeRun(false); }
+export function markRunning() { appActive = true; lastTick = Date.now(); return writeRun(true); }
+
+/* ============================================================
+   화면 멈춤 감지 — 앱은 살아 있는데 화면이 하얗고 뒤로가기가 안 먹을 때
+
+   2026-10-04 앱 주인: "아무것도 안 눌렀는데 화면이 하얗게, 앱은 안 꺼지고 뒤로가기도 안 먹는다".
+   뒤로가기는 자바스크립트가 처리하므로, 자바스크립트가 무언가에 묶여 멈춘 것으로 본다.
+   1초마다 시계를 보고, 앞 시계와 2.5초 넘게 벌어졌으면(그동안 멈춰 있었으면) 몇 초 멈췄는지와
+   마지막 동작을 where 'stall' 로 남긴다. 멈춘 채 앱을 닫으면 다음에 켤 때 'last-run' 으로 남는다.
+   ⚠️ 백그라운드에서는 시계가 서므로 그동안은 세지 않는다(appActive).
+   ============================================================ */
+let lastTick = Date.now();
+let stallTimer = null;
+export function startStallWatch() {
+  if (stallTimer) return;
+  lastTick = Date.now();
+  stallTimer = setInterval(() => {
+    const now = Date.now();
+    const gap = now - lastTick - 1000;
+    lastTick = now;
+    if (!appActive || gap < 2500) return;
+    const sec = Math.round(gap / 100) / 10;
+    breadcrumb(`화면 멈춤 ${sec}초`);
+    reportCrash({
+      message: `화면 멈춤 ${sec}초 — 화면 ${currentPath}`,
+      stack: crumbs.join('\n').slice(-1990),
+    }, { where: 'stall' });
+  }, 1000);
+}
+
+/** 화면 그리기가 오래 걸렸으면 동작 기록에 남긴다(멈춤 기록과 함께 보면 무엇이 무거운지 보인다) */
+export function slowRender(name, ms, extra = '') {
+  if (ms >= 700) breadcrumb(`느린 그리기 ${name} ${Math.round(ms)}ms${extra ? ` ${extra}` : ''}`);
+}
 
 /** 앱을 켤 때 — 지난번이 갑자기 끝났으면 로그인된 뒤에 한 번 남긴다 */
 export async function checkLastRun() {
@@ -225,5 +259,5 @@ export function later(fn, where = 'later', onFail) {
 
 export default {
   crashPayload, reportCrash, installCrashHandler, setCrashPath, guard, later,
-  breadcrumb, markCleanExit, markRunning, checkLastRun,
+  breadcrumb, markCleanExit, markRunning, checkLastRun, startStallWatch, slowRender,
 };

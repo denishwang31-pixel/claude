@@ -9,7 +9,7 @@
                   (lib/teamLeague.js moveToTeam · 2026-10-04 앱 주인)
      클럽교류전 : A팀은 우리 회원, B팀은 상대 클럽 선수를 직접 입력
    ============================================================ */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Alert } from 'react-native';
 import {
   splitTeams, teamStrength, generateTeamMatches, teamScore, teamPlayerStats,
@@ -21,7 +21,7 @@ import {
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { courtLabel } from '../lib/courtNames';
 import { CourtNamesEditor } from './CourtNamesEditor';
-import { guard, later, breadcrumb } from '../lib/crashReport';
+import { guard, later, breadcrumb, slowRender } from '../lib/crashReport';
 import { TOURNAMENT_FORMAT, TEAM_SIDES, BUSU_KEYS, busuToNtrp } from '../lib/constants';
 import { MatchGrid, AttendanceGrid } from './MatchGrid';
 import { AppButton, Segmented, Touchable } from './native';
@@ -44,6 +44,8 @@ function TeamTag({ side, children }) {
 export function TeamMatch({
   format, attendees, courts, rounds, saved, onSave, isAdmin, flash, courtNames = [], onSaveCourtNames,
 }) {
+  /* 그리기에 걸린 시간 — 길면 동작 기록에(lib/crashReport.js slowRender) */
+  const renderStart = Date.now();
   const sides = TEAM_SIDES[format] || TEAM_SIDES[TOURNAMENT_FORMAT.TEAM_BLUE_WHITE];
   const isClubMatch = format === TOURNAMENT_FORMAT.TEAM_CLUB;
 
@@ -371,6 +373,8 @@ export function TeamMatch({
   /* 골라 둔 사람이 어디에 있는지 — 옮길 곳에서 '지금 있는 곳'은 뺀다 */
   const pickedIn = (list) => list.some((p) => picked.includes(p.id));
   const UNSIDE = { name: '미배정', color: C.sub, bg: C.fill };
+
+  useEffect(() => { slowRender('2팀', Date.now() - renderStart, `경기 ${matches.length}`); });
 
   return (
     <View>
