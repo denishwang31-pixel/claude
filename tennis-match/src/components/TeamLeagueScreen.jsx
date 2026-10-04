@@ -733,6 +733,7 @@ export function TeamLeague({
             summary={`총 ${shown.length}경기 · 사람마다 몇 경기, 남복·여복·혼복 몇 경기씩`}>
             <Card style={{ padding: 10 }}>
               <AttendanceGrid attendees={teams.flat()} matches={shown} venue={venue}
+                groups={teams.map((t, i) => ({ key: `t${i}`, ...look(i), players: t, games: teamGameCounts(teams.length, matches)[i] }))}
                 roundCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).rounds}
                 typeOf={(m) => m.type}
                 tagOf={(p) => (teamIdxOf[p.id] != null ? look(teamIdxOf[p.id]) : null)} />

@@ -609,6 +609,10 @@ export function TeamMatch({
             summary={`총 ${shown.length}경기 · 사람마다 몇 경기, 남복·여복·혼복 몇 경기씩`}>
             <Card style={{ padding: 10 }}>
               <AttendanceGrid attendees={[...teamA, ...teamB]} matches={shown} venue={venue}
+                groups={[
+                  { key: 'A', ...sides[0], name: isClubMatch ? '우리 클럽' : sides[0].name, players: teamA, games: matches.length },
+                  { key: 'B', ...sides[1], name: isClubMatch ? (oppClub || '상대 클럽') : sides[1].name, players: teamB, games: matches.length },
+                ]}
                 roundCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).rounds}
                 typeOf={(m) => m.type}
                 tagOf={(p) => (teamA.some((x) => x.id === p.id) ? sides[0] : sides[1])} />

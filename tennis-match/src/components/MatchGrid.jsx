@@ -221,7 +221,11 @@ export function MatchGrid({
 /* typeOf(m) 를 주면 줄 끝에 유형별(남복·여복·혼복…) 경기 수 칸과, 맨 아래 전체 합계 줄을 단다.
    tagOf(p) → { name, color } 를 주면 이름 앞에 팀 색 점. roundCount 를 주면 1..N 타임을 모두 그린다.
    (청백전·팀 리그, 2026-10-04 앱 주인 — "타임별 참가 여부와 총 몇 경기, 남복·여복·혼복 몇 경기씩") */
-export function AttendanceGrid({ attendees, matches, roundTimes = [], me, venue = null, typeOf = null, tagOf = null, roundCount = 0 }) {
+/* groups — [{ key, name, color, bg, players }] 를 주면 팀별로 묶어 보여 준다(팀 이름 머리줄 + 그 팀 선수).
+   청백전·팀 리그에서 "어느 팀인지 보이고, 팀별로 모아 두면 보기 좋다"(2026-10-04 앱 주인). */
+export function AttendanceGrid({
+  attendees, matches, roundTimes = [], me, venue = null, typeOf = null, tagOf = null, roundCount = 0, groups = null,
+}) {
   if (!attendees?.length) return null;
   matches = matches || [];
   const rounds = [...new Set([...range(roundCount), ...matches.map((m) => m.round)])].sort((a, b) => a - b);
@@ -255,7 +259,10 @@ export function AttendanceGrid({ attendees, matches, roundTimes = [], me, venue 
   const maxGames = Math.max(...attendees.map((p) => total(p.id)), 0);
   const minGames = Math.min(...attendees.map((p) => total(p.id)), 99);
 
-  const sorted = [...attendees].sort((a, b) => total(b.id) - total(a.id));
+  const byGames = (list) => [...list].sort((a, b) => total(b.id) - total(a.id));
+  const sections = groups?.length
+    ? groups.map((g) => ({ ...g, players: byGames(g.players || []) }))
+    : [{ key: 'all', players: byGames(attendees) }];
 
   return (
     <View>
@@ -283,68 +290,85 @@ export function AttendanceGrid({ attendees, matches, roundTimes = [], me, venue 
             ))}
           </View>
 
-          {sorted.map((p, i) => {
-            const n = total(p.id);
-            /* 내 줄 — 참석자가 스무 명 넘으면 내 이름을 찾는 것부터 일이다 */
-            const mine = !!me && p.id === me;
-            return (
-              <View key={p.id} style={{
-                flexDirection: 'row', alignItems: 'center',
-                backgroundColor: mine ? C.greenSoft : i % 2 ? '#fafaf9' : '#fff',
-                borderRadius: 6,
-                borderWidth: mine ? 1.5 : 0, borderColor: C.green,
-              }}>
-                <View style={{ width: NAME_W, paddingVertical: 5, paddingLeft: 4 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                    {!!tagOf && !!tagOf(p) && (
-                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: tagOf(p).color }} />
-                    )}
-                    <Text numberOfLines={1} style={{
-                      flexShrink: 1,
-                      fontSize: 11, fontWeight: mine ? '900' : '700',
-                      color: nameColor(p.gender),
-                    }}>{mine ? `${p.name} (나)` : p.name}</Text>
+          {sections.map((sec) => (
+            <View key={sec.key}>
+              {!!sec.name && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginBottom: 4, paddingLeft: 2 }}>
+                  <View style={{
+                    backgroundColor: sec.bg || '#fff', borderColor: sec.color || C.border, borderWidth: 1,
+                    borderRadius: 5, paddingHorizontal: 7, paddingVertical: 1,
+                  }}>
+                    <Text style={{ fontSize: 11.5, fontWeight: '800', color: sec.color || C.sub }}>{sec.name}</Text>
                   </View>
+                  <Text style={{ fontSize: 10.5, color: C.faint }}>
+                    {sec.players.length}명{sec.games != null ? ` · 팀 경기 ${sec.games}` : ''}
+                  </Text>
                 </View>
-
-                {rounds.map((r) => {
-                  const court = playing[p.id]?.[r];
-                  return (
-                    <View key={r} style={{ width: COL_W, alignItems: 'center', paddingVertical: 4 }}>
-                      {court ? (
-                        <View style={{
-                          width: 22, height: 22, borderRadius: 11, backgroundColor: C.green,
-                          alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: C.lime }}>{courtLabel(venue, court)}</Text>
-                        </View>
-                      ) : (
-                        <View style={{
-                          width: 22, height: 22, borderRadius: 11, backgroundColor: '#f5f5f4',
-                          alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          <Text style={{ fontSize: 10, color: '#d6d3d1' }}>휴</Text>
-                        </View>
-                      )}
+              )}
+              {sec.players.map((p, i) => {
+                const n = total(p.id);
+                /* 내 줄 — 참석자가 스무 명 넘으면 내 이름을 찾는 것부터 일이다 */
+                const mine = !!me && p.id === me;
+                return (
+                  <View key={p.id} style={{
+                    flexDirection: 'row', alignItems: 'center',
+                    backgroundColor: mine ? C.greenSoft : i % 2 ? '#fafaf9' : '#fff',
+                    borderRadius: 6,
+                    borderWidth: mine ? 1.5 : 0, borderColor: C.green,
+                  }}>
+                    <View style={{ width: NAME_W, paddingVertical: 5, paddingLeft: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                        {!groups?.length && !!tagOf && !!tagOf(p) && (
+                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: tagOf(p).color }} />
+                        )}
+                        <Text numberOfLines={1} style={{
+                          flexShrink: 1,
+                          fontSize: 11, fontWeight: mine ? '900' : '700',
+                          color: nameColor(p.gender),
+                        }}>{mine ? `${p.name} (나)` : p.name}</Text>
+                      </View>
                     </View>
-                  );
-                })}
 
-                <View style={{ width: 38, alignItems: 'center' }}>
-                  <Text style={{
-                    fontSize: 12, fontWeight: '700',
-                    color: n === maxGames && maxGames !== minGames ? C.green2
-                      : n === minGames && maxGames !== minGames ? '#b45309' : C.sub,
-                  }}>{n}</Text>
-                </View>
-                {typeCols.map((t) => (
-                  <View key={t} style={{ width: TYPE_W, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 11, color: perType[p.id]?.[t] ? C.text : '#d6d3d1' }}>{perType[p.id]?.[t] || 0}</Text>
+                    {rounds.map((r) => {
+                      const court = playing[p.id]?.[r];
+                      return (
+                        <View key={r} style={{ width: COL_W, alignItems: 'center', paddingVertical: 4 }}>
+                          {court ? (
+                            <View style={{
+                              width: 22, height: 22, borderRadius: 11, backgroundColor: C.green,
+                              alignItems: 'center', justifyContent: 'center',
+                            }}>
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: C.lime }}>{courtLabel(venue, court)}</Text>
+                            </View>
+                          ) : (
+                            <View style={{
+                              width: 22, height: 22, borderRadius: 11, backgroundColor: '#f5f5f4',
+                              alignItems: 'center', justifyContent: 'center',
+                            }}>
+                              <Text style={{ fontSize: 10, color: '#d6d3d1' }}>휴</Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+
+                    <View style={{ width: 38, alignItems: 'center' }}>
+                      <Text style={{
+                        fontSize: 12, fontWeight: '700',
+                        color: n === maxGames && maxGames !== minGames ? C.green2
+                          : n === minGames && maxGames !== minGames ? '#b45309' : C.sub,
+                      }}>{n}</Text>
+                    </View>
+                    {typeCols.map((t) => (
+                      <View key={t} style={{ width: TYPE_W, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 11, color: perType[p.id]?.[t] ? C.text : '#d6d3d1' }}>{perType[p.id]?.[t] || 0}</Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
-            );
-          })}
+                );
+              })}
+            </View>
+          ))}
 
           {/* 맨 아래 — 전체 경기 수 · 유형별 */}
           {!!typeOf && (

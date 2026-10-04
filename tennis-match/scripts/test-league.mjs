@@ -379,6 +379,8 @@ section('자동으로 짠 뒤 손보기 · 대진 삭제 (2팀·3팀)');
   ok(!/어느 팀끼리 붙는 경기인지/.test(read('TeamLeagueScreen.jsx')), '타임별 팀 조합 카드는 없앴다 — 대진표 꼬리표·출전 현황과 겹친다');
   ok(/if \(!open \|\| !d\) return <Modal visible=\{false\}/.test(read('LeagueMatchEditor.jsx')) && /if \(!target\) return <Modal visible=\{false\}/.test(read('MatchBoard.jsx')),
     '창은 없애지 않고 visible 만 끈다(안드로이드에서 하얀 껍데기가 남지 않게)');
+  ok(/groups = null/.test(read('MatchGrid.jsx')) && /groups=\{teams\.map\(/.test(read('TeamLeagueScreen.jsx')) && /groups=\{\[/.test(read('TeamMatchScreen.jsx')),
+    '타임별 출전 현황: 팀별로 묶어(팀 이름 머리줄) 보여 준다');
   const mb = read('MatchBoard.jsx');
   ok(/'결과 입력'/.test(mb) && /'대진표 수정'/.test(mb) && /대진 삭제/.test(mb) && /경기 추가/.test(mb), '버튼 줄: 결과 입력 · 대진표 수정(+ 경기 추가 · 대진 삭제)');
   ok(/<LeagueMatchEditor/.test(read('TeamMatchScreen.jsx')) && /twoTeamSide/.test(read('TeamMatchScreen.jsx')), '2팀 청백전에도 경기 고치기 화면');
