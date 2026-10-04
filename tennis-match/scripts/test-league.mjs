@@ -407,7 +407,7 @@ section('공개 웹 링크 — 내 경기 찾기');
   ok(/if \(document\.getElementById\('find'\)\) return;/.test(lh) && /document\.getElementById\('rest'\)\.innerHTML = h;/.test(lh), '30초마다 다시 그려도 입력칸은 그대로(쓰던 글자·키보드 유지)');
   ok(/localStorage\.setItem\('court-live-me', meQ\)/.test(lh) && /try \{ meQ = localStorage\.getItem/.test(lh), '이 휴대폰에 이름을 기억(다음에 열면 그대로)');
   ok(/누구인가요\? 눌러서 고르세요/.test(lh) && /이름이 없습니다/.test(lh), '같은 글자가 든 이름이 여럿이면 골라서, 없으면 알려 준다');
-  ok(/'mg' \+ \(i === nextIdx \? ' next' : ''\)/.test(lh) && /td\.mine/.test(lh) && /class="me"/.test(lh), '내 경기 목록(다음 경기 강조) · 대진표에서 내 칸·내 이름 칠하기');
+  ok(/"mg' \+ \(i === nextIdx \? ' next' : ''\)/.test(lh) && /td\.mine/.test(lh) && /class="me"/.test(lh), '내 경기 목록(다음 경기 강조) · 대진표에서 내 칸·내 이름 칠하기');
 }
 
 section('DB 라이브러리 고장 — 하얀 화면 대신 앱을 다시 띄운다');
@@ -540,7 +540,7 @@ section('청백전·팀 리그 외부 공개 보기 · 내 경기');
   const mgSrc = readFileSync(new URL('../src/components/MatchGrid.jsx', import.meta.url), 'utf8');
   ok(/borderWidth: whiteWin \? 1\.5 : 0/.test(mgSrc) && /#d97706/.test(mgSrc) && /background:#fff;color:#111827;border:1\.5px solid #111827/.test(html),
     '백팀 승은 흰 점수 상자+검은 테두리, 무승부는 노랑(앱·웹)');
-  ok(/var accentOf = function/.test(html) && /td class="done"/.test(html), '웹도 끝난 경기를 이긴 팀 색으로');
+  ok(/var accentOf = function/.test(html) && /td class="done/.test(html), '웹도 끝난 경기를 이긴 팀 색으로');
   ok(/table class="grid"/.test(html) && /코트 ' \+ esc\(c\.label\)/.test(html), '웹: 대진은 앱과 같은 대진표(가로 코트 × 세로 타임)');
   eq('대진표 열 순서용 코트 번호', v.rounds[0].matches[0].c, 1);
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
