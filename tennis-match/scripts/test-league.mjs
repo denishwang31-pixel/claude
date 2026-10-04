@@ -399,6 +399,17 @@ section('대회 시간 — 시작 시간 · 한 타임 길이 → 타임 아래 
   ok(/r\.time \? '<small class="rt">'/.test(readFileSync(new URL('../web/live.html', import.meta.url), 'utf8')), '공개 웹 대진표도 타임 아래 시각');
 }
 
+section('공개 웹 링크 — 내 경기 찾기');
+{
+  /* 2026-10-04 앱 주인: 웹으로 받은 사람도 이름을 검색하면 앱의 '내 경기'와 같은 효과 */
+  const lh = readFileSync(new URL('../web/live.html', import.meta.url), 'utf8');
+  ok(/<h2>내 경기 찾기<\/h2>/.test(lh) && /id="meq" type="search"/.test(lh), '공개 페이지에 이름 입력칸');
+  ok(/if \(document\.getElementById\('find'\)\) return;/.test(lh) && /document\.getElementById\('rest'\)\.innerHTML = h;/.test(lh), '30초마다 다시 그려도 입력칸은 그대로(쓰던 글자·키보드 유지)');
+  ok(/localStorage\.setItem\('court-live-me', meQ\)/.test(lh) && /try \{ meQ = localStorage\.getItem/.test(lh), '이 휴대폰에 이름을 기억(다음에 열면 그대로)');
+  ok(/누구인가요\? 눌러서 고르세요/.test(lh) && /이름이 없습니다/.test(lh), '같은 글자가 든 이름이 여럿이면 골라서, 없으면 알려 준다');
+  ok(/'mg' \+ \(i === nextIdx \? ' next' : ''\)/.test(lh) && /td\.mine/.test(lh) && /class="me"/.test(lh), '내 경기 목록(다음 경기 강조) · 대진표에서 내 칸·내 이름 칠하기');
+}
+
 section('DB 라이브러리 고장 — 하얀 화면 대신 앱을 다시 띄운다');
 {
   /* 2026-10-04 기록: 23:24:43 화면 /(tabs) → 23:24:44 "FIRESTORE (10.14.1) INTERNAL ASSERTION FAILED: Unexpected state".

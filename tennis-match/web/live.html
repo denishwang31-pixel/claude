@@ -111,6 +111,23 @@
   .champ small { color: #A3E635; font-weight: 800; letter-spacing: .1em; }
   .champ b { display: block; font-size: 21px; margin-top: 6px; }
   .err { background: #FEF2F2; color: var(--no); border-radius: 14px; padding: 16px; margin-top: 16px; line-height: 1.6; }
+  /* 내 경기 찾기 — 이름을 넣으면 그 사람 경기만 모아 보이고 대진표에서도 칠한다(앱의 '내 경기'와 같은 효과) */
+  .find h2 { margin-bottom: 6px; }
+  .find input { width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
+  .find input:focus { outline: none; border-color: var(--green2); background: #fff; }
+  .find .pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .find .pick button { font: inherit; font-size: 13px; font-weight: 700; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+  .mg { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--fill); font-size: 13px; }
+  .mg:first-of-type { border-top: 0; }
+  .mg .wh { min-width: 86px; font-weight: 800; color: var(--ink); }
+  .mg .wh span { display: block; font-size: 11.5px; color: var(--sub); font-weight: 600; }
+  .mg .vs { flex: 1; line-height: 1.5; color: var(--sub); }
+  .mg .vs b { color: var(--ink); }
+  .mg .rs { font-weight: 900; white-space: nowrap; }
+  .mg.next { background: var(--green-soft); border-radius: 10px; padding: 8px; margin: 2px -8px; border-top: 0; }
+  .mg.next .wh::before { content: '다음 경기'; display: block; font-size: 10.5px; color: var(--green); font-weight: 900; }
+  table.grid td.mine { outline: 3px solid var(--green2); outline-offset: -3px; }
+  .gn .me { background: #FDE68A; color: var(--ink); font-weight: 900; border-radius: 3px; padding: 0 2px; }
   .foot { font-size: 12px; color: var(--faint); text-align: center; margin-top: 24px; }
 </style>
 </head>
@@ -213,9 +230,12 @@
   function renderTeams(d) {
     var byIdx = {};
     d.teams.forEach(function (x) { byIdx[x.idx] = x; });
-    var h = '<div class="club">' + esc(d.club) + '</div><h1>' + esc(d.name) + '</h1>' +
-      '<div class="meta">' + esc(d.date) + ' · ' + d.done + '/' + d.total + '경기 끝남</div>' +
+    mountTeams();
+    var top = '<div class="club">' + esc(d.club) + '</div><h1>' + esc(d.name) + '</h1>' +
+      '<div class="meta">' + esc(d.date) + (d.rounds[0] && d.rounds[0].time ? ' ' + esc(d.rounds[0].time) : '') + ' · ' + d.done + '/' + d.total + '경기 끝남</div>' +
       '<div class="live"><span class="dot"></span>' + (d.status === 'finished' ? '대회 종료' : '실시간 — 30초마다 새로 고침') + '</div>';
+    var h = '';
+    var me = findMe(d);
     var st = d.standings;
     if (st.length === 2) {
       /* 2팀 — 큰 점수판(이긴 경기 수) */
@@ -265,9 +285,14 @@
       return '<div class="gt"><span class="ty ' + esc(m.type) + '">' + esc(m.type) + '</span>' +
         (m.score ? '<span class="gs" style="' + (whiteWin ? 'background:#fff;color:#111827;border:1.5px solid #111827' : 'background:' + esc(ac)) + '">'
           + m.score.a + ':' + m.score.b + (draw ? ' 무' : '') + '</span>' : '<span class="gs wait">경기 전</span>') + '</div>' +
-        pill(byIdx[m.aTeam]) + '<div class="gn"' + nameStyle(m, aw) + '>' + esc(m.a || '—') + '</div>' +
+        pill(byIdx[m.aTeam]) + '<div class="gn"' + nameStyle(m, aw) + '>' + names(m.a) + '</div>' +
         '<div class="gv">vs</div>' +
-        pill(byIdx[m.bTeam]) + '<div class="gn"' + nameStyle(m, bw) + '>' + esc(m.b || '—') + '</div>';
+        pill(byIdx[m.bTeam]) + '<div class="gn"' + nameStyle(m, bw) + '>' + names(m.b) + '</div>';
+    };
+    /* 찾은 이름은 노란 바탕으로 */
+    var names = function (joined) {
+      if (!joined) return '—';
+      return splitNames(joined).map(function (n) { return n === me ? '<span class="me">' + esc(n) + '</span>' : esc(n); }).join('·');
     };
     /* 이긴 쪽 이름은 그 팀 색으로 굵게, 진 쪽은 흐리게 */
     var nameStyle = function (m, won) {
@@ -284,7 +309,8 @@
           var m = r.matches.filter(function (x) { return (x.c ? 'n' + x.c : 'l' + x.court) === c.key; })[0];
           var ac = m ? accentOf(m) : '';
           var wt = m && m.score && m.score.a !== m.score.b && (byIdx[m.score.a > m.score.b ? m.aTeam : m.bTeam] || {}).white;
-          return m ? (ac ? '<td class="done" style="background:' + esc(ac) + (wt ? '14' : '1F') + ';border-left-color:' + esc(ac) + '">' : '<td>') + cell(m) + '</td>' : '<td class="e">—</td>';
+          var mineCls = m && me && isMine(m, me) ? ' mine' : '';
+          return m ? (ac ? '<td class="done' + mineCls + '" style="background:' + esc(ac) + (wt ? '14' : '1F') + ';border-left-color:' + esc(ac) + '">' : '<td class="' + mineCls + '">') + cell(m) + '</td>' : '<td class="e">—</td>';
         }).join('') + '</tr>';
       });
       h += '</table></div><p class="note">표가 넓으면 옆으로 밀어 보세요 · 색칠된 칸 = 끝난 경기(이긴 팀 색) · 흰 칸 = 경기 전</p>';
@@ -292,7 +318,93 @@
       h += '<p class="note">아직 대진이 없습니다.</p>';
     }
     h += '</div><p class="foot">Court · 테니스 클럽 운영 앱</p>';
-    app.innerHTML = h;
+    document.getElementById('top').innerHTML = top;
+    document.getElementById('rest').innerHTML = h;
+    renderMine(d, byIdx, me);
+  }
+
+  /* ============================================================
+     내 경기 찾기 — 앱이 없는 참가자가 이름을 넣으면 자기 경기를 모아 본다
+     (2026-10-04 앱 주인: "웹으로 공유받는 사람은 본인 경기가 언제인지 표시가 안 되어 있으니
+      이름 검색하면 앱으로 자기 경기 보는 것과 같은 효과"). 이 휴대폰에만 기억한다(다음에 열면 그대로).
+     ⚠️ 입력칸은 한 번만 만든다 — 30초마다 다시 그려도 쓰던 글자·키보드가 날아가지 않게.
+     ============================================================ */
+  var meQ = '';
+  try { meQ = localStorage.getItem('court-live-me') || ''; } catch (e) { meQ = ''; }
+  function splitNames(joined) { return String(joined || '').split('·').map(function (x) { return x.trim(); }).filter(Boolean); }
+  function isMine(m, name) { return splitNames(m.a).indexOf(name) >= 0 || splitNames(m.b).indexOf(name) >= 0; }
+  function allNames(d) {
+    var seen = {}, out = [];
+    d.rounds.forEach(function (r) { r.matches.forEach(function (m) { splitNames(m.a).concat(splitNames(m.b)).forEach(function (n) { if (!seen[n]) { seen[n] = 1; out.push(n); } }); }); });
+    return out;
+  }
+  /* 넣은 글자로 한 사람을 고른다 — 이름과 똑같거나, 그 글자가 든 이름이 하나뿐일 때 */
+  function candidates(d) {
+    var q = meQ.replace(/\s+/g, '');
+    if (!q) return [];
+    return allNames(d).filter(function (n) { return n.replace(/\s+/g, '').indexOf(q) >= 0; });
+  }
+  function findMe(d) {
+    var q = meQ.replace(/\s+/g, '');
+    var c = candidates(d);
+    var exact = c.filter(function (n) { return n.replace(/\s+/g, '') === q; });
+    return exact.length === 1 ? exact[0] : c.length === 1 ? c[0] : '';
+  }
+  function mountTeams() {
+    if (document.getElementById('find')) return;
+    app.innerHTML = '<div id="top"></div>' +
+      '<div class="card find" id="find"><h2>내 경기 찾기</h2>' +
+      '<input id="meq" type="search" enterkeyhint="search" autocomplete="off" placeholder="이름을 넣으세요 (예: 홍길동)">' +
+      '<div id="mine"></div></div><div id="rest"></div>';
+    var inp = document.getElementById('meq');
+    inp.value = meQ;
+    inp.oninput = function () {
+      meQ = inp.value.trim();
+      try { localStorage.setItem('court-live-me', meQ); } catch (e) { /* 못 남겨도 그대로 */ }
+      if (data) renderTeams(data);
+    };
+  }
+  function renderMine(d, byIdx, me) {
+    var box = document.getElementById('mine');
+    if (!meQ) { box.innerHTML = '<p class="note">이름을 넣으면 내 경기만 모아 보이고, 아래 대진표에서도 내 칸이 칠해집니다.</p>'; return; }
+    if (!me) {
+      var c = candidates(d);
+      box.innerHTML = c.length
+        ? '<p class="note">누구인가요? 눌러서 고르세요</p><div class="pick">' + c.slice(0, 20).map(function (n) { return '<button data-n="' + esc(n) + '">' + esc(n) + '</button>'; }).join('') + '</div>'
+        : '<p class="note">이 대진에 "' + esc(meQ) + '" 이름이 없습니다. 운영진이 적은 이름 그대로 넣어 보세요.</p>';
+      Array.prototype.forEach.call(box.querySelectorAll('.pick button'), function (b) {
+        b.onclick = function () { var inp = document.getElementById('meq'); inp.value = b.getAttribute('data-n'); inp.oninput(); };
+      });
+      return;
+    }
+    var games = [];
+    d.rounds.forEach(function (r) {
+      r.matches.forEach(function (m) {
+        if (!isMine(m, me)) return;
+        var mineA = splitNames(m.a).indexOf(me) >= 0;
+        games.push({ r: r, m: m, mineA: mineA });
+      });
+    });
+    var nextIdx = -1;
+    games.some(function (g, i) { if (!g.m.score) { nextIdx = i; return true; } return false; });
+    var w = 0, l = 0;
+    var rows = games.map(function (g, i) {
+      var m = g.m;
+      var partner = splitNames(g.mineA ? m.a : m.b).filter(function (n) { return n !== me; }).join('·');
+      var opp = splitNames(g.mineA ? m.b : m.a).join('·');
+      var oppTeam = byIdx[g.mineA ? m.bTeam : m.aTeam];
+      var res = '<span class="rs" style="color:var(--faint)">대기</span>';
+      if (m.score) {
+        var my = g.mineA ? m.score.a : m.score.b, op = g.mineA ? m.score.b : m.score.a;
+        if (my > op) w += 1; else if (my < op) l += 1;
+        res = '<span class="rs" style="color:' + (my > op ? 'var(--green)' : my < op ? 'var(--no)' : 'var(--sub)') + '">' + my + ':' + op + ' ' + (my > op ? '승' : my < op ? '패' : '무') + '</span>';
+      }
+      return '<div class="mg' + (i === nextIdx ? ' next' : '') + '"><div class="wh">' + g.r.round + '타임' + (g.r.time ? ' ' + esc(g.r.time) : '') +
+        '<span>코트 ' + esc(m.court) + ' · ' + esc(m.type) + '</span></div>' +
+        '<div class="vs">' + (partner ? '짝 <b>' + esc(partner) + '</b><br>' : '') + '상대 ' + (oppTeam ? teamPill(oppTeam) + ' ' : '') + '<b>' + esc(opp || '—') + '</b></div>' + res + '</div>';
+    }).join('');
+    box.innerHTML = '<p class="sum" style="margin:2px 0 6px"><b style="color:var(--ink)">' + esc(me) + '</b> · ' + games.length + '경기' +
+      (w + l ? ' · ' + w + '승 ' + l + '패' : '') + '</p>' + (rows || '<p class="note">아직 이 사람 경기가 없습니다.</p>');
   }
 
   function render() {
