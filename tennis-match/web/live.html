@@ -68,6 +68,23 @@
   .tm .sides { flex: 1; font-size: 13.5px; line-height: 1.7; }
   .tm .sides .win { color: var(--green); font-weight: 800; }
   .sum { font-size: 13px; color: var(--sub); margin-top: 6px; }
+  /* 대진표 — 앱의 MatchGrid 와 같은 모양(가로 = 코트, 세로 = 타임). 좁은 화면은 가로로 민다 */
+  .gscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 8px -4px 0; padding: 0 4px 4px; }
+  table.grid { border-collapse: separate; border-spacing: 0; width: auto; font-size: 12px; }
+  table.grid th { background: var(--ink); color: #BEF264; font-size: 12px; padding: 7px 4px; border: 0; min-width: 138px; }
+  table.grid th:first-child { min-width: 42px; background: transparent; }
+  table.grid th.c1 { border-top-left-radius: 10px; } table.grid th.cl { border-top-right-radius: 10px; }
+  table.grid td { border: 1px solid #F1F5F9; padding: 6px; vertical-align: top; text-align: center; background: #fff; }
+  table.grid td.r { background: var(--green); color: #BEF264; font-weight: 800; vertical-align: middle; border-color: rgba(255,255,255,.15); }
+  table.grid td.e { background: #FAFAF9; color: var(--faint); vertical-align: middle; }
+  .gt { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .ty { font-size: 10px; font-weight: 800; padding: 1px 5px; border-radius: 4px; background: var(--fill); color: var(--sub); }
+  .ty.혼복 { background: #ECFCCB; color: #3F6212; } .ty.남복 { background: #F0F9FF; color: #075985; }
+  .ty.여복 { background: #FFF1F2; color: #BE123C; } .ty.잡복 { background: #FEF3C7; color: #92400E; }
+  .gs { font-size: 13px; font-weight: 900; color: var(--green); } .gs.wait { font-size: 10px; color: var(--faint); font-weight: 600; }
+  .gn { font-size: 12px; line-height: 1.45; margin-top: 2px; } .gn.win { color: var(--green); font-weight: 800; }
+  .gv { font-size: 9px; color: var(--faint); margin: 2px 0; }
+  .tp.sm { font-size: 10px; padding: 0 5px; }
   /* 본선 사다리 — 앱의 BracketTree 와 같은 모양(위·아래에서 가운데 결승으로) */
   .lad-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
   .lad { position: relative; }
@@ -217,18 +234,40 @@
     var order = ['남복', '여복', '혼복', '잡복', '남단식', '여단식', '혼성단식'];
     var typeLine = order.filter(function (k) { return d.types[k]; }).map(function (k) { return k + ' ' + d.types[k]; }).join(' · ');
     h += '<div class="card"><h2>대진 · 결과</h2>' + (typeLine ? '<div class="sum">총 ' + d.total + '경기 · ' + esc(typeLine) + '</div>' : '');
+    /* 대진표 — 가로 = 코트, 세로 = 타임(앱과 같은 모양, 2026-10-04 앱 주인).
+       열 순서는 코트 번호(c)로. 서버가 아직 번호를 안 주는 판이면 처음 나온 순서로 */
+    var cols = [];
     d.rounds.forEach(function (r) {
-      h += '<div class="rnd">' + r.round + '타임</div>';
       r.matches.forEach(function (m) {
-        var aw = m.score && m.score.a > m.score.b;
-        var bw = m.score && m.score.b > m.score.a;
-        h += '<div class="tm"><div class="ct">코트 ' + esc(m.court) + '<span>' + esc(m.type) + '</span></div>' +
-          '<div class="sides"><div class="' + (aw ? 'win' : '') + '">' + teamPill(byIdx[m.aTeam]) + ' ' + esc(m.a || '—') + '</div>' +
-          '<div class="' + (bw ? 'win' : '') + '">' + teamPill(byIdx[m.bTeam]) + ' ' + esc(m.b || '—') + '</div></div>' +
-          (m.score ? '<div class="sc">' + m.score.a + ':' + m.score.b + '</div>' : '<div class="sc wait">대기</div>') + '</div>';
+        var key = m.c ? 'n' + m.c : 'l' + m.court;
+        if (!cols.some(function (x) { return x.key === key; })) cols.push({ key: key, label: m.court, n: m.c || 0 });
       });
     });
-    if (!d.rounds.length) h += '<p class="note">아직 대진이 없습니다.</p>';
+    if (cols.every(function (x) { return x.n; })) cols.sort(function (a, b) { return a.n - b.n; });
+    var cell = function (m) {
+      var aw = m.score && m.score.a > m.score.b;
+      var bw = m.score && m.score.b > m.score.a;
+      var pill = function (tm) { return tm ? '<span class="tp sm' + (tm.white ? ' white' : '') + '" style="background:' + esc(tm.color) + '">' + esc(tm.name) + '</span>' : ''; };
+      return '<div class="gt"><span class="ty ' + esc(m.type) + '">' + esc(m.type) + '</span>' +
+        (m.score ? '<span class="gs">' + m.score.a + ':' + m.score.b + '</span>' : '<span class="gs wait">대기</span>') + '</div>' +
+        pill(byIdx[m.aTeam]) + '<div class="gn' + (aw ? ' win' : '') + '">' + esc(m.a || '—') + '</div>' +
+        '<div class="gv">vs</div>' +
+        pill(byIdx[m.bTeam]) + '<div class="gn' + (bw ? ' win' : '') + '">' + esc(m.b || '—') + '</div>';
+    };
+    if (d.rounds.length) {
+      h += '<div class="gscroll"><table class="grid"><tr><th></th>' + cols.map(function (c, i) {
+        return '<th class="' + (i === 0 ? 'c1 ' : '') + (i === cols.length - 1 ? 'cl' : '') + '">코트 ' + esc(c.label) + '</th>';
+      }).join('') + '</tr>';
+      d.rounds.forEach(function (r) {
+        h += '<tr><td class="r">' + r.round + 'T</td>' + cols.map(function (c) {
+          var m = r.matches.filter(function (x) { return (x.c ? 'n' + x.c : 'l' + x.court) === c.key; })[0];
+          return m ? '<td>' + cell(m) + '</td>' : '<td class="e">—</td>';
+        }).join('') + '</tr>';
+      });
+      h += '</table></div><p class="note">표가 넓으면 옆으로 밀어 보세요 · 초록 글씨 = 이긴 쪽</p>';
+    } else {
+      h += '<p class="note">아직 대진이 없습니다.</p>';
+    }
     h += '</div><p class="foot">Court · 테니스 클럽 운영 앱</p>';
     app.innerHTML = h;
   }

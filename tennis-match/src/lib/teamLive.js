@@ -106,6 +106,7 @@ export function teamLiveView(t, clubName = '') {
       types[type] = (types[type] || 0) + 1;
       (byRound[m.round] = byRound[m.round] || []).push({
         court: courtName(m.court),
+        c: Number(m.court) || 0,            // 대진표 열 순서(이름 말고 번호로 줄 세운다)
         type,
         aTeam: m.teamAIdx,
         bTeam: m.teamBIdx,
