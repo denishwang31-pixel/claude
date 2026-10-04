@@ -307,17 +307,27 @@
       b.onclick = function () { tab = b.getAttribute('data-k'); render(); };
     });
   }
+  /* 30초마다 다시 읽되, 화면을 안 보고 있을 때(다른 앱·화면 꺼짐)는 쉰다 — 돌아오면 바로 한 번 읽는다.
+     켜 둔 채 잊어도 서버를 계속 부르지 않게(2026-10-04 앱 주인: 비용). 대회가 끝나면 아예 멈춘다. */
+  var waiting = false;
+  function later() {
+    if (document.hidden) { waiting = true; return; }
+    setTimeout(load, 30000);
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && waiting) { waiting = false; load(); }
+  });
   function load() {
     fetch('/api/live?c=' + encodeURIComponent(c) + '&t=' + encodeURIComponent(t), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (!j.ok) { app.innerHTML = '<div class="err">' + esc(j.message || '대회를 열지 못했습니다.') + '</div>'; return; }
         data = j; render();
-        if (j.status !== 'finished') setTimeout(load, 30000);
+        if (j.status !== 'finished') later();
       })
       .catch(function () {
         if (!data) app.innerHTML = '<div class="err">연결이 불안정합니다. 잠시 후 다시 열어 주세요.</div>';
-        setTimeout(load, 30000);
+        later();
       });
   }
   /* 화면을 돌리거나 창 크기가 바뀌면 사다리 폭을 다시 맞춘다 */

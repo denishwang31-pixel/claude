@@ -918,7 +918,8 @@ exports.onMatchesRecorded = onDocumentUpdated(
    ⚠️ 내보내는 것은 groupLeague.liveView 가 고른 것뿐 — 이름·조·시간표·결과·순위·본선.
       공개가 꺼졌거나 없는 대회는 구별 없이 같은 답(대회 id 를 캐 볼 수 없게). */
 exports.liveTournament = onRequest({ ...REGION, cors: true, maxInstances: 5 }, async (req, res) => {
-  res.set('Cache-Control', 'public, max-age=15');
+  /* 여러 사람이 같은 링크를 열어도 15초 동안은 호스팅이 같은 답을 나눠 준다 — 서버·DB 를 사람 수만큼 부르지 않게 */
+  res.set('Cache-Control', 'public, max-age=15, s-maxage=15');
   const fail = (status, message) => res.status(status).json({ ok: false, message });
   try {
     if (req.method !== 'GET') return fail(405, '지원하지 않는 요청입니다.');

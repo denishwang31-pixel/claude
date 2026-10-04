@@ -455,6 +455,7 @@ section('청백전·팀 리그 외부 공개 보기 · 내 경기');
   ok(/t\.stage === 'team' \|\| t\.stage === 'league'/.test(fx) && /teamLiveView\(t, club\.name/.test(fx) && /t\.publicView !== true/.test(fx), '서버: 공개를 켠 청백전·팀 리그만 팀 대항 모양으로');
   const html = readFileSync(new URL('../web/live.html', import.meta.url), 'utf8');
   ok(/d\.kind === 'teams'/.test(html) && /function renderTeams/.test(html) && /setTimeout\(load, 30000\)/.test(html), '웹: 팀 점수판·타임별 대진, 30초마다 새로 읽기');
+  ok(/document\.hidden/.test(html) && /visibilitychange/.test(html) && /s-maxage=15/.test(fx), '안 보는 동안은 새로 읽기를 쉬고, 같은 답은 15초 동안 나눠 쓴다(비용)');
   ok(/table class="grid"/.test(html) && /코트 ' \+ esc\(c\.label\)/.test(html), '웹: 대진은 앱과 같은 대진표(가로 코트 × 세로 타임)');
   eq('대진표 열 순서용 코트 번호', v.rounds[0].matches[0].c, 1);
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
