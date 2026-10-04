@@ -102,6 +102,9 @@ export function breadcrumb(text) {
   } catch (e) { /* 그대로 */ }
 }
 
+/** 지금 실행의 최근 동작 기록(보낼 때 그대로 붙인다) */
+export const recentCrumbs = () => crumbs.join('\n').slice(-1990);
+
 /** 정상적으로 끝남 — 백그라운드로 갈 때, 업데이트 적용(reloadAsync) 직전에 */
 let appActive = true;
 export function markCleanExit() { appActive = false; return writeRun(false); }
@@ -308,5 +311,5 @@ export function later(fn, where = 'later', onFail) {
 
 export default {
   crashPayload, reportCrash, installCrashHandler, setCrashPath, guard, later,
-  breadcrumb, markCleanExit, markRunning, checkLastRun, startStallWatch, slowRender, sendRecentSessions,
+  breadcrumb, markCleanExit, markRunning, checkLastRun, startStallWatch, slowRender, sendRecentSessions, recentCrumbs,
 };

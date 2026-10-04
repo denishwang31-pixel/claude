@@ -19,7 +19,7 @@ import { checkAppAdmin } from '../src/lib/firestore';
 import { C } from '../src/lib/theme';
 import { handleLateSocialUrl, checkPendingSocial } from '../src/lib/socialSignIn';
 import {
-  reportCrash, installCrashHandler, setCrashPath, checkLastRun, markCleanExit, markRunning, startStallWatch, breadcrumb,
+  reportCrash, installCrashHandler, setCrashPath, checkLastRun, markCleanExit, markRunning, startStallWatch, breadcrumb, recentCrumbs,
 } from '../src/lib/crashReport';
 
 /* ============================================================
@@ -59,6 +59,30 @@ export function ErrorBoundary({ error, retry }) {
   );
 }
 
+/* 하얀 화면 탈출 — 앱을 스스로 다시 시작한다(업데이트 적용과 같은 방법).
+   2026-10-04: 대회 화면을 보던 중 주소가 빈 '/' 로 바뀌고 하얀 화면에 갇혔다. 홈으로 보내도(router.replace)
+   움직이지 않았다 — 화면 이동 장치가 고장 난 상태라, 앱을 깨끗이 다시 띄우는 것 말고는 빠져나올 길이 없다.
+   로그인은 유지되므로 다시 켜지면 홈이 나온다. */
+let rootMounts = 0;
+let recovering = false;
+async function restartApp(why) {
+  if (recovering) return;
+  recovering = true;
+  try {
+    breadcrumb(`앱 다시 시작 — ${why}`);
+    /* 무엇 때문에 갇혔는지 남긴다 — 동작 기록째로(최대 1.5초만 기다림) */
+    await Promise.race([
+      reportCrash({ message: `하얀 화면 탈출: ${why}`, stack: recentCrumbs() }, { where: 'recover' }),
+      new Promise((r) => setTimeout(r, 1500)),
+    ]);
+    await markCleanExit();
+    const U = await import('expo-updates');
+    await U.reloadAsync();
+  } catch (e) {
+    recovering = false;
+  }
+}
+
 export const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
 
@@ -94,7 +118,11 @@ export default function RootLayout() {
        뒤로 가면(백그라운드) 정상 종료로 적어 둔다 — 그 뒤 휴대폰이 앱을 정리해도 '갑자기 꺼짐'이 아니다. */
     checkLastRun();
     startStallWatch();
-    breadcrumb('앱 화면 시작');      // 같은 실행 안에서 또 찍히면 안드로이드가 화면을 새로 만든 것
+    rootMounts += 1;
+    breadcrumb(`앱 화면 시작 ${rootMounts}`);   // 같은 실행 안에서 2 이상이면 안드로이드가 화면을 새로 만든 것
+    /* 같은 실행 안에서 맨 위 화면이 다시 만들어졌다 — 화면 이동 장치가 예전 것을 붙잡아 하얀 화면에 갇힌다.
+       깨끗이 다시 시작한다(잠깐 기다려 로그인 확인이 끝나게) */
+    if (rootMounts > 1) setTimeout(() => restartApp('화면이 새로 만들어짐'), 300);
     const sub = AppState.addEventListener('change', (st) => {
       if (st === 'background') { breadcrumb('앱 뒤로 감'); markCleanExit(); }
       else if (st === 'active') { markRunning(); breadcrumb('앱으로 돌아옴'); }
@@ -180,7 +208,9 @@ export default function RootLayout() {
         breadcrumb('빈 화면 → 홈으로');
         router.replace('/(tabs)');
       }, 800);
-      return () => clearTimeout(t);
+      /* 홈으로 보내도 그대로면(화면 이동 장치가 고장) 앱을 다시 시작한다 */
+      const t2 = setTimeout(() => restartApp('빈 화면에서 홈으로 못 감'), 3000);
+      return () => { clearTimeout(t); clearTimeout(t2); };
     }
     // 클럽이 없고, 둘러보기도 선택하지 않았으면 온보딩으로
     if (!session.clubId && !session.skipped) {

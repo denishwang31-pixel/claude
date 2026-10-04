@@ -110,7 +110,7 @@ async function clientErrors(db) {
     console.log(`  앱 ${x.app?.version || '?'} · 업데이트 ${String(x.app?.updateId || '').slice(0, 8) || '?'} · ${x.app?.platform || '?'} ${x.app?.os || ''} · 사용자 …${String(x.uid || '').slice(-4)}`);
     console.log(`  문구: ${msg}`);
     /* last-run(갑자기 꺼짐)은 stack 칸에 마지막 동작들이 들어 있다 — 끝까지 보여 준다 */
-    String(x.stack || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(['last-run', 'user-report', 'stall'].includes(x.where) ? -60 : 0, ['last-run', 'user-report', 'stall'].includes(x.where) ? undefined : 6)
+    String(x.stack || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(['last-run', 'user-report', 'stall', 'recover'].includes(x.where) ? -60 : 0, ['last-run', 'user-report', 'stall', 'recover'].includes(x.where) ? undefined : 6)
       .forEach((l) => console.log(`    ${l.slice(0, 160)}`));
   });
 }

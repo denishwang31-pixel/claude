@@ -348,8 +348,10 @@ section('버튼 처리 오류가 앱을 끄지 않는다 · 알림창 안에서 
   ok(/export async function sendRecentSessions/.test(cr) && /where: 'user-report'/.test(cr)
     && /화면 문제 알리기/.test(readFileSync(new URL('../src/components/UpdateStatus.jsx', import.meta.url), 'utf8')), '앱 정보에 [화면 문제 알리기] — 지난 실행 기록을 보낸다');
   ok(/if \(!root\) \{\s*const t = setTimeout\(\(\) => \{\s*breadcrumb\('빈 화면 → 홈으로'\);\s*router\.replace\('\/\(tabs\)'\);/.test(lay)
-    && /return \(\) => clearTimeout\(t\);/.test(lay), '빈 주소("/")에 0.8초 넘게 멈추면 홈 탭으로 — 하얀 화면에 갇히지 않게');
-  ok(/breadcrumb\('앱 화면 시작'\)/.test(lay) && /breadcrumb\('앱 뒤로 감'\)/.test(lay), '화면 새로 만들기·앱 오가기도 동작 기록에');
+    && /return \(\) => \{ clearTimeout\(t\); clearTimeout\(t2\); \};/.test(lay), '빈 주소("/")에 0.8초 넘게 멈추면 홈 탭으로 — 하얀 화면에 갇히지 않게');
+  ok(/restartApp\('빈 화면에서 홈으로 못 감'\), 3000/.test(lay) && /if \(rootMounts > 1\) setTimeout\(\(\) => restartApp\('화면이 새로 만들어짐'\)/.test(lay)
+    && /await markCleanExit\(\);\s*const U = await import\('expo-updates'\);\s*await U\.reloadAsync\(\);/.test(lay), '그래도 갇히면(홈으로 못 감·화면이 새로 만들어짐) 앱을 스스로 다시 시작');
+  ok(/breadcrumb\(`앱 화면 시작 \$\{rootMounts\}`\)/.test(lay) && /breadcrumb\('앱 뒤로 감'\)/.test(lay), '화면 새로 만들기·앱 오가기도 동작 기록에');
   ok(/startStallWatch\(\)/.test(lay) && /where: 'stall'/.test(cr) && /if \(!appActive \|\| gap < 2500\) return;/.test(cr), '화면 멈춤 감지(2.5초 이상, 백그라운드 제외)');
 
   ok(/checkLastRun\(\)/.test(lay) && /st === 'background'\) \{ breadcrumb\('앱 뒤로 감'\); markCleanExit\(\); \}/.test(lay), '뒤로 가면 정상 종료로 적어 둔다');
