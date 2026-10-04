@@ -22,7 +22,7 @@ import Constants from 'expo-constants';
 import { Card, Btn, Chip } from './ui';
 import { authPersistence } from '../../firebaseConfig';
 import { C, S, F } from '../lib/theme';
-import { markCleanExit } from '../lib/crashReport';
+import { markCleanExit, sendRecentSessions } from '../lib/crashReport';
 
 /* 옛 빌드에는 이 모듈이 아예 없다. 그때 화면이 죽으면 안 된다. */
 let Updates = null;
@@ -37,6 +37,14 @@ const shortId = (id) => (id ? String(id).slice(0, 8) : '—');
 
 export function UpdateStatus({ flash }) {
   const [busy, setBusy] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  /* 화면 문제 알리기 — 하얀 화면처럼 기록이 안 남는 문제를 사람이 알려 준다(lib/crashReport.js sendRecentSessions) */
+  const report = async () => {
+    setReporting(true);
+    const ok = await sendRecentSessions();
+    setReporting(false);
+    flash?.(ok ? '보냈습니다. 고마워요 — 기록을 보고 고치겠습니다' : '보내지 못했습니다. 로그인 상태와 인터넷 연결을 확인해 주세요');
+  };
   const [info, setInfo] = useState(null);
 
   const appVersion = Constants.expoConfig?.version || '?';
@@ -130,6 +138,16 @@ export function UpdateStatus({ flash }) {
       <View style={{ marginTop: S.md }}>
         <Btn full disabled={busy} onPress={check}>
           {busy ? '확인 중…' : '지금 업데이트 확인'}
+        </Btn>
+      </View>
+
+      <Text style={{ fontSize: 11, color: C.faint, marginTop: S.lg, lineHeight: 16 }}>
+        화면이 하얗게 되거나 멈췄다면, 앱을 다시 켠 뒤 아래를 눌러 주세요.
+        직전에 쓴 기록(어느 화면·어떤 버튼)을 보내 원인을 찾는 데 씁니다. 개인 정보는 담기지 않습니다.
+      </Text>
+      <View style={{ marginTop: S.sm }}>
+        <Btn full tone="ghost" disabled={reporting} onPress={report}>
+          {reporting ? '보내는 중…' : '화면 문제 알리기'}
         </Btn>
       </View>
     </Card>

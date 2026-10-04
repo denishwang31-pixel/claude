@@ -64,6 +64,12 @@ const CRUMB_MAX = 25;
 let crumbs = [];
 let fsMod = null;
 let runFile = '';
+let histFile = '';
+const sessionStart = Date.now();
+/* 지난 실행 몇 개를 남겨 둔다 — 하얀 화면 뒤 '화면 문제 알리기'로 보낸다(아래 sendRecentSessions).
+   2026-10-04: 하얀 화면이 난 실행은 정상 종료(백그라운드)로 끝나 '갑자기 꺼짐'에 안 잡혔다 —
+   자바스크립트는 살아 있었다는 뜻. 그 실행의 동작 기록을 사람이 보내 줘야 볼 수 있다. */
+const HIST_MAX = 3;
 let writing = Promise.resolve();
 const hhmmss = () => { const d = new Date(); return [d.getHours(), d.getMinutes(), d.getSeconds()].map((x) => String(x).padStart(2, '0')).join(':'); };
 
@@ -72,11 +78,12 @@ async function loadFs() {
   try {
     fsMod = await import('expo-file-system/legacy');
     runFile = fsMod?.documentDirectory ? `${fsMod.documentDirectory}run-state.json` : '';
+    histFile = fsMod?.documentDirectory ? `${fsMod.documentDirectory}run-history.json` : '';
   } catch (e) { fsMod = null; }
   return fsMod;
 }
 function writeRun(running) {
-  const body = JSON.stringify({ running, at: Date.now(), path: currentPath, crumbs });
+  const body = JSON.stringify({ running, at: Date.now(), startedAt: sessionStart, path: currentPath, crumbs });
   writing = writing.then(async () => {
     try {
       const F = await loadFs();
@@ -128,6 +135,32 @@ export function startStallWatch() {
   }, 1000);
 }
 
+/**
+ * 사용자가 '화면 문제 알리기'를 누르면 — 지난 실행 최대 3개의 동작 기록을 보낸다(where 'user-report').
+ * @returns true 면 보냄
+ */
+export async function sendRecentSessions() {
+  try {
+    const F = await loadFs();
+    if (!F || !histFile) return false;
+    const hi = await F.getInfoAsync(histFile);
+    if (!hi?.exists) return false;
+    const hist = JSON.parse(await F.readAsStringAsync(histFile)) || [];
+    if (!hist.length) return false;
+    const t = (ms) => { const d = new Date(Number(ms || 0)); return [d.getHours(), d.getMinutes(), d.getSeconds()].map((x) => String(x).padStart(2, '0')).join(':'); };
+    const text = hist.map((h, i) => [
+      `── 지난 실행 ${hist.length - i} · ${t(h.startedAt)}~${t(h.at)} · ${h.running ? '갑자기 끝남' : '정상 종료(뒤로 감)'} · 마지막 화면 ${h.path || '?'}`,
+      ...(h.crumbs || []),
+    ].join('\n')).join('\n');
+    return await reportCrash({
+      message: `사용자가 알린 화면 문제 — ${t(Date.now())}`,
+      stack: text.slice(-1990),
+    }, { where: 'user-report', path: hist[hist.length - 1]?.path || '' });
+  } catch (e) {
+    return false;
+  }
+}
+
 /** 화면 그리기가 오래 걸렸으면 동작 기록에 남긴다(멈춤 기록과 함께 보면 무엇이 무거운지 보인다) */
 export function slowRender(name, ms, extra = '') {
   if (ms >= 700) breadcrumb(`느린 그리기 ${name} ${Math.round(ms)}ms${extra ? ` ${extra}` : ''}`);
@@ -141,8 +174,22 @@ export async function checkLastRun() {
     const info = await F.getInfoAsync(runFile);
     let last = null;
     if (info?.exists) { try { last = JSON.parse(await F.readAsStringAsync(runFile)); } catch (e) { last = null; } }
+    /* 지난 실행을 기록 묶음에 더해 둔다(최근 3개) */
+    if (last && histFile) {
+      let hist = [];
+      try {
+        const hi = await F.getInfoAsync(histFile);
+        if (hi?.exists) hist = JSON.parse(await F.readAsStringAsync(histFile)) || [];
+      } catch (e) { hist = []; }
+      hist = [...(Array.isArray(hist) ? hist : []), last].slice(-HIST_MAX);
+      try { await F.writeAsStringAsync(histFile, JSON.stringify(hist)); } catch (e) { /* 그대로 */ }
+    }
     await writeRun(true);
     if (!last?.running) return;
+    /* ⚠️ 켜자마자(20초 안) 닫은 실행은 세지 않는다 — 업데이트를 받으려고 껐다 켜는 일이 잦다.
+       그때는 시작 기록 하나뿐이라, 이걸 '갑자기 꺼짐'으로 올리면 거짓 경보만 쌓였다(2026-10-04 6건). */
+    const lived = Number(last.at || 0) - Number(last.startedAt || last.at || 0);
+    if (lived < 20000 && (last.crumbs || []).length <= 2) return;
     if (Date.now() - Number(last.at || 0) > 3 * 24 * 3600 * 1000) return;
     const when = new Date(Number(last.at || 0) + 9 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ');
     const err = {
@@ -194,8 +241,10 @@ export async function reportCrash(error, { where = '', path = null } = {}) {
     if (!uid) return;                       // 규칙상 로그인한 사람만 남길 수 있다
     const body = crashPayload(error, { uid, where, path: path ?? currentPath, app: await appInfo() });
     await addDoc(collection(db, 'clientErrors'), { ...body, at: serverTimestamp() });
+    return true;
   } catch (e) {
     /* 기록이 실패해도 앱은 그대로 */
+    return false;
   }
 }
 
@@ -259,5 +308,5 @@ export function later(fn, where = 'later', onFail) {
 
 export default {
   crashPayload, reportCrash, installCrashHandler, setCrashPath, guard, later,
-  breadcrumb, markCleanExit, markRunning, checkLastRun, startStallWatch, slowRender,
+  breadcrumb, markCleanExit, markRunning, checkLastRun, startStallWatch, slowRender, sendRecentSessions,
 };

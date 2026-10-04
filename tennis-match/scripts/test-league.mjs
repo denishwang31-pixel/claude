@@ -344,6 +344,9 @@ section('버튼 처리 오류가 앱을 끄지 않는다 · 알림창 안에서 
   const cr = readFileSync(new URL('../src/lib/crashReport.js', import.meta.url), 'utf8');
   ok(/export async function checkLastRun/.test(cr) && /where: 'last-run'/.test(cr) && /\.slice\(-1990\)/.test(cr), '갑자기 꺼짐: 다음에 켤 때 마지막 화면·동작을 남긴다(넘치면 최근 것을 남김)');
   const lay = readFileSync(new URL('../app/_layout.jsx', import.meta.url), 'utf8');
+  ok(/if \(lived < 20000 && \(last\.crumbs \|\| \[\]\)\.length <= 2\) return;/.test(cr), '켜자마자 닫은 실행은 갑자기 꺼짐으로 세지 않는다(업데이트 받느라 껐다 켜기)');
+  ok(/export async function sendRecentSessions/.test(cr) && /where: 'user-report'/.test(cr)
+    && /화면 문제 알리기/.test(readFileSync(new URL('../src/components/UpdateStatus.jsx', import.meta.url), 'utf8')), '앱 정보에 [화면 문제 알리기] — 지난 실행 기록을 보낸다');
   ok(/startStallWatch\(\)/.test(lay) && /where: 'stall'/.test(cr) && /if \(!appActive \|\| gap < 2500\) return;/.test(cr), '화면 멈춤 감지(2.5초 이상, 백그라운드 제외)');
 
   ok(/checkLastRun\(\)/.test(lay) && /st === 'background'\) markCleanExit\(\)/.test(lay), '뒤로 가면 정상 종료로 적어 둔다');
