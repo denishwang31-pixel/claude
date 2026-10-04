@@ -182,8 +182,11 @@ export function MatchGrid({
                 const done = !!m.score;
                 const draw = done && !aWin && !bWin;
                 const winSolid = done && !draw && sideOf ? teamSolid(sideOf(m, aWin ? 'A' : 'B')) : null;
-                const accent = draw ? '#64748b' : winSolid ? (winSolid.bg === '#ffffff' ? '#111827' : winSolid.bg) : C.green;
-                const tint = `${accent}1F`;
+                /* 백팀 승은 백팀 이름표와 같은 모양 — 흰 점수 상자에 검은 테두리·글씨(검은 상자는 백팀 같지 않다).
+                   무승부는 노랑 — 회색이면 백팀 승과 헷갈린다(2026-10-04 앱 주인) */
+                const whiteWin = !!winSolid && winSolid.bg === '#ffffff';
+                const accent = draw ? '#d97706' : winSolid ? (whiteWin ? '#111827' : winSolid.bg) : C.green;
+                const tint = `${accent}${whiteWin ? '14' : '1F'}`;
                 return (
                   <Pressable key={c} onPress={() => onPressMatch?.(m)}
                     style={{
@@ -209,8 +212,13 @@ export function MatchGrid({
                           pending 을 안 넘기면 예전과 똑같이 동작한다. */}
                       {m.score
                         ? (
-                          <View style={{ backgroundColor: accent, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 }}>
-                            <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>{m.score.a}:{m.score.b}</Text>
+                          <View style={{
+                            backgroundColor: whiteWin ? '#ffffff' : accent, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1,
+                            borderWidth: whiteWin ? 1.5 : 0, borderColor: '#111827',
+                          }}>
+                            <Text style={{ fontSize: 13, fontWeight: '900', color: whiteWin ? '#111827' : '#fff' }}>
+                              {m.score.a}:{m.score.b}{draw ? ' 무' : ''}
+                            </Text>
                           </View>
                         )
                         : pending?.[m.id]
