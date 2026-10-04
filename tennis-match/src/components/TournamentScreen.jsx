@@ -22,6 +22,7 @@ import {
 } from '../lib/groupLeague';
 import { TournamentDraw } from './TournamentDraw';
 import { TeamMatch } from './TeamMatchScreen';
+import { breadcrumb } from '../lib/crashReport';
 import { TeamLeague } from './TeamLeagueScreen';
 import { leagueFromRoster, BLUE_WHITE_RED, packLeague } from '../lib/teamLeague';
 import { MatchGrid } from './MatchGrid';
@@ -1059,7 +1060,7 @@ export function Tournaments({
   const finished = tournaments.filter((x) => x.status === 'finished');
   const Row = ({ x }) => (
     <Card key={x.id} style={{ marginBottom: 8 }}>
-      <Pressable onPress={() => { setOpenId(x.id); setView('detail'); }}>
+      <Pressable onPress={() => { breadcrumb(`대회 열기 ${x.format || ''}/${x.stage || ''}`); setOpenId(x.id); setView('detail'); }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: '700' }}>{x.name}</Text>

@@ -341,6 +341,14 @@ section('버튼 처리 오류가 앱을 끄지 않는다 · 알림창 안에서 
   const ce = read('CourtNamesEditor.jsx');
   ok(/onBlur=\{save\}/.test(ce) && /prevSaved/.test(ce), '코트 이름: 칸에서 벗어나면 저장, 옆 칸 입력은 지우지 않는다');
   const cr = readFileSync(new URL('../src/lib/crashReport.js', import.meta.url), 'utf8');
+  ok(/export async function checkLastRun/.test(cr) && /where: 'last-run'/.test(cr) && /\.slice\(-1990\)/.test(cr), '갑자기 꺼짐: 다음에 켤 때 마지막 화면·동작을 남긴다(넘치면 최근 것을 남김)');
+  const lay = readFileSync(new URL('../app/_layout.jsx', import.meta.url), 'utf8');
+  ok(/checkLastRun\(\)/.test(lay) && /st === 'background'\) markCleanExit\(\)/.test(lay), '뒤로 가면 정상 종료로 적어 둔다');
+  for (const f of ['src/components/UpdateBanner.jsx', 'src/components/UpdateStatus.jsx', 'app/login.jsx', 'app/_layout.jsx']) {
+    const src = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
+    ok(!/reloadAsync\(\)/.test(src) || /markCleanExit\(\)/.test(src), `${f}: 업데이트 적용(다시 시작)은 갑자기 꺼짐으로 세지 않는다`);
+  }
+
   ok(/reportCrash\(error, \{ where: 'global' \}\)\.then\(once, once\)/.test(cr) && /setTimeout\(once, 2000\)/.test(cr), '앱이 꺼지기 전에 기록이 서버에 닿을 틈(최대 2초)');
 }
 

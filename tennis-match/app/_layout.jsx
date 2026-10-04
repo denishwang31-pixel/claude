@@ -18,7 +18,9 @@ import { needsEmailVerify } from '../src/lib/verify';
 import { checkAppAdmin } from '../src/lib/firestore';
 import { C } from '../src/lib/theme';
 import { handleLateSocialUrl, checkPendingSocial } from '../src/lib/socialSignIn';
-import { reportCrash, installCrashHandler, setCrashPath } from '../src/lib/crashReport';
+import {
+  reportCrash, installCrashHandler, setCrashPath, checkLastRun, markCleanExit, markRunning,
+} from '../src/lib/crashReport';
 
 /* ============================================================
    화면을 그리다 오류가 나면 여기로 온다 (expo-router 의 ErrorBoundary)
@@ -30,7 +32,7 @@ import { reportCrash, installCrashHandler, setCrashPath } from '../src/lib/crash
 export function ErrorBoundary({ error, retry }) {
   useEffect(() => { reportCrash(error, { where: 'boundary' }); }, [error]);
   const restart = async () => {
-    try { const U = await import('expo-updates'); await U.reloadAsync(); } catch (e) { retry?.(); }
+    try { await markCleanExit(); const U = await import('expo-updates'); await U.reloadAsync(); } catch (e) { retry?.(); }
   };
   const btn = (label, onPress, solid) => (
     <Pressable onPress={onPress} style={{
@@ -86,7 +88,17 @@ export default function RootLayout() {
   const segments = useSegments();
 
   /* 화면 밖에서 난 치명적 오류도 한 번 기록(src/lib/crashReport.js) · 지금 화면 경로를 기록에 붙인다 */
-  useEffect(() => { installCrashHandler(); }, []);
+  useEffect(() => {
+    installCrashHandler();
+    /* 지난번에 갑자기 꺼졌으면 마지막 화면·동작을 남긴다(src/lib/crashReport.js checkLastRun).
+       뒤로 가면(백그라운드) 정상 종료로 적어 둔다 — 그 뒤 휴대폰이 앱을 정리해도 '갑자기 꺼짐'이 아니다. */
+    checkLastRun();
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'background') markCleanExit();
+      else if (st === 'active') markRunning();
+    });
+    return () => sub?.remove?.();
+  }, []);
   useEffect(() => { setCrashPath(`/${(segments || []).join('/')}`); }, [segments]);
 
   // 인증 상태 구독 → uid, 소속 clubId 해석

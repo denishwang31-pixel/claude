@@ -12,6 +12,7 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { C, R } from '../lib/theme';
+import { markCleanExit } from '../lib/crashReport';
 
 /* 옛 빌드에는 이 모듈이 없다. 그때도 화면이 죽으면 안 된다. */
 let Updates = null;
@@ -37,7 +38,7 @@ export function UpdateBanner() {
     <Pressable
       onPress={async () => {
         setApplying(true);
-        try { await Updates.reloadAsync(); } catch (e) { setApplying(false); }
+        try { await markCleanExit(); await Updates.reloadAsync(); } catch (e) { setApplying(false); }
       }}
       style={{
         flexDirection: 'row', alignItems: 'center', gap: 8,

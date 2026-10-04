@@ -21,7 +21,7 @@ import {
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { courtLabel } from '../lib/courtNames';
 import { CourtNamesEditor } from './CourtNamesEditor';
-import { guard, later } from '../lib/crashReport';
+import { guard, later, breadcrumb } from '../lib/crashReport';
 import { TOURNAMENT_FORMAT, TEAM_SIDES, BUSU_KEYS, busuToNtrp } from '../lib/constants';
 import { MatchGrid, AttendanceGrid } from './MatchGrid';
 import { AppButton, Segmented, Touchable } from './native';
@@ -266,6 +266,7 @@ export function TeamMatch({
 
   /** 경기를 눌렀을 때 — 위에서 고른 버튼에 따라 */
   const onPressMatch = (m) => {
+    breadcrumb(`경기 누름 ${mode || '-'}${multi ? '/골라서삭제' : ''}`);
     if (!isAdmin) return;
     if (mode === BOARD_MODE.EDIT && multi) {
       setPickedGames((cur) => (cur.includes(m.id) ? cur.filter((x) => x !== m.id) : [...cur, m.id]));

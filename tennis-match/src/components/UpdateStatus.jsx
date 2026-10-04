@@ -22,6 +22,7 @@ import Constants from 'expo-constants';
 import { Card, Btn, Chip } from './ui';
 import { authPersistence } from '../../firebaseConfig';
 import { C, S, F } from '../lib/theme';
+import { markCleanExit } from '../lib/crashReport';
 
 /* 옛 빌드에는 이 모듈이 아예 없다. 그때 화면이 죽으면 안 된다. */
 let Updates = null;
@@ -71,7 +72,7 @@ export function UpdateStatus({ flash }) {
         '앱을 다시 시작하면 적용됩니다.',
         [
           { text: '나중에', style: 'cancel', onPress: () => setBusy(false) },
-          { text: '지금 다시 시작', onPress: () => Updates.reloadAsync() },
+          { text: '지금 다시 시작', onPress: async () => { await markCleanExit(); Updates.reloadAsync(); } },
         ],
       );
     } catch (e) {

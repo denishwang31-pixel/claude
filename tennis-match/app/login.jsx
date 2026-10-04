@@ -194,6 +194,7 @@ export default function Login() {
         return;
       }
       await U.fetchUpdateAsync();
+      await (await import('../src/lib/crashReport')).markCleanExit();   // 업데이트 적용은 '갑자기 꺼짐'이 아니다
       await U.reloadAsync();          // 여기서 앱이 다시 시작된다
     } catch (e) {
       setFixing(false);

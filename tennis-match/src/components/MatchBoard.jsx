@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppButton } from './native';
 import { Chip } from './ui';
 import { C, S, R, F } from '../lib/theme';
+import { breadcrumb } from '../lib/crashReport';
 
 export const BOARD_MODE = { NONE: null, SCORE: 'score', EDIT: 'edit' };
 
@@ -29,7 +30,7 @@ export const BOARD_MODE = { NONE: null, SCORE: 'score', EDIT: 'edit' };
 export function Fold({ title, summary, open, onToggle, children }) {
   return (
     <View>
-      <Pressable onPress={onToggle} hitSlop={6}
+      <Pressable onPress={() => { breadcrumb(`${open ? '접기' : '펼치기'} ${title}`); onToggle?.(); }} hitSlop={6}
         style={({ pressed }) => ({
           marginTop: S.xl, marginBottom: S.sm, opacity: pressed ? 0.6 : 1,
           flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -61,7 +62,7 @@ export function BoardModeBar({
   const btn = (key, label) => (
     <View style={{ flex: 1 }}>
       <AppButton full small variant={mode === key ? 'filled' : 'outlined'}
-        onPress={() => onMode(mode === key ? BOARD_MODE.NONE : key)}>
+        onPress={() => { breadcrumb(`대진표 버튼 ${label}`); onMode(mode === key ? BOARD_MODE.NONE : key); }}>
         {mode === key ? `✓ ${label}` : label}
       </AppButton>
     </View>

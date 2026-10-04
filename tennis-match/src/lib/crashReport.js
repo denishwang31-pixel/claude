@@ -43,7 +43,89 @@ export function crashPayload(error, { uid = '', where = '', path = '', app = {} 
 
 const recent = new Map();     // 문구 → 마지막으로 보낸 시각
 let currentPath = '';
-export const setCrashPath = (p) => { currentPath = String(p || ''); };
+export const setCrashPath = (p) => {
+  const next = String(p || '');
+  if (next !== currentPath) breadcrumb(`화면 ${next}`);
+  currentPath = next;
+};
+
+/* ============================================================
+   갑자기 꺼짐 감지 — 오류 기록조차 못 남기고 앱이 죽을 때
+
+   2026-10-04: 대회 화면에서 스크롤만 하다 하얀 화면과 함께 앱이 꺼졌는데 errors 에
+   아무것도 없었다. 자바스크립트 오류라면 global 처리기가 남겼을 것이라, 휴대폰(네이티브) 쪽에서
+   앱이 통째로 죽은 것으로 본다. 그때는 이 파일의 어떤 코드도 돌 틈이 없다.
+   그래서 '켜져 있음'을 파일에 적어 두고, 정상적으로 뒤로 가면(백그라운드) '꺼짐'으로 고친다.
+   다음에 켰을 때 '켜져 있음'이 그대로면 지난번에 갑자기 죽은 것 — 마지막 화면과 마지막 동작
+   (breadcrumb)을 clientErrors 에 where 'last-run' 으로 남긴다.
+   ⚠️ breadcrumb 에는 화면 경로·동작 이름만 — 회원 이름 같은 개인 정보는 넣지 않는다(공개 로그로 본다).
+   ============================================================ */
+const CRUMB_MAX = 25;
+let crumbs = [];
+let fsMod = null;
+let runFile = '';
+let writing = Promise.resolve();
+const hhmmss = () => { const d = new Date(); return [d.getHours(), d.getMinutes(), d.getSeconds()].map((x) => String(x).padStart(2, '0')).join(':'); };
+
+async function loadFs() {
+  if (fsMod) return fsMod;
+  try {
+    fsMod = await import('expo-file-system/legacy');
+    runFile = fsMod?.documentDirectory ? `${fsMod.documentDirectory}run-state.json` : '';
+  } catch (e) { fsMod = null; }
+  return fsMod;
+}
+function writeRun(running) {
+  const body = JSON.stringify({ running, at: Date.now(), path: currentPath, crumbs });
+  writing = writing.then(async () => {
+    try {
+      const F = await loadFs();
+      if (F && runFile) await F.writeAsStringAsync(runFile, body);
+    } catch (e) { /* 못 적어도 그대로 */ }
+  });
+  return writing;
+}
+
+/** 마지막 동작 남기기 — 화면 이동·버튼 처리(guard)·대진표 버튼 등 */
+export function breadcrumb(text) {
+  try {
+    crumbs.push(`${hhmmss()} ${String(text || '').slice(0, 80)}`);
+    if (crumbs.length > CRUMB_MAX) crumbs = crumbs.slice(-CRUMB_MAX);
+    writeRun(true);
+  } catch (e) { /* 그대로 */ }
+}
+
+/** 정상적으로 끝남 — 백그라운드로 갈 때, 업데이트 적용(reloadAsync) 직전에 */
+export function markCleanExit() { return writeRun(false); }
+export function markRunning() { return writeRun(true); }
+
+/** 앱을 켤 때 — 지난번이 갑자기 끝났으면 로그인된 뒤에 한 번 남긴다 */
+export async function checkLastRun() {
+  try {
+    const F = await loadFs();
+    if (!F || !runFile) return;
+    const info = await F.getInfoAsync(runFile);
+    let last = null;
+    if (info?.exists) { try { last = JSON.parse(await F.readAsStringAsync(runFile)); } catch (e) { last = null; } }
+    await writeRun(true);
+    if (!last?.running) return;
+    if (Date.now() - Number(last.at || 0) > 3 * 24 * 3600 * 1000) return;
+    const when = new Date(Number(last.at || 0) + 9 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ');
+    const err = {
+      message: `앱이 갑자기 꺼짐(지난 실행 · ${when} KST) — 마지막 화면 ${last.path || '?'}`,
+      stack: (last.crumbs || []).join('\n').slice(-1990),   // 넘치면 오래된 것부터 버린다 — 마지막 동작이 중요하다
+    };
+    /* 켜자마자는 로그인 전이다 — 로그인될 때까지 잠깐씩 기다렸다가 보낸다(최대 1분) */
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const { auth } = await import('../../firebaseConfig');
+      if (auth?.currentUser?.uid) {
+        await reportCrash(err, { where: 'last-run', path: last.path || '' });
+        return;
+      }
+    }
+  } catch (e) { /* 그대로 */ }
+}
 
 async function appInfo() {
   const out = { version: '', updateId: '', platform: '', os: '' };
@@ -64,7 +146,7 @@ async function appInfo() {
 }
 
 /** 오류 하나 보내기 — 실패해도 아무 일 없다 */
-export async function reportCrash(error, { where = '' } = {}) {
+export async function reportCrash(error, { where = '', path = null } = {}) {
   try {
     const key = String(error?.message || error || '').slice(0, 120);
     const now = Date.now();
@@ -76,7 +158,7 @@ export async function reportCrash(error, { where = '' } = {}) {
     ]);
     const uid = auth?.currentUser?.uid;
     if (!uid) return;                       // 규칙상 로그인한 사람만 남길 수 있다
-    const body = crashPayload(error, { uid, where, path: currentPath, app: await appInfo() });
+    const body = crashPayload(error, { uid, where, path: path ?? currentPath, app: await appInfo() });
     await addDoc(collection(db, 'clientErrors'), { ...body, at: serverTimestamp() });
   } catch (e) {
     /* 기록이 실패해도 앱은 그대로 */
@@ -98,6 +180,7 @@ export function installCrashHandler() {
     EU.setGlobalHandler((error, isFatal) => {
       const pass = () => { if (typeof prev === 'function') prev(error, isFatal); };
       if (!isFatal) { pass(); return; }
+      breadcrumb(`치명적 오류 ${String(error?.message || '').slice(0, 60)}`);
       let done = false;
       const once = () => { if (!done) { done = true; pass(); } };
       reportCrash(error, { where: 'global' }).then(once, once);
@@ -114,6 +197,7 @@ export function installCrashHandler() {
  */
 export function guard(fn, where, onFail) {
   return (...args) => {
+    breadcrumb(`동작 ${where}`);
     const fail = (e) => {
       reportCrash(e, { where });
       try { onFail?.(e); } catch (x) { /* 알리기가 실패해도 그대로 */ }
@@ -139,4 +223,7 @@ export function later(fn, where = 'later', onFail) {
   setTimeout(guard(fn, where, onFail), ALERT_GAP_MS);
 }
 
-export default { crashPayload, reportCrash, installCrashHandler, setCrashPath, guard, later };
+export default {
+  crashPayload, reportCrash, installCrashHandler, setCrashPath, guard, later,
+  breadcrumb, markCleanExit, markRunning, checkLastRun,
+};
