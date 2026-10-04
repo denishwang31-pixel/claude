@@ -69,7 +69,7 @@ const sessionStart = Date.now();
 /* 지난 실행 몇 개를 남겨 둔다 — 하얀 화면 뒤 '화면 문제 알리기'로 보낸다(아래 sendRecentSessions).
    2026-10-04: 하얀 화면이 난 실행은 정상 종료(백그라운드)로 끝나 '갑자기 꺼짐'에 안 잡혔다 —
    자바스크립트는 살아 있었다는 뜻. 그 실행의 동작 기록을 사람이 보내 줘야 볼 수 있다. */
-const HIST_MAX = 3;
+const HIST_MAX = 8;
 let writing = Promise.resolve();
 const hhmmss = () => { const d = new Date(); return [d.getHours(), d.getMinutes(), d.getSeconds()].map((x) => String(x).padStart(2, '0')).join(':'); };
 
@@ -151,13 +151,14 @@ export async function sendRecentSessions() {
     const hist = JSON.parse(await F.readAsStringAsync(histFile)) || [];
     if (!hist.length) return false;
     const t = (ms) => { const d = new Date(Number(ms || 0)); return [d.getHours(), d.getMinutes(), d.getSeconds()].map((x) => String(x).padStart(2, '0')).join(':'); };
-    const text = hist.map((h, i) => [
-      `── 지난 실행 ${hist.length - i} · ${t(h.startedAt)}~${t(h.at)} · ${h.running ? '갑자기 끝남' : '정상 종료(뒤로 감)'} · 마지막 화면 ${h.path || '?'}`,
+    /* 최근 것부터 — 보낼 수 있는 길이(2000자)를 넘으면 오래된 실행이 잘린다 */
+    const text = [...hist].reverse().map((h, i) => [
+      `── ${i + 1}번째 전 실행 · ${t(h.startedAt)}~${t(h.at)} · ${h.running ? '갑자기 끝남' : '정상 종료(뒤로 감)'} · 마지막 화면 ${h.path || '?'}`,
       ...(h.crumbs || []),
     ].join('\n')).join('\n');
     return await reportCrash({
       message: `사용자가 알린 화면 문제 — ${t(Date.now())}`,
-      stack: text.slice(-1990),
+      stack: text.slice(0, 1990),
     }, { where: 'user-report', path: hist[hist.length - 1]?.path || '' });
   } catch (e) {
     return false;
@@ -184,7 +185,11 @@ export async function checkLastRun() {
         const hi = await F.getInfoAsync(histFile);
         if (hi?.exists) hist = JSON.parse(await F.readAsStringAsync(histFile)) || [];
       } catch (e) { hist = []; }
-      hist = [...(Array.isArray(hist) ? hist : []), last].slice(-HIST_MAX);
+      /* ⚠️ 켜자마자 닫은 실행(업데이트 받느라 껐다 켜기)은 담지 않는다 — 그런 실행 셋이
+         정작 하얀 화면 난 실행을 밀어냈다(2026-10-04 '화면 문제 알리기'에 짧은 실행만 셋) */
+      const livedMs = Number(last.at || 0) - Number(last.startedAt || last.at || 0);
+      const trivial = livedMs < 20000 && (last.crumbs || []).length <= 2;
+      if (!trivial) hist = [...(Array.isArray(hist) ? hist : []), last].slice(-HIST_MAX);
       try { await F.writeAsStringAsync(histFile, JSON.stringify(hist)); } catch (e) { /* 그대로 */ }
     }
     await writeRun(true);
