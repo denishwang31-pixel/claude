@@ -26,6 +26,8 @@ import {
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { CourtNamesEditor } from './CourtNamesEditor';
+import { RoundTimingEditor } from './RoundTimingEditor';
+import { tournamentRoundTimes } from '../lib/schedule';
 import { courtLabel } from '../lib/courtNames';
 import { TEAM_ROUND_TYPES } from '../lib/teamMatch';
 import { busuToNtrp } from '../lib/constants';
@@ -43,6 +45,7 @@ import { guard, later, breadcrumb, slowRender } from '../lib/crashReport';
  */
 export function TeamLeague({
   roster, courts, saved: savedRaw, isAdmin, onSave, flash, courtNames = [], onSaveCourtNames, me = '',
+  timing = null, onSaveTiming,
 }) {
   /* 저장된 모양은 teams:[{players}] — 화면에서는 [[선수…]] 로 푼다(lib/teamLeague.js packLeague 머리말) */
   /* 그리기에 걸린 시간 — 길면 동작 기록에(lib/crashReport.js slowRender) */
@@ -109,6 +112,10 @@ export function TeamLeague({
 
   /* 대진표·집계에 쓰는 경기 — 유형은 실제로 선 선수 성별로(설정한 유형이 아니라) */
   const shown = useMemo(() => matches.map((m) => ({ ...m, type: actualMatchType(m, genderOf) })), [matches, genderOf]);
+  /* 타임별 시각 — 대회 시간(timing)을 정했을 때만. 대진표·출전 현황·내 경기에 같이 쓴다 */
+  const gridRounds = gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).rounds;
+  const times = useMemo(() => tournamentRoundTimes(timing, gridRounds), [timing, gridRounds]);
+  const timeOf = (r) => times.find((t) => t.round === Number(r)) || null;
   const teamIdxOf = useMemo(() => {
     const map = {};
     teams.forEach((t, i) => t.forEach((p) => { map[p.id] = i; }));
@@ -250,6 +257,15 @@ export function TeamLeague({
       flash('코트 이름을 저장했습니다');
     } catch (e) {
       flash('코트 이름을 저장하지 못했습니다. 인터넷 연결을 확인해 주세요');
+    }
+  };
+  /* 대회 시간(시작 시간·한 타임 길이) — 대진표 타임 아래 시각 */
+  const saveTiming = async (next) => {
+    try {
+      await onSaveTiming?.(next);
+      flash(next ? '시간을 저장했습니다' : '시간을 지웠습니다');
+    } catch (e) {
+      flash('시간을 저장하지 못했습니다. 인터넷 연결을 확인해 주세요');
     }
   };
 
@@ -609,7 +625,7 @@ export function TeamLeague({
       {/* 대진 설정 */}
       {isAdmin && (
         <Fold title="대진 설정" open={openConfig} onToggle={() => setOpenConfig(!openConfig)}
-          summary={`코트 ${cfg.courts}면 · ${cfg.rounds}타임${oneCourtPerTeam ? ' · 한 팀 한 코트' : ''}`}>
+          summary={`${timing?.startTime ? `${timing.startTime} 시작 · ` : ''}코트 ${cfg.courts}면 · ${cfg.rounds}타임${oneCourtPerTeam ? ' · 한 팀 한 코트' : ''}`}>
           <Card>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <View style={{ flex: 1 }}>
@@ -626,6 +642,10 @@ export function TeamLeague({
 
             <View style={{ marginTop: S.md }}>
               <CourtNamesEditor count={cfg.courts} value={courtNames} onSave={saveCourtNames} />
+            </View>
+
+            <View style={{ marginTop: S.md }}>
+              <RoundTimingEditor value={timing} rounds={gridRounds} onSave={saveTiming} />
             </View>
 
             <Divider style={{ marginVertical: S.md }} />
@@ -719,10 +739,10 @@ export function TeamLeague({
               const mineIsA = (m.teamA || []).includes(me);
               const mine = look(mineIsA ? m.teamAIdx : m.teamBIdx);
               const opp = look(mineIsA ? m.teamBIdx : m.teamAIdx);
-              return { id: m.id, round: m.round, court: cn(m.court), type: m.type, mine, opp, score: m.score, mineIsA };
+              return { id: m.id, round: m.round, time: timeOf(m.round), court: cn(m.court), type: m.type, mine, opp, score: m.score, mineIsA };
             })} />
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} me={me}
+            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} me={me} roundTimes={times}
               sideOf={(m, side) => look(side === 'A' ? m.teamAIdx : m.teamBIdx)}
               roundCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).rounds} courtCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).courts}
               onPressEmpty={isAdmin && mode === BOARD_MODE.EDIT && !multi ? addAt : undefined}
@@ -745,7 +765,7 @@ export function TeamLeague({
           <Fold title="타임별 출전 현황" open={openAttend} onToggle={() => setOpenAttend(!openAttend)}
             summary={`총 ${shown.length}경기 · 사람마다 몇 경기, 남복·여복·혼복 몇 경기씩`}>
             <Card style={{ padding: 10 }}>
-              <AttendanceGrid attendees={teams.flat()} matches={shown} venue={venue} me={me}
+              <AttendanceGrid attendees={teams.flat()} matches={shown} venue={venue} me={me} roundTimes={times}
                 groups={teams.map((t, i) => ({ key: `t${i}`, ...look(i), players: t, games: teamGameCounts(teams.length, matches)[i] }))}
                 roundCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).rounds}
                 typeOf={(m) => m.type}

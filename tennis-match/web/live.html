@@ -76,6 +76,7 @@
   table.grid th.c1 { border-top-left-radius: 10px; } table.grid th.cl { border-top-right-radius: 10px; }
   table.grid td { border: 1px solid #F1F5F9; padding: 6px; vertical-align: top; text-align: center; background: #fff; }
   table.grid td.r { background: var(--green); color: #BEF264; font-weight: 800; vertical-align: middle; border-color: rgba(255,255,255,.15); }
+  table.grid td.r small.rt { display: block; margin-top: 2px; color: #BFE3D3; font-size: 10.5px; font-weight: 600; }
   table.grid td.e { background: #FAFAF9; color: var(--faint); vertical-align: middle; }
   .gt { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
   .ty { font-size: 10px; font-weight: 800; padding: 1px 5px; border-radius: 4px; background: var(--fill); color: var(--sub); }
@@ -278,7 +279,8 @@
         return '<th class="' + (i === 0 ? 'c1 ' : '') + (i === cols.length - 1 ? 'cl' : '') + '">코트 ' + esc(c.label) + '</th>';
       }).join('') + '</tr>';
       d.rounds.forEach(function (r) {
-        h += '<tr><td class="r">' + r.round + 'T</td>' + cols.map(function (c) {
+        /* 대회 시간을 정했으면 타임 아래 시작 시각(r.time) */
+        h += '<tr><td class="r">' + r.round + 'T' + (r.time ? '<small class="rt">' + esc(r.time) + '</small>' : '') + '</td>' + cols.map(function (c) {
           var m = r.matches.filter(function (x) { return (x.c ? 'n' + x.c : 'l' + x.court) === c.key; })[0];
           var ac = m ? accentOf(m) : '';
           var wt = m && m.score && m.score.a !== m.score.b && (byIdx[m.score.a > m.score.b ? m.aTeam : m.bTeam] || {}).white;

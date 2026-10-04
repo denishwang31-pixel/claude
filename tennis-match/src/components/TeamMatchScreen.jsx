@@ -21,6 +21,8 @@ import {
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { courtLabel } from '../lib/courtNames';
 import { CourtNamesEditor } from './CourtNamesEditor';
+import { RoundTimingEditor } from './RoundTimingEditor';
+import { tournamentRoundTimes } from '../lib/schedule';
 import { guard, later, breadcrumb, slowRender } from '../lib/crashReport';
 import { TOURNAMENT_FORMAT, TEAM_SIDES, BUSU_KEYS, busuToNtrp } from '../lib/constants';
 import { MatchGrid, AttendanceGrid } from './MatchGrid';
@@ -43,6 +45,7 @@ function TeamTag({ side, children }) {
 
 export function TeamMatch({
   format, attendees, courts, rounds, saved, onSave, isAdmin, flash, courtNames = [], onSaveCourtNames, me = '',
+  timing = null, onSaveTiming,
 }) {
   /* 그리기에 걸린 시간 — 길면 동작 기록에(lib/crashReport.js slowRender) */
   const renderStart = Date.now();
@@ -94,6 +97,15 @@ export function TeamMatch({
       flash('코트 이름을 저장하지 못했습니다. 인터넷 연결을 확인해 주세요');
     }
   };
+  /* 대회 시간(시작 시간·한 타임 길이) — 대진표 타임 아래 시각 */
+  const saveTiming = async (next) => {
+    try {
+      await onSaveTiming?.(next);
+      flash(next ? '시간을 저장했습니다' : '시간을 지웠습니다');
+    } catch (e) {
+      flash('시간을 저장하지 못했습니다. 인터넷 연결을 확인해 주세요');
+    }
+  };
 
   const strengthA = useMemo(() => teamStrength(teamA, { busuToNtrp }), [teamA]);
   const strengthB = useMemo(() => teamStrength(teamB, { busuToNtrp }), [teamB]);
@@ -111,6 +123,10 @@ export function TeamMatch({
 
   /* 대진표·집계에 쓰는 경기 — 유형은 실제로 선 선수 성별로 */
   const shown = useMemo(() => matches.map((m) => ({ ...m, type: actualMatchType(m, genderOf) })), [matches, genderOf]);
+  /* 타임별 시각 — 대회 시간(timing)을 정했을 때만. 대진표·출전 현황·내 경기에 같이 쓴다 */
+  const gridRounds = gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).rounds;
+  const times = useMemo(() => tournamentRoundTimes(timing, gridRounds), [timing, gridRounds]);
+  const timeOf = (r) => times.find((t) => t.round === Number(r)) || null;
 
   const nameOf = useMemo(() => {
     const map = {};
@@ -552,10 +568,14 @@ export function TeamMatch({
       {/* 편성 */}
       {isAdmin && (
         <Fold title="대진 설정" open={openConfig} onToggle={() => setOpenConfig(!openConfig)}
-          summary={`코트 ${courts}면 · ${Number(nRounds) || 4}타임${sameSexOnly ? ' · 같은 성별끼리' : ''}`}>
+          summary={`${timing?.startTime ? `${timing.startTime} 시작 · ` : ''}코트 ${courts}면 · ${Number(nRounds) || 4}타임${sameSexOnly ? ' · 같은 성별끼리' : ''}`}>
           <Card>
             <Label hint="몇 타임을 돌릴지">타임 수</Label>
             <Field keyboardType="number-pad" value={nRounds} onChangeText={setNRounds} suffix="타임" />
+
+            <View style={{ marginTop: S.lg }}>
+              <RoundTimingEditor value={timing} rounds={gridRounds} onSave={saveTiming} />
+            </View>
 
             {!isClubMatch && (
               <View style={{ marginTop: S.lg }}>
@@ -604,10 +624,10 @@ export function TeamMatch({
             .map((m) => {
               const mineIsA = (m.teamA || []).includes(me);
               const side = (i) => ({ ...sides[i], name: isClubMatch ? (i ? (oppClub || '상대 클럽') : '우리 클럽') : sides[i].name });
-              return { id: m.id, round: m.round, court: cn(m.court), type: m.type, mine: side(mineIsA ? 0 : 1), opp: side(mineIsA ? 1 : 0), score: m.score, mineIsA };
+              return { id: m.id, round: m.round, time: timeOf(m.round), court: cn(m.court), type: m.type, mine: side(mineIsA ? 0 : 1), opp: side(mineIsA ? 1 : 0), score: m.score, mineIsA };
             })} />
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} onPressMatch={onPressMatch} me={me}
+            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} onPressMatch={onPressMatch} me={me} roundTimes={times}
               roundCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).rounds} courtCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).courts}
               onPressEmpty={isAdmin && mode === BOARD_MODE.EDIT && !multi ? addAt : undefined}
               selected={multi ? pickedGames : null}
@@ -620,7 +640,7 @@ export function TeamMatch({
           <Fold title="타임별 출전 현황" open={openAttend} onToggle={() => setOpenAttend(!openAttend)}
             summary={`총 ${shown.length}경기 · 사람마다 몇 경기, 남복·여복·혼복 몇 경기씩`}>
             <Card style={{ padding: 10 }}>
-              <AttendanceGrid attendees={[...teamA, ...teamB]} matches={shown} venue={venue} me={me}
+              <AttendanceGrid attendees={[...teamA, ...teamB]} matches={shown} venue={venue} me={me} roundTimes={times}
                 groups={[
                   { key: 'A', ...sides[0], name: isClubMatch ? '우리 클럽' : sides[0].name, players: teamA, games: matches.length },
                   { key: 'B', ...sides[1], name: isClubMatch ? (oppClub || '상대 클럽') : sides[1].name, players: teamB, games: matches.length },

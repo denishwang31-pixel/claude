@@ -184,6 +184,7 @@ export function ScoreSheet({ target, onSave, onClose }) {
  */
 export function MyGames({ games }) {
   if (!games?.length) return null;
+  /* 대회 시간을 정했으면 몇 시 경기인지도(g.time — schedule.tournamentRoundTimes) */
   return (
     <View style={{ marginBottom: S.sm, padding: 12, borderRadius: R.md, backgroundColor: C.greenSoft, borderWidth: 1.5, borderColor: C.green }}>
       <Text style={{ fontSize: 13, fontWeight: '900', color: C.green }}>내 경기 {games.length}</Text>
@@ -192,7 +193,9 @@ export function MyGames({ games }) {
         const op = g.score ? (g.mineIsA ? g.score.b : g.score.a) : null;
         return (
           <View key={g.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
-            <Text style={{ width: 92, fontSize: 12, fontWeight: '800', color: C.text }}>{g.round}타임 · 코트 {g.court}</Text>
+            <Text style={{ minWidth: 92, fontSize: 12, fontWeight: '800', color: C.text }}>
+              {g.round}타임{g.time ? ` ${g.time.start}` : ''} · 코트 {g.court}
+            </Text>
             <Text style={{ flex: 1, fontSize: 12, color: C.sub }} numberOfLines={1}>
               {g.type} · <Text style={{ fontWeight: '800', color: g.opp.color }}>{g.opp.name}</Text>와
             </Text>

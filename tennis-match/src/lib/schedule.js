@@ -70,6 +70,20 @@ export function roundTimes(settings, rounds) {
   }));
 }
 
+/**
+ * 대회 타임별 시각 — 대회 문서 timing = { startTime:'HH:MM', roundMinutes }
+ * 일정(모임)과 같은 계산(roundTimes). 시작 시간을 아직 안 정했으면 빈 목록 → 대진표에 시각을 안 그린다.
+ * (2026-10-04 앱 주인: "일정 설정할 때처럼 대회도 시간·타임당 소요시간을 정해 타임 아래 시간 표시")
+ */
+export const TOURNAMENT_ROUND_MINUTES = 30;
+export function tournamentRoundTimes(timing, rounds) {
+  if (!timing || toMinutes(timing.startTime) == null) return [];
+  const n = Math.max(0, Math.floor(Number(rounds) || 0));
+  if (!n) return [];
+  const per = Math.min(180, Math.max(5, Number(timing.roundMinutes) || TOURNAMENT_ROUND_MINUTES));
+  return roundTimes({ startTime: timing.startTime, roundMinutes: per }, n);
+}
+
 /** 설정 요약 문장 (설정 화면·모임 등록에서 표시) */
 export function describeSettings(settings) {
   const s = { ...DEFAULT_SETTINGS, ...(settings || {}) };

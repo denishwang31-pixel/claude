@@ -364,6 +364,32 @@ section('버튼 처리 오류가 앱을 끄지 않는다 · 알림창 안에서 
   ok(/reportCrash\(error, \{ where: 'global' \}\)\.then\(once, once\)/.test(cr) && /setTimeout\(once, 2000\)/.test(cr), '앱이 꺼지기 전에 기록이 서버에 닿을 틈(최대 2초)');
 }
 
+section('대회 시간 — 시작 시간 · 한 타임 길이 → 타임 아래 시각');
+{
+  /* 2026-10-04 앱 주인: 일정 설정할 때처럼 대회도 시간·타임당 소요시간을 정해 타임 아래 시간 표시 */
+  const { tournamentRoundTimes } = await import('../src/lib/schedule.js');
+  eq('시작 시간을 안 정하면 시각 없음', tournamentRoundTimes(null, 4).length, 0);
+  eq('잘못된 시작 시간도 시각 없음', tournamentRoundTimes({ startTime: '25:00', roundMinutes: 30 }, 4).length, 0);
+  const tt = tournamentRoundTimes({ startTime: '09:00', roundMinutes: 30 }, 4);
+  ok(tt.length === 4 && tt[0].start === '09:00' && tt[1].start === '09:30' && tt[3].end === '11:00', '09:00 시작 · 30분 → 09:00 / 09:30 / … / 11:00 끝');
+  eq('타임 길이를 안 정하면 30분', tournamentRoundTimes({ startTime: '10:00' }, 2)[1].start, '10:30');
+  eq('45분 타임', tournamentRoundTimes({ startTime: '18:30', roundMinutes: 45 }, 3)[2].start, '20:00');
+  const lv = teamLiveView({ stage: 'team', format: 'blue_white', timing: { startTime: '09:00', roundMinutes: 40 },
+    team: { teamA: [P('a1', '청1', 'M')], teamB: [P('b1', '백1', 'M')], matches: [
+      { round: 1, court: 1, teamA: ['a1'], teamB: ['b1'], score: null }, { round: 3, court: 1, teamA: ['a1'], teamB: ['b1'], score: null }] } });
+  ok(lv.rounds[0].time === '09:00' && lv.rounds[1].time === '10:20', '공개 링크: 타임마다 시작 시각(앱과 같은 계산)');
+  eq('공개 링크: 시간을 안 정하면 빈칸', teamLiveView({ stage: 'team', team: { teamA: [], teamB: [], matches: [{ round: 1, court: 1, teamA: [], teamB: [] }] } }).rounds[0].time, '');
+  const rd = (f) => readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8');
+  for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
+    const src = rd(f);
+    ok(/<RoundTimingEditor value=\{timing\} rounds=\{gridRounds\} onSave=\{saveTiming\} \/>/.test(src)
+      && (src.match(/roundTimes=\{times\}/g) || []).length === 2 && /time: timeOf\(m\.round\)/.test(src), `${f}: 대진 설정에서 정하고 → 대진표·출전 현황·내 경기에 시각`);
+  }
+  const ts = rd('TournamentScreen.jsx');
+  eq('대회 화면이 2팀·3팀 모두에 시간을 넘기고 저장한다', (ts.match(/onSaveTiming=\{\(timing\) => updateTournament\(clubId, t\.id, \{ timing \}\)\}/g) || []).length, 2);
+  ok(/r\.time \? '<small class="rt">'/.test(readFileSync(new URL('../web/live.html', import.meta.url), 'utf8')), '공개 웹 대진표도 타임 아래 시각');
+}
+
 section('DB 라이브러리 고장 — 하얀 화면 대신 앱을 다시 띄운다');
 {
   /* 2026-10-04 기록: 23:24:43 화면 /(tabs) → 23:24:44 "FIRESTORE (10.14.1) INTERNAL ASSERTION FAILED: Unexpected state".

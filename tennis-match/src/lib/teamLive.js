@@ -51,6 +51,16 @@ function actualType(m, genderOf) {
   return mixed(A) && mixed(B) ? '혼복' : '잡복';
 }
 
+/** 타임 시작 시각 — 대회 문서 timing = { startTime:'HH:MM', roundMinutes } (앱 schedule.tournamentRoundTimes 와 같은 계산).
+ *  시작 시간을 안 정했으면 '' */
+function roundStart(timing, round) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(timing?.startTime || '').trim());
+  if (!m || +m[1] > 23 || +m[2] > 59) return '';
+  const per = Math.min(180, Math.max(5, Number(timing.roundMinutes) || 30));
+  const v = ((+m[1] * 60 + +m[2] + (Number(round) - 1) * per) % 1440 + 1440) % 1440;
+  return `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`;
+}
+
 /** 대회 문서 → 팀·경기 (2팀·3팀 공통 모양) */
 export function teamsAndMatches(t) {
   if (t?.stage === 'league') {
@@ -127,7 +137,7 @@ export function teamLiveView(t, clubName = '') {
     standings: standings.map(({ idx, name, color, white, players, played, wins, draws, losses, gf, ga, diff, rank }) => ({
       idx, name, color, white, players, played, wins, draws, losses, gf, ga, diff, rank,
     })),
-    rounds: Object.keys(byRound).map(Number).sort((a, b) => a - b).map((r) => ({ round: r, matches: byRound[r] })),
+    rounds: Object.keys(byRound).map(Number).sort((a, b) => a - b).map((r) => ({ round: r, time: roundStart(t?.timing, r), matches: byRound[r] })),
     total: matches.length,
     done: matches.filter((m) => m.score).length,
     types,

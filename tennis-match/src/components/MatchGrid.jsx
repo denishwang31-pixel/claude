@@ -150,7 +150,7 @@ export function MatchGrid({
                 borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.15)',
               }}>
                 <Text style={{ color: C.lime, fontSize: 12, fontWeight: '700' }}>{r}T</Text>
-                {t && <Text style={{ color: '#BFE3D3', fontSize: 8, marginTop: 1 }}>{t.start}</Text>}
+                {t && <Text style={{ color: '#BFE3D3', fontSize: 10, fontWeight: '600', marginTop: 1 }}>{t.start}</Text>}
               </View>
 
               {courts.map((c) => {
@@ -308,7 +308,7 @@ export function AttendanceGrid({
               return (
                 <View key={r} style={{ width: COL_W, alignItems: 'center', paddingBottom: 4 }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: C.ink }}>{r}T</Text>
-                  {t && <Text style={{ fontSize: 7, color: C.faint }}>{t.start}</Text>}
+                  {t && <Text style={{ fontSize: 8, color: C.faint }}>{t.start}</Text>}
                 </View>
               );
             })}
