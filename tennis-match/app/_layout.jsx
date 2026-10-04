@@ -30,6 +30,8 @@ import {
    오류 내용은 clientErrors 에 남는다(src/lib/crashReport.js) — 무엇이 문제였는지 기록으로 본다.
    ============================================================ */
 export function ErrorBoundary({ error, retry }) {
+  /* 그리는 순간에 남긴다 — 보내기(reportCrash)가 실패해도 다음 실행 기록에 '오류 화면'이 보이게 */
+  breadcrumb(`오류 화면 ${String(error?.message || error || '').slice(0, 60)}`);
   useEffect(() => { reportCrash(error, { where: 'boundary' }); }, [error]);
   const restart = async () => {
     try { await markCleanExit(); const U = await import('expo-updates'); await U.reloadAsync(); } catch (e) { retry?.(); }

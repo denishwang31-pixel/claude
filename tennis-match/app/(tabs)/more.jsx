@@ -30,6 +30,7 @@ import { Attendance } from '../../src/components/AttendanceScreen';
 import { Pairs } from '../../src/components/PairsScreen';
 import { ClubSettings } from '../../src/components/ClubSettingsScreen';
 import { Venues } from '../../src/components/VenuesScreen';
+import { breadcrumb } from '../../src/lib/crashReport';
 import { MatchConfig } from '../../src/components/MatchConfigScreen';
 import { JoinRequests } from '../../src/components/JoinRequestsScreen';
 import { Invite } from '../../src/components/InviteScreen';
@@ -188,6 +189,8 @@ export default function More() {
   const scrollRef = useRef(null);
   const scrollTop = () => scrollRef.current?.scrollTo?.({ y: 0, animated: false });
   useEffect(() => { scrollTop(); }, [sub, tourStart.n]);
+  /* 동작 기록 — 더보기 안의 어느 화면을 열었나(하얀 화면 추적, lib/crashReport.js) */
+  useEffect(() => { breadcrumb(`더보기 ${sub || '목록'}`); }, [sub]);
 
   useEffect(() => {
     if (!params?.open) return;
