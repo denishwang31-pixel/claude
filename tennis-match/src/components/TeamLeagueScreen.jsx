@@ -11,7 +11,7 @@
      2. 회원을 눌러 여러 명 고른 뒤 옮길 팀을 누르면 한 번에 옮겨진다(자동 배치 뒤에도 같다)
      3. 코트·타임·타임별 유형을 정하고 [대진 자동 작성] — 또는 [경기 직접 추가]로 손으로 넣는다
      4. 경기를 눌러 결과 입력 → 팀 순위가 자동으로 갱신된다
-        같은 자리에서 [경기 고치기]·[삭제] — 자동으로 짠 뒤 손보기(2026-10-03 앱 주인)
+        대진표 위 [결과 입력]·[대진표 수정]을 고른 뒤 경기를 누른다(components/MatchBoard.jsx, 2026-10-04 앱 주인)
    ============================================================ */
 import React, { useMemo, useState } from 'react';
 import { View, Text, Alert } from 'react-native';
@@ -29,7 +29,8 @@ import { courtLabel } from '../lib/courtNames';
 import { TEAM_ROUND_TYPES } from '../lib/teamMatch';
 import { busuToNtrp } from '../lib/constants';
 import { MatchGrid } from './MatchGrid';
-import { AppButton, Touchable, useOptionSheet } from './native';
+import { AppButton, Touchable } from './native';
+import { BoardModeBar, ScoreSheet, BOARD_MODE } from './MatchBoard';
 import { Card, SectionTitle, Chip, Field, Divider, EmptyState } from './ui';
 import { Label } from './pickers';
 import { C, S, R, F } from '../lib/theme';
@@ -57,16 +58,15 @@ export function TeamLeague({
   const [roundTypes, setRoundTypes] = useState(saved?.config?.roundTypes || {});
   /* 한 팀은 한 타임에 한 코트만 — 예전 기본. 이제는 끄는 것이 기본(팀보다 코트가 많으면 못 짠다) */
   const [oneCourtPerTeam, setOneCourtPerTeam] = useState(!!saved?.config?.oneCourtPerTeam);
-  const [editing, setEditing] = useState(null);
-  const [shortNote, setShortNote] = useState([]);
-  /* 수기 조정 — 켜면 경기를 누를 때 고치기 화면이 바로 열린다(결과 입력 메뉴를 거치지 않는다).
-     자동으로 짠 뒤 손볼 곳을 못 찾았다(2026-10-04 앱 주인) */
-  const [adjust, setAdjust] = useState(false);  // 대진을 짤 때 못 채운 코트 — 창 대신 화면에    // { id|null, draft } — 경기 추가·고치기 화면
+  const [editing, setEditing] = useState(null);     // { id|null, draft } — 경기 추가·고치기 화면
+  const [shortNote, setShortNote] = useState([]);  // 대진을 짤 때 못 채운 코트 — 창 대신 화면에
+  /* 대진표 위 [결과 입력]·[대진표 수정] — 고른 뒤 경기를 누르면 그 일을 한다(components/MatchBoard.jsx) */
+  const [mode, setMode] = useState(BOARD_MODE.NONE);
+  const [scoring, setScoring] = useState(null);    // 점수 창 대상
   /* 팀 이름 — 비어 있으면 A팀·B팀…(lib/teamLeague.js teamLook). 청팀·홍팀처럼 바꾸면 색도 따라간다 */
   const [teamNames, setTeamNames] = useState(saved?.config?.teamNames || []);
   const [renaming, setRenaming] = useState(null);  // { idx, text }
   const look = (i) => teamLook(i, teamNames);
-  const sheet = useOptionSheet();
 
   const cfg = {
     courts: Math.max(1, Number(nCourts) || 1),
@@ -294,48 +294,37 @@ export function TeamLeague({
       text: '모두 지우기',
       style: 'destructive',
       onPress: guard(() => {
-        setMatches([]); setShortNote([]); setAdjust(false);
+        setMatches([]); setShortNote([]); setMode(BOARD_MODE.NONE);
         persist({ matches: [] });
         flash('대진을 모두 지웠습니다');
       }, 'league-clear', fail),
     }]);
 
-  const editScore = (m) => {
+  /** 경기를 눌렀을 때 — 위에서 고른 버튼에 따라 */
+  const onPressMatch = (m) => {
     if (!isAdmin) return;
-    if (adjust) { setEditing({ id: m.id, draft: matchToDraft(m) }); return; }
-    const A = look(m.teamAIdx).name;
-    const B = look(m.teamBIdx).name;
-    sheet.open({
-      title: `${m.round}타임 코트 ${cn(m.court)} · ${A} vs ${B}`,
-      options: [
-        { key: 'edit', label: '경기 고치기 (타임·코트·선수)' },
-        { key: 'a', label: `${A} 승 (6:4)` },
-        { key: 'b', label: `${B} 승 (4:6)` },
-        { key: 'a2', label: `${A} 승 (6:2)` },
-        { key: 'b2', label: `${B} 승 (2:6)` },
-        { key: 'clear', label: '기록 지우기' },
-        { key: 'del', label: '경기 삭제', destructive: true },
-      ],
-      onSelect: guard((o) => {
-        /* 선택 시트가 닫히는 중에 또 다른 창(경기 고치기)을 바로 열지 않는다 */
-        if (o.key === 'edit') { later(() => setEditing({ id: m.id, draft: matchToDraft(m) }), 'league-edit', fail); return; }
-        if (o.key === 'del') {
-          /* 선택 시트가 닫히는 중이라 한 박자 뒤에 연다 */
-          later(() => Alert.alert('이 경기를 지울까요?', `${m.round}타임 코트 ${cn(m.court)} · ${A} vs ${B}`,
-            [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: guard(() => deleteMatch(m.id), 'league-delete', fail) }]), 'league-delete', fail);
-          return;
-        }
-        const map = {
-          a: { a: 6, b: 4 }, b: { a: 4, b: 6 },
-          a2: { a: 6, b: 2 }, b2: { a: 2, b: 6 },
-        };
-        const next = matches.map((x) =>
-          (x.id === m.id ? { ...x, score: o.key === 'clear' ? null : map[o.key] } : x));
-        setMatches(next);
-        persist({ matches: next });
-      }, 'league-score', fail),
-    });
+    if (mode === BOARD_MODE.EDIT) { setEditing({ id: m.id, draft: matchToDraft(m) }); return; }
+    if (mode === BOARD_MODE.SCORE) {
+      setScoring({
+        match: m,
+        title: `${m.round}타임 코트 ${cn(m.court)} · ${m.type}`,
+        A: { name: look(m.teamAIdx).name, color: look(m.teamAIdx).color },
+        B: { name: look(m.teamBIdx).name, color: look(m.teamBIdx).color },
+      });
+      return;
+    }
+    flash('대진표 위에서 [결과 입력] 또는 [대진표 수정]을 먼저 누르세요');
   };
+  const saveScore = guard((score) => {
+    const id = scoring?.match?.id;
+    setScoring(null);
+    if (!id) return;
+    const next = matches.map((x) => (x.id === id ? { ...x, score } : x));
+    setMatches(next);
+    persist({ matches: next });
+    flash(score ? '결과를 넣었습니다' : '기록을 지웠습니다');
+  }, 'league-score', fail);
+
 
   /* 회원 칩 — 운영진은 눌러서 고른다(✓). 여러 명 고른 뒤 아래 줄에서 옮길 팀을 누른다 */
   const playerChips = (list) => (
@@ -646,7 +635,7 @@ export function TeamLeague({
             </View>
             <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 16 }}>
               아직 안 만난 팀끼리 먼저 붙입니다. 코트가 남으면 그 타임에 이미 붙은 두 팀이 옆 코트를 더 씁니다.
-              자동으로 짠 뒤에도 경기를 눌러 고치거나 지울 수 있고, [경기 직접 추가]로 손으로 넣을 수도 있습니다.
+              자동으로 짠 뒤에는 대진표 위 [대진표 수정]을 누르고 경기를 누르면 고치거나 지울 수 있고, [결과 입력]을 누르고 경기를 누르면 점수를 넣습니다.
             </Text>
           </Card>
         </>
@@ -655,25 +644,22 @@ export function TeamLeague({
       {/* 대진표 */}
       {matches.length > 0 ? (
         <>
-          <SectionTitle
-            hint={isAdmin ? (adjust ? '수기 조정 중 — 경기를 누르면 고치기 화면이 열립니다' : '경기를 누르면 결과 기록 · 고치기 · 삭제') : undefined}
-            right={isAdmin
-              ? <Chip tone={adjust ? 'green' : 'soft'} onPress={() => setAdjust(!adjust)}>{adjust ? '✓ 수기 조정 중' : '수기 조정'}</Chip>
-              : undefined}>
-            대진표
-          </SectionTitle>
+          <SectionTitle>대진표</SectionTitle>
+          {isAdmin && (
+            <BoardModeBar mode={mode} onMode={setMode} onAdd={openAdd} onClearAll={clearAll} hasMatches={matches.length > 0} />
+          )}
           {shortNote.length > 0 && (
             <View style={{ marginBottom: S.sm, padding: 10, borderRadius: R.md, backgroundColor: C.warnBg }}>
               <Text style={{ fontSize: 11.5, fontWeight: '800', color: C.warn }}>못 채운 코트가 있습니다</Text>
               {shortNote.map((x) => (
                 <Text key={x} style={{ fontSize: 11, color: C.warn, marginTop: 3 }}>· {x}</Text>
               ))}
-              <Text style={{ fontSize: 10.5, color: C.warn, marginTop: 4 }}>팀 인원·타임별 유형을 바꾸거나 [경기 직접 추가]로 채울 수 있습니다.</Text>
+              <Text style={{ fontSize: 10.5, color: C.warn, marginTop: 4 }}>팀 인원·타임별 유형을 바꾸거나 [대진표 수정] → [＋ 경기 추가]로 채울 수 있습니다.</Text>
             </View>
           )}
           <Card style={{ padding: 10 }}>
             <MatchGrid matches={matches} nameOf={nameOf} genderOf={genderOf} venue={venue}
-              onPressMatch={editScore} />
+              onPressMatch={onPressMatch} />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
               {teams.map((_, i) => {
                 const st = look(i);
@@ -686,17 +672,6 @@ export function TeamLeague({
               })}
             </View>
           </Card>
-
-          {isAdmin && (
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: S.sm }}>
-              <View style={{ flex: 1 }}>
-                <AppButton full small variant="outlined" onPress={openAdd}>경기 직접 추가</AppButton>
-              </View>
-              <View style={{ flex: 1 }}>
-                <AppButton full small variant="outlined" onPress={clearAll}>대진 삭제</AppButton>
-              </View>
-            </View>
-          )}
 
           {/* 어느 팀끼리 붙는 경기인지 — 표에는 이름만 나온다 */}
           <Card style={{ marginTop: S.sm, paddingVertical: 6 }}>
@@ -759,7 +734,7 @@ export function TeamLeague({
         </View>
       )}
 
-      {sheet.node}
+      <ScoreSheet target={scoring} onSave={saveScore} onClose={() => setScoring(null)} />
       <LeagueMatchEditor
         open={editing}
         teams={teams}

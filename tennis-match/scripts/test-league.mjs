@@ -334,7 +334,7 @@ section('버튼 처리 오류가 앱을 끄지 않는다 · 알림창 안에서 
   const lg = read('TeamLeagueScreen.jsx');
   ok(!/Alert\.alert\('일부 코트를 채우지 못했습니다'/.test(lg) && /못 채운 코트가 있습니다/.test(lg), '못 채운 코트는 창이 아니라 화면에');
   ok(/later\(runGenerate, /.test(lg) && !/onPress: runGenerate/.test(lg) && !/onPress: confirmRedo/.test(lg), '확인 창 버튼에서 대진 짜기는 한 박자 뒤에');
-  ok(/later\(\(\) => setEditing\(/.test(lg) && /later\(\(\) => Alert\.alert\('이 경기를 지울까요\?'/.test(lg), '선택 시트가 닫히는 중에는 창을 바로 열지 않는다');
+  ok(!/sheet\.open\(/.test(lg), '선택 시트를 거쳐 다른 창을 여는 길이 없다(경기를 누르면 창 하나만)');
   const tm = read('TeamMatchScreen.jsx');
   ok(/const gen = guard\(/.test(tm) && /later\(run, /.test(tm), '2팀 화면도 같은 보호');
   const ce = read('CourtNamesEditor.jsx');
@@ -359,10 +359,13 @@ section('자동으로 짠 뒤 손보기 · 대진 삭제 (2팀·3팀)');
   const read = (f) => readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8');
   for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
     const src = read(f);
-    ok(/if \(adjust\) \{/.test(src) && /수기 조정/.test(src), `${f}: 수기 조정 — 경기를 누르면 고치기 화면이 바로`);
-    ok(/const clearAll = \(\) => Alert\.alert\('대진을 모두 지울까요\?'/.test(src) && />대진 삭제</.test(src), `${f}: 대진 삭제(확인 후)`);
-    ok(/options: \[\s*\{ key: 'edit'/.test(src), `${f}: 경기 메뉴 맨 위에 '경기 고치기'`);
+    ok(/<BoardModeBar mode=\{mode\}/.test(src) && /onPressMatch=\{onPressMatch\}/.test(src), `${f}: 대진표 위 [결과 입력]·[대진표 수정] → 경기를 누르면 그 일`);
+    ok(/mode === BOARD_MODE\.EDIT\) \{/.test(src) && /mode === BOARD_MODE\.SCORE\) \{/.test(src), `${f}: 고른 버튼에 따라 고치기 화면 / 점수 창`);
+    ok(/const clearAll = \(\) => Alert\.alert\('대진을 모두 지울까요\?'/.test(src) && /onClearAll=\{clearAll\}/.test(src), `${f}: 대진 삭제(확인 후)`);
+    ok(!/useOptionSheet/.test(src), `${f}: 점수·고치기·삭제가 섞인 메뉴는 없앴다`);
   }
+  const mb = read('MatchBoard.jsx');
+  ok(/'결과 입력'/.test(mb) && /'대진표 수정'/.test(mb) && /대진 삭제/.test(mb) && /경기 추가/.test(mb), '버튼 줄: 결과 입력 · 대진표 수정(+ 경기 추가 · 대진 삭제)');
   ok(/<LeagueMatchEditor/.test(read('TeamMatchScreen.jsx')) && /twoTeamSide/.test(read('TeamMatchScreen.jsx')), '2팀 청백전에도 경기 고치기 화면');
 }
 

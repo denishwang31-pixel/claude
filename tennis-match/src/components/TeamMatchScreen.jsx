@@ -24,7 +24,8 @@ import { CourtNamesEditor } from './CourtNamesEditor';
 import { guard, later } from '../lib/crashReport';
 import { TOURNAMENT_FORMAT, TEAM_SIDES, BUSU_KEYS, busuToNtrp } from '../lib/constants';
 import { MatchGrid } from './MatchGrid';
-import { AppButton, Segmented, Touchable, useOptionSheet } from './native';
+import { AppButton, Segmented, Touchable } from './native';
+import { BoardModeBar, ScoreSheet, BOARD_MODE } from './MatchBoard';
 import { Card, SectionTitle, Chip, Field, Divider, EmptyState, CheckRow } from './ui';
 import { Label } from './pickers';
 import { C, S, R, F } from '../lib/theme';
@@ -59,14 +60,15 @@ export function TeamMatch({
   const selectable = isAdmin && !isClubMatch;
   /* 경기 손보기 — 3팀 청백전과 같은 고치기 화면(LeagueMatchEditor)을 쓴다 */
   const [editing, setEditing] = useState(null);
-  const [adjust, setAdjust] = useState(false);
+  /* 대진표 위 [결과 입력]·[대진표 수정] — 고른 뒤 경기를 누르면 그 일을 한다(components/MatchBoard.jsx) */
+  const [mode, setMode] = useState(BOARD_MODE.NONE);
+  const [scoring, setScoring] = useState(null);
   const [sameSexOnly, setSameSexOnly] = useState(false);
   const [nRounds, setNRounds] = useState(String(rounds || 4));
 
   /* 상대 클럽 선수 입력 */
   const [opp, setOpp] = useState({ name: '', gender: 'M', busu: '' });
   const [oppClub, setOppClub] = useState(saved?.opponentClub || '');
-  const sheet = useOptionSheet();
 
   /* 코트 이름 — 대회 문서 courtNames(3팀 청백전과 같은 이름) */
   const venue = { courts, courtNames };
@@ -248,40 +250,35 @@ export function TeamMatch({
     [{ text: '취소', style: 'cancel' }, {
       text: '모두 지우기',
       style: 'destructive',
-      onPress: guard(() => { setMatches([]); setAdjust(false); persist({ matches: [] }); flash('대진을 모두 지웠습니다'); }, 'team-clear', fail),
+      onPress: guard(() => { setMatches([]); setMode(BOARD_MODE.NONE); persist({ matches: [] }); flash('대진을 모두 지웠습니다'); }, 'team-clear', fail),
     }]);
   const openEdit = (m) => setEditing({ id: m.id, draft: matchToDraft(withTeamIdx([m])[0]) });
 
-  const editScore = (m) => {
+  /** 경기를 눌렀을 때 — 위에서 고른 버튼에 따라 */
+  const onPressMatch = (m) => {
     if (!isAdmin) return;
-    if (adjust) { openEdit(m); return; }
-    sheet.open({
-      title: `${m.round}타임 코트 ${cn(m.court)}`,
-      options: [
-        { key: 'edit', label: '경기 고치기 (타임·코트·선수)' },
-        { key: 'a', label: `${sides[0].name} 승 (6:4)` },
-        { key: 'b', label: `${sides[1].name} 승 (4:6)` },
-        { key: 'clear', label: '기록 지우기' },
-        { key: 'del', label: '경기 삭제', destructive: true },
-      ],
-      onSelect: guard((o) => {
-        /* 선택 시트가 닫히는 중에 다른 창을 바로 열지 않는다(lib/crashReport.js later) */
-        if (o.key === 'edit') { later(() => openEdit(m), 'team-edit', fail); return; }
-        if (o.key === 'del') {
-          later(() => Alert.alert('이 경기를 지울까요?', `${m.round}타임 코트 ${cn(m.court)}`,
-            [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: guard(() => deleteMatch(m.id), 'team-delete', fail) }]), 'team-delete', fail);
-          return;
-        }
-        const next = matches.map((x) => {
-          if (x.id !== m.id) return x;
-          if (o.key === 'clear') return { ...x, score: null };
-          return { ...x, score: o.key === 'a' ? { a: 6, b: 4 } : { a: 4, b: 6 } };
-        });
-        setMatches(next);
-        persist({ matches: next });
-      }, 'team-score', fail),
-    });
+    if (mode === BOARD_MODE.EDIT) { openEdit(m); return; }
+    if (mode === BOARD_MODE.SCORE) {
+      setScoring({
+        match: m,
+        title: `${m.round}타임 코트 ${cn(m.court)} · ${m.type}`,
+        A: { name: isClubMatch ? '우리 클럽' : sides[0].name, color: sides[0].color },
+        B: { name: isClubMatch ? (oppClub || '상대 클럽') : sides[1].name, color: sides[1].color },
+      });
+      return;
+    }
+    flash('대진표 위에서 [결과 입력] 또는 [대진표 수정]을 먼저 누르세요');
   };
+  const saveScore = guard((score) => {
+    const id = scoring?.match?.id;
+    setScoring(null);
+    if (!id) return;
+    const next = matches.map((x) => (x.id === id ? { ...x, score } : x));
+    setMatches(next);
+    persist({ matches: next });
+    flash(score ? '결과를 넣었습니다' : '기록을 지웠습니다');
+  }, 'team-score', fail);
+
 
   /* 회원 한 줄 — 청백전 운영진은 눌러서 고른다(✓), 교류전은 예전처럼 눌러 반대편으로 */
   const PlayerRow = ({ p, side, which }) => {
@@ -549,26 +546,13 @@ export function TeamMatch({
       {/* 대진표 */}
       {matches.length > 0 ? (
         <>
-          <SectionTitle
-            hint={isAdmin ? (adjust ? '수기 조정 중 — 경기를 누르면 고치기 화면이 열립니다' : '경기를 누르면 승패 기록 · 고치기 · 삭제') : undefined}
-            right={isAdmin
-              ? <Chip tone={adjust ? 'green' : 'soft'} onPress={() => setAdjust(!adjust)}>{adjust ? '✓ 수기 조정 중' : '수기 조정'}</Chip>
-              : undefined}>
-            대진표
-          </SectionTitle>
-          <Card style={{ padding: 10 }}>
-            <MatchGrid matches={matches} nameOf={nameOf} venue={venue} onPressMatch={editScore} />
-          </Card>
+          <SectionTitle>대진표</SectionTitle>
           {isAdmin && (
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: S.sm }}>
-              <View style={{ flex: 1 }}>
-                <AppButton full small variant="outlined" onPress={openAdd}>경기 직접 추가</AppButton>
-              </View>
-              <View style={{ flex: 1 }}>
-                <AppButton full small variant="outlined" onPress={clearAll}>대진 삭제</AppButton>
-              </View>
-            </View>
+            <BoardModeBar mode={mode} onMode={setMode} onAdd={openAdd} onClearAll={clearAll} hasMatches={matches.length > 0} />
           )}
+          <Card style={{ padding: 10 }}>
+            <MatchGrid matches={matches} nameOf={nameOf} venue={venue} onPressMatch={onPressMatch} />
+          </Card>
 
           {mvp.length > 0 && (
             <>
@@ -601,7 +585,7 @@ export function TeamMatch({
         </View>
       )}
 
-      {sheet.node}
+      <ScoreSheet target={scoring} onSave={saveScore} onClose={() => setScoring(null)} />
       <LeagueMatchEditor
         open={editing}
         teams={both}
