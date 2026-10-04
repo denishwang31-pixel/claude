@@ -561,6 +561,32 @@ export function updateLeagueMatch(teams, matches, id, draft, opts = {}) {
 /** 경기 지우기 */
 export const removeLeagueMatch = (matches, id) => (matches || []).filter((m) => m.id !== id);
 
+/* ---------------- 2팀 청백전도 같은 고치기 화면으로 ----------------
+   2팀 경기(lib/teamMatch.js)에는 팀 번호가 없다 — 늘 teamA = 청팀(0), teamB = 백팀(1).
+   고치기 화면은 팀 번호로 움직이므로 넣을 때 붙이고, 저장할 때 청팀이 왼쪽(teamA)에
+   오도록 되돌린다. 점수 판(teamScore)은 teamA 를 청팀으로 센다(2026-10-04 앱 주인). */
+const TYPE_KEY_BY_NAME = { 혼복: 'MX', 남복: 'MD', 여복: 'WD', 단식: 'SG' };
+export function withTeamIdx(matches) {
+  return (matches || []).map((m) => ({
+    ...m,
+    teamAIdx: m.teamAIdx ?? 0,
+    teamBIdx: m.teamBIdx ?? 1,
+    typeKey: m.typeKey || TYPE_KEY_BY_NAME[m.type] || 'MX',
+  }));
+}
+export function twoTeamSide(m) {
+  if (!(m.teamAIdx === 1 && m.teamBIdx === 0)) return { ...m, team: true };
+  return {
+    ...m,
+    team: true,
+    teamAIdx: 0,
+    teamBIdx: 1,
+    teamA: m.teamB,
+    teamB: m.teamA,
+    score: m.score ? { a: m.score.b, b: m.score.a } : m.score ?? null,
+  };
+}
+
 /** 경기 → 고치는 화면에 넣을 초안 */
 export const matchToDraft = (m) => ({
   round: m.round, court: m.court, typeKey: m.typeKey || 'MX',

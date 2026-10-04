@@ -15,7 +15,7 @@ import {
   teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames,
   leagueFromRoster, BLUE_WHITE_RED, leagueBalanceNote, teamGameCounts,
   packLeague, unpackLeague, nestedArrayPath,
-  moveToTeam, emptyTeams, resizeTeams, UNASSIGNED,
+  moveToTeam, emptyTeams, resizeTeams, UNASSIGNED, withTeamIdx, twoTeamSide,
   checkLeagueMatch, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft, sideSize,
 } from '../src/lib/teamLeague.js';
 import { guard, ALERT_GAP_MS } from '../src/lib/crashReport.js';
@@ -341,6 +341,29 @@ section('버튼 처리 오류가 앱을 끄지 않는다 · 알림창 안에서 
   ok(/onBlur=\{save\}/.test(ce) && /prevSaved/.test(ce), '코트 이름: 칸에서 벗어나면 저장, 옆 칸 입력은 지우지 않는다');
   const cr = readFileSync(new URL('../src/lib/crashReport.js', import.meta.url), 'utf8');
   ok(/reportCrash\(error, \{ where: 'global' \}\)\.then\(once, once\)/.test(cr) && /setTimeout\(once, 2000\)/.test(cr), '앱이 꺼지기 전에 기록이 서버에 닿을 틈(최대 2초)');
+}
+
+section('자동으로 짠 뒤 손보기 · 대진 삭제 (2팀·3팀)');
+{
+  /* 2026-10-04 앱 주인: 자동 작성 뒤 수기 조정이 안 된다 · 대진 삭제 버튼이 있어야 */
+  const m2 = [{ id: 'tm-1-1', round: 1, court: 1, team: true, type: '남복', teamA: ['a1', 'a2'], teamB: ['b1', 'b2'], score: { a: 6, b: 4 } }];
+  const w = withTeamIdx(m2)[0];
+  ok(w.teamAIdx === 0 && w.teamBIdx === 1 && w.typeKey === 'MD', '2팀 경기에 팀 번호·유형 키를 붙인다(청 0 · 백 1)');
+  eq('잡복은 혼복 키로', withTeamIdx([{ ...m2[0], type: '잡복' }])[0].typeKey, 'MX');
+  const sw = twoTeamSide({ ...w, teamAIdx: 1, teamBIdx: 0, teamA: ['b1', 'b2'], teamB: ['a1', 'a2'], score: { a: 4, b: 6 } });
+  ok(sw.teamA[0] === 'a1' && sw.teamAIdx === 0 && sw.score.a === 6 && sw.team, '저장할 때 청팀이 늘 왼쪽(점수도 같이 뒤집는다)');
+  ok(twoTeamSide(w).teamA[0] === 'a1', '이미 청팀이 왼쪽이면 그대로');
+  const T2 = [[P('a1', '청1', 'M'), P('a2', '청2', 'M'), P('a3', '청3', 'F')], [P('b1', '백1', 'M'), P('b2', '백2', 'M'), P('b3', '백3', 'F')]];
+  const r = updateLeagueMatch(T2, withTeamIdx(m2), 'tm-1-1', { round: 2, court: 1, typeKey: 'MD', teamAIdx: 0, teamBIdx: 1, teamA: ['a1', 'a2'], teamB: ['b1', 'b2'] });
+  ok(!r.error && r.matches[0].round === 2 && r.matches[0].score?.a === 6, '2팀 경기도 같은 고치기로 — 타임만 바꾸면 점수 그대로');
+  const read = (f) => readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8');
+  for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
+    const src = read(f);
+    ok(/if \(adjust\) \{/.test(src) && /수기 조정/.test(src), `${f}: 수기 조정 — 경기를 누르면 고치기 화면이 바로`);
+    ok(/const clearAll = \(\) => Alert\.alert\('대진을 모두 지울까요\?'/.test(src) && />대진 삭제</.test(src), `${f}: 대진 삭제(확인 후)`);
+    ok(/options: \[\s*\{ key: 'edit'/.test(src), `${f}: 경기 메뉴 맨 위에 '경기 고치기'`);
+  }
+  ok(/<LeagueMatchEditor/.test(read('TeamMatchScreen.jsx')) && /twoTeamSide/.test(read('TeamMatchScreen.jsx')), '2팀 청백전에도 경기 고치기 화면');
 }
 
 section('손으로 넣기 · 고치기 · 지우기');

@@ -58,7 +58,10 @@ export function TeamLeague({
   /* 한 팀은 한 타임에 한 코트만 — 예전 기본. 이제는 끄는 것이 기본(팀보다 코트가 많으면 못 짠다) */
   const [oneCourtPerTeam, setOneCourtPerTeam] = useState(!!saved?.config?.oneCourtPerTeam);
   const [editing, setEditing] = useState(null);
-  const [shortNote, setShortNote] = useState([]);  // 대진을 짤 때 못 채운 코트 — 창 대신 화면에    // { id|null, draft } — 경기 추가·고치기 화면
+  const [shortNote, setShortNote] = useState([]);
+  /* 수기 조정 — 켜면 경기를 누를 때 고치기 화면이 바로 열린다(결과 입력 메뉴를 거치지 않는다).
+     자동으로 짠 뒤 손볼 곳을 못 찾았다(2026-10-04 앱 주인) */
+  const [adjust, setAdjust] = useState(false);  // 대진을 짤 때 못 채운 코트 — 창 대신 화면에    // { id|null, draft } — 경기 추가·고치기 화면
   /* 팀 이름 — 비어 있으면 A팀·B팀…(lib/teamLeague.js teamLook). 청팀·홍팀처럼 바꾸면 색도 따라간다 */
   const [teamNames, setTeamNames] = useState(saved?.config?.teamNames || []);
   const [renaming, setRenaming] = useState(null);  // { idx, text }
@@ -284,19 +287,33 @@ export function TeamLeague({
     flash('경기를 지웠습니다');
   };
 
+  /** 대진 전체 지우기 — 팀 편성은 그대로 */
+  const clearAll = () => Alert.alert('대진을 모두 지울까요?',
+    `${matches.length}경기${matches.some((m) => m.score) ? '와 넣은 점수' : ''}가 모두 지워집니다. 팀 편성은 그대로입니다.`,
+    [{ text: '취소', style: 'cancel' }, {
+      text: '모두 지우기',
+      style: 'destructive',
+      onPress: guard(() => {
+        setMatches([]); setShortNote([]); setAdjust(false);
+        persist({ matches: [] });
+        flash('대진을 모두 지웠습니다');
+      }, 'league-clear', fail),
+    }]);
+
   const editScore = (m) => {
     if (!isAdmin) return;
+    if (adjust) { setEditing({ id: m.id, draft: matchToDraft(m) }); return; }
     const A = look(m.teamAIdx).name;
     const B = look(m.teamBIdx).name;
     sheet.open({
       title: `${m.round}타임 코트 ${cn(m.court)} · ${A} vs ${B}`,
       options: [
+        { key: 'edit', label: '경기 고치기 (타임·코트·선수)' },
         { key: 'a', label: `${A} 승 (6:4)` },
         { key: 'b', label: `${B} 승 (4:6)` },
         { key: 'a2', label: `${A} 승 (6:2)` },
         { key: 'b2', label: `${B} 승 (2:6)` },
         { key: 'clear', label: '기록 지우기' },
-        { key: 'edit', label: '경기 고치기 (타임·코트·선수)' },
         { key: 'del', label: '경기 삭제', destructive: true },
       ],
       onSelect: guard((o) => {
@@ -638,7 +655,11 @@ export function TeamLeague({
       {/* 대진표 */}
       {matches.length > 0 ? (
         <>
-          <SectionTitle hint={isAdmin ? '경기를 누르면 결과 기록 · 고치기 · 삭제' : undefined}>
+          <SectionTitle
+            hint={isAdmin ? (adjust ? '수기 조정 중 — 경기를 누르면 고치기 화면이 열립니다' : '경기를 누르면 결과 기록 · 고치기 · 삭제') : undefined}
+            right={isAdmin
+              ? <Chip tone={adjust ? 'green' : 'soft'} onPress={() => setAdjust(!adjust)}>{adjust ? '✓ 수기 조정 중' : '수기 조정'}</Chip>
+              : undefined}>
             대진표
           </SectionTitle>
           {shortNote.length > 0 && (
@@ -665,6 +686,17 @@ export function TeamLeague({
               })}
             </View>
           </Card>
+
+          {isAdmin && (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: S.sm }}>
+              <View style={{ flex: 1 }}>
+                <AppButton full small variant="outlined" onPress={openAdd}>경기 직접 추가</AppButton>
+              </View>
+              <View style={{ flex: 1 }}>
+                <AppButton full small variant="outlined" onPress={clearAll}>대진 삭제</AppButton>
+              </View>
+            </View>
+          )}
 
           {/* 어느 팀끼리 붙는 경기인지 — 표에는 이름만 나온다 */}
           <Card style={{ marginTop: S.sm, paddingVertical: 6 }}>

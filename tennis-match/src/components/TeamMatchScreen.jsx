@@ -14,7 +14,11 @@ import { View, Text, Alert } from 'react-native';
 import {
   splitTeams, teamStrength, generateTeamMatches, teamScore, teamPlayerStats,
 } from '../lib/teamMatch';
-import { moveToTeam, UNASSIGNED } from '../lib/teamLeague';
+import {
+  moveToTeam, UNASSIGNED, withTeamIdx, twoTeamSide,
+  addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
+} from '../lib/teamLeague';
+import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { courtLabel } from '../lib/courtNames';
 import { CourtNamesEditor } from './CourtNamesEditor';
 import { guard, later } from '../lib/crashReport';
@@ -53,6 +57,9 @@ export function TeamMatch({
   const [unassigned, setUnassigned] = useState(saved?.unassigned || []);
   const [picked, setPicked] = useState([]);
   const selectable = isAdmin && !isClubMatch;
+  /* 경기 손보기 — 3팀 청백전과 같은 고치기 화면(LeagueMatchEditor)을 쓴다 */
+  const [editing, setEditing] = useState(null);
+  const [adjust, setAdjust] = useState(false);
   const [sameSexOnly, setSameSexOnly] = useState(false);
   const [nRounds, setNRounds] = useState(String(rounds || 4));
 
@@ -203,16 +210,68 @@ export function TeamMatch({
     return undefined;
   }, 'team-generate', fail);
 
+  /* ---- 손으로 넣기·고치기·지우기 ---- */
+  const both = [teamA, teamB];
+  /** 2팀 경기의 유형 이름 — 자동 편성과 같은 규칙(남복·여복·혼복·잡복) */
+  const genderIn = (id) => [...teamA, ...teamB].find((p) => p.id === id)?.gender === 'F' ? 'F' : 'M';
+  const typeName = (m) => {
+    if (m.typeKey === 'SG') return '단식';
+    const all = [...m.teamA, ...m.teamB].map(genderIn);
+    if (all.every((g) => g === 'M')) return '남복';
+    if (all.every((g) => g === 'F')) return '여복';
+    const mixed = (ids) => new Set(ids.map(genderIn)).size === 2;
+    return mixed(m.teamA) && mixed(m.teamB) ? '혼복' : '잡복';
+  };
+  const openAdd = () => setEditing({ id: null, draft: emptyDraft(matches, { courts, rounds: Number(nRounds) || 4 }, 2) });
+  const saveEdit = (id, draft) => {
+    const lm = withTeamIdx(matches);
+    const r = id
+      ? updateLeagueMatch(both, lm, id, draft, { courtName: cn })
+      : addLeagueMatch(both, lm, draft, undefined, { courtName: cn });
+    if (r.error) return r.error;
+    const next = r.matches.map((m) => { const x = twoTeamSide(m); return { ...x, type: typeName(x) }; });
+    setMatches(next);
+    persist({ matches: next });
+    setEditing(null);
+    flash(id ? (r.scoreCleared ? '경기를 고쳤습니다 (점수는 지움)' : '경기를 고쳤습니다') : '경기를 넣었습니다');
+    return undefined;
+  };
+  const deleteMatch = (id) => {
+    const next = removeLeagueMatch(matches, id);
+    setMatches(next);
+    persist({ matches: next });
+    setEditing(null);
+    flash('경기를 지웠습니다');
+  };
+  const clearAll = () => Alert.alert('대진을 모두 지울까요?',
+    `${matches.length}경기${matches.some((m) => m.score) ? '와 넣은 점수' : ''}가 모두 지워집니다. 팀 편성은 그대로입니다.`,
+    [{ text: '취소', style: 'cancel' }, {
+      text: '모두 지우기',
+      style: 'destructive',
+      onPress: guard(() => { setMatches([]); setAdjust(false); persist({ matches: [] }); flash('대진을 모두 지웠습니다'); }, 'team-clear', fail),
+    }]);
+  const openEdit = (m) => setEditing({ id: m.id, draft: matchToDraft(withTeamIdx([m])[0]) });
+
   const editScore = (m) => {
     if (!isAdmin) return;
+    if (adjust) { openEdit(m); return; }
     sheet.open({
       title: `${m.round}타임 코트 ${cn(m.court)}`,
       options: [
+        { key: 'edit', label: '경기 고치기 (타임·코트·선수)' },
         { key: 'a', label: `${sides[0].name} 승 (6:4)` },
         { key: 'b', label: `${sides[1].name} 승 (4:6)` },
         { key: 'clear', label: '기록 지우기' },
+        { key: 'del', label: '경기 삭제', destructive: true },
       ],
       onSelect: guard((o) => {
+        /* 선택 시트가 닫히는 중에 다른 창을 바로 열지 않는다(lib/crashReport.js later) */
+        if (o.key === 'edit') { later(() => openEdit(m), 'team-edit', fail); return; }
+        if (o.key === 'del') {
+          later(() => Alert.alert('이 경기를 지울까요?', `${m.round}타임 코트 ${cn(m.court)}`,
+            [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: guard(() => deleteMatch(m.id), 'team-delete', fail) }]), 'team-delete', fail);
+          return;
+        }
         const next = matches.map((x) => {
           if (x.id !== m.id) return x;
           if (o.key === 'clear') return { ...x, score: null };
@@ -474,6 +533,11 @@ export function TeamMatch({
                 {matches.length ? '대진 다시 생성' : '대진 생성'}
               </AppButton>
             </View>
+            {matches.length === 0 && (
+              <View style={{ marginTop: 8 }}>
+                <AppButton full variant="outlined" onPress={openAdd}>경기 직접 추가</AppButton>
+              </View>
+            )}
             <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 16 }}>
               모든 경기는 {sides[0].name} 2명 vs {sides[1].name} 2명으로 짜입니다.
               팀 안에서 맞붙는 경기는 생기지 않습니다.
@@ -485,10 +549,26 @@ export function TeamMatch({
       {/* 대진표 */}
       {matches.length > 0 ? (
         <>
-          <SectionTitle hint={isAdmin ? '경기를 누르면 승패를 기록합니다.' : undefined}>대진표</SectionTitle>
+          <SectionTitle
+            hint={isAdmin ? (adjust ? '수기 조정 중 — 경기를 누르면 고치기 화면이 열립니다' : '경기를 누르면 승패 기록 · 고치기 · 삭제') : undefined}
+            right={isAdmin
+              ? <Chip tone={adjust ? 'green' : 'soft'} onPress={() => setAdjust(!adjust)}>{adjust ? '✓ 수기 조정 중' : '수기 조정'}</Chip>
+              : undefined}>
+            대진표
+          </SectionTitle>
           <Card style={{ padding: 10 }}>
             <MatchGrid matches={matches} nameOf={nameOf} venue={venue} onPressMatch={editScore} />
           </Card>
+          {isAdmin && (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: S.sm }}>
+              <View style={{ flex: 1 }}>
+                <AppButton full small variant="outlined" onPress={openAdd}>경기 직접 추가</AppButton>
+              </View>
+              <View style={{ flex: 1 }}>
+                <AppButton full small variant="outlined" onPress={clearAll}>대진 삭제</AppButton>
+              </View>
+            </View>
+          )}
 
           {mvp.length > 0 && (
             <>
@@ -515,13 +595,24 @@ export function TeamMatch({
             icon={isClubMatch ? '🤝' : '🔵'}
             title="아직 대진이 없습니다"
             body={isAdmin
-              ? '팀 편성을 확인한 뒤 [대진 생성]을 누르세요.'
+              ? '팀 편성을 확인한 뒤 [대진 생성]을 누르거나, [경기 직접 추가]로 손으로 넣으세요.'
               : '운영진이 편성하면 여기에 표시됩니다.'}
           />
         </View>
       )}
 
       {sheet.node}
+      <LeagueMatchEditor
+        open={editing}
+        teams={both}
+        matches={withTeamIdx(matches)}
+        teamNames={[sides[0].name, sides[1].name]}
+        courts={courts}
+        courtName={cn}
+        onSave={saveEdit}
+        onDelete={deleteMatch}
+        onClose={() => setEditing(null)}
+      />
     </View>
   );
 }
