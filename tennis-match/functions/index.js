@@ -914,6 +914,7 @@ exports.onMatchesRecorded = onDocumentUpdated(
 /* ---------------- 대회 외부 공개 보기 (/api/live) ----------------
    운영진이 [외부 공개 링크]를 켠 클럽 대회만, 앱이 없는 사람도 브라우저로
    대진표·결과·실시간 순위를 본다(public/live.html 이 30초마다 다시 읽는다).
+   청백전·팀 리그는 팀 점수판·타임별 대진(shared/teamLive.js).
    ⚠️ 내보내는 것은 groupLeague.liveView 가 고른 것뿐 — 이름·조·시간표·결과·순위·본선.
       공개가 꺼졌거나 없는 대회는 구별 없이 같은 답(대회 id 를 캐 볼 수 없게). */
 exports.liveTournament = onRequest({ ...REGION, cors: true, maxInstances: 5 }, async (req, res) => {
@@ -929,6 +930,11 @@ exports.liveTournament = onRequest({ ...REGION, cors: true, maxInstances: 5 }, a
     const t = snap.exists ? snap.data() : null;
     if (!t || t.publicView !== true) return fail(404, '공개되지 않았거나 없는 대회입니다. 운영진에게 링크를 다시 받아 주세요.');
     const club = (await ref.get()).data() || {};
+    /* 청백전(2팀·3팀)·팀 리그는 팀 대항 모양으로(shared/teamLive.js) — 나머지는 조별·본선·KDK */
+    if (t.stage === 'team' || t.stage === 'league') {
+      const { teamLiveView } = await import('./shared/teamLive.js');
+      return res.json({ ok: true, at: Date.now(), ...teamLiveView(t, club.name || '') });
+    }
     const { liveView } = await import('./shared/groupLeague.js');
     return res.json({ ok: true, at: Date.now(), ...liveView(t, club.name || '') });
   } catch (e) {

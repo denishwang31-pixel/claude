@@ -20,6 +20,7 @@ import {
   checkLeagueMatch, addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft, sideSize,
 } from '../src/lib/teamLeague.js';
 import { guard, ALERT_GAP_MS } from '../src/lib/crashReport.js';
+import { teamLiveView } from '../functions/shared/teamLive.js';
 import {
   slotSize, blankDraw, labelOf, toggleInSlot, busyInRound, playCounts, reviewDraw,
   sameDraw, draftChanges,
@@ -414,6 +415,45 @@ section('실제 편성 기준 유형 · 빈칸 유지 · 골라서 삭제 · 접
     ok(/actualMatchType\(m, genderOf\)/.test(src) && /matches=\{shown\}/.test(src), `${f}: 대진표 유형은 실제 편성 기준`);
     ok(/const deletePicked = /.test(src) && /onDeletePicked=\{deletePicked\}/.test(src) && /matches\.length > 0 \|\| mode === BOARD_MODE\.EDIT/.test(src), `${f}: 골라서 삭제, 다 지워도 수정 중엔 표가 남는다`);
     ok((src.match(/<Fold title=/g) || []).length >= 4 && /<AttendanceGrid/.test(src), `${f}: 팀 편성 설정·배치 현황·대진 설정·출전 현황 접기`);
+  }
+}
+
+section('청백전·팀 리그 외부 공개 보기 · 내 경기');
+{
+  /* 2026-10-04 앱 주인: 실시간 결과를 웹 링크로 · 연동된 회원은 내 경기 하이라이트 */
+  const pl = (id, name, gender) => ({ id, name, gender, busu: '3부', phone: '010-0000-0000', email: 'x@y.z' });
+  const A = [pl('a1', '가1', 'M'), pl('a2', '가2', 'F')];
+  const B = [pl('b1', '나1', 'M'), pl('b2', '나2', 'F')];
+  const H = [pl('h1', '다1', 'M'), pl('h2', '다2', 'M')];
+  const lg = packLeague({
+    teams: [A, B, H],
+    matches: [
+      { id: 'm1', round: 1, court: 1, teamAIdx: 0, teamBIdx: 1, type: '남복', teamA: ['a1', 'a2'], teamB: ['b1', 'b2'], score: { a: 6, b: 3 } },
+      { id: 'm2', round: 2, court: 2, teamAIdx: 1, teamBIdx: 2, type: '혼복', teamA: ['b1', 'b2'], teamB: ['h1', 'h2'], score: null },
+    ],
+    config: { teamNames: ['청팀', '백팀', '홍팀'] },
+  });
+  const v = teamLiveView({ stage: 'league', name: '쿤블던', date: '2026-10-05', league: lg, courtNames: ['A', 'B'], publicView: true }, '써티포티');
+  eq('팀 대항 모양', `${v.kind}|${v.total}|${v.done}|${v.rounds.length}`, 'teams|2|1|2');
+  eq('1위는 이긴 청팀', `${v.standings[0].name}|${v.standings[0].wins}|${v.standings[0].diff}`, '청팀|1|3');
+  eq('코트 이름 · 실제 편성 유형(설정이 남복이어도 혼복)', `${v.rounds[0].matches[0].court}|${v.rounds[0].matches[0].type}`, 'A|혼복');
+  eq('경기의 선수 이름', `${v.rounds[0].matches[0].a} / ${v.rounds[0].matches[0].b}`, '가1·가2 / 나1·나2');
+  ok(v.teams.find((x) => x.name === '백팀').white && v.teams.find((x) => x.name === '청팀').color === '#1d4ed8', '팀 색: 청 파랑 · 백 흰색 표시');
+  const out = JSON.stringify(v);
+  ok(!/010-|3부|x@y\.z|"gender"|"busu"/.test(out), '이름 말고 다른 회원 정보(연락처·부수·성별)는 내보내지 않는다');
+  const v2 = teamLiveView({ stage: 'team', format: 'blue_white', team: { teamA: A, teamB: B, matches: [{ round: 1, court: 1, teamA: ['a1', 'a2'], teamB: ['b1', 'b2'], score: { a: 2, b: 6 } }] } });
+  eq('2팀 청백전 — 청팀·백팀, 백팀 승', `${v2.standings.map((r) => `${r.name}${r.wins}`).join(',')}`, '백팀1,청팀0');
+  const v3 = teamLiveView({ stage: 'team', format: 'club_match', team: { teamA: A, teamB: B, opponentClub: '한강', matches: [] } });
+  eq('교류전 이름', v3.teams.map((x) => x.name).join(','), '우리 클럽,한강');
+  const fx = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  ok(/t\.stage === 'team' \|\| t\.stage === 'league'/.test(fx) && /teamLiveView\(t, club\.name/.test(fx) && /t\.publicView !== true/.test(fx), '서버: 공개를 켠 청백전·팀 리그만 팀 대항 모양으로');
+  const html = readFileSync(new URL('../public/live.html', import.meta.url), 'utf8');
+  ok(/d\.kind === 'teams'/.test(html) && /function renderTeams/.test(html) && /setTimeout\(load, 30000\)/.test(html), '웹: 팀 점수판·타임별 대진, 30초마다 새로 읽기');
+  const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
+  ok(/t\.stage === 'team' \|\| t\.stage === 'league'/.test(ts) && (ts.match(/me=\{me\}\n/g) || []).length >= 2, '앱: 청백전·팀 리그에도 [외부 공개 링크], 내 id 를 넘긴다');
+  for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
+    const src = readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8');
+    ok(/<MyGames games=/.test(src) && /venue=\{venue\}.*me=\{me\}|me=\{me\}/.test(src) && /AttendanceGrid[^>]*me=\{me\}/.test(src), `${f}: 내 경기 카드 · 대진표·출전 현황 하이라이트`);
   }
 }
 

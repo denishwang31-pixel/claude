@@ -31,7 +31,7 @@ import { TEAM_ROUND_TYPES } from '../lib/teamMatch';
 import { busuToNtrp } from '../lib/constants';
 import { MatchGrid, AttendanceGrid } from './MatchGrid';
 import { AppButton, Touchable } from './native';
-import { BoardModeBar, ScoreSheet, BOARD_MODE, Fold } from './MatchBoard';
+import { BoardModeBar, ScoreSheet, BOARD_MODE, Fold, MyGames } from './MatchBoard';
 import { Card, SectionTitle, Chip, Field, Divider, EmptyState } from './ui';
 import { Label } from './pickers';
 import { C, S, R, F } from '../lib/theme';
@@ -42,7 +42,7 @@ import { guard, later, breadcrumb, slowRender } from '../lib/crashReport';
  * @param onSaveCourtNames (names) => Promise
  */
 export function TeamLeague({
-  roster, courts, saved: savedRaw, isAdmin, onSave, flash, courtNames = [], onSaveCourtNames,
+  roster, courts, saved: savedRaw, isAdmin, onSave, flash, courtNames = [], onSaveCourtNames, me = '',
 }) {
   /* 저장된 모양은 teams:[{players}] — 화면에서는 [[선수…]] 로 푼다(lib/teamLeague.js packLeague 머리말) */
   /* 그리기에 걸린 시간 — 길면 동작 기록에(lib/crashReport.js slowRender) */
@@ -712,8 +712,17 @@ export function TeamLeague({
               <Text style={{ fontSize: 10.5, color: C.warn, marginTop: 4 }}>팀 인원·타임별 유형을 바꾸거나 [대진표 수정] → [＋ 경기 추가]로 채울 수 있습니다.</Text>
             </View>
           )}
+          {/* 내 경기 — 명단에 든 회원(앱 가입·합치기 후)에게 */}
+          <MyGames games={shown
+            .filter((m) => !!me && [...(m.teamA || []), ...(m.teamB || [])].includes(me))
+            .map((m) => {
+              const mineIsA = (m.teamA || []).includes(me);
+              const mine = look(mineIsA ? m.teamAIdx : m.teamBIdx);
+              const opp = look(mineIsA ? m.teamBIdx : m.teamAIdx);
+              return { id: m.id, round: m.round, court: cn(m.court), type: m.type, mine, opp, score: m.score, mineIsA };
+            })} />
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue}
+            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} me={me}
               sideOf={(m, side) => look(side === 'A' ? m.teamAIdx : m.teamBIdx)}
               roundCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).rounds} courtCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).courts}
               onPressEmpty={isAdmin && mode === BOARD_MODE.EDIT && !multi ? addAt : undefined}
@@ -736,7 +745,7 @@ export function TeamLeague({
           <Fold title="타임별 출전 현황" open={openAttend} onToggle={() => setOpenAttend(!openAttend)}
             summary={`총 ${shown.length}경기 · 사람마다 몇 경기, 남복·여복·혼복 몇 경기씩`}>
             <Card style={{ padding: 10 }}>
-              <AttendanceGrid attendees={teams.flat()} matches={shown} venue={venue}
+              <AttendanceGrid attendees={teams.flat()} matches={shown} venue={venue} me={me}
                 groups={teams.map((t, i) => ({ key: `t${i}`, ...look(i), players: t, games: teamGameCounts(teams.length, matches)[i] }))}
                 roundCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).rounds}
                 typeOf={(m) => m.type}

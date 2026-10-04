@@ -177,4 +177,33 @@ export function ScoreSheet({ target, onSave, onClose }) {
   );
 }
 
-export default { BoardModeBar, ScoreSheet, BOARD_MODE };
+/**
+ * 내 경기 — 앱에 가입해(또는 오프라인 기록을 합쳐) 명단에 든 회원에게 자기 경기만 모아 보여 준다.
+ * 대진표에서도 내 칸은 초록 테두리로 칠해진다(MatchGrid me). (2026-10-04 앱 주인)
+ * @param games [{ id, round, court, type, mine:{name,color}, opp:{name,color}, score, mineIsA }]
+ */
+export function MyGames({ games }) {
+  if (!games?.length) return null;
+  return (
+    <View style={{ marginBottom: S.sm, padding: 12, borderRadius: R.md, backgroundColor: C.greenSoft, borderWidth: 1.5, borderColor: C.green }}>
+      <Text style={{ fontSize: 13, fontWeight: '900', color: C.green }}>내 경기 {games.length}</Text>
+      {games.map((g) => {
+        const my = g.score ? (g.mineIsA ? g.score.a : g.score.b) : null;
+        const op = g.score ? (g.mineIsA ? g.score.b : g.score.a) : null;
+        return (
+          <View key={g.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <Text style={{ width: 92, fontSize: 12, fontWeight: '800', color: C.text }}>{g.round}타임 · 코트 {g.court}</Text>
+            <Text style={{ flex: 1, fontSize: 12, color: C.sub }} numberOfLines={1}>
+              {g.type} · <Text style={{ fontWeight: '800', color: g.opp.color }}>{g.opp.name}</Text>와
+            </Text>
+            <Text style={{ fontSize: 12.5, fontWeight: '900', color: g.score ? (my > op ? C.green : my < op ? C.danger : C.sub) : C.faint }}>
+              {g.score ? `${my}:${op} ${my > op ? '승' : my < op ? '패' : '무'}` : '대기'}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+export default { BoardModeBar, ScoreSheet, BOARD_MODE, MyGames };

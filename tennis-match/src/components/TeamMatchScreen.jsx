@@ -25,7 +25,7 @@ import { guard, later, breadcrumb, slowRender } from '../lib/crashReport';
 import { TOURNAMENT_FORMAT, TEAM_SIDES, BUSU_KEYS, busuToNtrp } from '../lib/constants';
 import { MatchGrid, AttendanceGrid } from './MatchGrid';
 import { AppButton, Segmented, Touchable } from './native';
-import { BoardModeBar, ScoreSheet, BOARD_MODE, Fold } from './MatchBoard';
+import { BoardModeBar, ScoreSheet, BOARD_MODE, Fold, MyGames } from './MatchBoard';
 import { Card, SectionTitle, Chip, Field, Divider, EmptyState, CheckRow } from './ui';
 import { Label } from './pickers';
 import { C, S, R, F } from '../lib/theme';
@@ -42,7 +42,7 @@ function TeamTag({ side, children }) {
 }
 
 export function TeamMatch({
-  format, attendees, courts, rounds, saved, onSave, isAdmin, flash, courtNames = [], onSaveCourtNames,
+  format, attendees, courts, rounds, saved, onSave, isAdmin, flash, courtNames = [], onSaveCourtNames, me = '',
 }) {
   /* 그리기에 걸린 시간 — 길면 동작 기록에(lib/crashReport.js slowRender) */
   const renderStart = Date.now();
@@ -598,8 +598,16 @@ export function TeamMatch({
             <BoardModeBar mode={mode} onMode={setMode} onAdd={openAdd} onClearAll={clearAll} hasMatches={matches.length > 0}
               multi={multi} onMulti={setMulti} pickedCount={pickedGames.length} onDeletePicked={deletePicked} />
           )}
+          {/* 내 경기 — 명단에 든 회원(앱 가입·합치기 후)에게 */}
+          <MyGames games={shown
+            .filter((m) => !!me && [...(m.teamA || []), ...(m.teamB || [])].includes(me))
+            .map((m) => {
+              const mineIsA = (m.teamA || []).includes(me);
+              const side = (i) => ({ ...sides[i], name: isClubMatch ? (i ? (oppClub || '상대 클럽') : '우리 클럽') : sides[i].name });
+              return { id: m.id, round: m.round, court: cn(m.court), type: m.type, mine: side(mineIsA ? 0 : 1), opp: side(mineIsA ? 1 : 0), score: m.score, mineIsA };
+            })} />
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} onPressMatch={onPressMatch}
+            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} onPressMatch={onPressMatch} me={me}
               roundCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).rounds} courtCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).courts}
               onPressEmpty={isAdmin && mode === BOARD_MODE.EDIT && !multi ? addAt : undefined}
               selected={multi ? pickedGames : null}
@@ -612,7 +620,7 @@ export function TeamMatch({
           <Fold title="타임별 출전 현황" open={openAttend} onToggle={() => setOpenAttend(!openAttend)}
             summary={`총 ${shown.length}경기 · 사람마다 몇 경기, 남복·여복·혼복 몇 경기씩`}>
             <Card style={{ padding: 10 }}>
-              <AttendanceGrid attendees={[...teamA, ...teamB]} matches={shown} venue={venue}
+              <AttendanceGrid attendees={[...teamA, ...teamB]} matches={shown} venue={venue} me={me}
                 groups={[
                   { key: 'A', ...sides[0], name: isClubMatch ? '우리 클럽' : sides[0].name, players: teamA, games: matches.length },
                   { key: 'B', ...sides[1], name: isClubMatch ? (oppClub || '상대 클럽') : sides[1].name, players: teamB, games: matches.length },

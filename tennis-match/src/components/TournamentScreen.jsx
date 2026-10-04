@@ -960,6 +960,7 @@ export function Tournaments({
             roster={t.roster || []}
             courts={t.courts || 2}
             saved={t.league}
+            me={me}
             isAdmin={isAdmin}
             flash={flash}
             onSave={(payload) => updateTournament(clubId, t.id, { league: payload })}
@@ -974,6 +975,7 @@ export function Tournaments({
             courts={t.courts || 1}
             rounds={4}
             saved={t.team}
+            me={me}
             isAdmin={isAdmin}
             flash={flash}
             onSave={(payload) => updateTournament(clubId, t.id, { team: payload })}
@@ -1012,13 +1014,15 @@ export function Tournaments({
         )}
 
         {/* 외부 공개 — 앱이 없는 외부 참가자·관중도 링크로 대진·결과·순위를 본다 */}
-        {isAdmin && (t.stage === 'group' || t.stage === 'knockout' || (t.stage === 'draw' && (t.entries || []).length > 0)) && (
+        {/* 청백전(2팀·3팀)·팀 리그도 — 팀 점수판·타임별 대진(functions/shared/teamLive.js, 2026-10-04 앱 주인) */}
+        {isAdmin && (t.stage === 'group' || t.stage === 'knockout' || t.stage === 'team' || t.stage === 'league'
+          || (t.stage === 'draw' && (t.entries || []).length > 0)) && (
           <Card style={{ marginTop: S.lg }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{ flex: 1 }}>
                 <Text style={F.bodyBold}>외부 공개 링크</Text>
                 <Text style={{ fontSize: 11, color: C.faint, marginTop: 2, lineHeight: 16 }}>
-                  켜면 링크를 받은 누구나(앱 없이도) 대진표·결과·순위를 봅니다. 참가자 이름이 보이니 필요할 때만 켜세요.
+                  켜면 링크를 받은 누구나(앱 없이도) 대진표·결과·순위를 봅니다. 결과를 넣으면 링크 화면이 30초 안에 저절로 바뀝니다(다시 보낼 필요 없음). 참가자 이름이 보이니 필요할 때만 켜세요.
                 </Text>
               </View>
               <Chip tone={t.publicView ? 'green' : 'outline'}
