@@ -24,6 +24,8 @@ import {
   packLeague, unpackLeague, moveToTeam, emptyTeams, resizeTeams, UNASSIGNED,
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
+import { CourtNamesEditor } from './CourtNamesEditor';
+import { courtLabel } from '../lib/courtNames';
 import { TEAM_ROUND_TYPES } from '../lib/teamMatch';
 import { busuToNtrp } from '../lib/constants';
 import { MatchGrid } from './MatchGrid';
@@ -32,7 +34,13 @@ import { Card, SectionTitle, Chip, Field, Divider, EmptyState } from './ui';
 import { Label } from './pickers';
 import { C, S, R, F } from '../lib/theme';
 
-export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, flash }) {
+/**
+ * @param courtNames       대회 문서의 코트 이름(2팀·3팀 청백전이 함께 쓴다)
+ * @param onSaveCourtNames (names) => Promise
+ */
+export function TeamLeague({
+  roster, courts, saved: savedRaw, isAdmin, onSave, flash, courtNames = [], onSaveCourtNames,
+}) {
   /* 저장된 모양은 teams:[{players}] — 화면에서는 [[선수…]] 로 푼다(lib/teamLeague.js packLeague 머리말) */
   const saved = useMemo(() => unpackLeague(savedRaw), [savedRaw]);
   const [teams, setTeams] = useState(
@@ -63,6 +71,10 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
     teamNames,
     placement,
   };
+
+  /* 코트 이름 — 표·안내에 숫자 대신 그 코트장이 부르는 이름 */
+  const venue = { courts: cfg.courts, courtNames };
+  const cn = (c) => courtLabel(venue, c);
 
   const nameOf = useMemo(() => {
     const map = {};
@@ -202,6 +214,15 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
     if (saveNames(next, '팀 이름을 바꿨습니다')) setRenaming(null);
   };
 
+  const saveCourtNames = async (names) => {
+    try {
+      await onSaveCourtNames?.(names);
+      flash('코트 이름을 저장했습니다');
+    } catch (e) {
+      flash('코트 이름을 저장하지 못했습니다. 인터넷 연결을 확인해 주세요');
+    }
+  };
+
   const setRoundType = (r, key) => {
     const next = { ...roundTypes, [r]: key };
     setRoundTypes(next);
@@ -238,7 +259,7 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
     if (shortages.length) {
       Alert.alert('일부 코트를 채우지 못했습니다',
         `${ms.length}경기를 만들었습니다.\n\n`
-        + shortages.slice(0, 6).map((s) => `${s.round}타임 ${s.court}코트 ${s.type} — ${s.reason}`).join('\n')
+        + shortages.slice(0, 6).map((s) => `${s.round}타임 코트 ${cn(s.court)} ${s.type} — ${s.reason}`).join('\n')
         + (shortages.length > 6 ? `\n외 ${shortages.length - 6}건` : ''));
       return undefined;
     }
@@ -248,7 +269,9 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
   /* ---- 손으로 넣기·고치기·지우기 ---- */
   const openAdd = () => setEditing({ id: null, draft: emptyDraft(matches, cfg, teams.length) });
   const saveEdit = (id, draft) => {
-    const r = id ? updateLeagueMatch(teams, matches, id, draft) : addLeagueMatch(teams, matches, draft);
+    const r = id
+      ? updateLeagueMatch(teams, matches, id, draft, { courtName: cn })
+      : addLeagueMatch(teams, matches, draft, undefined, { courtName: cn });
     if (r.error) return r.error;
     setMatches(r.matches);
     persist({ matches: r.matches });
@@ -269,7 +292,7 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
     const A = look(m.teamAIdx).name;
     const B = look(m.teamBIdx).name;
     sheet.open({
-      title: `${m.round}타임 코트${m.court} · ${A} vs ${B}`,
+      title: `${m.round}타임 코트 ${cn(m.court)} · ${A} vs ${B}`,
       options: [
         { key: 'a', label: `${A} 승 (6:4)` },
         { key: 'b', label: `${B} 승 (4:6)` },
@@ -282,7 +305,7 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
       onSelect: (o) => {
         if (o.key === 'edit') { setEditing({ id: m.id, draft: matchToDraft(m) }); return; }
         if (o.key === 'del') {
-          Alert.alert('이 경기를 지울까요?', `${m.round}타임 코트${m.court} · ${A} vs ${B}`,
+          Alert.alert('이 경기를 지울까요?', `${m.round}타임 코트 ${cn(m.court)} · ${A} vs ${B}`,
             [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: () => deleteMatch(m.id) }]);
           return;
         }
@@ -542,6 +565,10 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
               </View>
             </View>
 
+            <View style={{ marginTop: S.md }}>
+              <CourtNamesEditor count={cfg.courts} value={courtNames} onSave={saveCourtNames} />
+            </View>
+
             <Divider style={{ marginVertical: S.md }} />
 
             <Label hint="타임마다 어떤 경기를 할지">타임별 경기 유형</Label>
@@ -616,7 +643,7 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
             대진표
           </SectionTitle>
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={matches} nameOf={nameOf} genderOf={genderOf}
+            <MatchGrid matches={matches} nameOf={nameOf} genderOf={genderOf} venue={venue}
               onPressMatch={editScore} />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
               {teams.map((_, i) => {
@@ -698,6 +725,8 @@ export function TeamLeague({ roster, courts, saved: savedRaw, isAdmin, onSave, f
         teams={teams}
         matches={matches}
         teamNames={teamNames}
+        courts={cfg.courts}
+        courtName={cn}
         onSave={saveEdit}
         onDelete={deleteMatch}
         onClose={() => setEditing(null)}

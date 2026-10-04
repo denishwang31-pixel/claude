@@ -15,6 +15,8 @@ import {
   splitTeams, teamStrength, generateTeamMatches, teamScore, teamPlayerStats,
 } from '../lib/teamMatch';
 import { moveToTeam, UNASSIGNED } from '../lib/teamLeague';
+import { courtLabel } from '../lib/courtNames';
+import { CourtNamesEditor } from './CourtNamesEditor';
 import { TOURNAMENT_FORMAT, TEAM_SIDES, BUSU_KEYS, busuToNtrp } from '../lib/constants';
 import { MatchGrid } from './MatchGrid';
 import { AppButton, Segmented, Touchable, useOptionSheet } from './native';
@@ -34,7 +36,7 @@ function TeamTag({ side, children }) {
 }
 
 export function TeamMatch({
-  format, attendees, courts, rounds, saved, onSave, isAdmin, flash,
+  format, attendees, courts, rounds, saved, onSave, isAdmin, flash, courtNames = [], onSaveCourtNames,
 }) {
   const sides = TEAM_SIDES[format] || TEAM_SIDES[TOURNAMENT_FORMAT.TEAM_BLUE_WHITE];
   const isClubMatch = format === TOURNAMENT_FORMAT.TEAM_CLUB;
@@ -57,6 +59,18 @@ export function TeamMatch({
   const [opp, setOpp] = useState({ name: '', gender: 'M', busu: '' });
   const [oppClub, setOppClub] = useState(saved?.opponentClub || '');
   const sheet = useOptionSheet();
+
+  /* 코트 이름 — 대회 문서 courtNames(3팀 청백전과 같은 이름) */
+  const venue = { courts, courtNames };
+  const cn = (c) => courtLabel(venue, c);
+  const saveCourtNames = async (names) => {
+    try {
+      await onSaveCourtNames?.(names);
+      flash('코트 이름을 저장했습니다');
+    } catch (e) {
+      flash('코트 이름을 저장하지 못했습니다. 인터넷 연결을 확인해 주세요');
+    }
+  };
 
   const strengthA = useMemo(() => teamStrength(teamA, { busuToNtrp }), [teamA]);
   const strengthB = useMemo(() => teamStrength(teamB, { busuToNtrp }), [teamB]);
@@ -188,7 +202,7 @@ export function TeamMatch({
   const editScore = (m) => {
     if (!isAdmin) return;
     sheet.open({
-      title: `${m.round}타임 코트${m.court}`,
+      title: `${m.round}타임 코트 ${cn(m.court)}`,
       options: [
         { key: 'a', label: `${sides[0].name} 승 (6:4)` },
         { key: 'b', label: `${sides[1].name} 승 (4:6)` },
@@ -436,6 +450,12 @@ export function TeamMatch({
             <Label hint="몇 타임을 돌릴지">타임 수</Label>
             <Field keyboardType="number-pad" value={nRounds} onChangeText={setNRounds} suffix="타임" />
 
+            {!isClubMatch && (
+              <View style={{ marginTop: S.lg }}>
+                <CourtNamesEditor count={courts} value={courtNames} onSave={saveCourtNames} />
+              </View>
+            )}
+
             <View style={{ marginTop: S.lg }}>
               <CheckRow
                 checked={sameSexOnly}
@@ -463,7 +483,7 @@ export function TeamMatch({
         <>
           <SectionTitle hint={isAdmin ? '경기를 누르면 승패를 기록합니다.' : undefined}>대진표</SectionTitle>
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={matches} nameOf={nameOf} onPressMatch={editScore} />
+            <MatchGrid matches={matches} nameOf={nameOf} venue={venue} onPressMatch={editScore} />
           </Card>
 
           {mvp.length > 0 && (

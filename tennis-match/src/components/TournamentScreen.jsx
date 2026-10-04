@@ -962,6 +962,8 @@ export function Tournaments({
             isAdmin={isAdmin}
             flash={flash}
             onSave={(payload) => updateTournament(clubId, t.id, { league: payload })}
+            courtNames={t.courtNames || []}
+            onSaveCourtNames={(names) => updateTournament(clubId, t.id, { courtNames: names })}
           />
         ) : t.stage === 'team' ? (
           <TeamMatch
@@ -974,6 +976,8 @@ export function Tournaments({
             isAdmin={isAdmin}
             flash={flash}
             onSave={(payload) => updateTournament(clubId, t.id, { team: payload })}
+            courtNames={t.courtNames || []}
+            onSaveCourtNames={(names) => updateTournament(clubId, t.id, { courtNames: names })}
           />
         ) : t.stage === 'kdk' ? (
           <KdkView clubId={clubId} t={t} isAdmin={isAdmin} flash={flash} />

@@ -297,6 +297,27 @@ section('팀 편성 — 자동/수동 배치 · 여러 명 한꺼번에 옮기�
   eq('2팀: 백팀 둘을 청팀으로', `${ids(r2.teams[0])}|${r2.teams[1].length}`, 'a,b,c|0');
 }
 
+section('청백전 · 팀 리그 코트 이름');
+{
+  /* 2026-10-04 앱 주인: 청백전·팀 리그도 코트 이름(A·B…)으로 */
+  const T = [[P('a1', '가1', 'M'), P('a2', '가2', 'F')], [P('b1', '나1', 'M'), P('b2', '나2', 'F')], [P('c1', '다1', 'M'), P('c2', '다2', 'F')]];
+  const d = { round: 1, court: 2, typeKey: 'MX', teamAIdx: 0, teamBIdx: 1, teamA: ['a1', 'a2'], teamB: ['b1', 'b2'] };
+  const ms = addLeagueMatch(T, [], d, 'm1').matches;
+  const clash = { ...d, teamAIdx: 2, teamA: ['c1', 'c2'], teamB: ['b1', 'b2'] };
+  eq('이름을 주면 겹침 안내도 그 이름으로', addLeagueMatch(T, ms, clash, undefined, { courtName: (c) => ['A', 'B'][c - 1] }).error, '1타임 코트 B에는 이미 경기가 있습니다');
+  eq('이름을 안 주면 예전 그대로', addLeagueMatch(T, ms, clash).error, '1타임 코트2에는 이미 경기가 있습니다');
+  eq('고칠 때도 이름으로', updateLeagueMatch(T, [...ms, { ...ms[0], id: 'm2', round: 2 }], 'm2', clash, { courtName: () => '9' }).error, '1타임 코트 9에는 이미 경기가 있습니다');
+  const read = (f) => readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8');
+  for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
+    const src = read(f);
+    ok(/<CourtNamesEditor /.test(src) && /venue=\{venue\}/.test(src), `${f}: 코트 이름 칸 + 표에 이름으로`);
+    ok(!/코트\$\{m\.court\}/.test(src), `${f}: 안내 문구에 코트 번호를 그대로 쓰지 않는다`);
+  }
+  const ts = read('TournamentScreen.jsx');
+  eq('대회 문서 courtNames 를 2팀·3팀 화면 둘 다에 넘긴다', (ts.match(/onSaveCourtNames=\{\(names\) => updateTournament\(clubId, t\.id, \{ courtNames: names \}\)\}/g) || []).length, 2);
+  ok(/courtName\(c\)/.test(read('LeagueMatchEditor.jsx')), '경기 추가·고치기 화면의 코트도 이름으로 고른다');
+}
+
 section('손으로 넣기 · 고치기 · 지우기');
 {
   const T = [

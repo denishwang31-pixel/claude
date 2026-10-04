@@ -5,6 +5,7 @@
    "자동 대진표 생성 후 수정하거나, 수기 입력도 할 수 있어야 한다").
    타임 · 코트 · 유형 · 두 팀 · 양쪽 선수를 고르면 끝.
    검사는 lib/teamLeague.js checkLeagueMatch — 사람·칸 겹침은 막고, 성별 구성은 경고만.
+   코트는 칩으로 고른다 — 코트 이름(A·B…)을 정했으면 그 이름으로 보인다(2026-10-04).
    ============================================================ */
 import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, Modal, ScrollView } from 'react-native';
@@ -19,8 +20,12 @@ import { C, S, R, F } from '../lib/theme';
  * @param open      { id: string|null, draft } | null — null 이면 닫힘
  * @param onSave    (id|null, draft) => string|undefined   실패 문구를 돌려주면 화면에 띄운다
  * @param onDelete  (id) => void
+ * @param courts    대진 설정의 코트 면수 — 코트 칩 개수
+ * @param courtName (번호) => 보여 줄 이름
  */
-export function LeagueMatchEditor({ open, teams, matches, teamNames, onSave, onDelete, onClose }) {
+export function LeagueMatchEditor({
+  open, teams, matches, teamNames, onSave, onDelete, onClose, courts = 2, courtName = (c) => String(c),
+}) {
   const insets = useSafeAreaInsets();
   const [d, setD] = useState(null);
   const [round, setRound] = useState('');
@@ -37,14 +42,16 @@ export function LeagueMatchEditor({ open, teams, matches, teamNames, onSave, onD
 
   const draft = d ? { ...d, round: Number(round) || 0, court: Number(court) || 0 } : null;
   const check = useMemo(
-    () => (draft ? checkLeagueMatch(teams, matches, draft, open?.id || null) : { warnings: [] }),
-    [teams, matches, d, round, court, open],
+    () => (draft ? checkLeagueMatch(teams, matches, draft, open?.id || null, { courtName }) : { warnings: [] }),
+    [teams, matches, d, round, court, open, courtName],
   );
 
   /* 이번 타임에 다른 코트에서 뛰는 사람 · 이미 찬 코트 */
   const others = (matches || []).filter((m) => m.id !== open?.id && Number(m.round) === Number(round));
   const busy = new Set(others.flatMap((m) => [...(m.teamA || []), ...(m.teamB || [])]));
   const usedCourts = others.map((m) => Number(m.court)).sort((a, b) => a - b);
+  /* 고를 수 있는 코트 — 설정한 면수, 예전에 그보다 큰 번호로 넣은 경기가 있으면 거기까지 */
+  const nCourtChips = Math.max(1, Number(courts) || 1, Number(court) || 0);
 
   if (!open || !d) return null;
   const need = sideSize(d.typeKey);
@@ -129,14 +136,23 @@ export function LeagueMatchEditor({ open, teams, matches, teamNames, onSave, onD
                 <Label>타임</Label>
                 <Field keyboardType="number-pad" suffix="타임" value={round} onChangeText={setRound} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Label>코트</Label>
-                <Field keyboardType="number-pad" suffix="번" value={court} onChangeText={setCourt} />
+            </View>
+            <View style={{ marginTop: S.md }}>
+              <Label>코트</Label>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {Array.from({ length: nCourtChips }, (_, i) => i + 1).map((c) => {
+                  const taken = usedCourts.includes(c);
+                  return (
+                    <Chip key={c} tone={Number(court) === c ? 'green' : 'outline'}
+                      style={taken ? { opacity: 0.35 } : undefined}
+                      onPress={taken ? undefined : () => setCourt(String(c))}>{courtName(c)}</Chip>
+                  );
+                })}
               </View>
             </View>
             {usedCourts.length > 0 && (
               <Text style={{ fontSize: 11, color: C.faint, marginTop: 6 }}>
-                {round}타임에 이미 쓰는 코트: {usedCourts.join(', ')}
+                흐린 코트는 {round}타임에 이미 경기가 있습니다: {usedCourts.map(courtName).join(', ')}
               </Text>
             )}
             <View style={{ marginTop: S.md }}>

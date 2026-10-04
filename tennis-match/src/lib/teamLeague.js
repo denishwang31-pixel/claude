@@ -476,9 +476,10 @@ export const sideSize = (typeKey) => (teamRoundType(typeKey).singles ? 1 : 2);
  * 손으로 넣는 경기를 검사한다.
  * @param draft  { round, court, typeKey, teamAIdx, teamBIdx, teamA:[id], teamB:[id] }
  * @param exceptId  고치는 중인 경기(자기 자신과는 겹침을 따지지 않는다)
+ * @param courtName 코트 번호 → 화면에 쓰는 이름(코트 이름을 정했으면 'A' 처럼). 없으면 숫자
  * @returns { error?: string, warnings: string[] }
  */
-export function checkLeagueMatch(teams, matches, draft, exceptId = null) {
+export function checkLeagueMatch(teams, matches, draft, exceptId = null, { courtName } = {}) {
   const warnings = [];
   const d = draft || {};
   const round = Number(d.round);
@@ -498,7 +499,7 @@ export function checkLeagueMatch(teams, matches, draft, exceptId = null) {
   }
   const others = (matches || []).filter((m) => m.id !== exceptId && Number(m.round) === round);
   const clash = others.find((m) => Number(m.court) === court);
-  if (clash) return { error: `${round}타임 코트${court}에는 이미 경기가 있습니다`, warnings };
+  if (clash) return { error: `${round}타임 코트${courtName ? ` ${courtName(court)}` : court}에는 이미 경기가 있습니다`, warnings };
   const busy = new Set(others.flatMap((m) => [...(m.teamA || []), ...(m.teamB || [])]));
   const dup = [...A, ...B].find((id) => busy.has(id));
   if (dup) {
@@ -537,17 +538,17 @@ const draftToMatch = (d, id, score = null) => {
 const sortMatches = (ms) => [...ms].sort((x, y) => x.round - y.round || x.court - y.court);
 
 /** 경기 하나 넣기 → { matches } 또는 { error } */
-export function addLeagueMatch(teams, matches, draft, newId = `lm-${Date.now().toString(36)}`) {
-  const chk = checkLeagueMatch(teams, matches, draft);
+export function addLeagueMatch(teams, matches, draft, newId = `lm-${Date.now().toString(36)}`, opts = {}) {
+  const chk = checkLeagueMatch(teams, matches, draft, null, opts);
   if (chk.error) return { error: chk.error };
   return { matches: sortMatches([...(matches || []), draftToMatch(draft, newId)]), warnings: chk.warnings };
 }
 
 /** 경기 고치기 — 선수·팀·유형이 바뀌면 지난 점수는 지운다(다른 경기가 됐다) */
-export function updateLeagueMatch(teams, matches, id, draft) {
+export function updateLeagueMatch(teams, matches, id, draft, opts = {}) {
   const old = (matches || []).find((m) => m.id === id);
   if (!old) return { error: '고칠 경기를 찾지 못했습니다' };
-  const chk = checkLeagueMatch(teams, matches, draft, id);
+  const chk = checkLeagueMatch(teams, matches, draft, id, opts);
   if (chk.error) return { error: chk.error };
   const same = old.teamAIdx === draft.teamAIdx && old.teamBIdx === draft.teamBIdx
     && old.typeKey === teamRoundType(draft.typeKey).key
