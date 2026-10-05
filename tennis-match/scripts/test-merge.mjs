@@ -1,5 +1,6 @@
 /* 오프라인 회원 합치기 — 서버 판단(functions/mergeMember.js)과 앱 권유(src/lib/mergeMember.js) */
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { mergeCandidates, mergeConfirmText } from '../src/lib/mergeMember.js';
 const require = createRequire(import.meta.url);
 const M = require('../functions/mergeMember.js');
@@ -97,6 +98,26 @@ console.log('[앱 — 같은 사람 권하기]');
   const c = mergeCandidates(members);
   eq(c.map((x) => `${x.offline.id}>${x.online.id}`), ['local:a1>u1'], '이름이 같은 짝 하나만(동명이인·탈퇴 제외, 띄어쓰기 무시)');
   ok(mergeConfirmText({ name: '김민수' }, { name: '김 민수' }).includes('되돌릴 수 없습니다'), '확인 문구에 되돌릴 수 없음을 적는다');
+}
+
+{
+  /* 2026-10-05: 회원이 초대코드로 가입했는데 목록에서 못 찾았다 — 명단엔 실명, 가입은 다른 이름(예스욱).
+     목록이 저장 순서라 새 회원이 중간에 섞였고, 이름이 달라 자동 짝에도 안 잡혔다 */
+  const MM = await import('../src/lib/mergeMember.js');
+  const ms = [
+    { id: 'local:1', name: '김예욱' }, { id: 'local:2', name: '박하나' }, { id: 'local:3', name: '홍길동' },
+    { id: 'uidA', name: '예스욱' },                          // 이름이 달라 짝이 안 잡힘
+    { id: 'uidB', name: '홍길동' },                          // 같은 이름 — 위 칸(자동 짝)에서 처리
+    { id: 'uidC', name: '이미합침', mergedFrom: ['local:9'] }, // 이미 합친 사람
+    { id: 'uidMe', name: '회장' },                           // 보는 사람 자신
+  ];
+  eq(MM.unlinkedOnline(ms, 'uidMe').map((m) => m.id), ['uidA'], '명단과 안 이어진 앱 회원만(같은 이름 짝·이미 합친 사람·나 자신은 뺀다)');
+  eq(MM.unlinkedOnline([{ id: 'uidA', name: '예스욱' }], '').length, 0, '명단(오프라인)이 없으면 보일 게 없다');
+  eq(MM.sortMembers(ms).map((m) => m.name).slice(0, 3), ['김예욱', '박하나', '예스욱'], '회원 목록은 이름 가나다순');
+  eq(MM.sortMembers(ms, ' 스욱').map((m) => m.id), ['uidA'], '이름 찾기(띄어쓰기 무시)');
+  const sc = readFileSync(new URL('../src/components/MembersScreen.jsx', import.meta.url), 'utf8');
+  ok(/앱으로 가입한 회원/.test(sc) && /askMerge\(off, on\)/.test(sc) && /명단의 누구인가요/.test(sc), '화면: 앱으로 가입한 회원 → [명단과 합치기]로 누구인지 골라 합친다');
+  ok(/placeholder="이름 찾기"/.test(sc) && /listed\.map\(\(m, i\)/.test(sc) && /<Chip tone="green">앱<\/Chip>/.test(sc), '화면: 전체 회원 가나다순·이름 찾기·앱 가입 표시');
 }
 
 console.log(`\n오프라인 회원 합치기 테스트: ${pass} 통과 / ${fail} 실패`);

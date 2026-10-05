@@ -16,14 +16,14 @@
      대진·점수·회비 기록을 앱 계정으로 옮기고 오프라인 회원을 지운다
      (functions/mergeMember.js). 이름이 같은 짝은 위에서 먼저 권한다 —
      동명이인이 있을 수 있어 자동으로 합치지는 않는다. */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
 import {
   updateMemberProfile, addMember, deleteMember, setMemberRole, setMemberRoles,
   assignVenuesBulk, requestMemberMerge, subMemberJob,
 } from '../lib/firestore';
 import {
-  isOfflineId, onlineMembers, mergeCandidates, mergeConfirmText,
+  isOfflineId, onlineMembers, offlineMembers, mergeCandidates, mergeConfirmText, unlinkedOnline, sortMembers,
 } from '../lib/mergeMember';
 import {
   ROLES, ASSIGNABLE_ROLES, ROLE_DESC, GRADES, BUSU, BUSU_KEYS,
@@ -86,6 +86,13 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
     ]);
   };
   const candidates = canMerge ? mergeCandidates(members) : [];
+  /* 이름이 명단과 달라 짝이 안 잡힌 앱 회원 — 명단의 누구인지 골라 합친다 */
+  const unlinked = canMerge ? unlinkedOnline(members, me) : [];
+  const [linkFor, setLinkFor] = useState(null);
+  /* 전체 회원 — 이름 가나다순 + 이름 찾기 */
+  const [q, setQ] = useState('');
+  const listed = useMemo(() => sortMembers(members, q), [members, q]);
+  const offlineSorted = useMemo(() => sortMembers(offlineMembers(members)), [members]);
 
   const openEdit = (m) => {
     if (openId === m.id) return setOpenId(null);
@@ -393,9 +400,47 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
         </>
       )}
 
+      {unlinked.length > 0 && (
+        <>
+          <SectionTitle hint="이름이 명단과 달라 자동으로 짝이 안 된 사람">앱으로 가입한 회원</SectionTitle>
+          <Card>
+            <Text style={{ fontSize: 13, color: C.sub, lineHeight: 19, marginBottom: 6 }}>
+              명단(오프라인)에 있던 사람이면 [명단과 합치기]로 누구인지 골라 주세요. 예전 기록이 옮겨집니다. 새로 온 회원이면 그대로 두면 됩니다.
+            </Text>
+            {unlinked.map((on, i) => (
+              <View key={on.id} style={{ borderTopWidth: i ? 1 : 0, borderTopColor: C.border, paddingVertical: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40 }}>
+                  <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: C.text }}>
+                    {on.name} <Text style={{ color: C.sub, fontWeight: '600' }}>(앱)</Text>
+                  </Text>
+                  <Btn small tone={linkFor === on.id ? 'ghost' : undefined} onPress={() => setLinkFor(linkFor === on.id ? null : on.id)}>
+                    {linkFor === on.id ? '닫기' : '명단과 합치기'}
+                  </Btn>
+                </View>
+                {linkFor === on.id && (
+                  <View style={{ marginTop: 4 }}>
+                    <Text style={{ fontSize: 12, color: C.sub, marginBottom: 6 }}>{on.name} 님은 명단의 누구인가요?</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {offlineSorted.map((off) => (
+                        <Chip key={off.id} tone="outline" onPress={() => askMerge(off, on)}>{off.name}</Chip>
+                      ))}
+                    </View>
+                  </View>
+                )}
+              </View>
+            ))}
+          </Card>
+        </>
+      )}
+
       <SectionTitle>전체 회원 ({members.length}명)</SectionTitle>
+      <Field placeholder="이름 찾기" value={q} onChangeText={setQ} />
+      <View style={{ height: 8 }} />
       <Card>
-        {members.map((m, i) => {
+        {listed.length === 0 && (
+          <Text style={{ fontSize: 13, color: C.faint, paddingVertical: 10 }}>"{q}" 이름의 회원이 없습니다.</Text>
+        )}
+        {listed.map((m, i) => {
           const eff = effectiveNtrp(m);
           const open = openId === m.id;
           const canEdit = isAdmin || m.id === me;
@@ -410,6 +455,8 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                       <Text style={{ fontSize: 14, fontWeight: '700' }}>{m.name}</Text>
+                      {/* 앱에 가입한 사람 — 오프라인 명단과 구별(합치기 대상 찾기 쉽게) */}
+                      {!isOfflineId(m.id) && <Chip tone="green">앱</Chip>}
                       {isStaffMember(m) && <Chip tone={roleTone(positionOf(m))}>{[positionOf(m), isTreasurer(m) ? '총무' : ''].filter(Boolean).join(' · ')}</Chip>}
                       {!!m.grade && <Chip tone="lime">{m.grade}조</Chip>}
                       {!!m.busu && <Chip tone="soft">{m.busu}</Chip>}
