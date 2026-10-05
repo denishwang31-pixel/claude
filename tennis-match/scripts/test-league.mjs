@@ -417,6 +417,39 @@ section('끝난 경기는 흐리게 — 남은 내 경기가 먼저 보이게');
   ok(/td\.done \.ty, table\.grid td\.done \.tp, table\.grid td\.done \.gn, table\.grid td\.done \.gv \{ opacity: \.45; \}/.test(readFileSync(new URL('../web/live.html', import.meta.url), 'utf8')), '웹: 같은 규칙');
 }
 
+section('앱 설치 페이지(/app) — 누르면 바로 내려받는 APK');
+{
+  /* 2026-10-05 앱 주인: expo.dev 빌드 화면은 내 계정 안이라 회원이 못 연다 — 바로 내려받는 링크 */
+  const { pickApk, parseList } = await import('./pick-apk.mjs');
+  const A = (o) => ({ platform: 'ANDROID', status: 'FINISHED', artifacts: { buildUrl: 'https://x/a.apk' }, ...o });
+  const g = pickApk([
+    A({ buildProfile: 'production', artifacts: { buildUrl: 'https://x/p.aab' }, completedAt: '2026-10-05T00:00:00Z' }),
+    A({ buildProfile: 'preview', appVersion: '1.0.0', appBuildVersion: '12', completedAt: '2026-10-03T01:00:00Z', artifacts: { buildUrl: 'https://x/new.apk' } }),
+    A({ buildProfile: 'preview', completedAt: '2026-09-30T01:00:00Z', artifacts: { buildUrl: 'https://x/old.apk' } }),
+    A({ platform: 'IOS', buildProfile: 'preview', completedAt: '2026-10-04T00:00:00Z', artifacts: { buildUrl: 'https://x/i.ipa' } }),
+  ]);
+  ok(g && g.url === 'https://x/new.apk' && g.info.build === '12' && g.info.date === '2026-10-03', '가장 최근 안드로이드 preview APK 를 고른다(스토어용 aab·아이폰은 뺀다)');
+  eq('고를 게 없으면 null — 페이지는 "준비 중"', pickApk([A({ artifacts: { buildUrl: 'https://x/p.aab' } })]), null);
+  eq('eas 가 안내 글을 섞어 찍어도 목록만 꺼낸다', parseList('경고: 새 버전\n[{"id":"1"}]\n').length, 1);
+  eq('망가진 출력이면 빈 목록', parseList('oops').length, 0);
+  const wf = readFileSync(new URL('../../.github/workflows/tennis-deploy.yml', import.meta.url), 'utf8');
+  ok(/name: 앱 설치 파일 가져오기/.test(wf) && /echo "::add-mask::\$URL"/.test(wf) && /-o public\/court\.apk "\$URL"/.test(wf)
+    && wf.indexOf('name: 약관 페이지 만들기') < wf.indexOf('name: 앱 설치 파일 가져오기') && wf.indexOf('name: 앱 설치 파일 가져오기') < wf.indexOf('name: 약관 웹 페이지'),
+    '배포: 웹 페이지를 만든 뒤·올리기 전에 최신 APK 를 받아 함께 올린다(주소는 로그에서 가림)');
+  const fj = JSON.parse(readFileSync(new URL('../firebase.json', import.meta.url), 'utf8'));
+  const h = (fj.hosting.headers || []).find((x) => x.source === '/court.apk');
+  ok(h && h.headers.some((x) => x.key === 'Content-Type' && x.value === 'application/vnd.android.package-archive')
+    && h.headers.some((x) => x.key === 'Content-Disposition' && /attachment/.test(x.value)), '누르면 바로 내려받기(APK 형식·첨부로)');
+  const ap = readFileSync(new URL('../web/app.html', import.meta.url), 'utf8');
+  ok(/href="\/court\.apk" download="Court\.apk"/.test(ap) && /fetch\('\/app-info\.json'/.test(ap) && /설치 파일 준비 중/.test(ap), '설치 페이지: 파일이 올라가 있을 때만 버튼을 켠다');
+  ok(/아이폰은 아직 설치할 수 없습니다/.test(ap) && /KAKAOTALK/.test(ap) && /get\('code'\)/.test(ap), '아이폰·카톡 안 브라우저 안내, 초대코드를 크게');
+  ok(/copyFileSync\(join\(ROOT, 'web', 'app\.html'\), join\(OUT, 'app\.html'\)\)/.test(readFileSync(new URL('./build-legal.mjs', import.meta.url), 'utf8')), '설치 페이지도 웹에 올린다');
+  const { appInstallUrl } = await import('../src/lib/constants.js');
+  eq('초대 문구에 넣는 설치 주소', appInstallUrl('abc234'), 'https://tennis-match-52b31.web.app/app?code=ABC234');
+  ok(/appInstallUrl\(c\)/.test(readFileSync(new URL('../src/lib/invite.js', import.meta.url), 'utf8'))
+    && !/스토어에서/.test(readFileSync(new URL('../src/lib/invite.js', import.meta.url), 'utf8')), '초대 문구: "스토어에서 받으라" 대신 설치 페이지 주소');
+}
+
 section('DB 라이브러리 고장 — 하얀 화면 대신 앱을 다시 띄운다');
 {
   /* 2026-10-04 기록: 23:24:43 화면 /(tabs) → 23:24:44 "FIRESTORE (10.14.1) INTERNAL ASSERTION FAILED: Unexpected state".

@@ -14,7 +14,7 @@
 import { Share, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Linking from 'expo-linking';
-import { APP_NAME } from './constants';
+import { APP_NAME, appInstallUrl } from './constants';
 
 /** 앱을 여는 딥링크. Expo Go / 개발 빌드에서도 알맞은 prefix 로 생성된다. */
 export function inviteUrl(code) {
@@ -36,7 +36,9 @@ export function inviteMessage(clubName, code) {
     inviteUrl(c),
     '',
     '앱이 설치돼 있으면 위 링크를 누르면 바로 가입됩니다.',
-    `설치 전이라면 스토어에서 "${APP_NAME}" 앱을 받은 뒤 초대코드를 입력하세요.`,
+    /* 스토어에 올리기 전까지는 설치 페이지에서 받는다(안드로이드 APK) — 2026-10-05 */
+    `앱이 없다면 여기서 "${APP_NAME}" 앱을 설치한 뒤 초대코드를 입력하세요(안드로이드):`,
+    appInstallUrl(c),
   ].join('\n');
 }
 

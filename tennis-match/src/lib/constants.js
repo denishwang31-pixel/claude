@@ -20,6 +20,11 @@
    여러 곳에 흩어져 있어 이름을 바꿨는데도 곳곳에 옛 이름이 남았다. */
 export const APP_NAME = 'Court';
 
+/* 앱 설치 페이지 — 스토어에 올리기 전까지 안드로이드는 여기서 APK 를 받는다(web/app.html).
+   ?code=초대코드 를 붙이면 설치 뒤 넣을 코드를 크게 보여 준다. 주소는 Firebase 호스팅(프로젝트 tennis-match-52b31) */
+export const APP_INSTALL_URL = 'https://tennis-match-52b31.web.app/app';
+export const appInstallUrl = (code) => (code ? `${APP_INSTALL_URL}?code=${encodeURIComponent(String(code).toUpperCase())}` : APP_INSTALL_URL);
+
 /* ============================================================
    역할 (2026-10 단순화 — 앱 주인)
 

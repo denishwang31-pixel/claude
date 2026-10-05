@@ -268,6 +268,47 @@ jobs:
         if: env.DO_HOSTING == 'true'
         run: npm run build:legal
 
+      # 앱 설치 페이지(/app)의 [안드로이드 앱 받기] — 같은 주소의 /court.apk
+      #   2026-10-05 앱 주인: expo.dev 빌드 화면은 내 계정 안이라 회원이 못 연다 —
+      #   누르면 바로 내려받는 링크가 필요. 스토어에 올리기 전까지 이 길로 설치한다.
+      #   EAS 의 최신 안드로이드 APK(내부 테스트 preview 먼저)를 받아 호스팅에 함께 올린다.
+      # ⚠️ 내려받는 주소는 로그에 찍지 않는다(공개 로그) — 파일로만 넘기고 가린다.
+      # ⚠️ 실패해도 배포는 계속한다 — 그때 페이지는 "설치 파일 준비 중"을 보인다.
+      - name: 앱 설치 파일 가져오기
+        id: apk
+        if: env.DO_HOSTING == 'true'
+        continue-on-error: true
+        env:
+          EXPO_TOKEN_RAW: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          EXPO_TOKEN="$(printf '%s' "$EXPO_TOKEN_RAW" | tr -d '[:space:]')"
+          export EXPO_TOKEN
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::warning::EXPO_TOKEN 시크릿이 없어 설치 파일을 올리지 못했습니다."
+            exit 0
+          fi
+          rm -f public/court.apk public/app-info.json
+          if ! npx --yes eas-cli@latest build:list --platform android --status finished --limit 20 \
+               --json --non-interactive > "$RUNNER_TEMP/builds.json" 2> "$RUNNER_TEMP/builds.err"; then
+            echo "::warning::EAS 빌드 목록을 읽지 못했습니다 — 설치 파일 없이 배포합니다."
+            exit 0
+          fi
+          if ! node scripts/pick-apk.mjs "$RUNNER_TEMP/builds.json" "$RUNNER_TEMP/apk-url.txt"; then
+            echo "::warning::올릴 안드로이드 APK 빌드가 없습니다 — 「테니스매치 빌드」(preview)를 먼저 돌려 주세요."
+            exit 0
+          fi
+          URL="$(cat "$RUNNER_TEMP/apk-url.txt")"
+          echo "::add-mask::$URL"
+          if curl -fsSL --retry 3 --max-time 600 -o public/court.apk "$URL"; then
+            BYTES=$(stat -c %s public/court.apk)
+            node -e "const f='public/app-info.json';const j=JSON.parse(require('fs').readFileSync(f,'utf8'));j.bytes=$BYTES;require('fs').writeFileSync(f,JSON.stringify(j))"
+            echo "설치 파일: $((BYTES / 1048576))MB — /court.apk 로 올립니다"
+          else
+            echo "::warning::APK 를 내려받지 못했습니다 — 설치 파일 없이 배포합니다."
+            rm -f public/court.apk public/app-info.json
+          fi
+          rm -f "$RUNNER_TEMP/apk-url.txt" "$RUNNER_TEMP/builds.json" "$RUNNER_TEMP/builds.err"
+
       - name: 약관 웹 페이지
         id: dep_hosting
         if: env.DO_HOSTING == 'true'

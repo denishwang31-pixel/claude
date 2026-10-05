@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Court 앱 설치</title>
+<!--
+  앱 설치 페이지 — /app (초대 문구에는 /app?code=초대코드)
+
+  2026-10-05 앱 주인: "expo 페이지는 내 계정 안이라 회원이 못 연다. 클릭하면 바로 다운로드되는 링크".
+  플레이 스토어에 올리기 전까지 안드로이드 회원은 APK 로 설치한다. 배포(tennis-deploy.yml
+  「앱 설치 파일 가져오기」)가 EAS 의 최신 안드로이드 내부 테스트 빌드를 받아 같은 주소의
+  /court.apk 로 올리고, 버전·크기를 /app-info.json 에 적는다. 이 페이지는 그걸 읽어 버튼을 켠다.
+
+  ⚠️ 휴대폰마다 경고 문구가 조금씩 다르다 — 버튼 이름을 단정하지 않고 "설치 쪽"으로 안내한다.
+  ⚠️ 외부 글꼴·라이브러리를 안 쓴다(카톡 안 브라우저에서도 바로 뜨게).
+-->
+<style>
+  :root { --green: #0E6B4F; --green2: #10B981; --soft: #E8F8F2; --ink: #0F172A; --sub: #475569; --faint: #94A3B8; --line: #E2E8F0; --bg: #F8FAFC; --warn: #B45309; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif; -webkit-text-size-adjust: 100%; word-break: keep-all; }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 24px 16px 48px; }
+  .hero { background: var(--green); color: #fff; border-radius: 20px; padding: 22px 20px; }
+  .hero small { color: #BEF264; font-weight: 800; letter-spacing: .08em; }
+  .hero h1 { margin: 6px 0 4px; font-size: 26px; letter-spacing: -0.02em; }
+  .hero p { margin: 0; color: #CDEBDD; font-size: 14px; line-height: 1.6; }
+  .btn { display: block; width: 100%; text-align: center; text-decoration: none; font-size: 17px; font-weight: 800;
+    padding: 16px; border-radius: 14px; background: #BEF264; color: var(--ink); margin-top: 16px; border: 0; }
+  .btn.off { background: rgba(255,255,255,.18); color: #CDEBDD; pointer-events: none; }
+  .ver { font-size: 12px; color: #CDEBDD; text-align: center; margin-top: 8px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-top: 14px; }
+  .card h2 { font-size: 16px; margin: 0 0 10px; }
+  ol { margin: 0; padding-left: 20px; } li { font-size: 14px; line-height: 1.65; color: var(--sub); margin-bottom: 8px; } li b { color: var(--ink); }
+  .code { display: flex; align-items: center; gap: 10px; background: var(--soft); border: 1.5px solid var(--green); border-radius: 14px; padding: 12px 14px; margin-top: 14px; }
+  .code b { font-size: 24px; letter-spacing: .12em; color: var(--green); flex: 1; }
+  .code button { font: inherit; font-size: 13px; font-weight: 800; border: 0; border-radius: 999px; padding: 8px 14px; background: var(--green); color: #fff; }
+  .note { font-size: 12.5px; color: var(--faint); line-height: 1.6; margin-top: 8px; }
+  .warn { background: #FFFBEB; border-color: #FDE68A; }
+  .warn h2 { color: var(--warn); }
+  .foot { font-size: 12px; color: var(--faint); text-align: center; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <small>COURT</small>
+    <h1>테니스 클럽 앱 설치</h1>
+    <p>일정·참석·대진표·내 경기를 휴대폰으로 봅니다.</p>
+    <a class="btn off" id="dl" href="/court.apk" download="Court.apk">설치 파일 확인 중…</a>
+    <div class="ver" id="ver"></div>
+  </div>
+
+  <div class="card warn" id="kakao" hidden>
+    <h2>카카오톡 안에서 열었다면</h2>
+    <p class="note" style="margin:0">카톡 안 화면에서는 내려받기가 안 될 수 있습니다. 화면 위·아래의 메뉴에서 <b>다른 브라우저로 열기</b>(크롬·삼성 인터넷)를 골라 이 페이지를 다시 연 뒤 버튼을 누르세요.</p>
+  </div>
+
+  <div class="code" id="codebox" hidden>
+    <div><div style="font-size:12px;color:var(--sub);font-weight:700">우리 클럽 초대코드</div><b id="code"></b></div>
+    <button id="copy">복사</button>
+  </div>
+
+  <div class="card" id="iphone" hidden>
+    <h2>아이폰은 아직 설치할 수 없습니다</h2>
+    <p class="note" style="margin:0">아이폰용 앱은 준비 중입니다. 운영진이 보내 주는 <b>대회·대진 링크</b>를 열면 내 경기를 볼 수 있습니다 — 링크 맨 위 [내 경기 찾기]에 이름을 넣으세요.</p>
+  </div>
+
+  <div class="card" id="android">
+    <h2>안드로이드 설치 순서</h2>
+    <ol>
+      <li>위 <b>[안드로이드 앱 받기]</b>를 누릅니다. 파일이 내려받아집니다.</li>
+      <li>다 받아지면 알림창이나 <b>다운로드</b> 폴더에서 <b>Court.apk</b>를 엽니다.</li>
+      <li>"이 출처의 앱 설치"를 허용하라고 나오면 <b>허용</b>으로 바꾸고 돌아옵니다. 한 번만 하면 됩니다.</li>
+      <li>보호 경고(Play 프로텍트 등)가 나오면 <b>설치</b> 쪽을 고릅니다. 스토어를 거치지 않은 앱이라 나오는 안내입니다. 휴대폰마다 문구가 조금 다릅니다.</li>
+      <li>설치가 끝나면 앱을 열고 <b>가입</b>합니다. <b>이름은 클럽 명단에 있는 이름 그대로</b> 넣어 주세요.</li>
+      <li>위 <b>초대코드</b>(운영진이 보낸 것)를 넣으면 클럽에 들어갑니다. 운영진이 예전 기록을 내 계정으로 합쳐 줍니다.</li>
+    </ol>
+  </div>
+
+
+  <div class="card">
+    <h2>설치한 뒤에는</h2>
+    <p class="note" style="margin:0">새 기능·고친 것은 앱을 켤 때 저절로 받아집니다. 이 페이지에서 다시 받을 필요가 없습니다.</p>
+  </div>
+  <p class="foot">Court · 테니스 클럽 운영 앱</p>
+</div>
+<script>
+(function () {
+  var ua = navigator.userAgent || '';
+  var ios = /iPhone|iPad|iPod/i.test(ua);
+  var kakao = /KAKAOTALK/i.test(ua);
+  if (ios) { document.getElementById('iphone').hidden = false; document.getElementById('android').hidden = true; }
+  if (kakao && !ios) document.getElementById('kakao').hidden = false;
+
+  /* 초대 문구의 /app?code=ABC234 — 설치 뒤 넣을 코드를 크게 보여 준다 */
+  var code = (new URLSearchParams(location.search).get('code') || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 12);
+  if (code) {
+    document.getElementById('codebox').hidden = false;
+    document.getElementById('code').textContent = code;
+    document.getElementById('copy').onclick = function () {
+      var b = this;
+      var done = function () { b.textContent = '복사됨'; setTimeout(function () { b.textContent = '복사'; }, 1500); };
+      if (navigator.clipboard) navigator.clipboard.writeText(code).then(done, function () {});
+      else { var t = document.createElement('textarea'); t.value = code; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); done(); } catch (e) {} document.body.removeChild(t); }
+    };
+  }
+
+  /* 설치 파일이 올라가 있는지 — 배포가 적어 둔 app-info.json */
+  var dl = document.getElementById('dl'), ver = document.getElementById('ver');
+  if (ios) { dl.textContent = '안드로이드 전용입니다'; return; }
+  fetch('/app-info.json', { cache: 'no-store' })
+    .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+    .then(function (j) {
+      dl.className = 'btn'; dl.textContent = '안드로이드 앱 받기';
+      var mb = j.bytes ? Math.round(j.bytes / 1048576) + 'MB' : '';
+      ver.textContent = [j.version ? '버전 ' + j.version + (j.build ? ' (' + j.build + ')' : '') : '', mb, j.date ? j.date + ' 빌드' : ''].filter(Boolean).join(' · ');
+    })
+    .catch(function () {
+      dl.textContent = '설치 파일 준비 중';
+      ver.textContent = '잠시 뒤 다시 열어 주세요. 계속 이러면 운영진에게 알려 주세요.';
+    });
+})();
+</script>
+</body>
+</html>
