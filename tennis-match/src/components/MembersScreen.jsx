@@ -405,7 +405,7 @@ export function Members({ clubId, members, venues, stats, me, isAdmin, canAppoin
           <SectionTitle hint="이름이 명단과 달라 자동으로 짝이 안 된 사람">앱으로 가입한 회원</SectionTitle>
           <Card>
             <Text style={{ fontSize: 13, color: C.sub, lineHeight: 19, marginBottom: 6 }}>
-              명단(오프라인)에 있던 사람이면 [명단과 합치기]로 누구인지 골라 주세요. 예전 기록이 옮겨집니다. 새로 온 회원이면 그대로 두면 됩니다.
+              명단(오프라인)에 있던 사람이면 오른쪽 버튼을 눌러 누구인지 골라 주세요. 예전 기록이 옮겨집니다. 새로 온 회원이면 그대로 두면 됩니다.
             </Text>
             {unlinked.map((on, i) => (
               <View key={on.id} style={{ borderTopWidth: i ? 1 : 0, borderTopColor: C.border, paddingVertical: 8 }}>
