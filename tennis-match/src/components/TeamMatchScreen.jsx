@@ -22,7 +22,7 @@ import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { courtLabel } from '../lib/courtNames';
 import { CourtNamesEditor } from './CourtNamesEditor';
 import { RoundTimingEditor } from './RoundTimingEditor';
-import { tournamentRoundTimes, timingRounds } from '../lib/schedule';
+import { tournamentRoundTimes, timingRounds, tournamentSchedule } from '../lib/schedule';
 import { guard, later, breadcrumb, slowRender } from '../lib/crashReport';
 import { TOURNAMENT_FORMAT, TEAM_SIDES, BUSU_KEYS, busuToNtrp } from '../lib/constants';
 import { MatchGrid, AttendanceGrid } from './MatchGrid';
@@ -127,6 +127,8 @@ export function TeamMatch({
   /* 타임별 시각 — 대회 시간(timing)을 정했을 때만. 대진표·출전 현황·내 경기에 같이 쓴다 */
   const gridRounds = gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).rounds;
   const times = useMemo(() => tournamentRoundTimes(timing, gridRounds), [timing, gridRounds]);
+  /* 이벤트(행사·식사) — 대진표 타임 사이 노란 띠(MatchGrid events) */
+  const evBands = useMemo(() => tournamentSchedule(timing, gridRounds).events, [timing, gridRounds]);
   const timeOf = (r) => times.find((t) => t.round === Number(r)) || null;
 
   const nameOf = useMemo(() => {
@@ -627,7 +629,7 @@ export function TeamMatch({
               return { id: m.id, round: m.round, time: timeOf(m.round), court: cn(m.court), type: m.type, mine: side(mineIsA ? 0 : 1), opp: side(mineIsA ? 1 : 0), score: m.score, mineIsA };
             })} />
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} onPressMatch={onPressMatch} me={me} roundTimes={times}
+            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} onPressMatch={onPressMatch} me={me} roundTimes={times} events={evBands}
               roundCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).rounds} courtCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).courts}
               onPressEmpty={isAdmin && mode === BOARD_MODE.EDIT && !multi ? addAt : undefined}
               selected={multi ? pickedGames : null}

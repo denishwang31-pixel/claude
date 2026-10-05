@@ -82,7 +82,74 @@ export function timingRounds(timing) {
   const per = Math.min(180, Math.max(5, Number(timing.roundMinutes) || TOURNAMENT_ROUND_MINUTES));
   let span = end - start;
   if (span <= 0) span += 1440;
+  /* 이벤트(행사·식사)가 끼면 그만큼 타임이 밀린다 — 종료 시간 안에 실제로 들어가는 타임만 센다 */
+  if ((timing.events || []).length) {
+    const endAbs = start + span;
+    let n = 0;
+    while (n < 200) {
+      const s = tournamentSchedule(timing, n + 1).times[n];
+      if (!s || s.endAbs > endAbs) break;
+      n += 1;
+    }
+    return Math.max(1, n);
+  }
   return Math.max(1, Math.floor(span / per));
+}
+
+/* ============================================================
+   대회 이벤트 — 경기 말고 행사·식사 같은 일정(개회식·점심·시상식)
+   2026-10-05 앱 주인: "처음·중간·마지막에 행사나 식사 같은 이벤트도 — 이름·시간을 정하면
+   그 경기 타임 중간에 블락하고, 색도 다르게".
+   timing.events = [{ id, name, startTime:'HH:MM', minutes }]
+   타임은 시작 시간부터 한 타임씩 이어 가다가, 이벤트와 겹치면 이벤트가 끝난 뒤로 밀린다.
+   ============================================================ */
+export const EVENT_MINUTES = 60;
+export function normalizeEvents(timing) {
+  return (timing?.events || [])
+    .map((e, i) => ({
+      id: String(e?.id || `ev${i}`),
+      name: String(e?.name || '').trim() || '이벤트',
+      start: toMinutes(e?.startTime),
+      minutes: Math.min(600, Math.max(5, Number(e?.minutes) || EVENT_MINUTES)),
+    }))
+    .filter((e) => e.start != null)
+    .sort((a, b) => a.start - b.start);
+}
+
+/**
+ * 타임 시각 + 이벤트 자리 — 대진표가 이벤트 띠를 어느 타임 앞에 그릴지(beforeRound, 끝이면 null)
+ * @returns { times:[{round,start,end,startAbs,endAbs}], events:[{id,name,start,end,minutes,beforeRound}] }
+ */
+export function tournamentSchedule(timing, rounds) {
+  const out = { times: [], events: [] };
+  const s0 = toMinutes(timing?.startTime);
+  if (s0 == null) return out;
+  const per = Math.min(180, Math.max(5, Number(timing.roundMinutes) || TOURNAMENT_ROUND_MINUTES));
+  /* 이벤트 시각을 대회 시작 기준으로 펼친다(자정을 넘는 대회 — 시작보다 이르면 다음 날) */
+  const evs = normalizeEvents(timing).map((e) => {
+    let a = e.start;
+    if (a < s0 - 180) a += 1440;      // 시작보다 3시간 넘게 이르면 다음 날로 본다
+    return { ...e, a, b: a + e.minutes };
+  }).sort((x, y) => x.a - y.a);
+  let cur = s0;
+  const n = Math.max(0, Math.floor(Number(rounds) || 0));
+  for (let r = 1; r <= n; r += 1) {
+    /* 이 타임 자리와 겹치는 이벤트가 있으면 그 이벤트가 끝난 뒤로 */
+    let moved = true;
+    while (moved) {
+      moved = false;
+      for (const e of evs) {
+        if (e.a < cur + per && e.b > cur) { cur = e.b; moved = true; }
+      }
+    }
+    out.times.push({ round: r, start: toHHMM(cur), end: toHHMM(cur + per), startAbs: cur, endAbs: cur + per });
+    cur += per;
+  }
+  out.events = evs.map((e) => {
+    const next = out.times.find((t) => t.startAbs >= e.a);
+    return { id: e.id, name: e.name, start: toHHMM(e.a), end: toHHMM(e.b), minutes: e.minutes, beforeRound: next ? next.round : null };
+  });
+  return out;
 }
 
 /**
@@ -95,6 +162,10 @@ export function tournamentRoundTimes(timing, rounds) {
   if (!timing || toMinutes(timing.startTime) == null) return [];
   const n = Math.max(0, Math.floor(Number(rounds) || 0));
   if (!n) return [];
+  /* 이벤트가 있으면 그만큼 밀린 시각(tournamentSchedule), 없으면 일정과 같은 계산 */
+  if (normalizeEvents(timing).length) {
+    return tournamentSchedule(timing, n).times.map(({ round, start, end }) => ({ round, start, end }));
+  }
   const per = Math.min(180, Math.max(5, Number(timing.roundMinutes) || TOURNAMENT_ROUND_MINUTES));
   return roundTimes({ startTime: timing.startTime, roundMinutes: per }, n);
 }

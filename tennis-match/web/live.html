@@ -77,6 +77,8 @@
   table.grid td { border: 1px solid #F1F5F9; padding: 6px; vertical-align: top; text-align: center; background: #fff; }
   table.grid td.r { background: var(--green); color: #BEF264; font-weight: 800; vertical-align: middle; border-color: rgba(255,255,255,.15); }
   table.grid td.r small.rt { display: block; margin-top: 2px; color: #BFE3D3; font-size: 10.5px; font-weight: 600; }
+  table.grid tr.ev td { background: #FEF3C7; border: 0; border-left: 5px solid #D97706; border-top: 1px solid #FDE68A; border-bottom: 1px solid #FDE68A; text-align: left; padding: 9px 12px; font-size: 14px; color: #92400E; }
+  table.grid tr.ev td b { font-weight: 900; } table.grid tr.ev td i { font-style: normal; font-weight: 700; color: #D97706; font-size: 12.5px; margin-left: 4px; }
   table.grid td.e { background: #FAFAF9; color: var(--faint); vertical-align: middle; }
   .gt { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
   .ty { font-size: 10px; font-weight: 800; padding: 1px 5px; border-radius: 4px; background: var(--fill); color: var(--sub); }
@@ -304,11 +306,21 @@
       if (!m.score) return '';
       return won ? ' style="color:' + esc(accentOf(m)) + ';font-weight:800"' : ' style="color:var(--faint)"';
     };
+    var evIcon = function (n) {
+      n = String(n || '');
+      /* 개회식 먼저 — '개회식'에 '회식'이 들어 있다 */
+      return /개회|개막|인사|소개|오리엔/.test(n) ? '🎉' : /시상|폐회|마무리/.test(n) ? '🏆' : /식사|점심|저녁|아침|간식|뒤풀이|회식/.test(n) ? '🍱' : /휴식|쉬는/.test(n) ? '☕' : '📌';
+    };
+    var evRow = function (e) {
+      return '<tr class="ev"><td colspan="' + (cols.length + 1) + '"><span>' + evIcon(e.name) + '</span> <b>' + esc(e.name) + '</b> <i>' + esc(e.start) + '~' + esc(e.end) + '</i></td></tr>';
+    };
     if (d.rounds.length) {
       h += '<div class="gscroll"><table class="grid"><tr><th></th>' + cols.map(function (c, i) {
         return '<th class="' + (i === 0 ? 'c1 ' : '') + (i === cols.length - 1 ? 'cl' : '') + '">코트 ' + esc(c.label) + '</th>';
       }).join('') + '</tr>';
       d.rounds.forEach(function (r) {
+        /* 이벤트(행사·식사) — 이 타임 앞에 노란 띠(앱 대진표와 같은 모양) */
+        (d.events || []).filter(function (e) { return e.beforeRound === r.round; }).forEach(function (e) { h += evRow(e); });
         /* 대회 시간을 정했으면 타임 아래 시작 시각(r.time) */
         h += '<tr><td class="r">' + r.round + 'T' + (r.time ? '<small class="rt">' + esc(r.time) + '</small>' : '') + '</td>' + cols.map(function (c) {
           var m = r.matches.filter(function (x) { return (x.c ? 'n' + x.c : 'l' + x.court) === c.key; })[0];
@@ -318,6 +330,7 @@
           return m ? (ac ? '<td class="done' + mineCls + '" style="background:' + esc(ac) + (wt ? '14' : '1F') + ';border-left-color:' + esc(ac) + '">' : '<td class="' + mineCls + '">') + cell(m) + '</td>' : '<td class="e">—</td>';
         }).join('') + '</tr>';
       });
+      (d.events || []).filter(function (e) { return !e.beforeRound || !d.rounds.some(function (r) { return r.round === e.beforeRound; }); }).forEach(function (e) { h += evRow(e); });
       h += '</table></div><p class="note">표가 넓으면 옆으로 밀어 보세요 · 색칠된 칸 = 끝난 경기(이긴 팀 색) · 흰 칸 = 경기 전</p>';
     } else {
       h += '<p class="note">아직 대진이 없습니다.</p>';

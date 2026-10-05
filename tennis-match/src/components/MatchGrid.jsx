@@ -102,9 +102,36 @@ function SideTag({ side }) {
    onPressEmpty(round, court) — 빈칸을 눌렀을 때(그 자리에 경기 넣기).
    selected — 고른 경기 id 목록(여러 경기 지우기). */
 const range = (n) => Array.from({ length: Math.max(0, n) }, (_, i) => i + 1);
+
+/* 이벤트(행사·식사) 띠 — 경기 칸과 확 다르게(노란 바탕·주황 띠). schedule.tournamentSchedule 의 events.
+   2026-10-05 앱 주인: "이벤트 추가 — 그 경기 타임 중간에 블락하고, 색도 다르게 잘 보이게" */
+export const EVENT_COLOR = { bg: '#FEF3C7', bar: '#D97706', ink: '#92400E' };
+export const eventIcon = (name) => {
+  const n = String(name || '');
+  /* ⚠️ 개회식 먼저 — '개회식'에 '회식'이 들어 있어 식사로 잡혔다 */
+  if (/개회|개막|인사|소개|오리엔/.test(n)) return '🎉';
+  if (/시상|폐회|마무리/.test(n)) return '🏆';
+  if (/식사|점심|저녁|아침|간식|뒤풀이|회식/.test(n)) return '🍱';
+  if (/휴식|쉬는/.test(n)) return '☕';
+  return '📌';
+};
+export function EventBand({ ev, width }) {
+  return (
+    <View style={{
+      width, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, paddingHorizontal: 12,
+      backgroundColor: EVENT_COLOR.bg, borderLeftWidth: 5, borderLeftColor: EVENT_COLOR.bar,
+      borderTopWidth: 1, borderTopColor: '#FDE68A', borderBottomWidth: 1, borderBottomColor: '#FDE68A',
+    }}>
+      <Text style={{ fontSize: 15 }}>{eventIcon(ev.name)}</Text>
+      <Text style={{ fontSize: 13.5, fontWeight: '900', color: EVENT_COLOR.ink }}>{ev.name}</Text>
+      <Text style={{ fontSize: 12, fontWeight: '700', color: EVENT_COLOR.bar }}>{ev.start}~{ev.end}</Text>
+    </View>
+  );
+}
+
 export function MatchGrid({
   matches, nameOf, genderOf, me, roundTimes = [], onPressMatch, venue = null, pending, sideOf = null,
-  roundCount = 0, courtCount = 0, onPressEmpty, selected = null,
+  roundCount = 0, courtCount = 0, onPressEmpty, selected = null, events = [],
 }) {
   const list = matches || [];
   const fixed = roundCount > 0 && courtCount > 0;
@@ -138,11 +165,14 @@ export function MatchGrid({
           ))}
         </View>
 
-        {/* 본문: 타임 × 코트 */}
+        {/* 본문: 타임 × 코트 — 이벤트는 그 시각 다음 타임 앞에 띠로 */}
         {rounds.map((r) => {
           const t = timeOf(r);
+          const bands = (events || []).filter((e) => e.beforeRound === r);
           return (
-            <View key={r} style={{ flexDirection: 'row' }}>
+            <View key={r}>
+            {bands.map((e) => <EventBand key={e.id} ev={e} width={HEAD_W + courts.length * CELL_W} />)}
+            <View style={{ flexDirection: 'row' }}>
               {/* 타임 헤더 */}
               <View style={{
                 width: HEAD_W, alignItems: 'center', justifyContent: 'center',
@@ -245,8 +275,13 @@ export function MatchGrid({
                 );
               })}
             </View>
+            </View>
           );
         })}
+        {/* 마지막 타임 뒤의 이벤트(시상식·뒤풀이) — 또는 이벤트 뒤에 오는 타임이 아직 없을 때 */}
+        {(events || []).filter((e) => e.beforeRound == null || !rounds.includes(e.beforeRound)).map((e) => (
+          <EventBand key={e.id} ev={e} width={HEAD_W + courts.length * CELL_W} />
+        ))}
       </View>
     </ScrollView>
   );

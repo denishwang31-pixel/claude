@@ -53,12 +53,36 @@ function actualType(m, genderOf) {
 
 /** 타임 시작 시각 — 대회 문서 timing = { startTime:'HH:MM', roundMinutes } (앱 schedule.tournamentRoundTimes 와 같은 계산).
  *  시작 시간을 안 정했으면 '' */
-function roundStart(timing, round) {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(String(timing?.startTime || '').trim());
-  if (!m || +m[1] > 23 || +m[2] > 59) return '';
+const mins = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim()); return m && +m[1] <= 23 && +m[2] <= 59 ? +m[1] * 60 + +m[2] : null; };
+const hhmm = (v) => { const x = ((v % 1440) + 1440) % 1440; return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; };
+/** 타임 시작 시각 + 이벤트(행사·식사) 자리 — 앱 schedule.tournamentSchedule 과 같은 계산.
+ *  이벤트와 겹치는 타임은 이벤트가 끝난 뒤로 밀린다. 시작 시간을 안 정했으면 시각 없음 */
+function scheduleOf(timing, maxRound) {
+  const s0 = mins(timing?.startTime);
+  if (s0 == null) return { start: () => '', events: [] };
   const per = Math.min(180, Math.max(5, Number(timing.roundMinutes) || 30));
-  const v = ((+m[1] * 60 + +m[2] + (Number(round) - 1) * per) % 1440 + 1440) % 1440;
-  return `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`;
+  const evs = (timing.events || []).map((e) => {
+    let a = mins(e?.startTime);
+    if (a == null) return null;
+    if (a < s0 - 180) a += 1440;
+    const len = Math.min(600, Math.max(5, Number(e?.minutes) || 60));
+    return { name: String(e?.name || '').trim() || '이벤트', a, b: a + len };
+  }).filter(Boolean).sort((x, y) => x.a - y.a);
+  const starts = {};
+  let cur = s0;
+  for (let r = 1; r <= maxRound; r += 1) {
+    let moved = true;
+    while (moved) { moved = false; evs.forEach((e) => { if (e.a < cur + per && e.b > cur) { cur = e.b; moved = true; } }); }
+    starts[r] = cur;
+    cur += per;
+  }
+  return {
+    start: (r) => (starts[r] != null ? hhmm(starts[r]) : ''),
+    events: evs.map((e) => {
+      const next = Object.keys(starts).map(Number).sort((x, y) => x - y).find((r) => starts[r] >= e.a);
+      return { name: e.name, start: hhmm(e.a), end: hhmm(e.b), beforeRound: next || null };
+    }),
+  };
 }
 
 /** 대회 문서 → 팀·경기 (2팀·3팀 공통 모양) */
@@ -109,6 +133,8 @@ export function teamLiveView(t, clubName = '') {
 
   const byRound = {};
   const types = {};
+  const maxRound = matches.reduce((n, m) => Math.max(n, Number(m.round) || 0), 0);
+  const sch = scheduleOf(t?.timing, maxRound);
   [...matches]
     .sort((x, y) => (Number(x.round) - Number(y.round)) || (Number(x.court) - Number(y.court)))
     .forEach((m) => {
@@ -137,7 +163,9 @@ export function teamLiveView(t, clubName = '') {
     standings: standings.map(({ idx, name, color, white, players, played, wins, draws, losses, gf, ga, diff, rank }) => ({
       idx, name, color, white, players, played, wins, draws, losses, gf, ga, diff, rank,
     })),
-    rounds: Object.keys(byRound).map(Number).sort((a, b) => a - b).map((r) => ({ round: r, time: roundStart(t?.timing, r), matches: byRound[r] })),
+    rounds: Object.keys(byRound).map(Number).sort((a, b) => a - b).map((r) => ({ round: r, time: sch.start(r), matches: byRound[r] })),
+    /* 행사·식사 — beforeRound 타임 앞에 띠로(끝이면 null) */
+    events: sch.events,
     total: matches.length,
     done: matches.filter((m) => m.score).length,
     types,

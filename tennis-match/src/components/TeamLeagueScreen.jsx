@@ -27,7 +27,7 @@ import {
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { CourtNamesEditor } from './CourtNamesEditor';
 import { RoundTimingEditor } from './RoundTimingEditor';
-import { tournamentRoundTimes, timingRounds } from '../lib/schedule';
+import { tournamentRoundTimes, timingRounds, tournamentSchedule } from '../lib/schedule';
 import { courtLabel } from '../lib/courtNames';
 import { TEAM_ROUND_TYPES } from '../lib/teamMatch';
 import { busuToNtrp } from '../lib/constants';
@@ -116,6 +116,8 @@ export function TeamLeague({
   /* 타임별 시각 — 대회 시간(timing)을 정했을 때만. 대진표·출전 현황·내 경기에 같이 쓴다 */
   const gridRounds = gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).rounds;
   const times = useMemo(() => tournamentRoundTimes(timing, gridRounds), [timing, gridRounds]);
+  /* 이벤트(행사·식사) — 대진표 타임 사이 노란 띠(MatchGrid events) */
+  const evBands = useMemo(() => tournamentSchedule(timing, gridRounds).events, [timing, gridRounds]);
   const timeOf = (r) => times.find((t) => t.round === Number(r)) || null;
   const teamIdxOf = useMemo(() => {
     const map = {};
@@ -743,7 +745,7 @@ export function TeamLeague({
               return { id: m.id, round: m.round, time: timeOf(m.round), court: cn(m.court), type: m.type, mine, opp, score: m.score, mineIsA };
             })} />
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} me={me} roundTimes={times}
+            <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} me={me} roundTimes={times} events={evBands}
               sideOf={(m, side) => look(side === 'A' ? m.teamAIdx : m.teamBIdx)}
               roundCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).rounds} courtCount={gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).courts}
               onPressEmpty={isAdmin && mode === BOARD_MODE.EDIT && !multi ? addAt : undefined}

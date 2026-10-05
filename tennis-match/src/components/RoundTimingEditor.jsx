@@ -9,13 +9,16 @@
    타임 수가 계산되면 onRounds 로 알려 [타임 수] 칸을 맞춘다.
    시작 시간을 비워 두면 대진표에 시각을 그리지 않는다(예전 그대로).
    ============================================================ */
-import React from 'react';
-import { View, Text } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, Pressable } from 'react-native';
 import { Label, TimeField } from './pickers';
 import { RoundMinutesPicker } from './RoundMinutesPicker';
-import { Chip } from './ui';
+import { Chip, Field, Btn } from './ui';
 import { C } from '../lib/theme';
-import { toMinutes, tournamentRoundTimes, timingRounds, TOURNAMENT_ROUND_MINUTES } from '../lib/schedule';
+import {
+  toMinutes, toHHMM, tournamentRoundTimes, timingRounds, TOURNAMENT_ROUND_MINUTES, normalizeEvents, EVENT_MINUTES,
+} from '../lib/schedule';
+import { EVENT_COLOR, eventIcon } from './MatchGrid';
 
 /**
  * @param value    { startTime, endTime, roundMinutes } | null
@@ -26,22 +29,37 @@ export function RoundTimingEditor({ value, onSave, onRounds }) {
   const startTime = value?.startTime || '';
   const endTime = value?.endTime || '';
   const roundMinutes = Number(value?.roundMinutes) || TOURNAMENT_ROUND_MINUTES;
+  const events = value?.events || [];
+  /* 이벤트 입력 칸 — null 이면 닫힘. id 가 있으면 고치는 중 */
+  const [ev, setEv] = useState(null);
   const save = (patch) => {
-    const next = { startTime, endTime, roundMinutes, ...patch };
+    const next = { startTime, endTime, roundMinutes, events, ...patch };
     onSave(next);
     const n = timingRounds(next);
     if (n) onRounds?.(n);
   };
-  const n = timingRounds({ startTime, endTime, roundMinutes });
-  const times = n ? tournamentRoundTimes({ startTime, roundMinutes }, n) : [];
+  const n = timingRounds({ startTime, endTime, roundMinutes, events });
+  const times = n ? tournamentRoundTimes({ startTime, roundMinutes, events }, n) : [];
   const last = times[times.length - 1];
   /* 나누어떨어지지 않으면 남는 시간 — 마지막 타임 뒤 몇 분이 빈다 */
   let left = 0;
   if (last) {
     let span = toMinutes(endTime) - toMinutes(startTime);
     if (span <= 0) span += 1440;
-    left = span - n * roundMinutes;
+    /* 마지막 타임이 끝난 뒤 종료까지 남는 시간(이벤트로 밀린 것까지 반영) */
+    let lastEnd = toMinutes(last.end) - toMinutes(startTime);
+    if (lastEnd <= 0) lastEnd += 1440;
+    left = Math.max(0, span - lastEnd);
   }
+  const evList = normalizeEvents({ events });
+  const saveEvent = () => {
+    if (!ev || toMinutes(ev.startTime) == null) return;
+    const item = { id: ev.id || `ev${Date.now().toString(36)}`, name: String(ev.name || '').trim() || '이벤트', startTime: ev.startTime, minutes: ev.minutes };
+    const rest = events.filter((x) => x.id !== item.id);
+    save({ events: [...rest, item] });
+    setEv(null);
+  };
+  const removeEvent = (id) => save({ events: events.filter((x) => x.id !== id) });
   return (
     <View>
       <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -66,7 +84,53 @@ export function RoundTimingEditor({ value, onSave, onRounds }) {
               ? '종료 시간을 정하면 타임 수가 저절로 맞춰집니다.'
               : '정하면 대진표 타임 아래에 시각이 나옵니다.'}
         </Text>
-        {!!(startTime || endTime) && <Chip tone="outline" onPress={() => onSave(null)}>시간 지우기</Chip>}
+        {!!(startTime || endTime) && (
+          <Chip tone="outline" onPress={() => onSave(events.length ? { roundMinutes, events } : null)}>시간 지우기</Chip>
+        )}
+      </View>
+
+      {/* 이벤트 — 행사·식사·시상식. 그 시간만큼 경기 타임이 뒤로 밀리고 대진표에 노란 띠로 보인다 */}
+      <View style={{ marginTop: 14 }}>
+        <Label hint="개회식·점심·시상식 — 그 시간엔 경기를 넣지 않습니다">이벤트</Label>
+        {evList.map((e) => (
+          <Pressable key={e.id}
+            onPress={() => { const src = events.find((x) => x.id === e.id) || {}; setEv({ id: e.id, name: src.name || e.name, startTime: src.startTime, minutes: e.minutes }); }}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6, paddingVertical: 9, paddingHorizontal: 10,
+              backgroundColor: EVENT_COLOR.bg, borderLeftWidth: 4, borderLeftColor: EVENT_COLOR.bar, borderRadius: 8,
+            }}>
+            <Text style={{ fontSize: 14 }}>{eventIcon(e.name)}</Text>
+            <Text style={{ flex: 1, fontSize: 13, fontWeight: '800', color: EVENT_COLOR.ink }}>
+              {e.name} <Text style={{ fontWeight: '600', color: EVENT_COLOR.bar }}>{toHHMM(e.start)}~{toHHMM(e.start + e.minutes)} · {e.minutes}분</Text>
+            </Text>
+            <Chip tone="outline" onPress={() => removeEvent(e.id)}>삭제</Chip>
+          </Pressable>
+        ))}
+        {!ev ? (
+          <Btn small tone="soft" onPress={() => setEv({ name: '', startTime: '', minutes: EVENT_MINUTES })}>＋ 이벤트 추가</Btn>
+        ) : (
+          <View style={{ borderWidth: 1.5, borderColor: EVENT_COLOR.bar, borderRadius: 12, padding: 12, backgroundColor: '#FFFBEB' }}>
+            <Label>이벤트 이름</Label>
+            <Field placeholder="예: 개회식 · 점심 식사 · 시상식" value={ev.name} onChangeText={(v) => setEv({ ...ev, name: v })} />
+            <View style={{ marginTop: 10 }}>
+              <Label>시작 시간</Label>
+              <TimeField value={ev.startTime} placeholder="시작 시간 고르기" onChange={(v) => setEv({ ...ev, startTime: v })} />
+            </View>
+            <View style={{ marginTop: 10 }}>
+              <Label>걸리는 시간</Label>
+              <RoundMinutesPicker value={ev.minutes} onChange={(m) => setEv({ ...ev, minutes: m })} />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Btn full small disabled={toMinutes(ev.startTime) == null} onPress={saveEvent}>{ev.id ? '고친 것 저장' : '이벤트 저장'}</Btn>
+              </View>
+              <Btn small tone="ghost" onPress={() => setEv(null)}>취소</Btn>
+            </View>
+            {!startTime && (
+              <Text style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>대회 시작 시간을 정해야 대진표에 시각과 이벤트가 나옵니다.</Text>
+            )}
+          </View>
+        )}
       </View>
     </View>
   );

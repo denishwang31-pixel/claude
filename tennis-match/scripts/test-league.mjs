@@ -399,6 +399,37 @@ section('대회 시간 — 시작 시간 · 한 타임 길이 → 타임 아래 
   ok(/r\.time \? '<small class="rt">'/.test(readFileSync(new URL('../web/live.html', import.meta.url), 'utf8')), '공개 웹 대진표도 타임 아래 시각');
 }
 
+section('대회 이벤트 — 행사·식사 시간엔 경기를 밀고 대진표에 띠로');
+{
+  /* 2026-10-05 앱 주인: 처음·중간·마지막에 행사나 식사 같은 이벤트 — 이름·시간을 정하면 그 타임을 블락, 색도 다르게 */
+  const { tournamentSchedule, timingRounds, tournamentRoundTimes, normalizeEvents } = await import('../src/lib/schedule.js');
+  const T = { startTime: '09:00', endTime: '14:00', roundMinutes: 40, events: [
+    { id: 'a', name: '개회식', startTime: '08:40', minutes: 20 },
+    { id: 'b', name: '점심', startTime: '11:30', minutes: 60 },
+    { id: 'c', name: '시상식', startTime: '13:40', minutes: 20 },
+  ] };
+  const S = tournamentSchedule(T, 5);
+  eq('점심과 겹치는 타임은 점심 뒤로 밀린다', S.times.map((x) => x.start).join(' '), '09:00 09:40 10:20 12:30 14:00');
+  eq('이벤트 자리 — 개회식은 1타임 앞, 점심은 4타임 앞, 시상식은 5타임 앞', S.events.map((e) => `${e.name}@${e.beforeRound}`).join(' '), '개회식@1 점심@4 시상식@5');
+  eq('종료 시간 안에 실제로 들어가는 타임만 센다(이벤트로 밀린 만큼 줄어듦)', timingRounds(T), 4);
+  eq('이벤트가 없으면 예전 계산 그대로', timingRounds({ startTime: '09:00', endTime: '13:00', roundMinutes: 40 }), 6);
+  eq('마지막 타임 뒤 이벤트는 자리 없음(null → 맨 아래)', tournamentSchedule({ startTime: '09:00', roundMinutes: 30, events: [{ name: '뒤풀이', startTime: '11:00', minutes: 90 }] }, 2).events[0].beforeRound, null);
+  eq('시각 목록도 밀린 시각으로', tournamentRoundTimes(T, 4)[3].start, '12:30');
+  eq('시간을 안 고른 이벤트는 뺀다', normalizeEvents({ events: [{ name: 'x' }, { name: '점심', startTime: '12:00' }] }).length, 1);
+  const lv = teamLiveView({ stage: 'team', format: 'blue_white', timing: T, team: { teamA: [P('a1', '청1', 'M')], teamB: [P('b1', '백1', 'M')], matches: [
+    { round: 1, court: 1, teamA: ['a1'], teamB: ['b1'] }, { round: 4, court: 1, teamA: ['a1'], teamB: ['b1'] }] } });
+  ok(lv.rounds[1].time === '12:30' && lv.events.find((e) => e.name === '점심')?.beforeRound === 4, '공개 링크도 같은 계산(4타임 12:30, 점심은 4타임 앞)');
+  const mg = readFileSync(new URL('../src/components/MatchGrid.jsx', import.meta.url), 'utf8');
+  ok(/export function EventBand/.test(mg) && /\(events \|\| \[\]\)\.filter\(\(e\) => e\.beforeRound === r\)/.test(mg) && /EVENT_COLOR = \{ bg: '#FEF3C7', bar: '#D97706'/.test(mg), '앱 대진표: 이벤트를 그 타임 앞에 노란 띠로');
+  const ed = readFileSync(new URL('../src/components/RoundTimingEditor.jsx', import.meta.url), 'utf8');
+  ok(mg.indexOf("if (/개회|개막") > 0 && mg.indexOf("if (/개회|개막") < mg.indexOf("if (/식사|점심"), '아이콘: 개회식을 식사보다 먼저 본다(개회식에 "회식"이 들어 있다)');
+  ok(/＋ 이벤트 추가/.test(ed) && /이벤트 이름/.test(ed) && /걸리는 시간/.test(ed) && /removeEvent/.test(ed), '대진 설정: 이벤트 추가(이름·시작 시간·걸리는 시간)·고치기·삭제');
+  for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
+    ok(/events=\{evBands\}/.test(readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8')), `${f}: 대진표에 이벤트 띠`);
+  }
+  ok(/tr class="ev"/.test(readFileSync(new URL('../web/live.html', import.meta.url), 'utf8')), '공개 웹 대진표에도 이벤트 띠');
+}
+
 section('공개 웹 링크 — 내 경기 찾기');
 {
   /* 2026-10-04 앱 주인: 웹으로 받은 사람도 이름을 검색하면 앱의 '내 경기'와 같은 효과 */
