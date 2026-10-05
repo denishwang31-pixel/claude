@@ -464,10 +464,24 @@ section('설치 페이지 — 실시간 경기 현황(초대코드로 그 클럽
   ok(L[0].time === '09:00' && L[0].status === 'ongoing' && L[2].status === 'finished', '시작 시간·진행/종료');
   ok(!JSON.stringify(L).includes('비공개 이름'), '명단·결과는 내보내지 않는다(이름·날짜·링크 id 만)');
   eq('최대 5개', publicTournamentList(Array.from({ length: 9 }, (_, i) => ({ id: 'x' + i, publicView: true })), '2026-10-05').length, 5);
+  /* 초대코드 없이 /app 만 열었을 때 — 공개 대회 중 오늘 전후 하루, 클럽 이름과 함께 */
+  const { todayPublicTournaments } = await import('../src/lib/teamLive.js');
+  const T = todayPublicTournaments([
+    { id: 'x1', c: 'k1', club: '써티포티', name: '오늘 청백전', date: '2026-10-05', publicView: true },
+    { id: 'x2', c: 'k2', club: '다른클럽', name: '어제 끝난 리그', date: '2026-10-04', status: 'finished', publicView: true },
+    { id: 'x3', c: 'k1', club: '써티포티', name: '끝내기를 잊은 지난주 대회', date: '2026-09-28', publicView: true },
+    { id: 'x4', c: 'k1', club: '써티포티', name: '공개 안 함', date: '2026-10-05', publicView: false },
+  ], '2026-10-05');
+  ok(T.length === 2 && T[0].t === 'x1' && T[0].c === 'k1' && T[0].club === '써티포티' && T[1].t === 'x2', '코드 없이: 오늘 전후 하루의 공개 대회만, 클럽 이름·링크와 함께(지난주 진행 중은 뺀다)');
   const fx = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  ok(/req\.query\?\.list === 'today'/.test(fx) && /collectionGroup\('tournaments'\)\.where\('publicView', '==', true\)/.test(fx), '서버: 코드 없이 열면 공개 대회(오늘)만');
+  const ix = JSON.parse(readFileSync(new URL('../firestore.indexes.json', import.meta.url), 'utf8'));
+  ok((ix.fieldOverrides || []).some((f) => f.collectionGroup === 'tournaments' && f.fieldPath === 'publicView' && f.indexes.some((i) => i.queryScope === 'COLLECTION_GROUP')), '색인: 모든 클럽의 대회에서 공개 여부로 찾기');
+  ok(/\[hidden\] \{ display: none !important; \}/.test(readFileSync(new URL('../web/app.html', import.meta.url), 'utf8')), '코드 없이 열면 빈 초대코드 상자를 숨긴다');
+  ok(/fetch\('\/api\/live\?list=today'/.test(readFileSync(new URL('../web/app.html', import.meta.url), 'utf8')), '설치 페이지: 코드 없이 열어도 오늘 대회 링크');
   ok(/if \(req\.query\?\.code != null\)/.test(fx) && /collection\('inviteCodes'\)\.doc\(code\)/.test(fx) && /where\('publicView', '==', true\)/.test(fx), '서버: 초대코드가 맞을 때만, 공개를 켠 대회만');
   const ap = readFileSync(new URL('../web/app.html', import.meta.url), 'utf8');
-  ok(/실시간 경기 현황/.test(ap) && /fetch\('\/api\/live\?code='/.test(ap) && /'\/live\?c=' \+ encodeURIComponent\(j\.c\)/.test(ap), '설치 페이지: 공개 대회마다 [현황 보기] 링크');
+  ok(/실시간 경기 현황/.test(ap) && /fetch\('\/api\/live\?code='/.test(ap) && /'\/live\?c=' \+ encodeURIComponent\(c\)/.test(ap) && /liveRow\(j\.c, x, ''\)/.test(ap), '설치 페이지: 공개 대회마다 [현황 보기] 링크');
   ok(ap.indexOf("fetch('/api/live?code=") < ap.indexOf("if (ios) { dl.textContent"), '아이폰에서도 현황 링크는 보인다');
 }
 

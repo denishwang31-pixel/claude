@@ -938,6 +938,18 @@ exports.liveTournament = onRequest({ ...REGION, cors: true, maxInstances: 5 }, a
       const list = publicTournamentList(ts.docs.map((d) => ({ id: d.id, ...d.data() })), today);
       return res.json({ ok: true, club: String(cs.data()?.name || ''), c: cid, list });
     }
+    /* 설치 페이지를 초대코드 없이 열었을 때(/app) — 공개를 켠 대회 중 오늘 전후 하루 안의 것(클럽 이름과 함께).
+       ⚠️ 공개를 켠 대회만. 이름·날짜·진행 여부·클럽 이름·링크 id 만 준다 */
+    if (req.query?.list === 'today') {
+      const { todayPublicTournaments } = await import('./shared/teamLive.js');
+      const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+      const qs = await db.collectionGroup('tournaments').where('publicView', '==', true).get();
+      const raw = qs.docs.map((d) => ({ id: d.id, c: d.ref.parent.parent?.id || '', ...d.data() }));
+      const cids = [...new Set(raw.map((t) => t.c).filter(Boolean))].slice(0, 30);
+      const names = {};
+      await Promise.all(cids.map(async (cid) => { names[cid] = String((await db.collection('clubs').doc(cid).get()).data()?.name || ''); }));
+      return res.json({ ok: true, list: todayPublicTournaments(raw.map((t) => ({ ...t, club: names[t.c] || '' })), today) });
+    }
     const clubId = String(req.query?.c || '');
     const tid = String(req.query?.t || '');
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(clubId) || !/^[A-Za-z0-9_-]{1,64}$/.test(tid)) return fail(400, '링크 주소가 잘못되었습니다.');

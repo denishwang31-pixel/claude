@@ -19,6 +19,8 @@
 <style>
   :root { --green: #0E6B4F; --green2: #10B981; --soft: #E8F8F2; --ink: #0F172A; --sub: #475569; --faint: #94A3B8; --line: #E2E8F0; --bg: #F8FAFC; --warn: #B45309; }
   * { box-sizing: border-box; }
+  /* hidden 이 display:flex 등에 덮이지 않게 — 초대코드 없이 열면 빈 코드 상자가 보였다 */
+  [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--bg); color: var(--ink);
     font-family: -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif; -webkit-text-size-adjust: 100%; word-break: keep-all; }
   .wrap { max-width: 520px; margin: 0 auto; padding: 24px 16px 48px; }
@@ -121,8 +123,25 @@
   }
 
   /* 실시간 경기 현황 — 이 클럽이 공개한 대회(초대코드로 찾는다) */
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (x) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[x]; }); };
+  var liveRow = function (c, x, club) {
+    var href = '/live?c=' + encodeURIComponent(c) + '&t=' + encodeURIComponent(x.t);
+    var on = x.status !== 'finished';
+    return '<a class="lv' + (on ? ' on' : ' end') + '" href="' + href + '"><span class="dot"></span><div><b>' + esc(x.name) + '</b>' +
+      '<span>' + (club ? esc(club) + ' · ' : '') + esc(x.date) + (x.time ? ' ' + esc(x.time) : '') + ' · ' + (on ? '진행 중' : '끝남') + '</span></div><span class="go">' + (on ? '현황 보기' : '결과 보기') + '</span></a>';
+  };
+  var tip = '<p class="note">링크 맨 위 [내 경기 찾기]에 이름을 넣으면 내 경기만 모아 보입니다.</p>';
+  /* 초대코드 없이 열었을 때 — 공개를 켠 오늘(전후 하루) 대회를 클럽 이름과 함께 */
+  if (!code) {
+    fetch('/api/live?list=today', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok || !j.list || !j.list.length) return;
+        document.getElementById('livelist').innerHTML = j.list.map(function (x) { return liveRow(x.c, x, x.club); }).join('') + tip;
+      })
+      .catch(function () { /* 못 읽어도 안내 문구는 그대로 */ });
+  }
   if (code) {
-    var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (x) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[x]; }); };
     var box = document.getElementById('livelist');
     fetch('/api/live?code=' + encodeURIComponent(code), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
@@ -132,12 +151,7 @@
           box.innerHTML = '<p class="note" style="margin:0">지금 공개된 대회가 없습니다. 운영진이 대회를 공개하면 여기에 나타납니다.</p>';
           return;
         }
-        box.innerHTML = j.list.map(function (x) {
-          var href = '/live?c=' + encodeURIComponent(j.c) + '&t=' + encodeURIComponent(x.t);
-          var on = x.status !== 'finished';
-          return '<a class="lv' + (on ? ' on' : ' end') + '" href="' + href + '"><span class="dot"></span><div><b>' + esc(x.name) + '</b>' +
-            '<span>' + esc(x.date) + (x.time ? ' ' + esc(x.time) : '') + ' · ' + (on ? '진행 중' : '끝남') + '</span></div><span class="go">' + (on ? '현황 보기' : '결과 보기') + '</span></a>';
-        }).join('') + '<p class="note">링크 맨 위 [내 경기 찾기]에 이름을 넣으면 내 경기만 모아 보입니다.</p>';
+        box.innerHTML = j.list.map(function (x) { return liveRow(j.c, x, ''); }).join('') + tip;
       })
       .catch(function () { /* 못 읽어도 안내 문구는 그대로 */ });
   }

@@ -163,6 +163,7 @@ export function publicTournamentList(list, today) {
       date: String(t.date || ''),
       time: String(t.timing?.startTime || ''),
       status: t.status === 'finished' ? 'finished' : 'ongoing',
+      ...(t.c ? { c: String(t.c), club: String(t.club || '') } : {}),
     }))
     .filter((r) => r.status === 'ongoing' || (t0 && day(r.date) && t0 - day(r.date) <= 7 * 86400000));
   const gap = (r) => Math.abs(day(r.date) - t0);
@@ -170,4 +171,17 @@ export function publicTournamentList(list, today) {
   return rows.slice(0, 5);
 }
 
-export default { teamLiveView, teamsAndMatches, publicTournamentList };
+/**
+ * 초대코드 없이 /app 만 열었을 때 — 어느 클럽인지 모르므로, 공개를 켠 대회 중 오늘 전후 하루 안의 것만
+ * 클럽 이름과 함께(2026-10-05 앱 주인: "앱 다운로드 링크에서 클릭하면 들어갈 수 있게").
+ * 날짜가 지난 '진행 중'(끝내기를 잊은 대회)이 끝없이 남지 않게 진행 여부와 상관없이 날짜로 자른다.
+ * @param list   [{ id, c(클럽 id), club(클럽 이름), ...대회 문서 }]
+ */
+export function todayPublicTournaments(list, today) {
+  const day = (s) => Date.parse(`${String(s || '').slice(0, 10)}T00:00:00Z`) || 0;
+  const t0 = day(today);
+  const near = (Array.isArray(list) ? list : []).filter((t) => t && t.c && day(t.date) && Math.abs(day(t.date) - t0) <= 86400000);
+  return publicTournamentList(near, today);
+}
+
+export default { teamLiveView, teamsAndMatches, publicTournamentList, todayPublicTournaments };
