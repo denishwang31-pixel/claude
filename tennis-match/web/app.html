@@ -39,6 +39,13 @@
   .note { font-size: 12.5px; color: var(--faint); line-height: 1.6; margin-top: 8px; }
   .warn { background: #FFFBEB; border-color: #FDE68A; }
   .warn h2 { color: var(--warn); }
+  .lv { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); padding: 12px; border-radius: 12px; border: 1.5px solid var(--line); margin-top: 8px; }
+  .lv b { display: block; font-size: 15px; }
+  .lv span { font-size: 12px; color: var(--sub); }
+  .lv .go { margin-left: auto; font-size: 13px; font-weight: 800; color: #fff; background: var(--green); padding: 7px 12px; border-radius: 999px; white-space: nowrap; }
+  .lv.on { border-color: var(--green2); background: var(--soft); }
+  .lv .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--green2); flex: none; }
+  .lv.end .dot { background: var(--faint); }
   .foot { font-size: 12px; color: var(--faint); text-align: center; margin-top: 24px; }
 </style>
 </head>
@@ -60,6 +67,12 @@
   <div class="code" id="codebox" hidden>
     <div><div style="font-size:12px;color:var(--sub);font-weight:700">우리 클럽 초대코드</div><b id="code"></b></div>
     <button id="copy">복사</button>
+  </div>
+
+  <!-- 실시간 경기 현황 — 초대코드로 그 클럽이 공개한 대회를 찾아 /live 링크로(/api/live?code=) -->
+  <div class="card" id="livebox">
+    <h2>🎾 실시간 경기 현황</h2>
+    <div id="livelist"><p class="note" style="margin:0">대진표·결과·내 경기는 운영진이 보내 주는 <b>대회 링크</b>에서 앱 없이도 볼 수 있습니다.</p></div>
   </div>
 
   <div class="card" id="iphone" hidden>
@@ -105,6 +118,28 @@
       if (navigator.clipboard) navigator.clipboard.writeText(code).then(done, function () {});
       else { var t = document.createElement('textarea'); t.value = code; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); done(); } catch (e) {} document.body.removeChild(t); }
     };
+  }
+
+  /* 실시간 경기 현황 — 이 클럽이 공개한 대회(초대코드로 찾는다) */
+  if (code) {
+    var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (x) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[x]; }); };
+    var box = document.getElementById('livelist');
+    fetch('/api/live?code=' + encodeURIComponent(code), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) return;
+        if (!j.list || !j.list.length) {
+          box.innerHTML = '<p class="note" style="margin:0">지금 공개된 대회가 없습니다. 운영진이 대회를 공개하면 여기에 나타납니다.</p>';
+          return;
+        }
+        box.innerHTML = j.list.map(function (x) {
+          var href = '/live?c=' + encodeURIComponent(j.c) + '&t=' + encodeURIComponent(x.t);
+          var on = x.status !== 'finished';
+          return '<a class="lv' + (on ? ' on' : ' end') + '" href="' + href + '"><span class="dot"></span><div><b>' + esc(x.name) + '</b>' +
+            '<span>' + esc(x.date) + (x.time ? ' ' + esc(x.time) : '') + ' · ' + (on ? '진행 중' : '끝남') + '</span></div><span class="go">' + (on ? '현황 보기' : '결과 보기') + '</span></a>';
+        }).join('') + '<p class="note">링크 맨 위 [내 경기 찾기]에 이름을 넣으면 내 경기만 모아 보입니다.</p>';
+      })
+      .catch(function () { /* 못 읽어도 안내 문구는 그대로 */ });
   }
 
   /* 설치 파일이 올라가 있는지 — 배포가 적어 둔 app-info.json */

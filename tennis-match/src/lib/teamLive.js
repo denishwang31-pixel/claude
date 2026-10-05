@@ -144,4 +144,30 @@ export function teamLiveView(t, clubName = '') {
   };
 }
 
-export default { teamLiveView, teamsAndMatches };
+/**
+ * 설치 페이지(/app?code=초대코드)의 [실시간 경기 현황] — 그 클럽이 공개한 대회 목록
+ * (2026-10-05 앱 주인: "설치 화면에 실시간 경기 현황 보기 링크도 같이").
+ * 진행 중인 대회 먼저(날짜 가까운 순), 끝난 대회는 7일 안의 것만. 최대 5개.
+ * ⚠️ 내보내는 것: 대회 이름·날짜·진행/종료·링크에 쓸 id 뿐. 명단·결과는 /live 가 따로 준다.
+ * @param list   [{ id, ...대회 문서 }]  (publicView 가 켜진 것만 넘어오지만 여기서도 거른다)
+ * @param today  'YYYY-MM-DD' (KST)
+ */
+export function publicTournamentList(list, today) {
+  const day = (s) => Date.parse(`${String(s || '').slice(0, 10)}T00:00:00Z`) || 0;
+  const t0 = day(today);
+  const rows = (Array.isArray(list) ? list : [])
+    .filter((t) => t && t.publicView === true && t.id)
+    .map((t) => ({
+      t: String(t.id),
+      name: String(t.name || '대회'),
+      date: String(t.date || ''),
+      time: String(t.timing?.startTime || ''),
+      status: t.status === 'finished' ? 'finished' : 'ongoing',
+    }))
+    .filter((r) => r.status === 'ongoing' || (t0 && day(r.date) && t0 - day(r.date) <= 7 * 86400000));
+  const gap = (r) => Math.abs(day(r.date) - t0);
+  rows.sort((a, b) => (a.status === b.status ? 0 : a.status === 'ongoing' ? -1 : 1) || gap(a) - gap(b) || b.date.localeCompare(a.date));
+  return rows.slice(0, 5);
+}
+
+export default { teamLiveView, teamsAndMatches, publicTournamentList };

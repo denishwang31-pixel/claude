@@ -923,6 +923,21 @@ exports.liveTournament = onRequest({ ...REGION, cors: true, maxInstances: 5 }, a
   const fail = (status, message) => res.status(status).json({ ok: false, message });
   try {
     if (req.method !== 'GET') return fail(405, '지원하지 않는 요청입니다.');
+    /* 설치 페이지(/app?code=초대코드) — 그 클럽이 공개한 대회 목록(shared/teamLive.js publicTournamentList).
+       ⚠️ 초대코드가 맞을 때만, 공개를 켠 대회만. 이름·날짜·진행 여부·링크 id 만 준다 */
+    if (req.query?.code != null) {
+      const code = String(req.query.code || '').toUpperCase();
+      if (!/^[A-Z0-9]{4,12}$/.test(code)) return fail(400, '초대코드가 잘못되었습니다.');
+      const inv = await db.collection('inviteCodes').doc(code).get();
+      const cid = inv.exists ? String(inv.data()?.clubId || '') : '';
+      if (!cid) return fail(404, '초대코드를 찾지 못했습니다.');
+      const cref = db.collection('clubs').doc(cid);
+      const [cs, ts] = await Promise.all([cref.get(), cref.collection('tournaments').where('publicView', '==', true).get()]);
+      const { publicTournamentList } = await import('./shared/teamLive.js');
+      const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+      const list = publicTournamentList(ts.docs.map((d) => ({ id: d.id, ...d.data() })), today);
+      return res.json({ ok: true, club: String(cs.data()?.name || ''), c: cid, list });
+    }
     const clubId = String(req.query?.c || '');
     const tid = String(req.query?.t || '');
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(clubId) || !/^[A-Za-z0-9_-]{1,64}$/.test(tid)) return fail(400, '링크 주소가 잘못되었습니다.');

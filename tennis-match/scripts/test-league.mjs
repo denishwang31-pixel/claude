@@ -450,6 +450,27 @@ section('앱 설치 페이지(/app) — 누르면 바로 내려받는 APK');
     && !/스토어에서/.test(readFileSync(new URL('../src/lib/invite.js', import.meta.url), 'utf8')), '초대 문구: "스토어에서 받으라" 대신 설치 페이지 주소');
 }
 
+section('설치 페이지 — 실시간 경기 현황(초대코드로 그 클럽의 공개 대회)');
+{
+  const { publicTournamentList } = await import('../src/lib/teamLive.js');
+  const L = publicTournamentList([
+    { id: 'a', name: '지난달 대회', date: '2026-09-01', status: 'finished', publicView: true },
+    { id: 'b', name: '어제 끝난 대회', date: '2026-10-04', status: 'finished', publicView: true },
+    { id: 'c', name: '오늘 청백전', date: '2026-10-05', publicView: true, timing: { startTime: '09:00' }, roster: [{ name: '비공개 이름' }] },
+    { id: 'd', name: '공개 안 한 대회', date: '2026-10-05', publicView: false },
+    { id: 'e', name: '다음 주 대회', date: '2026-10-12', publicView: true },
+  ], '2026-10-05');
+  eq('진행 중 먼저(날짜 가까운 순), 끝난 건 7일 안만, 공개 안 한 건 빼고', L.map((x) => x.t).join(','), 'c,e,b');
+  ok(L[0].time === '09:00' && L[0].status === 'ongoing' && L[2].status === 'finished', '시작 시간·진행/종료');
+  ok(!JSON.stringify(L).includes('비공개 이름'), '명단·결과는 내보내지 않는다(이름·날짜·링크 id 만)');
+  eq('최대 5개', publicTournamentList(Array.from({ length: 9 }, (_, i) => ({ id: 'x' + i, publicView: true })), '2026-10-05').length, 5);
+  const fx = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  ok(/if \(req\.query\?\.code != null\)/.test(fx) && /collection\('inviteCodes'\)\.doc\(code\)/.test(fx) && /where\('publicView', '==', true\)/.test(fx), '서버: 초대코드가 맞을 때만, 공개를 켠 대회만');
+  const ap = readFileSync(new URL('../web/app.html', import.meta.url), 'utf8');
+  ok(/실시간 경기 현황/.test(ap) && /fetch\('\/api\/live\?code='/.test(ap) && /'\/live\?c=' \+ encodeURIComponent\(j\.c\)/.test(ap), '설치 페이지: 공개 대회마다 [현황 보기] 링크');
+  ok(ap.indexOf("fetch('/api/live?code=") < ap.indexOf("if (ios) { dl.textContent"), '아이폰에서도 현황 링크는 보인다');
+}
+
 section('DB 라이브러리 고장 — 하얀 화면 대신 앱을 다시 띄운다');
 {
   /* 2026-10-04 기록: 23:24:43 화면 /(tabs) → 23:24:44 "FIRESTORE (10.14.1) INTERNAL ASSERTION FAILED: Unexpected state".
