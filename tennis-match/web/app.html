@@ -131,7 +131,7 @@
       '<span>' + (club ? esc(club) + ' · ' : '') + esc(x.date) + (x.time ? ' ' + esc(x.time) : '') + ' · ' + (on ? '진행 중' : '끝남') + '</span></div><span class="go">' + (on ? '현황 보기' : '결과 보기') + '</span></a>';
   };
   var tip = '<p class="note">링크 맨 위 [내 경기 찾기]에 이름을 넣으면 내 경기만 모아 보입니다.</p>';
-  /* 초대코드 없이 열었을 때 — 공개를 켠 오늘(전후 하루) 대회를 클럽 이름과 함께 */
+  /* 초대코드 없이 열었을 때 — 공개를 켠 대회(오늘 전후 10일)를 클럽 이름과 함께 */
   if (!code) {
     fetch('/api/live?list=today', { cache: 'no-store' })
       .then(function (r) { return r.json(); })

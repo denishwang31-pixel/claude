@@ -152,7 +152,7 @@ export function teamLiveView(t, clubName = '') {
  * @param list   [{ id, ...대회 문서 }]  (publicView 가 켜진 것만 넘어오지만 여기서도 거른다)
  * @param today  'YYYY-MM-DD' (KST)
  */
-export function publicTournamentList(list, today) {
+export function publicTournamentList(list, today, finishedDays = 7) {
   const day = (s) => Date.parse(`${String(s || '').slice(0, 10)}T00:00:00Z`) || 0;
   const t0 = day(today);
   const rows = (Array.isArray(list) ? list : [])
@@ -165,23 +165,27 @@ export function publicTournamentList(list, today) {
       status: t.status === 'finished' ? 'finished' : 'ongoing',
       ...(t.c ? { c: String(t.c), club: String(t.club || '') } : {}),
     }))
-    .filter((r) => r.status === 'ongoing' || (t0 && day(r.date) && t0 - day(r.date) <= 7 * 86400000));
+    .filter((r) => r.status === 'ongoing' || (t0 && day(r.date) && t0 - day(r.date) <= finishedDays * 86400000));
   const gap = (r) => Math.abs(day(r.date) - t0);
   rows.sort((a, b) => (a.status === b.status ? 0 : a.status === 'ongoing' ? -1 : 1) || gap(a) - gap(b) || b.date.localeCompare(a.date));
   return rows.slice(0, 5);
 }
 
 /**
- * 초대코드 없이 /app 만 열었을 때 — 어느 클럽인지 모르므로, 공개를 켠 대회 중 오늘 전후 하루 안의 것만
- * 클럽 이름과 함께(2026-10-05 앱 주인: "앱 다운로드 링크에서 클릭하면 들어갈 수 있게").
+ * 초대코드 없이 /app 만 열었을 때 — 어느 클럽인지 모르므로, 공개를 켠 대회 중 오늘 전후 10일 안의 것만
+ * 클럽 이름과 함께(2026-10-05 앱 주인: "앱 다운로드 링크에서 클릭하면 들어갈 수 있게" →
+ * "오늘 전후 하루만 하지 말고 10일까지").
+ * 10일 안에서도 진행 중 먼저·날짜 가까운 순, 최대 5개(publicTournamentList).
  * 날짜가 지난 '진행 중'(끝내기를 잊은 대회)이 끝없이 남지 않게 진행 여부와 상관없이 날짜로 자른다.
  * @param list   [{ id, c(클럽 id), club(클럽 이름), ...대회 문서 }]
  */
-export function todayPublicTournaments(list, today) {
+export const OPEN_LIST_DAYS = 10;
+export function todayPublicTournaments(list, today, days = OPEN_LIST_DAYS) {
   const day = (s) => Date.parse(`${String(s || '').slice(0, 10)}T00:00:00Z`) || 0;
   const t0 = day(today);
-  const near = (Array.isArray(list) ? list : []).filter((t) => t && t.c && day(t.date) && Math.abs(day(t.date) - t0) <= 86400000);
-  return publicTournamentList(near, today);
+  const near = (Array.isArray(list) ? list : []).filter((t) => t && t.c && day(t.date) && Math.abs(day(t.date) - t0) <= days * 86400000);
+  /* publicTournamentList 는 끝난 대회를 7일 안만 남긴다 — 여기서는 같은 10일로 맞춘다 */
+  return publicTournamentList(near, today, days);
 }
 
 export default { teamLiveView, teamsAndMatches, publicTournamentList, todayPublicTournaments };

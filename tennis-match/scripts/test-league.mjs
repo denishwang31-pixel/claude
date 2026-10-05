@@ -472,9 +472,17 @@ section('설치 페이지 — 실시간 경기 현황(초대코드로 그 클럽
     { id: 'x3', c: 'k1', club: '써티포티', name: '끝내기를 잊은 지난주 대회', date: '2026-09-28', publicView: true },
     { id: 'x4', c: 'k1', club: '써티포티', name: '공개 안 함', date: '2026-10-05', publicView: false },
   ], '2026-10-05');
-  ok(T.length === 2 && T[0].t === 'x1' && T[0].c === 'k1' && T[0].club === '써티포티' && T[1].t === 'x2', '코드 없이: 오늘 전후 하루의 공개 대회만, 클럽 이름·링크와 함께(지난주 진행 중은 뺀다)');
+  ok(T.length === 3 && T[0].t === 'x1' && T[0].c === 'k1' && T[0].club === '써티포티' && T.map((x) => x.t).includes('x3') && T[T.length - 1].t === 'x2',
+    '코드 없이: 오늘 전후 10일 안의 공개 대회, 클럽 이름·링크와 함께(진행 중 먼저)');
+  const far = todayPublicTournaments([
+    { id: 'y1', c: 'k1', name: '열흘 뒤 대회', date: '2026-10-15', publicView: true },
+    { id: 'y2', c: 'k1', name: '열하루 뒤 대회', date: '2026-10-16', publicView: true },
+    { id: 'y3', c: 'k1', name: '열흘 전 끝난 대회', date: '2026-09-25', status: 'finished', publicView: true },
+    { id: 'y4', c: 'k1', name: '열하루 전 대회', date: '2026-09-24', publicView: true },
+  ], '2026-10-05');
+  eq('10일 경계: 10일 안은 넣고 11일은 뺀다(끝난 대회도 10일)', far.map((x) => x.t).sort().join(','), 'y1,y3');
   const fx = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
-  ok(/req\.query\?\.list === 'today'/.test(fx) && /collectionGroup\('tournaments'\)\.where\('publicView', '==', true\)/.test(fx), '서버: 코드 없이 열면 공개 대회(오늘)만');
+  ok(/req\.query\?\.list === 'today'/.test(fx) && /collectionGroup\('tournaments'\)\.where\('publicView', '==', true\)/.test(fx), '서버: 코드 없이 열면 공개 대회(오늘 전후 10일)만');
   const ix = JSON.parse(readFileSync(new URL('../firestore.indexes.json', import.meta.url), 'utf8'));
   ok((ix.fieldOverrides || []).some((f) => f.collectionGroup === 'tournaments' && f.fieldPath === 'publicView' && f.indexes.some((i) => i.queryScope === 'COLLECTION_GROUP')), '색인: 모든 클럽의 대회에서 공개 여부로 찾기');
   ok(/\[hidden\] \{ display: none !important; \}/.test(readFileSync(new URL('../web/app.html', import.meta.url), 'utf8')), '코드 없이 열면 빈 초대코드 상자를 숨긴다');

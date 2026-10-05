@@ -938,7 +938,7 @@ exports.liveTournament = onRequest({ ...REGION, cors: true, maxInstances: 5 }, a
       const list = publicTournamentList(ts.docs.map((d) => ({ id: d.id, ...d.data() })), today);
       return res.json({ ok: true, club: String(cs.data()?.name || ''), c: cid, list });
     }
-    /* 설치 페이지를 초대코드 없이 열었을 때(/app) — 공개를 켠 대회 중 오늘 전후 하루 안의 것(클럽 이름과 함께).
+    /* 설치 페이지를 초대코드 없이 열었을 때(/app) — 공개를 켠 대회 중 오늘 전후 10일 안의 것(클럽 이름과 함께).
        ⚠️ 공개를 켠 대회만. 이름·날짜·진행 여부·클럽 이름·링크 id 만 준다 */
     if (req.query?.list === 'today') {
       const { todayPublicTournaments } = await import('./shared/teamLive.js');
