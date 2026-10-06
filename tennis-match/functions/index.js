@@ -10,7 +10,7 @@ const {
 } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
 const { logger } = require('firebase-functions/v2');
 
@@ -1113,6 +1113,79 @@ exports.onMemberJobCreated = onDocumentCreated(
       logger.error('mergeOffline failed', event.params.clubId, e);
       await event.data.ref.update({ status: 'failed', reason: 'exception', detail: String((e && e.message) || e) }).catch(() => {});
     }
+  },
+);
+
+/* ============================================================
+   대회 되돌리기 — 앱의 운영진 버튼(clubs/{c}/restoreJobs) → 지난 시각 상태로 (2026-10-06)
+   서버 백업(PITR, 7일)은 서버에서만 지난 시각을 읽을 수 있다. 판단은 shared/restoreJob.js.
+     preview: 그 시각·지금 숫자만 / restore: 지금 상태를 tournamentBackups 에 남기고 그 시각 상태로 /
+     undo: 마지막으로 남긴 상태로(그 전에 지금 상태도 남긴다 — 취소도 취소할 수 있게)
+   ⚠️ 규칙이 운영진만 일감을 만들게 막지만, 여기서도 요청한 사람이 운영진인지 다시 본다.
+   ============================================================ */
+exports.onRestoreJobCreated = onDocumentCreated(
+  { ...REGION, document: 'clubs/{clubId}/restoreJobs/{jobId}', timeoutSeconds: 120 },
+  async (event) => {
+    const job = event.data?.data();
+    if (!job) return;
+    const done = (patch) => event.data.ref.update({ ...patch, doneAt: new Date() }).catch(() => {});
+    try {
+      const { restoreReadTime, tournamentCounts, isStaffDoc, RESTORE_TYPES } = await import('./shared/restoreJob.js');
+      if (!RESTORE_TYPES.includes(job.type)) return done({ status: 'failed', reason: '모르는 요청입니다.' });
+      const clubRef = db.collection('clubs').doc(event.params.clubId);
+      const [club, member] = await Promise.all([clubRef.get(), clubRef.collection('members').doc(String(job.by || '')).get()]);
+      if (!isStaffDoc(member.data(), club.data(), job.by)) return done({ status: 'failed', reason: '운영진만 되돌릴 수 있습니다.' });
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(job.tournamentId || ''))) return done({ status: 'failed', reason: '대회를 찾지 못했습니다.' });
+      const tRef = clubRef.collection('tournaments').doc(job.tournamentId);
+      const backups = clubRef.collection('tournamentBackups');
+      const nowSnap = await tRef.get();
+      const now = nowSnap.exists ? nowSnap.data() : null;
+      const keepNow = (reason) => (now
+        ? backups.doc(`${job.tournamentId}_${Date.now()}`).set({ tournamentId: job.tournamentId, savedAt: FieldValue.serverTimestamp(), by: job.by, reason, data: now })
+        : Promise.resolve());
+
+      if (job.type === 'undo') {
+        const list = (await backups.where('tournamentId', '==', job.tournamentId).get()).docs
+          .map((d) => ({ ref: d.ref, ...d.data() }))
+          .sort((a, b) => (b.savedAt?.toMillis?.() || 0) - (a.savedAt?.toMillis?.() || 0));
+        const last = list[0];
+        if (!last?.data) return done({ status: 'failed', reason: '되돌리기 전 상태가 남아 있지 않습니다.' });
+        await keepNow('undo 직전 상태');
+        await tRef.set({ ...last.data, restoredAt: Date.now() });
+        await last.ref.delete();
+        return done({ status: 'done', now: tournamentCounts(last.data) });
+      }
+
+      const rt = restoreReadTime(job.at);
+      if (!rt.ok) return done({ status: 'failed', reason: rt.error });
+      const past = await db.runTransaction(async (tx) => {
+        const s = await tx.get(tRef);
+        return s.exists ? s.data() : null;
+      }, { readOnly: true, readTime: Timestamp.fromMillis(rt.readMs) });
+      if (job.type === 'preview') {
+        return done({ status: 'done', readMs: rt.readMs, then: tournamentCounts(past), now: tournamentCounts(now) });
+      }
+      if (!past) return done({ status: 'failed', reason: '그 시각에는 이 대회가 없었습니다(개설 전).' });
+      await keepNow('restore 직전 상태');
+      await tRef.set({ ...past, restoredAt: Date.now() });
+      await clubRef.collection('tournamentTrash').doc(job.tournamentId).delete().catch(() => {});
+      return done({ status: 'done', readMs: rt.readMs, then: tournamentCounts(past), now: tournamentCounts(past) });
+    } catch (e) {
+      logger.error('restoreJob failed', event.params.clubId, e);
+      return done({ status: 'failed', reason: '서버에서 처리하지 못했습니다. 잠시 뒤 다시 해 주세요.', detail: String((e && e.message) || e).slice(0, 200) });
+    }
+  },
+);
+
+/* 대회를 지우면 휴지통에 이름만 남긴다 — 앱 대회 목록의 [최근 지운 대회 · 되살리기](운영진).
+   내용은 남기지 않는다(서버 백업에서 지운 그 분의 상태로 되살린다 — onRestoreJobCreated) */
+exports.onTournamentDeleted = onDocumentDeleted(
+  { ...REGION, document: 'clubs/{clubId}/tournaments/{tournamentId}' },
+  async (event) => {
+    const t = event.data?.data() || {};
+    await db.collection('clubs').doc(event.params.clubId).collection('tournamentTrash').doc(event.params.tournamentId)
+      .set({ name: String(t.name || '').slice(0, 80), date: String(t.date || ''), deletedAt: Date.now() })
+      .catch((e) => logger.error('tournamentTrash failed', e));
   },
 );
 

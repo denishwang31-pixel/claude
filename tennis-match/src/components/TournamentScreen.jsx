@@ -25,6 +25,7 @@ import { TeamMatch } from './TeamMatchScreen';
 import { breadcrumb } from '../lib/crashReport';
 import { TeamLeague } from './TeamLeagueScreen';
 import { TournamentRoster } from './TournamentRoster';
+import { TournamentRestore, TournamentTrash } from './TournamentRestore';
 import { leagueFromRoster, BLUE_WHITE_RED, packLeague, partialPatch } from '../lib/teamLeague';
 import { MatchGrid } from './MatchGrid';
 import { DateField, Label } from './pickers';
@@ -34,6 +35,7 @@ import { Card, SectionTitle, Chip, Btn, Field, EmptyState, Divider } from './ui'
 import { GenderMark, genderCount } from './Mine';
 import { C, S, R, F } from '../lib/theme';
 import { todayYmd } from '../lib/today';
+import { RESTORE_KEEP_DAYS } from '../lib/restoreJob';
 import { firebaseConfig } from '../../firebaseConfig';
 
 /** 외부 공개 보기 주소 — 앱이 없는 사람도 브라우저로 대진·순위를 본다(public/live.html) */
@@ -945,6 +947,7 @@ export function Tournaments({
         )}
         <TournamentRoster t={t} members={members} flash={flash}
           onPatch={(patch) => updateTournament(clubId, t.id, patch)} />
+        <TournamentRestore clubId={clubId} t={t} flash={flash} />
       </>
     ) : null;
     return (
@@ -967,7 +970,7 @@ export function Tournaments({
         {/* ⚠️ key 에 rosterVer — 참가자를 바꾸면 화면이 저장본을 다시 읽어 미배정에 보인다 */}
         {t.stage === 'league' ? (
           <TeamLeague
-            key={`${t.id}-${t.rosterVer || 0}`}
+            key={`${t.id}-${t.rosterVer || 0}-${t.restoredAt || 0}`}
             roster={t.roster || []}
             courts={t.courts || 2}
             saved={t.league}
@@ -984,7 +987,7 @@ export function Tournaments({
           />
         ) : t.stage === 'team' ? (
           <TeamMatch
-            key={`${t.id}-${t.rosterVer || 0}`}
+            key={`${t.id}-${t.rosterVer || 0}-${t.restoredAt || 0}`}
             format={t.format}
             attendees={t.roster || []}
             courts={t.courts || 1}
@@ -1005,10 +1008,10 @@ export function Tournaments({
         ) : t.stage === 'skillGroups' ? (
           <SkillGroupsView clubId={clubId} t={t} members={members} isAdmin={isAdmin} flash={flash} />
         ) : t.stage === 'draw' ? (
-          <TournamentDraw key={t.id} clubId={clubId} t={t} members={members} isAdmin={isAdmin} me={me} flash={flash} />
+          <TournamentDraw key={`${t.id}-${t.restoredAt || 0}`} clubId={clubId} t={t} members={members} isAdmin={isAdmin} me={me} flash={flash} />
         ) : t.stage === 'group' ? (
           <GroupLeagueView
-            key={t.id} t={t} members={members} isAdmin={isAdmin} me={me} flash={flash}
+            key={`${t.id}-${t.restoredAt || 0}`} t={t} members={members} isAdmin={isAdmin} me={me} flash={flash}
             onUpdate={(patch) => updateTournament(clubId, t.id, patch)}
             onKnockout={(groups) => {
               const q = leagueQualifiers(groups, normRules(t.rules || { advance: t.advancePerGroup }).advance || 2);
@@ -1067,9 +1070,22 @@ export function Tournaments({
           members={members} canReset={memberRoles(meVal || {}).includes(ROLES.PRESIDENT)}
         />
 
+        {/* 되돌리기 — 청백전·팀 리그는 [대회 운영] 묶음(opsExtra) 안에 있다 */}
+        {isAdmin && !opsExtra && <TournamentRestore clubId={clubId} t={t} flash={flash} />}
+
         {isAdmin && (
           <View style={{ marginTop: 20, alignItems: 'center' }}>
-            <Pressable onPress={() => { deleteTournament(clubId, t.id); setView('list'); flash('대회 삭제됨'); }}>
+            {/* 한 번 눌러 바로 지우던 것을 묻고 지운다. 지운 대회는 목록 아래 [최근 지운 대회]에서 되살린다 */}
+            <Pressable onPress={() => Alert.alert(`[${t.name}] 대회를 삭제할까요?`,
+              `대진·결과·참가자가 모두 지워집니다. ${RESTORE_KEEP_DAYS}일 안에는 대회 목록 아래 [최근 지운 대회]에서 되살릴 수 있습니다.`, [
+                { text: '취소', style: 'cancel' },
+                {
+                  text: '삭제', style: 'destructive',
+                  onPress: () => deleteTournament(clubId, t.id)
+                    .then(() => { setView('list'); setOpenId(null); flash('대회 삭제됨'); })
+                    .catch(() => flash('삭제하지 못했습니다')),
+                },
+              ])}>
               <Text style={{ color: C.danger, fontSize: 12 }}>대회 삭제</Text>
             </Pressable>
           </View>
@@ -1112,6 +1128,7 @@ export function Tournaments({
       {ongoing.map((x) => <Row key={x.id} x={x} />)}
       {finished.length > 0 && <SectionTitle>지난 대회 기록</SectionTitle>}
       {finished.map((x) => <Row key={x.id} x={x} />)}
+      {isAdmin && <TournamentTrash clubId={clubId} flash={flash} />}
       {tournaments.length === 0 && (
         <EmptyState icon="🏆" title="등록된 대회가 없습니다"
           body={isAdmin

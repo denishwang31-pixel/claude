@@ -482,6 +482,17 @@ export const requestMemberMerge = (clubId, offlineId, uid, by) =>
 export const subMemberJob = (clubId, jobId, cb) =>
   onSnapshot(D(clubId, 'memberJobs', jobId), (d) => cb(d.exists() ? d.data() : null), () => cb(null));
 
+/* 대회 되돌리기 — 서버(onRestoreJobCreated)가 처리한다(lib/restoreJob.js 머리말). type: preview | restore | undo */
+export const requestRestore = (clubId, { type, tournamentId, at = null, by }) =>
+  addDoc(C(clubId, 'restoreJobs'), {
+    type, tournamentId, by, status: 'queued', createdAt: serverTimestamp(), ...(type === 'undo' ? {} : { at }),
+  });
+export const subRestoreJob = (clubId, jobId, cb) =>
+  onSnapshot(D(clubId, 'restoreJobs', jobId), (d) => cb(d.exists() ? d.data() : null), () => cb(null));
+/* 최근 지운 대회(휴지통) — 운영진만 읽는다 */
+export const subTournamentTrash = (clubId, cb) =>
+  onSnapshot(C(clubId, 'tournamentTrash'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => cb([]));
+
 /* ============================================================
    참가투표 — 일정 RSVP 와 별개. 회식 날짜, 대회 참가 의사처럼
    "물어보고 집계"가 필요한 모든 것을 담는다.

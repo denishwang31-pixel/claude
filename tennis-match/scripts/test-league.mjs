@@ -433,7 +433,7 @@ section('대회 참가자 바꾸기 — 확정한 뒤에도 운영진이 넣고 
   ok(/missingFromTeams\(roster, \[\.\.\.saved\.teams, base\]\)/.test(tls) && /missingFromTeams\(attendees, \[saved\.teamA, saved\.teamB, saved\.unassigned\]\)/.test(tms),
     '2팀·3팀 화면 모두 명단에만 있는 사람을 미배정으로(교류전은 우리 클럽 쪽)');
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
-  ok(/<TournamentRoster t=\{t\} members=\{members\}/.test(ts) && (ts.match(/key=\{`\$\{t\.id\}-\$\{t\.rosterVer \|\| 0\}`\}/g) || []).length === 2, '대회 화면: 참가자 관리(운영진) + 바꾸면 편성 화면이 다시 읽는다');
+  ok(/<TournamentRoster t=\{t\} members=\{members\}/.test(ts) && (ts.match(/key=\{`\$\{t\.id\}-\$\{t\.rosterVer \|\| 0\}-\$\{t\.restoredAt \|\| 0\}`\}/g) || []).length === 2, '대회 화면: 참가자 관리(운영진) + 바꾸면 편성 화면이 다시 읽는다');
   for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
     ok(/useState\(!hasDrawAtOpen \|\| unassigned\.length > 0\)/.test(readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8')),
       `${f}: 미배정이 있으면 [팀 배치 현황]을 펼친 채로(새로 넣은 사람이 접힌 칸에 숨었다)`);
@@ -1035,6 +1035,55 @@ section('저장 전 표 비교');
   ok(sameDraw([], []), '둘 다 비면 같다');
   ok(sameDraw(null, []), '빈 값과 빈 배열은 같다');
   eq('빈 입력에도 죽지 않는다 (비교)', draftChanges(null, null), 0);
+}
+
+section('대회 되돌리기 — 운영진 버튼(서버 백업)');
+{
+  const R = await import('../src/lib/restoreJob.js');
+  const now = Date.UTC(2026, 9, 6, 6, 0, 30);
+  const r1 = R.restoreReadTime(now - 15 * 60000, now);
+  ok(r1.ok && r1.readMs % 60000 === 0 && r1.readMs <= now - 15 * 60000, '15분 전 → 분 단위로 내린 시각');
+  ok(!R.restoreReadTime(now - 20000, now).ok, '1분이 안 지난 시각은 안 된다');
+  ok(!R.restoreReadTime(now - 8 * 86400000, now).ok && R.restoreReadTime(now - 6 * 86400000, now).ok, '7일보다 오래된 시각은 안 된다(보관 기간)');
+  ok(!R.restoreReadTime('x', now).ok && !R.restoreReadTime(null, now).ok, '잘못된 시각은 거절');
+  eq('대회 숫자 요약', JSON.stringify(R.tournamentCounts({ roster: [1, 2, 3], league: { matches: [{ score: { a: 6, b: 2 } }, { score: null }, null] } })),
+    JSON.stringify({ exists: true, games: 2, done: 1, players: 3 }));
+  ok(!R.tournamentCounts(null).exists && R.countsText(null).includes('없음'), '그 시각에 대회가 없으면 없음');
+  eq('요약 한 줄', R.countsText({ exists: true, games: 12, done: 5, players: 20 }), '경기 12 · 결과 5 · 참가자 20명');
+  ok(R.isStaffDoc({ role: '운영진' }) && R.isStaffDoc({ role: '회원', roles: ['회원', '총무'] }) && !R.isStaffDoc({ role: '회원' }) && !R.isStaffDoc(null),
+    '운영진 판단 — role/roles(규칙 isClubAdmin 과 같은 역할)');
+  ok(R.isStaffDoc(null, { ownerId: 'u1' }, 'u1') && !R.isStaffDoc(null, { ownerId: 'u1' }, 'u2'), '클럽을 만든 사람은 회원 문서가 없어도 운영진');
+  const at = R.atFromClock(-1, '14:05', now);
+  const d = new Date(at);
+  ok(d.getHours() === 14 && d.getMinutes() === 5 && Math.round((now - at) / 3600000) <= 48 && at < now, '어제 14:05 → 그 시각');
+  ok(R.atFromClock(0, '25:00', now) === null && R.atFromClock(0, '', now) === null, '잘못 넣은 시각은 null');
+  eq('N분 전 칩', R.RESTORE_AGO.map(R.agoLabel).join(','), '5분 전,15분 전,30분 전,1시간 전,3시간 전');
+  ok(R.trashRestoreAt(now) % 60000 === 0 && R.trashRestoreAt(now) <= now, '지운 대회는 지운 그 분의 처음 상태로');
+  eq('휴지통: 7일 안, 최근 것부터', R.trashList([{ id: 'a', deletedAt: now - 1000 }, { id: 'b', deletedAt: now - 8 * 86400000 }, { id: 'c', deletedAt: now - 500 }, { id: 'd' }], now).map((x) => x.id).join(','), 'c,a');
+  const src = readFileSync(new URL('../src/lib/restoreJob.js', import.meta.url), 'utf8');
+  ok(!/^import /m.test(src) && /'restoreJob\.js'/.test(readFileSync(new URL('./copy-functions-shared.mjs', import.meta.url), 'utf8')), 'restoreJob.js 는 혼자 서고 서버로 복사된다');
+
+  const fx = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  ok(/exports\.onRestoreJobCreated = onDocumentCreated/.test(fx) && /readOnly: true, readTime: Timestamp\.fromMillis\(rt\.readMs\)/.test(fx), '서버: 일감을 받아 지난 시각을 읽는다(PITR)');
+  ok(/isStaffDoc\(member\.data\(\), club\.data\(\), job\.by\)/.test(fx), '서버: 요청한 사람이 운영진인지 다시 본다');
+  ok(/keepNow\('restore 직전 상태'\);\n\s*await tRef\.set\(\{ \.\.\.past, restoredAt/.test(fx), '서버: 되돌리기 전 지금 상태를 남기고 덮어쓴다');
+  ok(/keepNow\('undo 직전 상태'\)/.test(fx) && /last\.ref\.delete\(\)/.test(fx), '서버: 되돌리기 취소 — 남긴 상태로, 취소도 다시 취소 가능');
+  ok(/exports\.onTournamentDeleted = onDocumentDeleted/.test(fx) && /tournamentTrash/.test(fx), '서버: 대회를 지우면 휴지통에 이름만');
+  ok(!/job\.at.*logger|logger\.info\(.*data/.test(fx), '로그에 대회 내용을 남기지 않는다');
+
+  const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  const rj = rules.slice(rules.indexOf('match /restoreJobs/'), rules.indexOf('match /restoreJobs/') + 800);
+  ok(/allow create: if isClubAdmin\(clubId\)/.test(rj) && /request\.resource\.data\.by == request\.auth\.uid/.test(rj) && /status == 'queued'/.test(rj) && !/allow update/.test(rj.split('}')[0]),
+    '규칙: 일감은 운영진이 자기 이름으로 만들고, 결과는 서버만 쓴다');
+  ok(/match \/tournamentTrash\/\{tournamentId\} \{\n\s*allow read: if isClubAdmin\(clubId\);\n\s*\}/.test(rules) && !/match \/tournamentBackups/.test(rules), '규칙: 휴지통은 운영진만 읽기, 백업 내용은 앱이 못 읽는다');
+
+  const ui = readFileSync(new URL('../src/components/TournamentRestore.jsx', import.meta.url), 'utf8');
+  ok(/run\('preview'\)/.test(ui) && /run\('restore'\)/.test(ui) && /run\('undo'\)/.test(ui) && /Alert\.alert/.test(ui), '앱: 미리 보기 · 되돌리기(확인 창) · 되돌리기 취소');
+  ok(/WAIT_MS/.test(ui) && /서버가 응답하지 않습니다/.test(ui), '앱: 서버가 답이 없으면 기다리다 알린다');
+  const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
+  ok(/<TournamentRestore clubId=\{clubId\} t=\{t\} flash=\{flash\} \/>\n\s*<\/>/.test(ts) && /isAdmin && !opsExtra && <TournamentRestore/.test(ts), '앱: 대회 운영 묶음(청백전·팀 리그) · 다른 대회는 화면 아래 — 운영진만');
+  ok(/isAdmin && <TournamentTrash/.test(ts) && /대회를 삭제할까요\?/.test(ts), '앱: 대회 삭제는 묻고, 지운 대회는 목록 아래에서 되살린다');
+  ok((ts.match(/t\.restoredAt \|\| 0/g) || []).length >= 4, '앱: 되돌린 뒤 열린 화면이 저장본을 다시 읽는다');
 }
 
 console.log(`\n다팀 리그·수기 대진 테스트: ${pass} 통과 / ${fail} 실패`);
