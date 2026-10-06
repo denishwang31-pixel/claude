@@ -935,6 +935,18 @@ export function Tournaments({
   }
 
   if (view === 'detail' && t) {
+    /* [대회 운영] 묶음 — 2팀↔3팀 바꾸기 · 참가자 관리. 청백전·팀 리그 화면이 대진 아래(짜기 전엔 맨 위)에 넣는다 */
+    const opsExtra = isAdmin && (t.stage === 'team' || t.stage === 'league') ? (
+      <>
+        {t.format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE && (
+          <BlueWhiteSwitch t={t} onSwitch={async (patch, msg) => {
+            try { await updateTournament(clubId, t.id, patch); flash(msg); } catch (e) { flash('바꾸지 못했습니다. 잠시 뒤 다시 해 주세요'); }
+          }} />
+        )}
+        <TournamentRoster t={t} members={members} flash={flash}
+          onPatch={(patch) => updateTournament(clubId, t.id, patch)} />
+      </>
+    ) : null;
     return (
       <View>
         <Pressable onPress={() => { setView('list'); setOpenId(null); }}>
@@ -949,18 +961,9 @@ export function Tournaments({
           </Text>
         </Card>
 
-        {isAdmin && t.format === TOURNAMENT_FORMAT.TEAM_BLUE_WHITE && (t.stage === 'team' || t.stage === 'league') && (
-          <BlueWhiteSwitch t={t} onSwitch={async (patch, msg) => {
-            try { await updateTournament(clubId, t.id, patch); flash(msg); } catch (e) { flash('바꾸지 못했습니다. 잠시 뒤 다시 해 주세요'); }
-          }} />
-        )}
 
-        {/* 참가자 관리 — 확정한 뒤에도 운영진이 넣고 뺀다(TournamentRoster). 새로 넣은 사람은 미배정으로 */}
-        {isAdmin && (t.stage === 'team' || t.stage === 'league') && (
-          <TournamentRoster t={t} members={members} flash={flash}
-            onPatch={(patch) => updateTournament(clubId, t.id, patch)} />
-        )}
-
+        {/* 참가자 관리 — 확정한 뒤에도 운영진이 넣고 뺀다(TournamentRoster). 새로 넣은 사람은 미배정으로.
+            화면 아래 [대회 운영] 묶음에 들어간다(opsExtra) — 대진을 짜기 전엔 맨 위 */}
         {/* ⚠️ key 에 rosterVer — 참가자를 바꾸면 화면이 저장본을 다시 읽어 미배정에 보인다 */}
         {t.stage === 'league' ? (
           <TeamLeague
@@ -977,6 +980,7 @@ export function Tournaments({
             onSaveCourtNames={(names) => updateTournament(clubId, t.id, { courtNames: names })}
             timing={t.timing || null}
             onSaveTiming={(timing) => updateTournament(clubId, t.id, { timing })}
+            opsExtra={opsExtra}
           />
         ) : t.stage === 'team' ? (
           <TeamMatch
@@ -994,6 +998,7 @@ export function Tournaments({
             onSaveCourtNames={(names) => updateTournament(clubId, t.id, { courtNames: names })}
             timing={t.timing || null}
             onSaveTiming={(timing) => updateTournament(clubId, t.id, { timing })}
+            opsExtra={opsExtra}
           />
         ) : t.stage === 'kdk' ? (
           <KdkView clubId={clubId} t={t} isAdmin={isAdmin} flash={flash} />

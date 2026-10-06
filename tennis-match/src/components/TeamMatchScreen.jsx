@@ -12,7 +12,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Alert } from 'react-native';
 import {
-  splitTeams, teamStrength, generateTeamMatches, teamScore, teamPlayerStats,
+  splitTeams, teamStrength, generateTeamMatches,
 } from '../lib/teamMatch';
 import {
   missingFromTeams, stableKey, moveToTeam, UNASSIGNED, withTeamIdx, twoTeamSide, actualMatchType, gridExtent,
@@ -21,6 +21,8 @@ import {
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { courtLabel } from '../lib/courtNames';
 import { CourtNamesEditor } from './CourtNamesEditor';
+import { TournamentDashboard } from './TournamentDashboard';
+import { tourneyDashboard } from '../lib/tourneyStats';
 import { RoundTimingEditor } from './RoundTimingEditor';
 import { tournamentRoundTimes, timingRounds, tournamentSchedule } from '../lib/schedule';
 import { guard, later, breadcrumb, slowRender } from '../lib/crashReport';
@@ -45,7 +47,7 @@ function TeamTag({ side, children }) {
 
 export function TeamMatch({
   format, attendees, courts, rounds, saved, onSave, isAdmin, flash, courtNames = [], onSaveCourtNames, me = '',
-  timing = null, onSaveTiming,
+  timing = null, onSaveTiming, opsExtra = null,
 }) {
   /* 그리기에 걸린 시간 — 길면 동작 기록에(lib/crashReport.js slowRender) */
   const renderStart = Date.now();
@@ -114,11 +116,6 @@ export function TeamMatch({
 
   const strengthA = useMemo(() => teamStrength(teamA, { busuToNtrp }), [teamA]);
   const strengthB = useMemo(() => teamStrength(teamB, { busuToNtrp }), [teamB]);
-  const score = useMemo(() => teamScore(matches), [matches]);
-  const mvp = useMemo(
-    () => teamPlayerStats([...teamA, ...teamB], matches).filter((r) => r.games > 0).slice(0, 3),
-    [teamA, teamB, matches],
-  );
 
   const genderOf = useMemo(() => {
     const map = {};
@@ -128,6 +125,10 @@ export function TeamMatch({
 
   /* 대진표·집계에 쓰는 경기 — 유형은 실제로 선 선수 성별로 */
   const shown = useMemo(() => matches.map((m) => ({ ...m, type: actualMatchType(m, genderOf) })), [matches, genderOf]);
+  /* 대회 현황(대시보드) — 2팀: 0 = 청팀(우리 클럽) · 1 = 백팀(상대). 경기의 팀 번호는 withTeamIdx 가 붙인다 */
+  const lookSide = (i) => ({ ...sides[i], name: isClubMatch ? (i ? (oppClub || '상대 클럽') : '우리 클럽') : sides[i].name, white: !isClubMatch && i === 1 });
+  const dash = useMemo(() => tourneyDashboard([{ idx: 0, players: teamA }, { idx: 1, players: teamB }],
+    withTeamIdx(shown)), [teamA, teamB, shown]);
   /* 타임별 시각 — 대회 시간(timing)을 정했을 때만. 대진표·출전 현황·내 경기에 같이 쓴다 */
   const gridRounds = gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).rounds;
   const times = useMemo(() => tournamentRoundTimes(timing, gridRounds), [timing, gridRounds]);
@@ -419,40 +420,12 @@ export function TeamMatch({
     setPicked([]);
   }, [saved]);
 
-  return (
-    <View>
-      {/* 점수판 */}
-      {matches.length > 0 && (
-        <Card style={{ backgroundColor: C.ink }}>
-          <Text style={{ color: C.lime, fontSize: 11, fontWeight: '800', letterSpacing: 0.5, textAlign: 'center' }}>
-            {isClubMatch ? '클럽 교류전' : '청백전'} 스코어
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: S.md }}>
-            <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '700' }}>
-                {isClubMatch ? '우리 클럽' : sides[0].name}
-              </Text>
-              <Text style={{ color: score.winner === 'A' ? C.lime : '#fff', fontSize: 40, fontWeight: '700' }}>
-                {score.a}
-              </Text>
-            </View>
-            <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 18, fontWeight: '700' }}>:</Text>
-            <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '700' }} numberOfLines={1}>
-                {isClubMatch ? (oppClub || '상대 클럽') : sides[1].name}
-              </Text>
-              <Text style={{ color: score.winner === 'B' ? C.lime : '#fff', fontSize: 40, fontWeight: '700' }}>
-                {score.b}
-              </Text>
-            </View>
-          </View>
-          <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, textAlign: 'center', marginTop: 6 }}>
-            {score.played}/{score.total}경기 완료 · 총 게임 {score.gamesA}:{score.gamesB}
-            {score.winner ? ` · ${score.winner === 'A' ? (isClubMatch ? '우리 클럽' : sides[0].name) : (isClubMatch ? (oppClub || '상대') : sides[1].name)} 우세` : ' · 동점'}
-          </Text>
-        </Card>
-      )}
-
+  /* ---- 화면 순서(2026-10-06 앱 주인) — TeamLeagueScreen 과 같다 ----
+     대진을 짠 뒤: 대회 현황 → 내 경기 → 대진표 → 출전 현황 → 대회 운영(접힘, 운영진)
+     대진 짜기 전: 설정(운영)이 위. 예전의 큰 점수판·오늘의 MVP 는 대회 현황 한 곳으로 모았다 */
+  const hasDraw = matches.length > 0;
+  const opsBlock = (
+    <>
       {/* 팀 편성 — 설정 · 배치 현황을 따로 접는다 */}
       {selectable && (
         <Fold title="팀 편성 설정" open={openSetup} onToggle={() => setOpenSetup(!openSetup)}
@@ -636,6 +609,22 @@ export function TeamMatch({
         </Fold>
       )}
 
+    </>
+  );
+  const myGamesBlock = hasDraw ? (
+    <>
+      {/* 내 경기 — 명단에 든 회원(앱 가입·합치기 후)에게 */}
+      <MyGames games={shown
+        .filter((m) => !!me && [...(m.teamA || []), ...(m.teamB || [])].includes(me))
+        .map((m) => {
+          const mineIsA = (m.teamA || []).includes(me);
+          const side = (i) => ({ ...sides[i], name: isClubMatch ? (i ? (oppClub || '상대 클럽') : '우리 클럽') : sides[i].name });
+          return { id: m.id, round: m.round, time: timeOf(m.round), court: cn(m.court), type: m.type, mine: side(mineIsA ? 0 : 1), opp: side(mineIsA ? 1 : 0), score: m.score, mineIsA };
+        })} />
+    </>
+  ) : null;
+  const boardBlock = (
+    <>
       {/* 대진표 */}
       {matches.length > 0 || mode === BOARD_MODE.EDIT ? (
         <>
@@ -644,14 +633,6 @@ export function TeamMatch({
             <BoardModeBar mode={mode} onMode={setMode} onAdd={openAdd} onClearAll={clearAll} hasMatches={matches.length > 0}
               multi={multi} onMulti={setMulti} pickedCount={pickedGames.length} onDeletePicked={deletePicked} />
           )}
-          {/* 내 경기 — 명단에 든 회원(앱 가입·합치기 후)에게 */}
-          <MyGames games={shown
-            .filter((m) => !!me && [...(m.teamA || []), ...(m.teamB || [])].includes(me))
-            .map((m) => {
-              const mineIsA = (m.teamA || []).includes(me);
-              const side = (i) => ({ ...sides[i], name: isClubMatch ? (i ? (oppClub || '상대 클럽') : '우리 클럽') : sides[i].name });
-              return { id: m.id, round: m.round, time: timeOf(m.round), court: cn(m.court), type: m.type, mine: side(mineIsA ? 0 : 1), opp: side(mineIsA ? 1 : 0), score: m.score, mineIsA };
-            })} />
           <Card style={{ padding: 10 }}>
             <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} onPressMatch={onPressMatch} me={me} roundTimes={times} events={evBands}
               roundCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).rounds} courtCount={gridExtent(matches, { rounds: Number(nRounds) || 4, courts }).courts}
@@ -677,24 +658,6 @@ export function TeamMatch({
             </Card>
           </Fold>
 
-          {mvp.length > 0 && (
-            <>
-              <SectionTitle>오늘의 MVP</SectionTitle>
-              <Card style={{ paddingVertical: 6 }}>
-                {mvp.map((r, i) => (
-                  <View key={r.id} style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 10,
-                    paddingVertical: 9, borderTopWidth: i ? 1 : 0, borderTopColor: C.border,
-                  }}>
-                    <Text style={{ fontSize: 16 }}>{['🥇', '🥈', '🥉'][i]}</Text>
-                    <Text style={[F.bodyBold, { flex: 1 }]}>{r.name}</Text>
-                    <Text style={{ fontSize: 12, color: C.sub }}>{r.games}경기</Text>
-                    <Text style={{ fontSize: 13.5, fontWeight: '700', color: C.green }}>{r.wins}승</Text>
-                  </View>
-                ))}
-              </Card>
-            </>
-          )}
         </>
       ) : (
         <View style={{ marginTop: S.lg }}>
@@ -706,6 +669,30 @@ export function TeamMatch({
               : '운영진이 편성하면 여기에 표시됩니다.'}
           />
         </View>
+      )}
+
+    </>
+  );
+
+  return (
+    <View>
+      {hasDraw ? (
+        <>
+          <TournamentDashboard dash={dash} look={lookSide} isAdmin={isAdmin} />
+          {myGamesBlock}
+          {boardBlock}
+          {(isAdmin || opsExtra) && (
+            <SectionTitle hint="참가자 · 팀 편성 · 대진 설정">⚙️ 대회 운영</SectionTitle>
+          )}
+          {opsExtra}
+          {opsBlock}
+        </>
+      ) : (
+        <>
+          {opsExtra}
+          {opsBlock}
+          {boardBlock}
+        </>
       )}
 
       <ScoreSheet target={scoring} onSave={saveScore} onClose={() => setScoring(null)} />

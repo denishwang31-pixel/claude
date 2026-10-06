@@ -14,8 +14,10 @@
    ⚠️ 앱(src/lib/teamLeague.js)과 같은 규칙 — 순위는 승 → 게임 득실 → 득점, 유형은 실제 선 선수 성별로.
    ⚠️ 원본은 여기(src/lib) — 배포 직전에 scripts/copy-functions-shared.mjs 가 functions/shared/ 로 복사한다
       (functions/shared 는 생성물이라 저장소에 없다). 서버는 ./shared/teamLive.js 로 부른다.
-   ⚠️ import 없이 혼자 선다 — 복사된 곳에서도 그대로 돌아야 한다. node 검사(scripts/test-league.mjs)가 돌려 본다.
+   ⚠️ 같은 폴더의 tourneyStats.js 만 부른다(둘 다 functions/shared 로 함께 복사된다 — scripts/copy-functions-shared.mjs).
    ============================================================ */
+
+import { tourneyDashboard } from './tourneyStats.js';
 
 const PALETTE = ['#1d4ed8', '#be123c', '#0d7a5f', '#b45309', '#6d28d9', '#0f766e', '#a21caf', '#475569'];
 const COLOR_WORDS = [
@@ -111,25 +113,14 @@ export function teamLiveView(t, clubName = '') {
   const genderOf = (id) => people[id]?.gender || '';
   const courtName = (c) => String((t?.courtNames || [])[Number(c) - 1] || '').trim() || String(c);
 
-  const rows = teams.map((list, i) => ({
-    idx: i, name: names[i], ...teamStyle(names[i], i), players: (list || []).length,
-    played: 0, wins: 0, draws: 0, losses: 0, gf: 0, ga: 0,
+  /* 팀 순위·MVP·남녀 TOP 5 — 앱 대회 현황과 같은 계산(tourneyStats.js: 승점 승1·무0.5 → 득실차) */
+  const typed = matches.map((m) => ({ ...m, type: actualType(m, genderOf) }));
+  const dash = tourneyDashboard(teams.map((list, i) => ({ idx: i, players: list || [] })), typed);
+  const rows = teams.map((list, i) => ({ idx: i, name: names[i], ...teamStyle(names[i], i), players: (list || []).length }));
+  const standings = dash.standings.map((r) => ({
+    ...rows[r.idx], played: r.played, wins: r.w, draws: r.d, losses: r.l, pts: r.pts, gf: r.gf, ga: r.ga, diff: r.diff, rank: r.rank,
   }));
-  matches.forEach((m) => {
-    if (!m.score) return;
-    const a = rows[m.teamAIdx];
-    const b = rows[m.teamBIdx];
-    if (!a || !b) return;
-    const sa = Number(m.score.a) || 0;
-    const sb = Number(m.score.b) || 0;
-    a.played += 1; b.played += 1;
-    a.gf += sa; a.ga += sb; b.gf += sb; b.ga += sa;
-    if (sa > sb) { a.wins += 1; b.losses += 1; } else if (sb > sa) { b.wins += 1; a.losses += 1; } else { a.draws += 1; b.draws += 1; }
-  });
-  const standings = rows
-    .map((r) => ({ ...r, diff: r.gf - r.ga }))
-    .sort((x, y) => y.wins - x.wins || y.diff - x.diff || y.gf - x.gf || x.idx - y.idx)
-    .map((r, i) => ({ ...r, rank: i + 1 }));
+  const person = (p) => ({ name: p.name, team: p.team, rank: p.rank, games: p.games, w: p.w, d: p.d, l: p.l, rate: Math.round(p.rate * 1000) / 1000 });
 
   const byRound = {};
   const types = {};
@@ -160,9 +151,13 @@ export function teamLiveView(t, clubName = '') {
     status: t?.status === 'finished' ? 'finished' : 'ongoing',
     stage: t?.stage || '',
     teams: rows.map(({ idx, name, color, white }) => ({ idx, name, color, white })),
-    standings: standings.map(({ idx, name, color, white, players, played, wins, draws, losses, gf, ga, diff, rank }) => ({
-      idx, name, color, white, players, played, wins, draws, losses, gf, ga, diff, rank,
+    standings: standings.map(({ idx, name, color, white, players, played, wins, draws, losses, pts, gf, ga, diff, rank }) => ({
+      idx, name, color, white, players, played, wins, draws, losses, pts, gf, ga, diff, rank,
     })),
+    /* 오늘의 MVP(남·여 1위, 공동이면 모두) · 남녀 TOP 5 — 이름·팀·전적만 */
+    mvp: { M: dash.mvp.M.map(person), F: dash.mvp.F.map(person) },
+    top: { M: dash.top.M.map(person), F: dash.top.F.map(person) },
+    rule: dash.rule,
     rounds: Object.keys(byRound).map(Number).sort((a, b) => a - b).map((r) => ({ round: r, time: sch.start(r), matches: byRound[r] })),
     /* 행사·식사 — beforeRound 타임 앞에 띠로(끝이면 null) */
     events: sch.events,

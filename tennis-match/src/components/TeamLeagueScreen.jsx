@@ -17,7 +17,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Alert } from 'react-native';
 import {
   MIN_TEAMS, MAX_TEAMS, splitIntoTeams, teamAverage, teamComposition,
-  generateLeagueMatches, leagueStandings, leaguePlayerStats, diagnoseLeague,
+  generateLeagueMatches, diagnoseLeague,
   teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames, TEAM_NAME_MAX,
   leagueBalanceNote, teamGameCounts,
   addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
@@ -26,6 +26,8 @@ import {
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
 import { CourtNamesEditor } from './CourtNamesEditor';
+import { TournamentDashboard } from './TournamentDashboard';
+import { tourneyDashboard } from '../lib/tourneyStats';
 import { RoundTimingEditor } from './RoundTimingEditor';
 import { tournamentRoundTimes, timingRounds, tournamentSchedule } from '../lib/schedule';
 import { courtLabel } from '../lib/courtNames';
@@ -45,7 +47,7 @@ import { guard, later, breadcrumb, slowRender } from '../lib/crashReport';
  */
 export function TeamLeague({
   roster, courts, saved: savedRaw, isAdmin, onSave, flash, courtNames = [], onSaveCourtNames, me = '',
-  timing = null, onSaveTiming,
+  timing = null, onSaveTiming, opsExtra = null,
 }) {
   /* 저장된 모양은 teams:[{players}] — 화면에서는 [[선수…]] 로 푼다(lib/teamLeague.js packLeague 머리말) */
   /* 그리기에 걸린 시간 — 길면 동작 기록에(lib/crashReport.js slowRender) */
@@ -118,6 +120,8 @@ export function TeamLeague({
 
   /* 대진표·집계에 쓰는 경기 — 유형은 실제로 선 선수 성별로(설정한 유형이 아니라) */
   const shown = useMemo(() => matches.map((m) => ({ ...m, type: actualMatchType(m, genderOf) })), [matches, genderOf]);
+  /* 대회 현황(대시보드) — 팀 순위(승점)·MVP·남녀 TOP 5·종목별·맞대결(lib/tourneyStats.js) */
+  const dash = useMemo(() => tourneyDashboard(teams.map((players, i) => ({ idx: i, players })), shown), [teams, shown]);
   /* 타임별 시각 — 대회 시간(timing)을 정했을 때만. 대진표·출전 현황·내 경기에 같이 쓴다 */
   const gridRounds = gridExtent(matches, { rounds: cfg.rounds, courts: cfg.courts }).rounds;
   const times = useMemo(() => tournamentRoundTimes(timing, gridRounds), [timing, gridRounds]);
@@ -130,11 +134,6 @@ export function TeamLeague({
     return map;
   }, [teams]);
 
-  const standings = useMemo(() => leagueStandings(teams, matches, teamNames), [teams, matches, teamNames]);
-  const mvp = useMemo(
-    () => leaguePlayerStats(teams, matches, teamNames).filter((r) => r.games > 0).slice(0, 3),
-    [teams, matches, teamNames],
-  );
   const check = useMemo(() => diagnoseLeague(teams, cfg), [teams, nCourts, nRounds, roundTypes, oneCourtPerTeam, teamNames]);
 
   /* 버튼·알림창 처리 중 오류 — 앱을 끄지 않고 알리기만(lib/crashReport.js guard) */
@@ -469,61 +468,12 @@ export function TeamLeague({
     setPicked([]);
   }, [savedRaw]);
 
-  return (
-    <View>
-      {/* 순위 */}
-      {matches.length > 0 && (
-        <>
-          <SectionTitle hint="승점 → 게임 득실 → 총 득점 순">팀 순위</SectionTitle>
-          <Card style={{ paddingVertical: 4 }}>
-            <View style={{ flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: C.border }}>
-              <Text style={{ width: 28, fontSize: 10, color: C.faint, fontWeight: '700' }}>순위</Text>
-              <Text style={{ flex: 1, fontSize: 10, color: C.faint, fontWeight: '700' }}>팀</Text>
-              <Text style={{ width: 62, fontSize: 10, color: C.faint, fontWeight: '700', textAlign: 'center' }}>승-무-패</Text>
-              <Text style={{ width: 44, fontSize: 10, color: C.faint, fontWeight: '700', textAlign: 'center' }}>득실</Text>
-            </View>
-            {standings.map((r) => {
-              const st = look(r.idx);
-              return (
-                <View key={r.idx} style={{
-                  flexDirection: 'row', alignItems: 'center', paddingVertical: 9,
-                  borderBottomWidth: 1, borderBottomColor: '#f5f5f4',
-                }}>
-                  <Text style={{
-                    width: 28, fontSize: 13, fontWeight: '900',
-                    color: r.rank === 1 ? C.green : C.sub,
-                  }}>
-                    {r.rank === 1 ? '🥇' : r.rank}
-                  </Text>
-                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <View style={{
-                      paddingHorizontal: 7, paddingVertical: 2,
-                      borderRadius: R.sm, backgroundColor: st.bg,
-                    }}>
-                      <Text style={{ fontSize: 11.5, fontWeight: '800', color: st.color }}>{st.name}</Text>
-                    </View>
-                    <Text style={{ fontSize: 10.5, color: C.faint }}>{r.players}명</Text>
-                  </View>
-                  <Text style={{ width: 62, fontSize: 12, fontWeight: '700', textAlign: 'center' }}>
-                    {r.wins}-{r.draws}-{r.losses}
-                  </Text>
-                  <Text style={{
-                    width: 44, fontSize: 12, textAlign: 'center',
-                    color: r.diff > 0 ? C.green : r.diff < 0 ? C.danger : C.sub,
-                    fontWeight: '700',
-                  }}>
-                    {r.diff > 0 ? '+' : ''}{r.diff}
-                  </Text>
-                </View>
-              );
-            })}
-            <Text style={{ fontSize: 10.5, color: C.faint, paddingVertical: 6 }}>
-              팀별 경기 수 · {teamGameCounts(teams.length, matches).map((n, i) => `${look(i).name} ${n}`).join(' · ')}
-            </Text>
-          </Card>
-        </>
-      )}
-
+  /* ---- 화면 순서(2026-10-06 앱 주인) ----
+     대진을 짠 뒤: 대회 현황 → 내 경기 → 대진표 → 출전 현황 → 대회 운영(접힘, 운영진)
+     대진 짜기 전: 보여 줄 결과가 없으니 설정(운영)이 위 */
+  const hasDraw = matches.length > 0;
+  const opsBlock = (
+    <>
       {/* 팀 편성 — 설정 · 배치 현황을 따로 접는다 */}
       {isAdmin && (
         <Fold title="팀 편성 설정" open={openSetup} onToggle={() => setOpenSetup(!openSetup)}
@@ -744,6 +694,23 @@ export function TeamLeague({
         </Fold>
       )}
 
+    </>
+  );
+  const myGamesBlock = hasDraw ? (
+    <>
+      {/* 내 경기 — 명단에 든 회원(앱 가입·합치기 후)에게 */}
+      <MyGames games={shown
+        .filter((m) => !!me && [...(m.teamA || []), ...(m.teamB || [])].includes(me))
+        .map((m) => {
+          const mineIsA = (m.teamA || []).includes(me);
+          const mine = look(mineIsA ? m.teamAIdx : m.teamBIdx);
+          const opp = look(mineIsA ? m.teamBIdx : m.teamAIdx);
+          return { id: m.id, round: m.round, time: timeOf(m.round), court: cn(m.court), type: m.type, mine, opp, score: m.score, mineIsA };
+        })} />
+    </>
+  ) : null;
+  const boardBlock = (
+    <>
       {/* 대진표 */}
       {matches.length > 0 || mode === BOARD_MODE.EDIT ? (
         <>
@@ -761,15 +728,6 @@ export function TeamLeague({
               <Text style={{ fontSize: 10.5, color: C.warn, marginTop: 4 }}>팀 인원·타임별 유형을 바꾸거나 [대진표 수정] → [＋ 경기 추가]로 채울 수 있습니다.</Text>
             </View>
           )}
-          {/* 내 경기 — 명단에 든 회원(앱 가입·합치기 후)에게 */}
-          <MyGames games={shown
-            .filter((m) => !!me && [...(m.teamA || []), ...(m.teamB || [])].includes(me))
-            .map((m) => {
-              const mineIsA = (m.teamA || []).includes(me);
-              const mine = look(mineIsA ? m.teamAIdx : m.teamBIdx);
-              const opp = look(mineIsA ? m.teamBIdx : m.teamAIdx);
-              return { id: m.id, round: m.round, time: timeOf(m.round), court: cn(m.court), type: m.type, mine, opp, score: m.score, mineIsA };
-            })} />
           <Card style={{ padding: 10 }}>
             <MatchGrid matches={shown} nameOf={nameOf} genderOf={genderOf} venue={venue} me={me} roundTimes={times} events={evBands}
               sideOf={(m, side) => look(side === 'A' ? m.teamAIdx : m.teamBIdx)}
@@ -802,25 +760,6 @@ export function TeamLeague({
             </Card>
           </Fold>
 
-          {mvp.length > 0 && (
-            <>
-              <SectionTitle>오늘의 MVP</SectionTitle>
-              <Card style={{ paddingVertical: 6 }}>
-                {mvp.map((r, i) => (
-                  <View key={r.id} style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 10,
-                    paddingVertical: 9, borderTopWidth: i ? 1 : 0, borderTopColor: C.border,
-                  }}>
-                    <Text style={{ fontSize: 16 }}>{['🥇', '🥈', '🥉'][i]}</Text>
-                    <Text style={[F.bodyBold, { flex: 1 }]}>{r.name}</Text>
-                    <Text style={{ fontSize: 11, color: C.faint }}>{r.team}</Text>
-                    <Text style={{ fontSize: 12, color: C.sub }}>{r.games}경기</Text>
-                    <Text style={{ fontSize: 13.5, fontWeight: '700', color: C.green }}>{r.wins}승</Text>
-                  </View>
-                ))}
-              </Card>
-            </>
-          )}
         </>
       ) : (
         <View style={{ marginTop: S.lg }}>
@@ -832,6 +771,30 @@ export function TeamLeague({
               : '운영진이 편성하면 여기에 표시됩니다.'}
           />
         </View>
+      )}
+
+    </>
+  );
+
+  return (
+    <View>
+      {hasDraw ? (
+        <>
+          <TournamentDashboard dash={dash} look={look} isAdmin={isAdmin} />
+          {myGamesBlock}
+          {boardBlock}
+          {(isAdmin || opsExtra) && (
+            <SectionTitle hint="참가자 · 팀 편성 · 대진 설정">⚙️ 대회 운영</SectionTitle>
+          )}
+          {opsExtra}
+          {opsBlock}
+        </>
+      ) : (
+        <>
+          {opsExtra}
+          {opsBlock}
+          {boardBlock}
+        </>
       )}
 
       <ScoreSheet target={scoring} onSave={saveScore} onClose={() => setScoring(null)} />

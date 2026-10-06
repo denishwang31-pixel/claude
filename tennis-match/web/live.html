@@ -135,6 +135,12 @@
   table.grid td.mine { outline: 2.5px solid var(--green); outline-offset: -2.5px; }
   table.grid td.mine:not(.done) { background: var(--green-soft); }
   .gn .me { background: var(--green); color: #fff !important; font-weight: 900; border-radius: 4px; padding: 0 4px; }
+  .mvp { display: flex; gap: 12px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #FEF9C3; font-size: 13px; }
+  .mvp > b { color: #854D0E; font-size: 12px; width: 34px; line-height: 1.3; }
+  .mvp > div { flex: 1; } .mvp small { display: block; color: #A16207; font-weight: 700; font-size: 11px; }
+  .mvp span { display: block; font-weight: 900; margin-top: 2px; } .mvp i { display: block; font-style: normal; color: var(--sub); font-size: 11px; margin-top: 2px; }
+  h3.sub { font-size: 13.5px; margin: 12px 0 2px; }
+  tr.meRow td { background: var(--green-soft); }
   .foot { font-size: 12px; color: var(--faint); text-align: center; margin-top: 24px; }
 </style>
 </head>
@@ -244,23 +250,52 @@
     var h = '';
     var me = findMe(d);
     var st = d.standings;
+    /* 승점 — 승 1·무 0.5(앱 대회 현황과 같은 기준, 서버 tourneyStats). 옛 서버면 이긴 경기 수 */
+    var pts = function (r) { var p = r.pts != null ? r.pts : r.wins; return (p % 1 === 0 ? p : p.toFixed(1)); };
+    var ptsRule = d.rule === 'wins' || d.standings.every(function (r) { return r.pts == null; });
     if (st.length === 2) {
-      /* 2팀 — 큰 점수판(이긴 경기 수) */
+      /* 2팀 — 큰 점수판(승점) */
       var A = st.filter(function (r) { return r.idx === 0; })[0] || st[0];
       var B = st.filter(function (r) { return r.idx === 1; })[0] || st[1];
+      var pa = Number(pts(A)), pb = Number(pts(B));
       h += '<div class="board">' +
-        '<div class="side' + (A.wins > B.wins ? ' lead' : '') + '">' + teamPill(A) + '<b>' + A.wins + '</b></div>' +
+        '<div class="side' + (pa > pb ? ' lead' : '') + '">' + teamPill(A) + '<b>' + pts(A) + '</b></div>' +
         '<div class="colon">:</div>' +
-        '<div class="side' + (B.wins > A.wins ? ' lead' : '') + '">' + teamPill(B) + '<b>' + B.wins + '</b></div></div>' +
-        '<div class="sum" style="text-align:center">총 게임 ' + A.gf + ' : ' + B.gf + (A.draws ? ' · 무승부 ' + A.draws : '') + '</div>';
+        '<div class="side' + (pb > pa ? ' lead' : '') + '">' + teamPill(B) + '<b>' + pts(B) + '</b></div></div>' +
+        '<div class="sum" style="text-align:center">' + (ptsRule ? '이긴 경기' : '승점') + ' · 총 게임 ' + A.gf + ' : ' + B.gf + (A.draws ? ' · 무승부 ' + A.draws : '') + '</div>';
     }
-    h += '<div class="card"><h2>팀 순위</h2><table><tr><th>순위</th><th class="l">팀</th><th>경기</th><th>승</th><th>무</th><th>패</th><th>득실</th></tr>' +
+    h += '<div class="card"><h2>🏆 팀 순위</h2><table><tr><th>순위</th><th class="l">팀</th><th>승점</th><th>승-무-패</th><th>득실</th></tr>' +
       st.map(function (r) {
         return '<tr><td><span class="rk' + (r.rank === 1 && r.played ? ' up' : '') + '">' + r.rank + '</span></td>' +
           '<td class="l">' + teamPill(r) + ' <small style="color:var(--faint)">' + r.players + '명</small></td>' +
-          '<td>' + r.played + '</td><td class="w">' + r.wins + '</td><td>' + r.draws + '</td><td>' + r.losses + '</td>' +
+          '<td class="w">' + pts(r) + '</td><td>' + r.wins + '-' + r.draws + '-' + r.losses + '</td>' +
           '<td class="' + (r.diff > 0 ? 'plus' : r.diff < 0 ? 'minus' : '') + '">' + (r.diff > 0 ? '+' : '') + r.diff + '</td></tr>';
-      }).join('') + '</table><p class="note">순위: 이긴 경기 → 게임 득실 → 딴 게임</p></div>';
+      }).join('') + '</table>';
+    /* 오늘의 MVP — 남·여 1위(공동이면 모두) */
+    var mv = d.mvp || { M: [], F: [] };
+    if ((mv.M || []).length || (mv.F || []).length) {
+      h += '<div class="mvp"><b>오늘의 MVP</b>' + [['M', '남'], ['F', '여']].map(function (x) {
+        var list = mv[x[0]] || [];
+        if (!list.length) return '<div></div>';
+        return '<div><small>' + x[1] + ' 1위' + (list.length > 1 ? ' (공동 ' + list.length + '명)' : '') + '</small>' +
+          list.slice(0, 3).map(function (p) { return '<span>🏅 ' + esc(p.name) + ' ' + teamPill(byIdx[p.team]).replace('class="tp', 'class="tp sm') + '</span>'; }).join('') +
+          '<i>' + list[0].w + '-' + list[0].d + '-' + list[0].l + ' · 승률 ' + Math.round(list[0].rate * 1000) / 10 + '%</i></div>';
+      }).join('') + '</div>';
+    }
+    h += '<p class="note">' + (ptsRule ? '순위: 이긴 경기 → 게임 득실 → 딴 게임' : '순위: 승점(승 1·무 0.5) → 득실차 → 딴 게임') + '</p></div>';
+    /* 개인 순위 — 남녀 TOP 5 */
+    if (d.top && ((d.top.M || []).length || (d.top.F || []).length)) {
+      h += '<div class="card"><h2>개인 순위</h2>' + [['M', '남자'], ['F', '여자']].map(function (x) {
+        var list = d.top[x[0]] || [];
+        return '<h3 class="sub">' + x[1] + ' TOP 5</h3>' + (list.length
+          ? '<table><tr><th>순위</th><th class="l">선수</th><th>경기</th><th>승-무-패</th><th>승률</th></tr>' + list.map(function (p) {
+            return '<tr' + (me && p.name === me ? ' class="meRow"' : '') + '><td><span class="rk' + (p.rank === 1 ? ' up' : '') + '">' + p.rank + '</span></td>' +
+              '<td class="l">' + esc(p.name) + ' ' + teamPill(byIdx[p.team]).replace('class="tp', 'class="tp sm') + '</td><td>' + p.games + '</td>' +
+              '<td>' + p.w + '-' + p.d + '-' + p.l + '</td><td class="w">' + Math.round(p.rate * 1000) / 10 + '%</td></tr>';
+          }).join('') + '</table>'
+          : '<p class="note">아직 경기한 사람이 없습니다.</p>');
+      }).join('') + '<p class="note">개인 순위: 승률((승+무×0.5)÷경기) → 득실차 → 딴 게임</p></div>';
+    }
     var order = ['남복', '여복', '혼복', '잡복', '남단식', '여단식', '혼성단식'];
     var typeLine = order.filter(function (k) { return d.types[k]; }).map(function (k) { return k + ' ' + d.types[k]; }).join(' · ');
     h += '<div class="card"><h2>대진 · 결과</h2>' + (typeLine ? '<div class="sum">총 ' + d.total + '경기 · ' + esc(typeLine) + '</div>' : '');

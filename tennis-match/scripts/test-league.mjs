@@ -442,6 +442,46 @@ section('대회 참가자 바꾸기 — 확정한 뒤에도 운영진이 넣고 
   ok(/클럽 회원에서 넣기/.test(tr) && /게스트 넣기/.test(tr) && /대진표 수정/.test(tr), '참가자 관리: 회원·게스트 넣기, 대진에 든 사람은 안내');
 }
 
+section('대회 현황(대시보드) — 엑셀 대시보드 시트를 앱으로');
+{
+  /* 2026-10-06 앱 주인: 승점 기준(이번 대회 — 출시 전 다시 결정), 개인 순위 그대로, MVP 는 남녀 1위 */
+  const { tourneyDashboard, TEAM_RANK_RULE } = await import('../src/lib/tourneyStats.js');
+  const Pp = (id, g) => ({ id, name: id, gender: g });
+  const teams = [{ idx: 0, players: [Pp('a1', 'M'), Pp('a2', 'F')] }, { idx: 1, players: [Pp('b1', 'M'), Pp('b2', 'F')] }, { idx: 2, players: [Pp('c1', 'M'), Pp('c2', 'F')] }];
+  const ms = [
+    { round: 1, teamAIdx: 0, teamBIdx: 1, teamA: ['a1', 'a2'], teamB: ['b1', 'b2'], score: { a: 6, b: 3 }, type: '혼복' },
+    { round: 2, teamAIdx: 1, teamBIdx: 2, teamA: ['b1', 'b2'], teamB: ['c1', 'c2'], score: { a: 5, b: 5 }, type: '혼복' },
+    { round: 2, teamAIdx: 2, teamBIdx: 1, teamA: ['c1'], teamB: ['b1'], score: { a: 6, b: 2 }, type: '남단식' },
+    { round: 3, teamAIdx: 0, teamBIdx: 2, teamA: ['a1'], teamB: ['c1'], score: null, type: '남단식' },
+  ];
+  const d = tourneyDashboard(teams, ms);
+  eq('기본은 승점 기준(이번 대회)', TEAM_RANK_RULE, 'points');
+  ok(d.progress.done === 3 && d.progress.total === 4 && d.progress.lastRound === 2, '진행: 끝난 경기·전체·마지막 타임');
+  eq('팀 순위: 승점(무 0.5) → 득실차', d.standings.map((r) => `${r.idx}:${r.pts}`).join(' '), '2:1.5 0:1 1:0.5');
+  eq('예전 기준(이긴 경기)도 고를 수 있다', tourneyDashboard(teams, ms, { rule: 'wins' }).standings.map((r) => r.idx).join(''), '201');
+  ok(d.byType.find((b) => b.type === '혼복').pts[0] === 1 && d.byType.find((b) => b.type === '남단식').done === 1 && d.byType.find((b) => b.type === '남단식').total === 2, '종목별 승점·완료/전체');
+  ok(d.h2h[0][1] === 1 && d.h2h[1][2] === 0.5 && d.h2h[2][1] === 1.5, '맞대결 승점(행 팀 기준)');
+  ok(d.players.M[0].id === 'a1' && d.players.M[0].rate === 1 && Math.abs(d.players.M.find((r) => r.id === 'b1').rate - 0.5 / 3) < 1e-9, '개인: 승률=(승+무×0.5)÷경기, 남녀 따로');
+  eq('MVP 는 남·여 1위', [d.mvp.M.map((r) => r.id).join(), d.mvp.F.map((r) => r.id).join()].join('/'), 'a1/a2');
+  const tie = tourneyDashboard([{ idx: 0, players: [Pp('x', 'M')] }, { idx: 1, players: [Pp('y', 'M')] }],
+    [{ round: 1, teamAIdx: 0, teamBIdx: 1, teamA: ['x'], teamB: ['y'], score: { a: 4, b: 4 }, type: '남단식' }]);
+  eq('완전 동률이면 공동 1위(MVP 둘)', tie.mvp.M.length, 2);
+  ok(d.players.F.every((r) => r.games > 0 || r.rank === null), '경기 없는 사람은 순위 없음');
+  const lv = teamLiveView({ stage: 'league', league: { teams: [{ players: [P('a1', '가', 'M')] }, { players: [P('b1', '나', 'M')] }], matches: [{ round: 1, court: 1, teamAIdx: 0, teamBIdx: 1, teamA: ['a1'], teamB: ['b1'], score: { a: 5, b: 5 } }] } });
+  ok(lv.standings[0].pts === 0.5 && lv.mvp.M.length === 2 && lv.top.M.length === 2 && !('id' in lv.top.M[0]), '공개 링크: 같은 계산(승점·MVP·TOP 5), 회원 id 는 안 내보낸다');
+  const tls = readFileSync(new URL('../src/components/TeamLeagueScreen.jsx', import.meta.url), 'utf8');
+  const tms = readFileSync(new URL('../src/components/TeamMatchScreen.jsx', import.meta.url), 'utf8');
+  for (const [f, src] of [['3팀', tls], ['2팀', tms]]) {
+    const iD = src.indexOf('<TournamentDashboard'); const iM = src.indexOf('{myGamesBlock}'); const iB = src.indexOf('{boardBlock}'); const iO = src.indexOf('⚙️ 대회 운영');
+    ok(iD > 0 && iD < iM && iM < iB && iB < iO && /\{hasDraw \? \(/.test(src), `${f}: 대진 뒤 순서 — 대회 현황 → 내 경기 → 대진표 → 대회 운영`);
+    ok(!/오늘의 MVP<\/SectionTitle>/.test(src), `${f}: 따로 있던 오늘의 MVP 는 대회 현황으로 모았다`);
+  }
+  const db = readFileSync(new URL('../src/components/TournamentDashboard.jsx', import.meta.url), 'utf8');
+  ok(/TOP 5/.test(db) && /종목별 · 맞대결 승점/.test(db) && /\{isAdmin && \(\s*<Fold title="전체 선수 기록 \(운영진\)"/.test(db), '대회 현황: TOP 5 는 모두, 종목별·맞대결은 접기, 전체 선수 기록은 운영진만');
+  const tsc = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
+  ok((tsc.match(/opsExtra=\{opsExtra\}/g) || []).length === 2 && /<BlueWhiteSwitch t=\{t\}[\s\S]{0,400}<TournamentRoster/.test(tsc), '2팀↔3팀 바꾸기·참가자 관리는 [대회 운영] 묶음으로');
+}
+
 section('여러 휴대폰 — 남이 해 둔 팀 배치를 덮어쓰지 않는다');
 {
   /* 2026-10-06 앱 주인: 팀 배치했던 사람들이 다시 미배정으로 빠졌다.
@@ -705,7 +745,15 @@ section('청백전·팀 리그 외부 공개 보기 · 내 경기');
   eq('교류전 이름', v3.teams.map((x) => x.name).join(','), '우리 클럽,한강');
   const fx = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
   ok(/'teamLive\.js'/.test(readFileSync(new URL('./copy-functions-shared.mjs', import.meta.url), 'utf8')), '배포 때 서버로 복사하는 목록에 teamLive.js');
-  ok(!/^import /m.test(readFileSync(new URL('../src/lib/teamLive.js', import.meta.url), 'utf8')), 'teamLive.js 는 다른 파일을 부르지 않는다(복사된 곳에서도 돈다)');
+  {
+    /* teamLive.js 는 같이 복사되는 tourneyStats.js 만 부른다 — 복사된 곳(functions/shared)에서도 돈다 */
+    const src = readFileSync(new URL('../src/lib/teamLive.js', import.meta.url), 'utf8');
+    const imps = [...src.matchAll(/^import .* from '([^']+)';/gm)].map((m) => m[1]);
+    const shared = readFileSync(new URL('./copy-functions-shared.mjs', import.meta.url), 'utf8');
+    ok(imps.every((f) => f === './tourneyStats.js') && /'tourneyStats\.js'/.test(shared) && /^\s*\/\*|^\s*\/\//m.test(readFileSync(new URL('../src/lib/tourneyStats.js', import.meta.url), 'utf8'))
+      && !/^import /m.test(readFileSync(new URL('../src/lib/tourneyStats.js', import.meta.url), 'utf8')),
+      'teamLive.js 는 함께 복사되는 tourneyStats.js 만 부르고, tourneyStats.js 는 아무것도 안 부른다');
+  }
 
   ok(/t\.stage === 'team' \|\| t\.stage === 'league'/.test(fx) && /teamLiveView\(t, club\.name/.test(fx) && /t\.publicView !== true/.test(fx), '서버: 공개를 켠 청백전·팀 리그만 팀 대항 모양으로');
   const html = readFileSync(new URL('../web/live.html', import.meta.url), 'utf8');
