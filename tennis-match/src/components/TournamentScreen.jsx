@@ -24,6 +24,7 @@ import { TournamentDraw } from './TournamentDraw';
 import { TeamMatch } from './TeamMatchScreen';
 import { breadcrumb } from '../lib/crashReport';
 import { TeamLeague } from './TeamLeagueScreen';
+import { TournamentRoster } from './TournamentRoster';
 import { leagueFromRoster, BLUE_WHITE_RED, packLeague } from '../lib/teamLeague';
 import { MatchGrid } from './MatchGrid';
 import { DateField, Label } from './pickers';
@@ -954,9 +955,16 @@ export function Tournaments({
           }} />
         )}
 
+        {/* 참가자 관리 — 확정한 뒤에도 운영진이 넣고 뺀다(TournamentRoster). 새로 넣은 사람은 미배정으로 */}
+        {isAdmin && (t.stage === 'team' || t.stage === 'league') && (
+          <TournamentRoster t={t} members={members} flash={flash}
+            onPatch={(patch) => updateTournament(clubId, t.id, patch)} />
+        )}
+
+        {/* ⚠️ key 에 rosterVer — 참가자를 바꾸면 화면이 저장본을 다시 읽어 미배정에 보인다 */}
         {t.stage === 'league' ? (
           <TeamLeague
-            key={t.id}
+            key={`${t.id}-${t.rosterVer || 0}`}
             roster={t.roster || []}
             courts={t.courts || 2}
             saved={t.league}
@@ -971,7 +979,7 @@ export function Tournaments({
           />
         ) : t.stage === 'team' ? (
           <TeamMatch
-            key={t.id}
+            key={`${t.id}-${t.rosterVer || 0}`}
             format={t.format}
             attendees={t.roster || []}
             courts={t.courts || 1}

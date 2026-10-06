@@ -642,3 +642,62 @@ export function emptyDraft(matches, { courts = 2, rounds = 4 } = {}, teamsCount 
 }
 
 export { TEAM_ROUND_TYPES };
+
+/* ============================================================
+   대회 참가자 바꾸기 — 확정한 뒤에도 운영진이 넣고 뺀다(2026-10-06 앱 주인:
+   "대회 인원 확정했는데 변경이 필요해 — 모집 말고 운영진이 추가할 수 있게").
+   청백전 2팀(team)·3팀(league)·팀 리그 공통. 두 판(team·league)은 2팀↔3팀 전환 때 보관되므로 둘 다 맞춘다.
+   · 넣기: 명단(roster)에 더하고, 이미 편성이 있으면 미배정에 넣는다 — 팀은 운영진이 골라 준다.
+     교류전(club_match)은 우리 클럽 쪽(teamA)에 바로.
+   · 빼기: 대진에 들어 있으면 막는다(경기가 한쪽 사람 없이 남는다) — 대진표 수정에서 먼저 바꾸게.
+   · rosterVer 를 올린다 — 화면이 저장본을 다시 읽어 미배정에 보이게(TournamentScreen key).
+   ============================================================ */
+const idsOfMatch = (m) => [...(m?.teamA || []), ...(m?.teamB || [])];
+const dropId = (list, id) => (list || []).filter((p) => p && p.id !== id);
+
+/** 이 사람이 들어간 경기 수(2팀·3팀 판 모두) */
+export function gamesOf(t, id) {
+  const ms = [...((t?.league?.matches) || []), ...((t?.team?.matches) || [])];
+  return ms.filter((m) => idsOfMatch(m).includes(id)).length;
+}
+
+/** 참가자 넣기 → 대회 문서에 쓸 patch (이미 있는 사람은 건너뛴다) */
+export function rosterAddPatch(t, people) {
+  const roster = [...(t?.roster || [])];
+  const have = new Set(roster.map((p) => p.id));
+  const add = (people || []).filter((p) => p && p.id && !have.has(p.id));
+  if (!add.length) return { patch: null, added: [] };
+  const patch = { roster: [...roster, ...add], rosterVer: (Number(t?.rosterVer) || 0) + 1 };
+  if (t?.league) {
+    const lg = t.league;
+    patch.league = { ...lg, unassigned: [...(lg.unassigned || []), ...add] };
+  }
+  if (t?.team) {
+    const tm = t.team;
+    patch.team = t.format === 'club_match'
+      ? { ...tm, teamA: [...(tm.teamA || []), ...add] }
+      : { ...tm, unassigned: [...(tm.unassigned || []), ...add] };
+  }
+  return { patch, added: add };
+}
+
+/** 참가자 빼기 → { patch } 또는 { error, games } */
+export function rosterRemovePatch(t, id) {
+  const games = gamesOf(t, id);
+  if (games > 0) return { error: 'inGames', games };
+  if (!(t?.roster || []).some((p) => p.id === id)) return { error: 'notFound', games: 0 };
+  const patch = { roster: dropId(t.roster, id), rosterVer: (Number(t?.rosterVer) || 0) + 1 };
+  if (t.league) {
+    const lg = t.league;
+    patch.league = {
+      ...lg,
+      teams: (lg.teams || []).map((x) => (Array.isArray(x) ? dropId(x, id) : { ...x, players: dropId(x?.players, id) })),
+      unassigned: dropId(lg.unassigned, id),
+    };
+  }
+  if (t.team) {
+    const tm = t.team;
+    patch.team = { ...tm, teamA: dropId(tm.teamA, id), teamB: dropId(tm.teamB, id), unassigned: dropId(tm.unassigned, id) };
+  }
+  return { patch };
+}

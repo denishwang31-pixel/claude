@@ -399,6 +399,36 @@ section('대회 시간 — 시작 시간 · 한 타임 길이 → 타임 아래 
   ok(/r\.time \? '<small class="rt">'/.test(readFileSync(new URL('../web/live.html', import.meta.url), 'utf8')), '공개 웹 대진표도 타임 아래 시각');
 }
 
+section('대회 참가자 바꾸기 — 확정한 뒤에도 운영진이 넣고 뺀다');
+{
+  /* 2026-10-06 앱 주인: 대회 인원 확정했는데 변경이 필요 — 모집 말고 운영진이 추가 */
+  const { rosterAddPatch, rosterRemovePatch, gamesOf } = await import('../src/lib/teamLeague.js');
+  const A = P('a', '가', 'M'); const B = P('b', '나', 'F'); const N = P('n', '새사람', 'M');
+  const t = {
+    format: 'blue_white', stage: 'league', rosterVer: 2, roster: [A, B],
+    league: { teams: [{ players: [A] }, { players: [B] }], unassigned: [], matches: [{ id: 'm1', teamA: ['a'], teamB: ['b'] }] },
+    team: { teamA: [A], teamB: [B], unassigned: [], matches: [] },
+  };
+  const r = rosterAddPatch(t, [N, A]);
+  ok(r.added.length === 1 && r.patch.roster.length === 3 && r.patch.rosterVer === 3, '넣기: 명단에 더하고(이미 있는 사람은 건너뜀) 판 번호를 올린다');
+  ok(r.patch.league.unassigned[0].id === 'n' && r.patch.team.unassigned[0].id === 'n' && r.patch.league.matches.length === 1, '넣기: 2팀·3팀 판 모두 미배정에(대진은 그대로)');
+  ok(!nestedArrayPath(r.patch), '넣기: 저장할 수 있는 모양(배열 안 배열 없음)');
+  eq('교류전은 우리 클럽 쪽에 바로', rosterAddPatch({ ...t, format: 'club_match' }, [N]).patch.team.teamA.map((p) => p.id).join(','), 'a,n');
+  eq('대진에 든 사람 경기 수', gamesOf(t, 'a'), 1);
+  eq('대진에 든 사람은 못 뺀다', rosterRemovePatch(t, 'a').error, 'inGames');
+  const t2 = { ...t, ...r.patch };
+  const d = rosterRemovePatch(t2, 'n');
+  ok(!d.error && d.patch.roster.length === 2 && !d.patch.league.unassigned.length && !d.patch.team.unassigned.length && d.patch.rosterVer === 4, '빼기: 명단·미배정·팀에서 모두 빠진다');
+  const t3 = { ...t, league: { ...t.league, matches: [] } };
+  const d2 = rosterRemovePatch(t3, 'b');
+  ok(!d2.error && d2.patch.league.teams[1].players.length === 0 && d2.patch.team.teamB.length === 0, '빼기: 팀에 있던 사람도(대진이 없을 때)');
+  ok(!nestedArrayPath(d2.patch), '빼기: 저장할 수 있는 모양');
+  const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
+  ok(/<TournamentRoster t=\{t\} members=\{members\}/.test(ts) && (ts.match(/key=\{`\$\{t\.id\}-\$\{t\.rosterVer \|\| 0\}`\}/g) || []).length === 2, '대회 화면: 참가자 관리(운영진) + 바꾸면 편성 화면이 다시 읽는다');
+  const tr = readFileSync(new URL('../src/components/TournamentRoster.jsx', import.meta.url), 'utf8');
+  ok(/클럽 회원에서 넣기/.test(tr) && /게스트 넣기/.test(tr) && /대진표 수정/.test(tr), '참가자 관리: 회원·게스트 넣기, 대진에 든 사람은 안내');
+}
+
 section('대회 이벤트 — 행사·식사 시간엔 경기를 밀고 대진표에 띠로');
 {
   /* 2026-10-05 앱 주인: 처음·중간·마지막에 행사나 식사 같은 이벤트 — 이름·시간을 정하면 그 타임을 블락, 색도 다르게 */
