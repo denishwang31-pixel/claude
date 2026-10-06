@@ -75,7 +75,8 @@ export function TeamMatch({
   /* 접었다 펴는 구역 — 대진이 이미 있으면 설정들은 접힌 채로 시작한다 */
   const hasDrawAtOpen = (saved?.matches || []).length > 0;
   const [openSetup, setOpenSetup] = useState(!hasDrawAtOpen);
-  const [openTeams, setOpenTeams] = useState(!hasDrawAtOpen);
+  /* 미배정이 있으면 펼친 채로 — 참가자 관리에서 새로 넣은 사람이 접힌 칸에 숨어 "안 보인다"였다(2026-10-06) */
+  const [openTeams, setOpenTeams] = useState(!hasDrawAtOpen || (saved?.unassigned || []).length > 0);
   const [openConfig, setOpenConfig] = useState(!hasDrawAtOpen);
   const [openAttend, setOpenAttend] = useState(false);
   const [scoring, setScoring] = useState(null);

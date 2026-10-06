@@ -425,6 +425,10 @@ section('대회 참가자 바꾸기 — 확정한 뒤에도 운영진이 넣고 
   ok(!nestedArrayPath(d2.patch), '빼기: 저장할 수 있는 모양');
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
   ok(/<TournamentRoster t=\{t\} members=\{members\}/.test(ts) && (ts.match(/key=\{`\$\{t\.id\}-\$\{t\.rosterVer \|\| 0\}`\}/g) || []).length === 2, '대회 화면: 참가자 관리(운영진) + 바꾸면 편성 화면이 다시 읽는다');
+  for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
+    ok(/useState\(!hasDrawAtOpen \|\| \(saved\?\.unassigned \|\| \[\]\)\.length > 0\)/.test(readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8')),
+      `${f}: 미배정이 있으면 [팀 배치 현황]을 펼친 채로(새로 넣은 사람이 접힌 칸에 숨었다)`);
+  }
   const tr = readFileSync(new URL('../src/components/TournamentRoster.jsx', import.meta.url), 'utf8');
   ok(/클럽 회원에서 넣기/.test(tr) && /게스트 넣기/.test(tr) && /대진표 수정/.test(tr), '참가자 관리: 회원·게스트 넣기, 대진에 든 사람은 안내');
 }
