@@ -15,7 +15,7 @@ import {
   splitTeams, teamStrength, generateTeamMatches, teamScore, teamPlayerStats,
 } from '../lib/teamMatch';
 import {
-  moveToTeam, UNASSIGNED, withTeamIdx, twoTeamSide, actualMatchType, gridExtent,
+  missingFromTeams, moveToTeam, UNASSIGNED, withTeamIdx, twoTeamSide, actualMatchType, gridExtent,
   addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
@@ -53,14 +53,17 @@ export function TeamMatch({
   const isClubMatch = format === TOURNAMENT_FORMAT.TEAM_CLUB;
 
   /* 저장된 편성이 있으면 그걸 쓰고, 없으면 자동 분할 결과를 보여준다 */
-  const [teamA, setTeamA] = useState(() => saved?.teamA
+  /* 명단에 있는데 어느 팀에도·미배정에도 없는 사람 — 청백전은 미배정으로, 교류전은 우리 클럽 쪽으로 되살린다
+     (참가자를 넣었는데 아예 안 보이던 것, lib/teamLeague.js missingFromTeams) */
+  const lost = saved?.teamA ? missingFromTeams(attendees, [saved.teamA, saved.teamB, saved.unassigned]) : [];
+  const [teamA, setTeamA] = useState(() => (saved?.teamA ? [...saved.teamA, ...(isClubMatch ? lost : [])] : null)
     || (isClubMatch ? attendees : splitTeams(attendees, { busuToNtrp }).teamA));
   const [teamB, setTeamB] = useState(() => saved?.teamB
     || (isClubMatch ? [] : splitTeams(attendees, { busuToNtrp }).teamB));
   const [matches, setMatches] = useState(saved?.matches || []);
   /* 배치 방식 · 미배정 · 골라 둔 회원 — 청백전만(교류전 B팀은 상대 클럽 선수라 옮길 일이 없다) */
   const [placement, setPlacement] = useState(saved?.placement === 'manual' ? 'manual' : 'auto');
-  const [unassigned, setUnassigned] = useState(saved?.unassigned || []);
+  const [unassigned, setUnassigned] = useState(() => [...(saved?.unassigned || []), ...(isClubMatch ? [] : lost)]);
   const [picked, setPicked] = useState([]);
   const selectable = isAdmin && !isClubMatch;
   /* 경기 손보기 — 3팀 청백전과 같은 고치기 화면(LeagueMatchEditor)을 쓴다 */
@@ -76,7 +79,7 @@ export function TeamMatch({
   const hasDrawAtOpen = (saved?.matches || []).length > 0;
   const [openSetup, setOpenSetup] = useState(!hasDrawAtOpen);
   /* 미배정이 있으면 펼친 채로 — 참가자 관리에서 새로 넣은 사람이 접힌 칸에 숨어 "안 보인다"였다(2026-10-06) */
-  const [openTeams, setOpenTeams] = useState(!hasDrawAtOpen || (saved?.unassigned || []).length > 0);
+  const [openTeams, setOpenTeams] = useState(!hasDrawAtOpen || unassigned.length > 0);
   const [openConfig, setOpenConfig] = useState(!hasDrawAtOpen);
   const [openAttend, setOpenAttend] = useState(false);
   const [scoring, setScoring] = useState(null);

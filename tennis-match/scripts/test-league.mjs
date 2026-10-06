@@ -423,10 +423,19 @@ section('대회 참가자 바꾸기 — 확정한 뒤에도 운영진이 넣고 
   const d2 = rosterRemovePatch(t3, 'b');
   ok(!d2.error && d2.patch.league.teams[1].players.length === 0 && d2.patch.team.teamB.length === 0, '빼기: 팀에 있던 사람도(대진이 없을 때)');
   ok(!nestedArrayPath(d2.patch), '빼기: 저장할 수 있는 모양');
+  /* 명단에만 있고 편성에 없는 사람 — 화면을 열 때 미배정으로 되살린다(앱 주인: 미배정에도 아예 없었다) */
+  const { missingFromTeams } = await import('../src/lib/teamLeague.js');
+  eq('명단에만 있는 사람을 찾는다', missingFromTeams([A, B, N], [[A], [B], []]).map((p) => p.id), ['n']);
+  eq('미배정에 있으면 빠진 게 아니다', missingFromTeams([A, B, N], [[A], [B], [N]]).length, 0);
+  eq('빈 편성도 죽지 않는다', missingFromTeams([A], [null, undefined]).map((p) => p.id), ['a']);
+  const tls = readFileSync(new URL('../src/components/TeamLeagueScreen.jsx', import.meta.url), 'utf8');
+  const tms = readFileSync(new URL('../src/components/TeamMatchScreen.jsx', import.meta.url), 'utf8');
+  ok(/missingFromTeams\(roster, \[\.\.\.saved\.teams, base\]\)/.test(tls) && /missingFromTeams\(attendees, \[saved\.teamA, saved\.teamB, saved\.unassigned\]\)/.test(tms),
+    '2팀·3팀 화면 모두 명단에만 있는 사람을 미배정으로(교류전은 우리 클럽 쪽)');
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
   ok(/<TournamentRoster t=\{t\} members=\{members\}/.test(ts) && (ts.match(/key=\{`\$\{t\.id\}-\$\{t\.rosterVer \|\| 0\}`\}/g) || []).length === 2, '대회 화면: 참가자 관리(운영진) + 바꾸면 편성 화면이 다시 읽는다');
   for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
-    ok(/useState\(!hasDrawAtOpen \|\| \(saved\?\.unassigned \|\| \[\]\)\.length > 0\)/.test(readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8')),
+    ok(/useState\(!hasDrawAtOpen \|\| unassigned\.length > 0\)/.test(readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8')),
       `${f}: 미배정이 있으면 [팀 배치 현황]을 펼친 채로(새로 넣은 사람이 접힌 칸에 숨었다)`);
   }
   const tr = readFileSync(new URL('../src/components/TournamentRoster.jsx', import.meta.url), 'utf8');

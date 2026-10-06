@@ -21,7 +21,7 @@ import {
   teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames, TEAM_NAME_MAX,
   leagueBalanceNote, teamGameCounts,
   addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
-  packLeague, unpackLeague, moveToTeam, emptyTeams, resizeTeams, UNASSIGNED,
+  packLeague, unpackLeague, moveToTeam, emptyTeams, resizeTeams, UNASSIGNED, missingFromTeams,
   actualMatchType, gridExtent,
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
@@ -57,7 +57,11 @@ export function TeamLeague({
   const [matches, setMatches] = useState(saved?.matches || []);
   /* 배치 방식 — auto: 실력·성비 자동 / manual: 미배정에서 손으로. 미배정 명단은 manual 에서 주로 쓴다 */
   const [placement, setPlacement] = useState(saved?.config?.placement === 'manual' ? 'manual' : 'auto');
-  const [unassigned, setUnassigned] = useState(saved?.unassigned || []);
+  /* 미배정 — 저장본 + 명단에 있는데 어느 팀에도 없는 사람(missingFromTeams: 참가자를 넣었는데 아예 안 보이던 것) */
+  const [unassigned, setUnassigned] = useState(() => {
+    const base = saved?.unassigned || [];
+    return saved?.teams ? [...base, ...missingFromTeams(roster, [...saved.teams, base])] : base;
+  });
   const [picked, setPicked] = useState([]);       // 골라 둔 회원 id — 한꺼번에 옮길 사람
   const [nCourts, setNCourts] = useState(String(saved?.config?.courts || courts || 2));
   /* 타임 수 — 저장된 대진 설정, 없으면 대회 시작~종료 시간으로 계산(RoundTimingEditor), 그도 없으면 6 */
@@ -79,7 +83,7 @@ export function TeamLeague({
   const hasDrawAtOpen = (saved?.matches || []).length > 0;
   const [openSetup, setOpenSetup] = useState(!hasDrawAtOpen);
   /* 미배정이 있으면 펼친 채로 — 참가자 관리에서 새로 넣은 사람이 접힌 칸에 숨어 "안 보인다"였다(2026-10-06) */
-  const [openTeams, setOpenTeams] = useState(!hasDrawAtOpen || (saved?.unassigned || []).length > 0);
+  const [openTeams, setOpenTeams] = useState(!hasDrawAtOpen || unassigned.length > 0);
   const [openConfig, setOpenConfig] = useState(!hasDrawAtOpen);
   const [openAttend, setOpenAttend] = useState(false);
   /* 팀 이름 — 비어 있으면 A팀·B팀…(lib/teamLeague.js teamLook). 청팀·홍팀처럼 바꾸면 색도 따라간다 */

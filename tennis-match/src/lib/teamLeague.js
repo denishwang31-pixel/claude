@@ -701,3 +701,16 @@ export function rosterRemovePatch(t, id) {
   }
   return { patch };
 }
+
+/**
+ * 명단(roster)에는 있는데 어느 팀에도·미배정에도 없는 사람 — 화면을 열 때 미배정으로 되살린다.
+ * 2026-10-06 앱 주인: "대회 인원은 추가됐는데 팀 배정에는 없다 — 미배정에도 아예 없었다".
+ * 어떤 길로 편성 저장본에서 빠졌든(옛 판·동시에 저장 등) 명단에 있는 사람은 반드시 어딘가 보이게 한다.
+ * @param roster  대회 명단 [{id,…}]
+ * @param groups  지금 편성의 사람 목록들 [[팀1 선수…], [팀2…], [미배정…]]
+ */
+export function missingFromTeams(roster, groups) {
+  const placed = new Set();
+  (groups || []).forEach((g) => (g || []).forEach((p) => { if (p?.id) placed.add(p.id); }));
+  return (roster || []).filter((p) => p?.id && !placed.has(p.id));
+}
