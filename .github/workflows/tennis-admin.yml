@@ -15,10 +15,10 @@ on:
       action:
         description: '무엇을 할까'
         type: choice
-        options: [grant, list, revoke, info, social-log, errors]
+        options: [grant, list, revoke, info, social-log, errors, backup-on, backup-status, restore-tournament]
         default: grant
       target:
-        description: '이메일 (예: 평소 로그인하는 구글 이메일). list·social-log 는 비워 두세요. info = 그 계정의 로그인 방식·이메일 인증 상태 보기, social-log = 카카오·네이버 로그인이 서버까지 왔는지, errors = 앱 화면 오류 기록(최근 7일)'
+        description: '이메일 (예: 평소 로그인하는 구글 이메일). list·social-log 는 비워 두세요. info = 그 계정의 로그인 방식·이메일 인증 상태 보기, social-log = 카카오·네이버 로그인이 서버까지 왔는지, errors = 앱 화면 오류 기록(최근 7일). backup-on·backup-status = 서버 백업 켜기·보기(비워 두세요). restore-tournament = "대회 이름 @ 2026-10-09 14:30"(한국 시각 — 그 시각 상태로 되돌리기)'
         type: string
         default: ''
       ref:
@@ -58,9 +58,51 @@ jobs:
           fi
           printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
 
+      # ---------- 서버 백업 (2026-10-06 앱 주인) ----------
+      #   backup-on    : ① 지난 7일 아무 시각으로 읽기·되돌리기(PITR) ② 매일 자동 백업(7일 보관)을 켠다. 여러 번 눌러도 된다.
+      #   backup-status: 켜져 있는지·가장 이른 되돌릴 수 있는 시각·백업 목록
+      #   되돌리기는 restore-tournament(아래 「실행」 → scripts/app-admin.cjs)
+      # ⚠️ 서비스 계정에 roles/datastore.owner 가 없으면 막힌다 — 그때 안내를 찍는다(콘솔 메뉴 이름은 적지 않는다).
+      - uses: google-github-actions/setup-gcloud@v2
+        if: inputs.action == 'backup-on' || inputs.action == 'backup-status'
+
+      - name: 서버 백업
+        if: inputs.action == 'backup-on' || inputs.action == 'backup-status'
+        env:
+          ACT: ${{ inputs.action }}
+        run: |
+          P=tennis-match-52b31
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json" --quiet >/dev/null 2>&1
+          FAIL=0
+          if [ "$ACT" = "backup-on" ]; then
+            echo "① 지난 7일 아무 시각으로 되돌리기(PITR) 켜기"
+            gcloud firestore databases update --database='(default)' --enable-pitr --project="$P" --quiet || FAIL=1
+            echo "② 매일 자동 백업(7일 보관)"
+            if gcloud firestore backups schedules list --database='(default)' --project="$P" --format='value(name)' 2>/dev/null | grep -q .; then
+              echo "   이미 켜져 있습니다"
+            else
+              gcloud firestore backups schedules create --database='(default)' --recurrence=daily --retention=7d --project="$P" || FAIL=1
+            fi
+          fi
+          echo ""
+          echo "== 지금 상태 =="
+          gcloud firestore databases describe --database='(default)' --project="$P" \
+            --format='table[box](pointInTimeRecoveryEnablement:label=되돌리기_PITR,earliestVersionTime:label=가장_이른_시각_UTC,versionRetentionPeriod:label=보관)' || FAIL=1
+          echo "매일 백업 일정:"
+          gcloud firestore backups schedules list --database='(default)' --project="$P" --format='table(dailyRecurrence:label=매일,retention:label=보관)' || FAIL=1
+          echo "만들어진 백업(최근):"
+          gcloud firestore backups list --project="$P" --format='table(snapshotTime:label=시각_UTC,state:label=상태)' 2>/dev/null | head -8 || true
+          if [ "$FAIL" = "1" ]; then
+            echo "::error::백업 설정·조회가 막혔습니다. 이 서비스 계정(FIREBASE_SERVICE_ACCOUNT)에 IAM 역할 roles/datastore.owner 가 필요합니다. 역할을 준 뒤 backup-on 을 다시 실행해 주세요."
+            exit 1
+          fi
+          echo ""
+          echo "✅ 대진·결과를 실수로 지웠으면 restore-tournament 로 \"대회 이름 @ 2026-10-09 14:30\"(지우기 전 시각)을 넣어 되돌립니다."
+
       # 이메일은 로그에 가려서 남긴다(스크립트가 de***@gmail.com 으로 찍는다).
       # ⚠️ 입력값을 run 줄에 직접 끼우지 않는다 — env 로 넘겨야 셸 해석을 피한다.
       - name: 실행
+        if: inputs.action != 'backup-on' && inputs.action != 'backup-status'
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
           GOOGLE_CLOUD_PROJECT: tennis-match-52b31

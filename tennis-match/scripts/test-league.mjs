@@ -442,6 +442,24 @@ section('대회 참가자 바꾸기 — 확정한 뒤에도 운영진이 넣고 
   ok(/클럽 회원에서 넣기/.test(tr) && /게스트 넣기/.test(tr) && /대진표 수정/.test(tr), '참가자 관리: 회원·게스트 넣기, 대진에 든 사람은 안내');
 }
 
+section('서버 백업 · 대회 되돌리기(관리자 workflow)');
+{
+  /* 2026-10-06 앱 주인: 서버 백업 켜기 — 실수로 대진 날아가면 다시 불러올 수 있게 */
+  const wf = readFileSync(new URL('../../.github/workflows/tennis-admin.yml', import.meta.url), 'utf8');
+  ok(/backup-on, backup-status, restore-tournament/.test(wf) && /--enable-pitr/.test(wf) && /backups schedules create --database='\(default\)' --recurrence=daily --retention=7d/.test(wf),
+    '관리자 workflow: 지난 7일 되돌리기(PITR) + 매일 백업(7일) 켜기·보기');
+  ok(/roles\/datastore\.owner/.test(wf), '권한이 없으면 필요한 역할 아이디를 알린다(콘솔 메뉴 이름은 적지 않는다)');
+  const ad = readFileSync(new URL('./app-admin.cjs', import.meta.url), 'utf8');
+  const parse = new Function(ad.slice(ad.indexOf('function parseRestoreTarget'), ad.indexOf('async function restoreTournament')) + '; return parseRestoreTarget;')();
+  const r1 = parse('쿤블던 2026 @ 2026-10-09 14:30');
+  ok(r1 && r1.name === '쿤블던 2026' && r1.at.toISOString() === '2026-10-09T05:30:00.000Z' && !r1.club, '되돌리기 입력: "대회 이름 @ 날짜 시각"(한국 시각 → UTC)');
+  const r2 = parse('써티포티 > 쿤블던 @ 2026-10-09 9:05');
+  ok(r2 && r2.club === '써티포티' && r2.at.toISOString() === '2026-10-09T00:05:00.000Z', '같은 이름 대회가 여럿이면 "클럽 > 대회 @ 시각"');
+  eq('틀린 입력은 거른다', parse('쿤블던 14:30'), null);
+  ok(/readOnly: true, readTime/.test(ad) && /tournamentBackups/.test(ad) && /7 \* 24 \* 3600 \* 1000/.test(ad),
+    '그 시각 상태로 읽어 되돌리고, 덮어쓰기 전 지금 상태를 남긴다(최근 7일만)');
+}
+
 section('대회 현황(대시보드) — 엑셀 대시보드 시트를 앱으로');
 {
   /* 2026-10-06 앱 주인: 승점 기준(이번 대회 — 출시 전 다시 결정), 개인 순위 그대로, MVP 는 남녀 1위 */

@@ -17,7 +17,8 @@
      ADMIN_ACTION  grant | revoke | list | info(로그인 방식·인증 상태 보기)
                    | social-log(카카오·네이버 로그인이 서버까지 왔는지 — 최근 요청·기록)
                    | errors(앱 화면 오류 기록 최근 7일 — src/lib/crashReport.js)
-     ADMIN_TARGET  이메일 또는 uid
+                   | restore-tournament(대회 하나를 지난 시각 상태로 되돌리기 — 아래)
+     ADMIN_TARGET  이메일 또는 uid · restore-tournament 는 "대회 이름 @ 2026-10-09 14:30"(한국 시각)
    ============================================================ */
 const path = require('path');
 const req = (m) => require(require.resolve(m, { paths: [path.join(__dirname, '..', 'functions')] }));
@@ -115,6 +116,74 @@ async function clientErrors(db) {
   });
 }
 
+/* ============================================================
+   대회 되돌리기 — 실수로 대진·결과를 지웠을 때 (2026-10-06 앱 주인: 서버 백업)
+   서버 백업(지난 7일 아무 시각으로 읽기, PITR)이 켜져 있어야 한다(같은 workflow 의 backup-on).
+   입력: "대회 이름 @ 2026-10-09 14:30" — 그 시각(한국)에 대회가 어땠는지 읽어 지금 자리에 다시 쓴다.
+     · 대회 이름이 여러 클럽에 있으면 "클럽 이름 > 대회 이름 @ …" 로 좁힌다
+     · 덮어쓰기 전에 지금 상태를 clubs/{c}/tournamentBackups 에 남긴다 — 되돌리기도 되돌릴 수 있게
+     · 대회 자체를 지웠어도 그 시각에 있었으면 되살린다
+   ⚠️ 로그는 공개다 — 클럽·대회 이름과 숫자만 찍는다(회원 이름 없음).
+   ============================================================ */
+function parseRestoreTarget(raw) {
+  const m = /^\s*(?:(.+?)\s*>\s*)?(.+?)\s*@\s*(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})\s*$/.exec(String(raw || ''));
+  if (!m) return null;
+  const [, club, name, ymd, hh, mm] = m;
+  const utc = Date.parse(`${ymd}T${String(hh).padStart(2, '0')}:${mm}:00Z`) - 9 * 3600 * 1000;   // 한국 시각 → UTC
+  return { club: club ? club.trim() : '', name: name.trim(), at: new Date(utc) };
+}
+
+async function restoreTournament(db) {
+  const { Timestamp } = req('firebase-admin/firestore');
+  const t = parseRestoreTarget(process.env.ADMIN_TARGET);
+  if (!t || Number.isNaN(t.at.getTime())) throw new Error('target 을 "대회 이름 @ 2026-10-09 14:30" 꼴로 넣어 주세요(한국 시각).');
+  const age = Date.now() - t.at.getTime();
+  if (age < 60 * 1000) throw new Error('되돌릴 시각은 지금보다 1분 이상 전이어야 합니다.');
+  if (age > 7 * 24 * 3600 * 1000) throw new Error('서버 백업은 최근 7일만 보관합니다. 그보다 이른 시각은 되돌릴 수 없습니다.');
+  const readTime = Timestamp.fromDate(t.at);
+  /* 그 시각의 대회들을 읽는다(지금 지워졌어도 그때 있었으면 나온다) */
+  /* ⚠️ 모든 클럽을 한 번에 이름으로 찾는 검색(collectionGroup)은 따로 색인이 필요하고 지난 시각엔 없을 수 있다 —
+        클럽마다 대회 목록을 그 시각으로 읽어 이름을 맞춘다(클럽 수가 적다) */
+  const clubRefs = await db.collection('clubs').listDocuments();
+  const past = await db.runTransaction(async (tx) => {
+    const out = [];
+    for (const c of clubRefs) {
+      const snap = await tx.get(c.collection('tournaments'));
+      snap.docs.forEach((d) => { if (String(d.data()?.name || '').trim() === t.name) out.push({ ref: d.ref, data: d.data() }); });
+    }
+    return out;
+  }, { readOnly: true, readTime });
+  const clubName = async (ref) => String((await ref.parent.parent.get()).data()?.name || '');
+  const rows = [];
+  for (const x of past) rows.push({ ...x, club: await clubName(x.ref) });
+  const hit = t.club ? rows.filter((r) => r.club === t.club) : rows;
+  console.log(`되돌릴 시각: ${process.env.ADMIN_TARGET.split('@')[1].trim()} (한국)`);
+  if (!hit.length) {
+    console.log(`::error::그 시각에 "${t.name}" 대회를 찾지 못했습니다. 대회 이름(띄어쓰기까지)과 시각을 확인해 주세요.`);
+    process.exit(1);
+  }
+  if (hit.length > 1) {
+    console.log(`::error::"${t.name}" 대회가 ${hit.length}개 있습니다 — "클럽 이름 > 대회 이름 @ 시각" 꼴로 다시 넣어 주세요.`);
+    hit.forEach((r) => console.log(`  · ${r.club || '(이름 없는 클럽)'} > ${t.name}`));
+    process.exit(1);
+  }
+  const { ref, data } = hit[0];
+  const now = await ref.get();
+  const count = (x) => {
+    const ms = [...(x?.league?.matches || []), ...(x?.team?.matches || []), ...(x?.matches || [])];
+    return `경기 ${ms.length} · 결과 ${ms.filter((m) => m && m.score).length} · 참가자 ${(x?.roster || []).length}`;
+  };
+  console.log(`그 시각: ${count(data)}`);
+  console.log(`지금:   ${now.exists ? count(now.data()) : '(지워져 있음)'}`);
+  if (now.exists) {
+    const keep = ref.parent.parent.collection('tournamentBackups').doc(`${ref.id}_${Date.now()}`);
+    await keep.set({ tournamentId: ref.id, savedAt: FieldValue.serverTimestamp(), reason: 'restore-tournament 직전 상태', data: now.data() });
+    console.log('지금 상태를 따로 남겼습니다(tournamentBackups) — 이 되돌리기도 되돌릴 수 있습니다.');
+  }
+  await ref.set(data);
+  console.log(`되돌렸습니다: ${hit[0].club || ''} > ${t.name}. 앱에서 대회를 다시 열면 그 시각의 대진·결과가 보입니다.`);
+}
+
 async function main() {
   initializeApp();
   const auth = getAuth();
@@ -133,6 +202,7 @@ async function main() {
 
   if (action === 'social-log') { await socialLog(db); return; }
   if (action === 'errors') { await clientErrors(db); return; }
+  if (action === 'restore-tournament') { await restoreTournament(db); return; }
 
   const user = await resolveUser(auth, process.env.ADMIN_TARGET);
   const ref = db.collection('appAdmins').doc(user.uid);
