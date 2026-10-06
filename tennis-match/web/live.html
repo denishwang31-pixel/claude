@@ -141,6 +141,12 @@
   .mvp span { display: block; font-weight: 900; margin-top: 2px; } .mvp i { display: block; font-style: normal; color: var(--sub); font-size: 11px; margin-top: 2px; }
   h3.sub { font-size: 13.5px; margin: 12px 0 2px; }
   tr.meRow td { background: var(--green-soft); }
+  .prog { font-size: 13px; color: var(--sub); margin-bottom: 4px; } .prog b { font-size: 20px; color: var(--ink); }
+  .prog .bar { height: 6px; border-radius: 3px; background: var(--fill); margin-top: 6px; overflow: hidden; }
+  .prog .bar i { display: block; height: 6px; background: var(--green); }
+  details.fold summary { font-size: 16px; font-weight: 800; cursor: pointer; list-style: none; }
+  details.fold summary::after { content: ' 펼치기 ▼'; font-size: 12px; color: var(--green); font-weight: 800; }
+  details.fold[open] summary::after { content: ' 접기 ▲'; color: var(--sub); }
   .foot { font-size: 12px; color: var(--faint); text-align: center; margin-top: 24px; }
 </style>
 </head>
@@ -253,18 +259,13 @@
     /* 승점 — 승 1·무 0.5(앱 대회 현황과 같은 기준, 서버 tourneyStats). 옛 서버면 이긴 경기 수 */
     var pts = function (r) { var p = r.pts != null ? r.pts : r.wins; return (p % 1 === 0 ? p : p.toFixed(1)); };
     var ptsRule = d.rule === 'wins' || d.standings.every(function (r) { return r.pts == null; });
-    if (st.length === 2) {
-      /* 2팀 — 큰 점수판(승점) */
-      var A = st.filter(function (r) { return r.idx === 0; })[0] || st[0];
-      var B = st.filter(function (r) { return r.idx === 1; })[0] || st[1];
-      var pa = Number(pts(A)), pb = Number(pts(B));
-      h += '<div class="board">' +
-        '<div class="side' + (pa > pb ? ' lead' : '') + '">' + teamPill(A) + '<b>' + pts(A) + '</b></div>' +
-        '<div class="colon">:</div>' +
-        '<div class="side' + (pb > pa ? ' lead' : '') + '">' + teamPill(B) + '<b>' + pts(B) + '</b></div></div>' +
-        '<div class="sum" style="text-align:center">' + (ptsRule ? '이긴 경기' : '승점') + ' · 총 게임 ' + A.gf + ' : ' + B.gf + (A.draws ? ' · 무승부 ' + A.draws : '') + '</div>';
-    }
-    h += '<div class="card"><h2>🏆 팀 순위</h2><table><tr><th>순위</th><th class="l">팀</th><th>승점</th><th>승-무-패</th><th>득실</th></tr>' +
+    /* 2팀 큰 점수판은 앱처럼 대회 현황 팀 순위로 합쳤다(2026-10-06) */
+    /* 진행 — 끝난 경기 / 전체 · 마지막 입력 타임(앱 대회 현황 맨 위와 같다) */
+    var pg = d.progress || { done: d.done, total: d.total, lastRound: 0 };
+    var pcent = pg.total ? Math.round((pg.done / pg.total) * 100) : 0;
+    h += '<div class="card"><h2>🏆 대회 현황</h2><div class="prog"><b>' + pg.done + '</b> / ' + pg.total + '경기 끝남' + (pg.lastRound ? ' · 마지막 입력 ' + pg.lastRound + '타임' : '') +
+      '<div class="bar"><i style="width:' + pcent + '%"></i></div></div>';
+    h += '<h3 class="sub">팀 순위</h3><table><tr><th>순위</th><th class="l">팀</th><th>승점</th><th>승-무-패</th><th>득실</th></tr>' +
       st.map(function (r) {
         return '<tr><td><span class="rk' + (r.rank === 1 && r.played ? ' up' : '') + '">' + r.rank + '</span></td>' +
           '<td class="l">' + teamPill(r) + ' <small style="color:var(--faint)">' + r.players + '명</small></td>' +
@@ -285,7 +286,7 @@
     h += '<p class="note">' + (ptsRule ? '순위: 이긴 경기 → 게임 득실 → 딴 게임' : '순위: 승점(승 1·무 0.5) → 득실차 → 딴 게임') + '</p></div>';
     /* 개인 순위 — 남녀 TOP 5 */
     if (d.top && ((d.top.M || []).length || (d.top.F || []).length)) {
-      h += '<div class="card"><h2>개인 순위</h2>' + [['M', '남자'], ['F', '여자']].map(function (x) {
+      h += '<div class="card"><h2>개인 순위 TOP 5</h2>' + [['M', '남자'], ['F', '여자']].map(function (x) {
         var list = d.top[x[0]] || [];
         return '<h3 class="sub">' + x[1] + ' TOP 5</h3>' + (list.length
           ? '<table><tr><th>순위</th><th class="l">선수</th><th>경기</th><th>승-무-패</th><th>승률</th></tr>' + list.map(function (p) {
@@ -295,6 +296,24 @@
           }).join('') + '</table>'
           : '<p class="note">아직 경기한 사람이 없습니다.</p>');
       }).join('') + '<p class="note">개인 순위: 승률((승+무×0.5)÷경기) → 득실차 → 딴 게임</p></div>';
+    }
+    /* 종목별 · 맞대결 승점 — 접어 둔다(앱과 같다) */
+    if ((d.byType || []).length) {
+      var ids = d.teams.map(function (x) { return x.idx; }).sort(function (a, b) { return a - b; });
+      var pt = function (v) { v = Number(v) || 0; return v % 1 === 0 ? String(v) : v.toFixed(1); };
+      var nm = function (i) { return esc((byIdx[i] || {}).name || ''); };
+      h += '<details class="card fold"' + (foldOpen ? ' open' : '') + '><summary>종목별 · 맞대결 승점</summary>' +
+        '<h3 class="sub">종목별 승점</h3><table><tr><th class="l">종목</th>' + ids.map(function (i) { return '<th>' + nm(i) + '</th>'; }).join('') + '<th>완료/전체</th></tr>' +
+        d.byType.map(function (b) {
+          return '<tr><td class="l"><b>' + esc(b.type) + '</b></td>' + ids.map(function (i) { return '<td class="w">' + pt(b.pts[i]) + '</td>'; }).join('') + '<td>' + b.done + '/' + b.total + '</td></tr>';
+        }).join('') + '</table>' +
+        '<h3 class="sub">맞대결 승점 <small style="color:var(--faint);font-weight:600">(가로 팀이 세로 팀을 상대로)</small></h3><table><tr><th></th>' +
+        ids.map(function (j) { return '<th>vs ' + nm(j) + '</th>'; }).join('') + '</tr>' +
+        ids.map(function (i) {
+          return '<tr><td class="l">' + teamPill(byIdx[i]).replace('class="tp', 'class="tp sm') + '</td>' + ids.map(function (j) {
+            return '<td' + (i === j ? ' style="color:var(--faint)"' : ' class="w"') + '>' + (i === j ? '—' : pt((d.h2h || {})[i] && d.h2h[i][j])) + '</td>';
+          }).join('') + '</tr>';
+        }).join('') + '</table></details>';
     }
     var order = ['남복', '여복', '혼복', '잡복', '남단식', '여단식', '혼성단식'];
     var typeLine = order.filter(function (k) { return d.types[k]; }).map(function (k) { return k + ' ' + d.types[k]; }).join(' · ');
@@ -373,6 +392,10 @@
     h += '</div><p class="foot">Court · 테니스 클럽 운영 앱</p>';
     document.getElementById('top').innerHTML = top;
     document.getElementById('rest').innerHTML = h;
+    /* 30초마다 다시 그려도 [종목별 · 맞대결] 을 펼쳐 둔 채로 */
+    Array.prototype.forEach.call(document.querySelectorAll('details.fold'), function (el) {
+      el.addEventListener('toggle', function () { foldOpen = el.open; });
+    });
     renderMine(d, byIdx, me);
   }
 
@@ -383,6 +406,7 @@
      ⚠️ 입력칸은 한 번만 만든다 — 30초마다 다시 그려도 쓰던 글자·키보드가 날아가지 않게.
      ============================================================ */
   var meQ = '';
+  var foldOpen = false;   // [종목별 · 맞대결 승점] 펼침 — 다시 그릴 때 유지
   try { meQ = localStorage.getItem('court-live-me') || ''; } catch (e) { meQ = ''; }
   function splitNames(joined) { return String(joined || '').split('·').map(function (x) { return x.trim(); }).filter(Boolean); }
   function isMine(m, name) { return splitNames(m.a).indexOf(name) >= 0 || splitNames(m.b).indexOf(name) >= 0; }

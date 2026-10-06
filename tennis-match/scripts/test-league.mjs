@@ -469,6 +469,10 @@ section('대회 현황(대시보드) — 엑셀 대시보드 시트를 앱으로
   ok(d.players.F.every((r) => r.games > 0 || r.rank === null), '경기 없는 사람은 순위 없음');
   const lv = teamLiveView({ stage: 'league', league: { teams: [{ players: [P('a1', '가', 'M')] }, { players: [P('b1', '나', 'M')] }], matches: [{ round: 1, court: 1, teamAIdx: 0, teamBIdx: 1, teamA: ['a1'], teamB: ['b1'], score: { a: 5, b: 5 } }] } });
   ok(lv.standings[0].pts === 0.5 && lv.mvp.M.length === 2 && lv.top.M.length === 2 && !('id' in lv.top.M[0]), '공개 링크: 같은 계산(승점·MVP·TOP 5), 회원 id 는 안 내보낸다');
+  ok(lv.progress.done === 1 && lv.byType.length === 1 && lv.h2h[0][1] === 0.5, '공개 링크: 진행·종목별·맞대결도(앱 대회 현황과 같다)');
+  const lh = readFileSync(new URL('../web/live.html', import.meta.url), 'utf8');
+  ok(/🏆 대회 현황/.test(lh) && /개인 순위 TOP 5/.test(lh) && /<details class="card fold"/.test(lh) && /종목별 · 맞대결 승점/.test(lh) && !/전체 선수 기록/.test(lh),
+    '웹: 앱과 같은 현황(진행·팀 순위·MVP·TOP 5·종목별/맞대결 접기) — 전체 선수 기록은 없다');
   const tls = readFileSync(new URL('../src/components/TeamLeagueScreen.jsx', import.meta.url), 'utf8');
   const tms = readFileSync(new URL('../src/components/TeamMatchScreen.jsx', import.meta.url), 'utf8');
   for (const [f, src] of [['3팀', tls], ['2팀', tms]]) {

@@ -158,6 +158,10 @@ export function teamLiveView(t, clubName = '') {
     mvp: { M: dash.mvp.M.map(person), F: dash.mvp.F.map(person) },
     top: { M: dash.top.M.map(person), F: dash.top.F.map(person) },
     rule: dash.rule,
+    /* 진행 · 종목별 승점 · 맞대결 승점 — 앱 대회 현황과 같은 것(2026-10-06 앱 주인: 웹도 동일하게, TOP 5 까지만) */
+    progress: dash.progress,
+    byType: dash.byType,
+    h2h: dash.h2h,
     rounds: Object.keys(byRound).map(Number).sort((a, b) => a - b).map((r) => ({ round: r, time: sch.start(r), matches: byRound[r] })),
     /* 행사·식사 — beforeRound 타임 앞에 띠로(끝이면 null) */
     events: sch.events,
