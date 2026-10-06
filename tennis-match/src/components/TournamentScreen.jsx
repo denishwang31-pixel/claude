@@ -25,7 +25,7 @@ import { TeamMatch } from './TeamMatchScreen';
 import { breadcrumb } from '../lib/crashReport';
 import { TeamLeague } from './TeamLeagueScreen';
 import { TournamentRoster } from './TournamentRoster';
-import { leagueFromRoster, BLUE_WHITE_RED, packLeague } from '../lib/teamLeague';
+import { leagueFromRoster, BLUE_WHITE_RED, packLeague, partialPatch } from '../lib/teamLeague';
 import { MatchGrid } from './MatchGrid';
 import { DateField, Label } from './pickers';
 import { AppButton, Touchable, Segmented, useOptionSheet } from './native';
@@ -971,7 +971,8 @@ export function Tournaments({
             me={me}
             isAdmin={isAdmin}
             flash={flash}
-            onSave={(payload) => updateTournament(clubId, t.id, { league: payload })}
+            /* 바뀐 칸만 쓴다 — 다른 휴대폰이 해 둔 편성을 덮어쓰지 않게(lib/teamLeague.js partialPatch) */
+            onSave={(payload, keys) => updateTournament(clubId, t.id, partialPatch('league', payload, keys, !!t.league))}
             courtNames={t.courtNames || []}
             onSaveCourtNames={(names) => updateTournament(clubId, t.id, { courtNames: names })}
             timing={t.timing || null}
@@ -988,7 +989,7 @@ export function Tournaments({
             me={me}
             isAdmin={isAdmin}
             flash={flash}
-            onSave={(payload) => updateTournament(clubId, t.id, { team: payload })}
+            onSave={(payload, keys) => updateTournament(clubId, t.id, partialPatch('team', payload, keys, !!t.team))}
             courtNames={t.courtNames || []}
             onSaveCourtNames={(names) => updateTournament(clubId, t.id, { courtNames: names })}
             timing={t.timing || null}

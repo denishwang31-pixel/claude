@@ -13,7 +13,7 @@
      4. 경기를 눌러 결과 입력 → 팀 순위가 자동으로 갱신된다
         대진표 위 [결과 입력]·[대진표 수정]을 고른 뒤 경기를 누른다(components/MatchBoard.jsx, 2026-10-04 앱 주인)
    ============================================================ */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Alert } from 'react-native';
 import {
   MIN_TEAMS, MAX_TEAMS, splitIntoTeams, teamAverage, teamComposition,
@@ -21,7 +21,7 @@ import {
   teamLook, teamNamePresets, cleanTeamName, duplicateTeamNames, TEAM_NAME_MAX,
   leagueBalanceNote, teamGameCounts,
   addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
-  packLeague, unpackLeague, moveToTeam, emptyTeams, resizeTeams, UNASSIGNED, missingFromTeams,
+  packLeague, unpackLeague, moveToTeam, emptyTeams, resizeTeams, UNASSIGNED, missingFromTeams, stableKey,
   actualMatchType, gridExtent,
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
@@ -141,14 +141,19 @@ export function TeamLeague({
   const fail = () => flash('문제가 생겨 멈췄습니다. 잠시 뒤 다시 해 주세요');
 
   /* ⚠️ 저장 실패가 버튼 처리 안에서 터지면 앱이 꺼진다 — 여기서 받아 알리기만 한다 */
-  const persist = (next) => {
+  /* 내가 최근에 쓴 저장본 — 돌아온 저장본이 내 것인지(그대로 두기) 남의 것인지(다시 읽기) 가른다 */
+  const myWrites = useRef([]);
+  const persist = (next = {}) => {
     try {
-      const r = onSave?.(packLeague({
+      const full = packLeague({
         teams: next.teams ?? teams,
         unassigned: next.unassigned ?? unassigned,
         matches: next.matches ?? matches,
         config: next.config ?? cfg,
-      }));
+      });
+      myWrites.current = [...myWrites.current, stableKey(full)].slice(-12);
+      /* ⚠️ 바뀐 칸만 쓴다(두 번째 인자) — 다른 휴대폰이 해 둔 팀 배치를 점수 입력이 덮어쓰지 않게 */
+      const r = onSave?.(full, Object.keys(next));
       if (r && typeof r.catch === 'function') r.catch(() => flash('저장하지 못했습니다. 인터넷 연결을 확인해 주세요'));
     } catch (e) {
       flash('저장하지 못했습니다. 잠시 뒤 다시 해 주세요');
@@ -447,6 +452,22 @@ export function TeamLeague({
   };
 
   useEffect(() => { slowRender('팀리그', Date.now() - renderStart, `경기 ${matches.length}`); });
+
+  /* 다른 휴대폰(다른 운영진)이 바꾼 저장본이 오면 화면에 다시 읽는다 — 예전엔 처음 연 상태를 끝까지 들고 있다가
+     다음 저장 때 남의 변경을 덮어썼다. 내가 방금 쓴 것이면 그대로 둔다(myWrites). */
+  const firstSaved = useRef(true);
+  useEffect(() => {
+    if (firstSaved.current) { firstSaved.current = false; return; }
+    if (!savedRaw || myWrites.current.includes(stableKey(savedRaw))) return;
+    const s = unpackLeague(savedRaw);
+    if (s.teams) setTeams(s.teams);
+    const base = s.unassigned || [];
+    setUnassigned(s.teams ? [...base, ...missingFromTeams(roster, [...s.teams, base])] : base);
+    setMatches(s.matches || []);
+    if (s.config?.teamNames) setTeamNames(s.config.teamNames);
+    if (s.config?.placement) setPlacement(s.config.placement === 'manual' ? 'manual' : 'auto');
+    setPicked([]);
+  }, [savedRaw]);
 
   return (
     <View>

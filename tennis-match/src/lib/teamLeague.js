@@ -714,3 +714,33 @@ export function missingFromTeams(roster, groups) {
   (groups || []).forEach((g) => (g || []).forEach((p) => { if (p?.id) placed.add(p.id); }));
   return (roster || []).filter((p) => p?.id && !placed.has(p.id));
 }
+
+/* ============================================================
+   여러 휴대폰에서 같은 대회를 열어 둘 때 — 덮어쓰기 막기 (2026-10-06)
+   앱 주인: "팀 배치했던 사람들이 다시 미배정으로 빠졌다".
+   편성 화면은 저장할 때 팀·미배정·대진·설정을 통째로 '이 휴대폰이 들고 있는 상태'로 썼고,
+   다른 휴대폰에서 바뀐 것을 다시 읽지 않았다. 두 사람이 열어 두면 한쪽이 점수만 넣어도
+   다른 쪽이 해 둔 팀 배치가 옛 상태로 돌아갔다.
+   → ① 바뀐 칸만 쓴다(partialPatch: 'league.matches' 처럼) ② 남이 바꾼 저장본은 화면에 다시 읽는다(stableKey 로 내 저장과 구별)
+   ============================================================ */
+/** 키 순서와 상관없이 같은 값이면 같은 문자열 — 내가 방금 쓴 것인지 알아보는 데 */
+export function stableKey(v) {
+  const norm = (x) => {
+    if (Array.isArray(x)) return x.map(norm);
+    if (x && typeof x === 'object') {
+      const o = {};
+      Object.keys(x).sort().forEach((k) => { if (x[k] !== undefined) o[k] = norm(x[k]); });
+      return o;
+    }
+    return x;
+  };
+  return JSON.stringify(norm(v ?? null));
+}
+
+/** 대회 문서에 쓸 patch — 저장본이 이미 있으면 바뀐 칸만('league.matches'), 처음이면 통째로 */
+export function partialPatch(field, payload, keys, hasSaved) {
+  if (!hasSaved || !keys || !keys.length) return { [field]: payload };
+  const out = {};
+  keys.forEach((k) => { if (payload && k in payload) out[`${field}.${k}`] = payload[k]; });
+  return Object.keys(out).length ? out : { [field]: payload };
+}

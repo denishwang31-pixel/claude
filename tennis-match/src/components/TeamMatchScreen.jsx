@@ -9,13 +9,13 @@
                   (lib/teamLeague.js moveToTeam · 2026-10-04 앱 주인)
      클럽교류전 : A팀은 우리 회원, B팀은 상대 클럽 선수를 직접 입력
    ============================================================ */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Alert } from 'react-native';
 import {
   splitTeams, teamStrength, generateTeamMatches, teamScore, teamPlayerStats,
 } from '../lib/teamMatch';
 import {
-  missingFromTeams, moveToTeam, UNASSIGNED, withTeamIdx, twoTeamSide, actualMatchType, gridExtent,
+  missingFromTeams, stableKey, moveToTeam, UNASSIGNED, withTeamIdx, twoTeamSide, actualMatchType, gridExtent,
   addLeagueMatch, updateLeagueMatch, removeLeagueMatch, matchToDraft, emptyDraft,
 } from '../lib/teamLeague';
 import { LeagueMatchEditor } from './LeagueMatchEditor';
@@ -145,17 +145,23 @@ export function TeamMatch({
   const fail = () => flash('문제가 생겨 멈췄습니다. 잠시 뒤 다시 해 주세요');
 
   /* ⚠️ 저장 실패가 버튼 처리 안에서 터지면 앱이 꺼진다 — 받아서 알리기만 한다 */
+  /* 내가 최근에 쓴 저장본 — 돌아온 저장본이 내 것인지 남의 것인지 가른다(TeamLeagueScreen 같은 자리 주석) */
+  const myWrites = useRef([]);
   const persist = (next = {}) => {
     try {
-      const r = onSave?.({
+      const full = {
         teamA: next.teamA ?? teamA,
         teamB: next.teamB ?? teamB,
         matches: next.matches ?? matches,
         unassigned: next.unassigned ?? unassigned,
         placement: next.placement ?? placement,
-        opponentClub: oppClub,
+        opponentClub: next.opponentClub ?? oppClub,
         format,
-      });
+      };
+      myWrites.current = [...myWrites.current, stableKey(full)].slice(-12);
+      /* ⚠️ 바뀐 칸만 쓴다 — 다른 휴대폰이 해 둔 팀 배치를 덮어쓰지 않게 */
+      /* 교류전 상대 클럽 이름은 입력칸에서만 바뀌어 따로 저장되지 않는다 — 함께 싣는다 */
+      const r = onSave?.(full, [...Object.keys(next), ...(isClubMatch ? ['opponentClub'] : [])]);
       if (r && typeof r.catch === 'function') r.catch(() => flash('저장하지 못했습니다. 인터넷 연결을 확인해 주세요'));
     } catch (e) {
       flash('저장하지 못했습니다. 잠시 뒤 다시 해 주세요');
@@ -398,6 +404,20 @@ export function TeamMatch({
   const UNSIDE = { name: '미배정', color: C.sub, bg: C.fill };
 
   useEffect(() => { slowRender('2팀', Date.now() - renderStart, `경기 ${matches.length}`); });
+
+  /* 다른 휴대폰이 바꾼 저장본이 오면 다시 읽는다(내가 방금 쓴 것은 그대로) */
+  const firstSaved = useRef(true);
+  useEffect(() => {
+    if (firstSaved.current) { firstSaved.current = false; return; }
+    if (!saved || myWrites.current.includes(stableKey(saved))) return;
+    if (saved.teamA) setTeamA(saved.teamA);
+    if (saved.teamB) setTeamB(saved.teamB);
+    const back = saved.teamA ? missingFromTeams(attendees, [saved.teamA, saved.teamB, saved.unassigned]) : [];
+    setUnassigned([...(saved.unassigned || []), ...(isClubMatch ? [] : back)]);
+    setMatches(saved.matches || []);
+    if (saved.placement) setPlacement(saved.placement === 'manual' ? 'manual' : 'auto');
+    setPicked([]);
+  }, [saved]);
 
   return (
     <View>

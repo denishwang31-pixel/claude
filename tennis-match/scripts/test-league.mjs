@@ -247,7 +247,7 @@ section('Firestore 에 저장되는 모양 — 배열 안에 배열 금지');
   eq('예전 모양(배열의 배열)도 읽는다', unpackLeague({ teams: [[{ id: 'a' }]] }).teams[0][0].id, 'a');
   eq('null 은 그대로', packLeague(null), null);
   const scr = readFileSync(new URL('../src/components/TeamLeagueScreen.jsx', import.meta.url), 'utf8');
-  ok(/onSave\?\.\(packLeague\(/.test(scr) && /unpackLeague\(savedRaw\)/.test(scr), '팀 리그 화면은 pack 해서 저장하고 unpack 해서 읽는다');
+  ok(/const full = packLeague\(/.test(scr) && /unpackLeague\(savedRaw\)/.test(scr), '팀 리그 화면은 pack 해서 저장하고 unpack 해서 읽는다');
   ok(/r\.catch\(/.test(scr) && /catch \(e\) \{\s*flash\('저장하지 못했습니다/.test(scr), '저장 실패는 알리기만 — 버튼 처리 안에서 터져 앱이 꺼지지 않게');
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
   ok((ts.match(/packLeague\(leagueFromRoster/g) || []).length === 2 && /packLeague\(t\.league\)/.test(ts), '3팀 개설·2→3팀 전환도 pack 해서 저장');
@@ -440,6 +440,23 @@ section('대회 참가자 바꾸기 — 확정한 뒤에도 운영진이 넣고 
   }
   const tr = readFileSync(new URL('../src/components/TournamentRoster.jsx', import.meta.url), 'utf8');
   ok(/클럽 회원에서 넣기/.test(tr) && /게스트 넣기/.test(tr) && /대진표 수정/.test(tr), '참가자 관리: 회원·게스트 넣기, 대진에 든 사람은 안내');
+}
+
+section('여러 휴대폰 — 남이 해 둔 팀 배치를 덮어쓰지 않는다');
+{
+  /* 2026-10-06 앱 주인: 팀 배치했던 사람들이 다시 미배정으로 빠졌다.
+     원인: 저장할 때 팀·미배정·대진을 통째로 '이 휴대폰 상태'로 썼고, 남이 바꾼 것을 다시 읽지 않았다 */
+  const { partialPatch, stableKey } = await import('../src/lib/teamLeague.js');
+  eq('점수만 넣으면 대진 칸만 쓴다', Object.keys(partialPatch('league', { teams: [], matches: [1] }, ['matches'], true)), ['league.matches']);
+  eq('저장본이 없으면 통째로(처음 저장)', Object.keys(partialPatch('league', { matches: [] }, ['matches'], false)), ['league']);
+  eq('무엇이 바뀌었는지 모르면 통째로', Object.keys(partialPatch('team', { matches: [] }, [], true)), ['team']);
+  ok(stableKey({ b: 1, a: { d: 2, c: [{ y: 1, x: undefined }] } }) === stableKey({ a: { c: [{ y: 1 }], d: 2 }, b: 1 }), '키 순서가 달라도 같은 저장본으로 알아본다');
+  const tls = readFileSync(new URL('../src/components/TeamLeagueScreen.jsx', import.meta.url), 'utf8');
+  const tms = readFileSync(new URL('../src/components/TeamMatchScreen.jsx', import.meta.url), 'utf8');
+  const tsc = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
+  ok(/onSave\?\.\(full, Object\.keys\(next\)\)/.test(tls) && /myWrites\.current\.includes\(stableKey\(savedRaw\)\)/.test(tls), '3팀: 바뀐 칸만 저장 · 남이 바꾼 저장본은 다시 읽는다');
+  ok(/onSave\?\.\(full, \[\.\.\.Object\.keys\(next\)/.test(tms) && /myWrites\.current\.includes\(stableKey\(saved\)\)/.test(tms), '2팀: 같은 보호(교류전 상대 이름도 함께)');
+  ok(/partialPatch\('league', payload, keys, !!t\.league\)/.test(tsc) && /partialPatch\('team', payload, keys, !!t\.team\)/.test(tsc), '대회 화면: 바뀐 칸만 대회 문서에');
 }
 
 section('대회 이벤트 — 행사·식사 시간엔 경기를 밀고 대진표에 띠로');
