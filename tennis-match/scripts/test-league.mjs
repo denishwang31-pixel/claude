@@ -491,6 +491,7 @@ section('대회 현황(대시보드) — 엑셀 대시보드 시트를 앱으로
   const lh = readFileSync(new URL('../web/live.html', import.meta.url), 'utf8');
   ok(/🏆 대회 현황/.test(lh) && /개인 순위 TOP 5/.test(lh) && /<details class="card fold"/.test(lh) && /종목별 · 맞대결 승점/.test(lh) && !/전체 선수 기록/.test(lh),
     '웹: 앱과 같은 현황(진행·팀 순위·MVP·TOP 5·종목별/맞대결 접기) — 전체 선수 기록은 없다');
+  ok(/if \(d\.top\) \{/.test(lh) && /아직 경기한 사람이 없습니다/.test(lh), '웹: 결과가 들어가기 전에도 남녀 TOP 5 칸이 보인다(앱과 같다)');
   const tls = readFileSync(new URL('../src/components/TeamLeagueScreen.jsx', import.meta.url), 'utf8');
   const tms = readFileSync(new URL('../src/components/TeamMatchScreen.jsx', import.meta.url), 'utf8');
   for (const [f, src] of [['3팀', tls], ['2팀', tms]]) {

@@ -284,8 +284,9 @@
       }).join('') + '</div>';
     }
     h += '<p class="note">' + (ptsRule ? '순위: 이긴 경기 → 게임 득실 → 딴 게임' : '순위: 승점(승 1·무 0.5) → 득실차 → 딴 게임') + '</p></div>';
-    /* 개인 순위 — 남녀 TOP 5 */
-    if (d.top && ((d.top.M || []).length || (d.top.F || []).length)) {
+    /* 개인 순위 — 남녀 TOP 5. 결과가 들어가기 전에도 칸은 보인다(앱 대회 현황과 같다 — 2026-10-07 앱 주인:
+       "웹에서는 남녀 TOP 5 가 안 보여". 예전엔 경기한 사람이 없으면 칸째 숨겼다) */
+    if (d.top) {
       h += '<div class="card"><h2>개인 순위 TOP 5</h2>' + [['M', '남자'], ['F', '여자']].map(function (x) {
         var list = d.top[x[0]] || [];
         return '<h3 class="sub">' + x[1] + ' TOP 5</h3>' + (list.length
