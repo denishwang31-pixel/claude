@@ -23,6 +23,7 @@ import { db } from '../../firebaseConfig';
 import { ROLES, GUEST_STATUS, JOIN_STATUS, memberRoles, rolesPayload } from './constants';
 import { lineupOf, scoreOp } from './scoreReport';
 import { todayYmd } from './today.js';
+import { applyScore } from './teamLeague.js';
 
 const C = (clubId, sub) => collection(db, 'clubs', clubId, sub);
 const D = (clubId, sub, id) => doc(db, 'clubs', clubId, sub, id);
@@ -612,6 +613,19 @@ export const updateTournament = (clubId, id, patch) =>
   updateDoc(D(clubId, 'tournaments', id), patch);
 
 export const deleteTournament = (clubId, id) => deleteDoc(D(clubId, 'tournaments', id));
+
+/* 대회 점수 한 칸 — 서버의 지금 대진을 읽어 그 경기 점수만 바꿔 쓴다(트랜잭션, lib/teamLeague.js applyScore).
+   field: 'league'(3팀 이상) | 'team'(2팀·교류전). 인터넷이 끊겼으면 저장하지 않고 실패로 돌아온다 —
+   끊긴 동안 쌓였다가 나중에 옛 목록으로 남의 점수를 덮어쓰는 것보다 "다시 넣어 주세요"가 낫다. */
+export const setTournamentScore = (clubId, id, field, matchId, score) => {
+  const ref = D(clubId, 'tournaments', id);
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const r = applyScore(snap.data()?.[field]?.matches, matchId, score);
+    if (r.error) throw Object.assign(new Error(r.error), { code: r.error });
+    tx.update(ref, { [`${field}.matches`]: r.matches });
+  });
+};
 
 /* ---- 대회 참가 신청 ----
    신청자를 하위 컬렉션이 아니라 대회 문서 안의 맵으로 둔다. 일정 화면이

@@ -47,7 +47,7 @@ function TeamTag({ side, children }) {
 
 export function TeamMatch({
   format, attendees, courts, rounds, saved, onSave, isAdmin, flash, courtNames = [], onSaveCourtNames, me = '',
-  timing = null, onSaveTiming, opsExtra = null,
+  timing = null, onSaveTiming, opsExtra = null, onScore,
 }) {
   /* 그리기에 걸린 시간 — 길면 동작 기록에(lib/crashReport.js slowRender) */
   const renderStart = Date.now();
@@ -341,10 +341,26 @@ export function TeamMatch({
     const id = scoring?.match?.id;
     setScoring(null);
     if (!id) return;
-    const next = matches.map((x) => (x.id === id ? { ...x, score } : x));
-    setMatches(next);
-    persist({ matches: next });
-    flash(score ? '결과를 넣었습니다' : '기록을 지웠습니다');
+    const put = (sc) => (list) => list.map((x) => (x.id === id ? { ...x, score: sc } : x));
+    if (!onScore) {
+      const next = put(score)(matches);
+      setMatches(next);
+      persist({ matches: next });
+      flash(score ? '결과를 넣었습니다' : '기록을 지웠습니다');
+      return;
+    }
+    /* 점수는 그 경기 한 칸만 서버에 쓴다(onScore → firestore.js setTournamentScore) — 다른 운영진이 같은 때
+       넣은 점수를 지우지 않게. 화면에는 바로 보이고, 실패하면 되돌린 뒤 알린다 */
+    const before = matches.find((x) => x.id === id)?.score || null;
+    setMatches(put(score));
+    Promise.resolve(onScore(id, score || null))
+      .then(() => flash(score ? '결과를 넣었습니다' : '기록을 지웠습니다'))
+      .catch((e) => {
+        setMatches(put(before));
+        flash(e?.code === 'noMatch' || e?.code === 'noMatches'
+          ? '그 사이 대진이 바뀌었습니다. 대진표를 확인하고 다시 넣어 주세요'
+          : '결과를 저장하지 못했습니다. 인터넷 연결을 확인하고 다시 넣어 주세요');
+      });
   }, 'team-score', fail);
 
 

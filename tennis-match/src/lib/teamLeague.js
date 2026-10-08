@@ -738,6 +738,19 @@ export function stableKey(v) {
 }
 
 /** 대회 문서에 쓸 patch — 저장본이 이미 있으면 바뀐 칸만('league.matches'), 처음이면 통째로 */
+/**
+ * 점수 한 칸만 바꾼 경기 목록 — 서버에 있는 지금 대진에 내 점수만 얹는다(firestore.js setTournamentScore).
+ * 2026-10-08 대회 전날 점검: 운영진 여럿이 코트마다 점수를 넣으면, 늦게 저장한 휴대폰이 들고 있던 옛 목록이
+ * 방금 다른 사람이 넣은 점수를 지울 수 있었다(신호가 약해 늦게 올라가면 여러 개가 한꺼번에).
+ * @returns { matches } | { error: 'noMatches' | 'noMatch' }
+ */
+export function applyScore(matches, matchId, score) {
+  if (!Array.isArray(matches)) return { error: 'noMatches' };
+  const i = matches.findIndex((m) => m && m.id === matchId);
+  if (i < 0) return { error: 'noMatch' };
+  return { matches: matches.map((m, j) => (j === i ? { ...m, score: score || null } : m)) };
+}
+
 export function partialPatch(field, payload, keys, hasSaved) {
   if (!hasSaved || !keys || !keys.length) return { [field]: payload };
   const out = {};

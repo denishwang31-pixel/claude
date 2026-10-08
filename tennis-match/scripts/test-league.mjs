@@ -1087,5 +1087,30 @@ section('대회 되돌리기 — 운영진 버튼(서버 백업)');
   ok((ts.match(/t\.restoredAt \|\| 0/g) || []).length >= 4, '앱: 되돌린 뒤 열린 화면이 저장본을 다시 읽는다');
 }
 
+section('대회 점수 — 그 경기 한 칸만 (동시 입력에도 안 지워진다)');
+{
+  const { applyScore } = await import('../src/lib/teamLeague.js');
+  const ms = [{ id: 'g1', score: null, round: 1 }, { id: 'g2', score: { a: 6, b: 2 }, round: 1 }];
+  const r = applyScore(ms, 'g1', { a: 4, b: 6 });
+  ok(r.matches[0].score.b === 6 && r.matches[1].score.a === 6 && r.matches[0].round === 1 && ms[0].score === null, '그 경기 점수만 바꾸고, 나머지·원본은 그대로');
+  ok(applyScore(ms, 'g2', null).matches[1].score === null && applyScore(ms, 'g2', undefined).matches[1].score === null, '지우기는 null');
+  eq('없는 경기', applyScore(ms, 'zz', { a: 1, b: 0 }).error, 'noMatch');
+  eq('대진이 없으면', applyScore(undefined, 'g1', null).error, 'noMatches');
+  const fs = readFileSync(new URL('../src/lib/firestore.js', import.meta.url), 'utf8');
+  ok(/export const setTournamentScore = [\s\S]{0,400}runTransaction\(db[\s\S]{0,300}applyScore\(snap\.data\(\)\?\.\[field\]\?\.matches[\s\S]{0,200}tx\.update\(ref, \{ \[`\$\{field\}\.matches`\]: r\.matches \}\)/.test(fs),
+    '저장: 서버의 지금 목록을 읽어 그 경기만 바꿔 쓴다(트랜잭션)');
+  const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
+  ok(/onScore=\{\(matchId, score\) => setTournamentScore\(clubId, t\.id, 'league', matchId, score\)\}/.test(ts)
+    && /onScore=\{\(matchId, score\) => setTournamentScore\(clubId, t\.id, 'team', matchId, score\)\}/.test(ts), '대회 화면: 3팀 리그·2팀 모두 점수는 한 칸 저장으로');
+  for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
+    const src = readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8');
+    const at = src.indexOf('const saveScore = guard(');
+    const body = src.slice(at, src.indexOf("-score', fail);", at));
+    ok(/onScore, *\n\}\) \{/.test(src) && /Promise\.resolve\(onScore\(id, score \|\| null\)\)/.test(body) && /setMatches\(put\(before\)\)/.test(body)
+      && (body.match(/persist\(/g) || []).length === 1 && body.indexOf('persist(') < body.indexOf('return;', body.indexOf('if (!onScore)')),
+      `${f}: 점수는 onScore 로(실패하면 화면을 되돌리고 알림), 통째 저장은 onScore 가 없을 때만`);
+  }
+}
+
 console.log(`\n다팀 리그·수기 대진 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

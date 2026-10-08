@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, Share, Alert } from 'react-native';
 import {
-  addTournament, updateTournament, deleteTournament,
+  addTournament, updateTournament, deleteTournament, setTournamentScore,
 } from '../lib/firestore';
 import {
   buildBracket, applyResult, championOf, orderBySeed, assignSkillGroups, moveMemberToGroup,
@@ -979,6 +979,7 @@ export function Tournaments({
             flash={flash}
             /* 바뀐 칸만 쓴다 — 다른 휴대폰이 해 둔 편성을 덮어쓰지 않게(lib/teamLeague.js partialPatch) */
             onSave={(payload, keys) => updateTournament(clubId, t.id, partialPatch('league', payload, keys, !!t.league))}
+            onScore={(matchId, score) => setTournamentScore(clubId, t.id, 'league', matchId, score)}
             courtNames={t.courtNames || []}
             onSaveCourtNames={(names) => updateTournament(clubId, t.id, { courtNames: names })}
             timing={t.timing || null}
@@ -997,6 +998,7 @@ export function Tournaments({
             isAdmin={isAdmin}
             flash={flash}
             onSave={(payload, keys) => updateTournament(clubId, t.id, partialPatch('team', payload, keys, !!t.team))}
+            onScore={(matchId, score) => setTournamentScore(clubId, t.id, 'team', matchId, score)}
             courtNames={t.courtNames || []}
             onSaveCourtNames={(names) => updateTournament(clubId, t.id, { courtNames: names })}
             timing={t.timing || null}

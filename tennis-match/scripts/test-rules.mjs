@@ -1385,6 +1385,43 @@ console.log('\n[오프라인 회원 합치기 일감 — 회장·총무만]');
     assertSucceeds(getDocs(collection(env.authenticatedContext('appboss').firestore(), 'clientErrors'))));
 }
 
+/* ---- 대회 점수: 운영진 여럿이 같은 때 넣어도 모두 남는다 (2026-10-08 대회 전날 점검) ----
+   예전엔 점수 하나를 넣을 때마다 휴대폰이 들고 있던 경기 목록 전체를 썼다. 다른 운영진이 방금 넣은 점수를
+   아직 못 받은 휴대폰이 저장하면 그 점수가 지워졌다. 이제는 서버의 지금 목록에 그 경기 점수만 얹는다
+   (lib/firestore.js setTournamentScore = 트랜잭션 + lib/teamLeague.js applyScore). */
+console.log('\n[대회 점수 — 동시에 넣어도 모두 남는다]');
+{
+  const { runTransaction } = await import('firebase/firestore');
+  const { applyScore } = await import('../src/lib/teamLeague.js');
+  const fresh = () => [1, 2, 3].map((c) => ({ id: `g${c}`, round: 1, court: c, teamA: ['a'], teamB: ['b'], score: null }));
+  const reset = () => seed((f) => setDoc(doc(f, 'clubs', CLUB, 'tournaments', 'race'), { name: 'race', stage: 'league', league: { matches: fresh() } }));
+  const save = (fs, id, score) => runTransaction(fs, async (tx) => {
+    const ref = doc(fs, 'clubs', CLUB, 'tournaments', 'race');
+    const snap = await tx.get(ref);
+    const r = applyScore(snap.data()?.league?.matches, id, score);
+    if (r.error) throw new Error(r.error);
+    tx.update(ref, { 'league.matches': r.matches });
+  });
+  const scores = async () => (await getDoc(doc(owner, 'clubs', CLUB, 'tournaments', 'race'))).data().league.matches.map((m) => (m.score ? `${m.score.a}:${m.score.b}` : '-')).join(',');
+  const expect = async (want) => { const got = await scores(); if (got !== want) throw new Error(`점수 ${got} (기대 ${want})`); };
+
+  await reset();
+  await T('운영진 셋이 다른 코트 점수를 동시에 저장', Promise.all([
+    save(owner, 'g1', { a: 6, b: 3 }), save(staffDb, 'g2', { a: 4, b: 6 }), save(headDb, 'g3', { a: 5, b: 5 }),
+  ]));
+  await T('세 점수가 모두 남는다', expect('6:3,4:6,5:5'));
+  await T('점수 지우기도 그 경기만', save(staffDb, 'g2', null).then(() => expect('6:3,-,5:5')));
+  await T('없는 경기 점수는 저장하지 않는다', save(owner, 'zz', { a: 6, b: 0 }).then(() => { throw new Error('저장됨'); }, (e) => { if (e.message !== 'noMatch') throw e; }));
+  await T('일반 회원은 점수를 못 넣는다', assertFails(save(mem1, 'g1', { a: 0, b: 6 })));
+
+  /* 예전 방식(옛 목록 통째로 쓰기)이 왜 위험했는지 — 같은 상황에서 먼저 넣은 점수가 사라진다 */
+  await reset();
+  const stale = fresh();
+  await updateDoc(doc(owner, 'clubs', CLUB, 'tournaments', 'race'), { 'league.matches': applyScore(stale, 'g1', { a: 6, b: 3 }).matches });
+  await updateDoc(doc(staffDb, 'clubs', CLUB, 'tournaments', 'race'), { 'league.matches': applyScore(stale, 'g2', { a: 4, b: 6 }).matches });
+  await T('(예전 방식 재현) 옛 목록 통째로 쓰면 먼저 넣은 점수가 지워진다', expect('-,4:6,-'));
+}
+
 await env.cleanup();
 if (failures.length) {
   console.log('\n실패한 검사 —');
