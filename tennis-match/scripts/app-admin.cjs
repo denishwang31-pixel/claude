@@ -184,6 +184,52 @@ async function restoreTournament(db) {
   console.log(`되돌렸습니다: ${hit[0].club || ''} > ${t.name}. 앱에서 대회를 다시 열면 그 시각의 대진·결과가 보입니다.`);
 }
 
+/* ============================================================
+   대회 점검 — 최근 대회가 멀쩡히 끝났는지 (2026-10-09 앱 주인: "어제 경기 이상 없었는지 검토")
+   최근 3일(한국 날짜) 대회마다: 경기·결과 수, 이상한 칸(src/lib/tourneyHealth.js),
+   되돌리기 사용 기록, 남겨 둔 백업 수. 끝에 앱 오류 기록(errors)도 같이 찍는다.
+   ⚠️ 로그는 공개다 — 클럽·대회 이름과 숫자만(회원 이름·id 없음).
+   ============================================================ */
+async function tourneyCheck(db) {
+  const { tourneyHealth } = await import(require('url').pathToFileURL(path.join(__dirname, '..', 'src', 'lib', 'tourneyHealth.js')).href);
+  const kstDay = (ms) => new Date(ms + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const from = kstDay(Date.now() - 3 * 24 * 3600 * 1000);
+  const to = kstDay(Date.now() + 24 * 3600 * 1000);
+  const kst = (v) => {
+    const ms = typeof v === 'number' ? v : v?.toMillis?.();
+    return ms ? new Date(ms + 9 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ') : '-';
+  };
+  console.log(`대회 점검 — 날짜 ${from} ~ ${to} (한국)`);
+  let n = 0;
+  for (const c of await db.collection('clubs').listDocuments()) {
+    const ts = await c.collection('tournaments').where('date', '>=', from).where('date', '<=', to).get();
+    if (ts.empty) continue;
+    const club = String((await c.get()).data()?.name || '');
+    for (const d of ts.docs) {
+      n += 1;
+      const t = d.data();
+      const h = tourneyHealth(t);
+      console.log('');
+      console.log(`■ ${club} > ${t.name || '(이름 없음)'} · ${t.date} · ${h.kind} · ${t.status === 'finished' ? '종료' : '진행 중'}`);
+      console.log(`  참가자 ${h.roster}명${h.teams ? ` · 팀 ${h.teams.join('/')}명 · 미배정 ${h.unassigned}명` : ''}`);
+      if (h.games != null) console.log(`  경기 ${h.games} · 결과 ${h.done} · 결과 없음 ${h.left} · 마지막 결과 ${h.lastRound}타임`);
+      const iss = Object.entries(h.issues);
+      console.log(iss.length ? `  ⚠️ 확인할 것: ${iss.map(([k, v]) => `${k} ${v}`).join(' · ')}` : '  이상한 칸 없음');
+      if (t.restoredAt) console.log(`  되돌리기 적용됨: ${kst(t.restoredAt)} KST`);
+      const jobs = await c.collection('restoreJobs').where('tournamentId', '==', d.id).get();
+      if (!jobs.empty) {
+        const rows = jobs.docs.map((j) => j.data()).sort((a, b) => (a.createdAt?.toMillis?.() || 0) - (b.createdAt?.toMillis?.() || 0));
+        console.log(`  되돌리기 요청 ${rows.length}건: ${rows.map((j) => `${kst(j.createdAt)} ${j.type}→${j.status}${j.reason ? `(${j.reason})` : ''}`).join(' · ')}`);
+      }
+      const bk = await c.collection('tournamentBackups').where('tournamentId', '==', d.id).get();
+      if (!bk.empty) console.log(`  되돌리기 전 상태 백업 ${bk.size}개`);
+    }
+  }
+  if (!n) console.log('이 기간에 대회가 없습니다.');
+  console.log('');
+  await clientErrors(db);
+}
+
 async function main() {
   initializeApp();
   const auth = getAuth();
@@ -202,6 +248,7 @@ async function main() {
 
   if (action === 'social-log') { await socialLog(db); return; }
   if (action === 'errors') { await clientErrors(db); return; }
+  if (action === 'tourney-check') { await tourneyCheck(db); return; }
   if (action === 'restore-tournament') { await restoreTournament(db); return; }
 
   const user = await resolveUser(auth, process.env.ADMIN_TARGET);

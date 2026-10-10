@@ -1112,5 +1112,30 @@ section('대회 점수 — 그 경기 한 칸만 (동시 입력에도 안 지워
   }
 }
 
+section('대회 점검 — 관리자 tourney-check (숫자만)');
+{
+  const { tourneyHealth } = await import('../src/lib/tourneyHealth.js');
+  const P = (id) => ({ id, name: `이름${id}`, gender: 'M' });
+  const roster = ['a1', 'a2', 'b1', 'b2', 'c1', 'c2', 'x'].map(P);
+  const lg = (matches, extra = {}) => ({ stage: 'league', roster, league: { teams: [{ players: [P('a1'), P('a2')] }, { players: [P('b1'), P('b2')] }, { players: [P('c1'), P('c2')] }], unassigned: [P('x')], matches, ...extra } });
+  const g = (id, round, A, B, ai, bi, score = null) => ({ id, round, court: 1, teamA: A, teamB: B, teamAIdx: ai, teamBIdx: bi, score });
+  const ok1 = tourneyHealth(lg([g('m1', 1, ['a1'], ['b1'], 0, 1, { a: 6, b: 3 }), g('m2', 2, ['a2'], ['c1'], 0, 2)]));
+  ok(ok1.games === 2 && ok1.done === 1 && ok1.left === 1 && ok1.lastRound === 1 && ok1.teams.join('/') === '2/2/2' && ok1.unassigned === 1 && !Object.keys(ok1.issues).length, '정상 대회: 숫자만, 이상한 칸 없음');
+  const bad = tourneyHealth(lg([
+    g('m1', 1, ['a1'], ['b1'], 0, 1, { a: 6, b: 3 }), g('m1', 1, ['a1'], ['zz'], 0, 1), g('m3', 2, ['c1'], [], 2, 2, { a: -1, b: 'x' }), g('m4', 3, ['b2'], ['c2'], 0, 2),
+  ]));
+  ok(bad.issues['같은 경기 번호가 두 번'] === 1 && bad.issues['한 타임에 두 경기 나간 자리'] === 1 && bad.issues['팀에 없는 사람이 들어간 자리'] === 1
+    && bad.issues['점수 모양이 이상한 경기'] === 1 && bad.issues['같은 팀끼리 붙은 경기'] === 1 && bad.issues['한쪽 사람이 비어 있는 경기'] === 1 && bad.issues['다른 팀 사람이 들어간 자리'] === 1,
+    '이상한 칸을 종류별로 센다');
+  const lost = tourneyHealth({ ...lg([]), league: { ...lg([]).league, unassigned: [] } });
+  eq('참가자인데 어디에도 없는 사람', lost.issues['참가자인데 팀·미배정 어디에도 없는 사람'], 1);
+  const two = tourneyHealth({ stage: 'team', roster: roster.slice(0, 4), team: { teamA: [P('a1'), P('a2')], teamB: [P('b1'), P('b2')], matches: [{ id: 'q', round: 1, teamA: ['a1', 'a2'], teamB: ['b1', 'b2'], score: { a: 6, b: 4 } }] } });
+  ok(two.games === 1 && two.done === 1 && !Object.keys(two.issues).length, '2팀(청백전)도 같은 점검');
+  ok(!/이름/.test(JSON.stringify([ok1, bad, two])) && !/"a1"|"b1"/.test(JSON.stringify([ok1, bad, two])), '결과에 회원 이름·id 가 없다(공개 로그)');
+  eq('팀 대회가 아니면 숫자만', JSON.stringify(tourneyHealth({ stage: 'kdk', roster })), JSON.stringify({ kind: 'kdk', roster: 7, issues: {} }));
+  const admin = readFileSync(new URL('./app-admin.cjs', import.meta.url), 'utf8');
+  ok(/action === 'tourney-check'\) \{ await tourneyCheck\(db\)/.test(admin) && /await clientErrors\(db\);\n\}/.test(admin), '관리자 workflow: tourney-check = 대회 점검 + 오류 기록');
+}
+
 console.log(`\n다팀 리그·수기 대진 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);
