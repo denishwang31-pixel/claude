@@ -15,10 +15,10 @@ on:
       action:
         description: '무엇을 할까'
         type: choice
-        options: [grant, list, revoke, info, social-log, errors, backup-on, backup-status, restore-tournament]
+        options: [grant, list, revoke, info, social-log, errors, tourney-check, backup-on, backup-status, restore-tournament]
         default: grant
       target:
-        description: '이메일 (예: 평소 로그인하는 구글 이메일). list·social-log 는 비워 두세요. info = 그 계정의 로그인 방식·이메일 인증 상태 보기, social-log = 카카오·네이버 로그인이 서버까지 왔는지, errors = 앱 화면 오류 기록(최근 7일). backup-on·backup-status = 서버 백업 켜기·보기(비워 두세요). restore-tournament = "대회 이름 @ 2026-10-09 14:30"(한국 시각 — 그 시각 상태로 되돌리기)'
+        description: '이메일 (예: 평소 로그인하는 구글 이메일). list·social-log 는 비워 두세요. info = 그 계정의 로그인 방식·이메일 인증 상태 보기, social-log = 카카오·네이버 로그인이 서버까지 왔는지, errors = 앱 화면 오류 기록(최근 7일), tourney-check = 최근 3일 대회 점검(경기·결과 수·이상한 칸·되돌리기 기록 + 오류 기록, 비워 두세요). backup-on·backup-status = 서버 백업 켜기·보기(비워 두세요). restore-tournament = "대회 이름 @ 2026-10-09 14:30"(한국 시각 — 그 시각 상태로 되돌리기)'
         type: string
         default: ''
       ref:
