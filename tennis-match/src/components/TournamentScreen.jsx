@@ -26,6 +26,7 @@ import { breadcrumb } from '../lib/crashReport';
 import { TeamLeague } from './TeamLeagueScreen';
 import { TournamentRoster } from './TournamentRoster';
 import { TournamentRestore, TournamentTrash } from './TournamentRestore';
+import { TournamentImport } from './TournamentImport';
 import { leagueFromRoster, BLUE_WHITE_RED, packLeague, partialPatch } from '../lib/teamLeague';
 import { MatchGrid } from './MatchGrid';
 import { DateField, Label } from './pickers';
@@ -946,6 +947,8 @@ export function Tournaments({
           }} />
         )}
         <TournamentRoster t={t} members={members} flash={flash}
+          onPatch={(patch) => updateTournament(clubId, t.id, patch)} />
+        <TournamentImport t={t} members={members} flash={flash}
           onPatch={(patch) => updateTournament(clubId, t.id, patch)} />
         <TournamentRestore clubId={clubId} t={t} flash={flash} />
       </>
