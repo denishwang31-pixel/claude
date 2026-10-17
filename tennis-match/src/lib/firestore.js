@@ -490,6 +490,12 @@ export const requestRestore = (clubId, { type, tournamentId, at = null, by }) =>
   });
 export const subRestoreJob = (clubId, jobId, cb) =>
   onSnapshot(D(clubId, 'restoreJobs', jobId), (d) => cb(d.exists() ? d.data() : null), () => cb(null));
+/* 엑셀 작업 링크 일감 — 양식을 넣어 만들고, 올라온 내용은 서버(excelJob)가 적는다(lib/excelJob.js 머리말) */
+export const createExcelJob = (clubId, data) =>
+  addDoc(C(clubId, 'importJobs'), { ...data, status: 'waiting', createdAt: serverTimestamp() });
+export const subExcelJob = (clubId, jobId, cb) =>
+  onSnapshot(D(clubId, 'importJobs', jobId), (d) => cb(d.exists() ? d.data() : null), () => cb(null));
+
 /* 최근 지운 대회(휴지통) — 운영진만 읽는다 */
 export const subTournamentTrash = (clubId, cb) =>
   onSnapshot(C(clubId, 'tournamentTrash'), (s) => cb(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => cb([]));

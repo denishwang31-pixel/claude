@@ -148,5 +148,7 @@ copyFileSync(join(ROOT, 'web', 'rsvp.html'), join(OUT, 'rsvp.html'));
 copyFileSync(join(ROOT, 'web', 'live.html'), join(OUT, 'live.html'));
 /* 앱 설치 페이지(/app) — APK(court.apk)·app-info.json 은 배포가 EAS 에서 받아 따로 넣는다 */
 copyFileSync(join(ROOT, 'web', 'app.html'), join(OUT, 'app.html'));
+/* 엑셀 작업 링크(/excel) — 대회 양식 내려받기·올리기(2026-10-17, functions excelJob) */
+copyFileSync(join(ROOT, 'web', 'excel.html'), join(OUT, 'excel.html'));
 
-console.log('약관 페이지를 만들었습니다 — public/index.html, privacy.html, terms.html, delete-account.html (+ rsvp.html, live.html, app.html)');
+console.log('약관 페이지를 만들었습니다 — public/index.html, privacy.html, terms.html, delete-account.html (+ rsvp.html, live.html, app.html, excel.html)');

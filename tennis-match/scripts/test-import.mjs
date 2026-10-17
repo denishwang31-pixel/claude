@@ -187,9 +187,51 @@ section('화면 연결');
   ok(/parseImport\(/.test(ui) && /buildTemplate\(/.test(ui) && /Alert\.alert/.test(ui) && /onPatch\(/.test(ui), '양식 받기 · 미리 보기 · 확인 후 저장');
   ok(/errors\.length/.test(ui) && /disabled=\{!!preview\.errors\.length|preview\.errors\.length \?/.test(ui), '오류가 있으면 저장 버튼을 막는다');
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
-  ok(/<TournamentImport t=\{t\} members=\{members\} flash=\{flash\}/.test(ts), '대회 운영 묶음에 엑셀로 불러오기');
+  ok(/<TournamentImport clubId=\{clubId\} t=\{t\} members=\{members\} flash=\{flash\}/.test(ts), '대회 운영 묶음에 엑셀로 불러오기');
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   ok(pkg.dependencies['expo-document-picker'] && pkg.dependencies['expo-sharing'] && pkg.dependencies.fflate, '필요한 모듈');
+}
+
+section('엑셀 작업 링크 — 지금 깔린 앱에서 (웹으로 내려받기·올리기)');
+{
+  const X = await import('../src/lib/excelJob.js');
+  eq('링크', X.excelUrl('p1', 'c1', 'j/1'), 'https://p1.web.app/excel?c=c1&j=j%2F1');
+  ok(X.validId('AbC_-9') && !X.validId('a/b') && !X.validId('') && !X.validId('x'.repeat(65)), '일감·클럽 id 모양');
+  ok(X.jobOpen({ expiresAt: 2000 }, 1000).ok && !X.jobOpen({ expiresAt: 1000 }, 2000).ok && /시간이 지났/.test(X.jobOpen({ expiresAt: 1 }, 2).message) && !X.jobOpen(null).ok, '3시간 지나면 닫힌다');
+  const picked = X.pickImportSheets({ ' 참가자 ': [['이름', '성별'], ['가', '남', ...Array(30).fill('x')], ['y'.repeat(300)]], 안내: [['a']], 기타: [['b']], 대진: [[1, true]] });
+  ok(Object.keys(picked.sheets).join() === '참가자,대진' && picked.sheets['참가자'][1].length === 20 && picked.sheets['참가자'][2][0].length === 100 && picked.sheets['대진'][0][1] === true, '쓸 시트만 · 칸·글자 수 자르기');
+  eq('JSON 으로 담는다(문서에 배열 안 배열을 못 넣어서)', JSON.parse(picked.json)['대진'], [[1, true]]);
+  ok(/참가자」 시트가 없습니다/.test(X.pickImportSheets({ Sheet1: [] }).error), '참가자 시트가 없으면');
+  ok(/too|많습니다/.test(X.pickImportSheets({ 참가자: Array.from({ length: 600 }, () => Array(20).fill('가'.repeat(100))) }).error || ''), '너무 크면 거절');
+  ok(/filename\*=UTF-8''%EA%B0%80/.test(X.attachmentHeader('가.xlsx')) && !/\r|\n/.test(X.attachmentHeader('a\r\nb')), '내려받기 파일 이름(한글)');
+  /* 웹으로 올린 것과 같은 길: 양식 → 파일 → 서버가 읽어 JSON → 앱이 해석 */
+  const t = { id: 't9', name: '웹 시험', format: 'blue_white', stage: 'team', roster: [], team: { teamA: [], teamB: [], matches: [] } };
+  const server = X.pickImportSheets(readXlsx(writeXlsx([
+    { name: '참가자', rows: [['이름', '성별', '팀'], ['김철수', '남', '청팀'], ['손님', '여', '백팀']] },
+    { name: '대진', rows: [['타임', '코트', 'A선수1', 'A선수2', 'B선수1', 'B선수2', 'A점수', 'B점수'], [1, 1, '김철수', '', '손님', '', 6, 3]] },
+  ])));
+  const r = parseImport(JSON.parse(server.json), { t, members, personOf });
+  ok(!r.errors.length && r.patch.team.matches[0].score.a === 6 && r.patch.roster.length === 2, '서버를 거쳐도 같은 결과');
+
+  const fx = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  const body = fx.slice(fx.indexOf('exports.excelJob'), fx.indexOf('exports.excelJob') + 4000);
+  ok(/onRequest\(/.test(body) && /X\.jobOpen\(job\)/.test(body) && /EXCEL_MAX_BYTES/.test(body) && /pickImportSheets/.test(body), '서버: 일감 확인 · 크기 제한 · 쓸 시트만');
+  ok(!/collection\('tournaments'\)/.test(body) && /importJobs/.test(body), '서버는 대회를 건드리지 않는다(일감에만 적는다)');
+  ok(/'excelJob\.js', 'xlsxLite\.js'/.test(readFileSync(new URL('./copy-functions-shared.mjs', import.meta.url), 'utf8'))
+    && JSON.parse(readFileSync(new URL('../functions/package.json', import.meta.url), 'utf8')).dependencies.fflate, '서버로 복사 · 서버에 fflate');
+  ok(!/^import /m.test(readFileSync(new URL('../src/lib/excelJob.js', import.meta.url), 'utf8')), 'excelJob.js 는 혼자 선다');
+  const fb = JSON.parse(readFileSync(new URL('../firebase.json', import.meta.url), 'utf8'));
+  ok(fb.hosting.rewrites.some((r) => r.source === '/api/excel' && r.function.functionId === 'excelJob'), '호스팅 /api/excel → excelJob');
+  ok(/'excel\.html'/.test(readFileSync(new URL('./build-legal.mjs', import.meta.url), 'utf8')), '웹 페이지(/excel)를 배포에 싣는다');
+  const page = readFileSync(new URL('../web/excel.html', import.meta.url), 'utf8');
+  ok(/&file=template/.test(page) && /method: 'POST'/.test(page) && /application\/octet-stream/.test(page) && /\[이대로 저장\]/.test(page), '웹: 양식 내려받기 · 올리기 · 저장은 앱에서');
+  ok(!/<script src=|<link [^>]*href="http/.test(page), '웹: 바깥 라이브러리 없음(카톡 안 브라우저)');
+  const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  const rj = rules.slice(rules.indexOf('match /importJobs/'), rules.indexOf('match /importJobs/') + 900);
+  ok(/allow read: if isClubAdmin\(clubId\)/.test(rj) && /request\.resource\.data\.by == request\.auth\.uid/.test(rj) && /status == 'waiting'/.test(rj) && !/allow update/.test(rj.split('\n      }')[0]), '규칙: 운영진이 만들고, 올라온 내용은 서버만 적는다');
+  const ui = readFileSync(new URL('../src/components/TournamentImport.jsx', import.meta.url), 'utf8');
+  ok(/createExcelJob\(clubId/.test(ui) && /subExcelJob\(clubId, job\.id/.test(ui) && /JSON\.parse\(d\.sheetsJson\)/.test(ui) && /Share\.share/.test(ui), '앱: 링크 만들기 · 보내기 · 올라오면 미리 보기');
+  ok(/\{ready && \(/.test(ui) && ui.indexOf('makeLink') < ui.indexOf('{ready && ('), '앱: 링크 길은 늘, 휴대폰 바로 고르기는 새 앱에서만');
 }
 
 console.log(`\n엑셀 불러오기 테스트: ${pass} 통과 / ${fail} 실패`);

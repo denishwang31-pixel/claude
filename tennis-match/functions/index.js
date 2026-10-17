@@ -1177,6 +1177,69 @@ exports.onRestoreJobCreated = onDocumentCreated(
   },
 );
 
+/* ============================================================
+   엑셀 작업 링크 — /excel 페이지가 부른다(firebase.json rewrites /api/excel). 판단은 shared/excelJob.js.
+     GET  ?c=&j=            대회 이름·상태만(회원 이름 없음)
+     GET  ?c=&j=&file=template  앱이 넣어 둔 양식(.xlsx) 내려받기
+     POST ?c=&j=  (본문 = .xlsx 파일 그대로)  읽어서 칸 값만 일감에 적는다 — 대회는 건드리지 않는다
+   링크(일감 id)를 아는 사람만, 3시간. 저장은 앱에서 운영진이 미리 보기를 보고 누른다.
+   ============================================================ */
+exports.excelJob = onRequest({ ...REGION, maxInstances: 5, memory: '512MiB' }, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const fail = (status, message) => res.status(status).json({ ok: false, message });
+  try {
+    const X = await import('./shared/excelJob.js');
+    const c = String(req.query.c || ''); const j = String(req.query.j || '');
+    if (!X.validId(c) || !X.validId(j)) return fail(400, '링크 주소가 잘못되었습니다. 앱에서 새 링크를 만들어 주세요.');
+    const ref = db.collection('clubs').doc(c).collection('importJobs').doc(j);
+    const snap = await ref.get();
+    const job = snap.exists ? snap.data() : null;
+    const open = X.jobOpen(job);
+    if (!open.ok) return fail(404, open.message);
+
+    if (req.method === 'GET' && req.query.file === 'template') {
+      const buf = Buffer.from(String(job.template || ''), 'base64');
+      if (!buf.length) return fail(404, '양식이 없습니다. 앱에서 새 링크를 만들어 주세요.');
+      res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.set('Content-Disposition', X.attachmentHeader(job.fileName));
+      return res.status(200).send(buf);
+    }
+    if (req.method === 'GET') {
+      return res.json({
+        ok: true, name: String(job.tournamentName || ''), status: job.status || 'waiting',
+        uploads: Number(job.uploads) || 0, expiresAt: Number(job.expiresAt) || 0, error: job.lastError || '',
+      });
+    }
+    if (req.method !== 'POST') return fail(405, '지원하지 않는 요청입니다.');
+    const body = req.rawBody;
+    if (!body || !body.length) return fail(400, '파일이 비어 있습니다.');
+    if (body.length > X.EXCEL_MAX_BYTES) return fail(413, '파일이 너무 큽니다(2MB까지). 양식 파일인지 확인해 주세요.');
+    const { readXlsx, XlsxError } = await import('./shared/xlsxLite.js');
+    let all;
+    try {
+      all = readXlsx(new Uint8Array(body.buffer, body.byteOffset, body.length));
+    } catch (e) {
+      const msg = e instanceof XlsxError ? e.message : '파일을 읽지 못했습니다. 받은 양식에 적어 .xlsx 로 저장해 올려 주세요.';
+      await ref.update({ lastError: msg, lastErrorAt: Date.now() }).catch(() => {});
+      return fail(400, msg);
+    }
+    const picked = X.pickImportSheets(all);
+    if (picked.error) {
+      await ref.update({ lastError: picked.error, lastErrorAt: Date.now() }).catch(() => {});
+      return fail(400, picked.error);
+    }
+    await ref.update({
+      status: 'uploaded', sheetsJson: picked.json, uploadedAt: Date.now(),
+      uploads: FieldValue.increment(1), lastError: '',
+      upName: (() => { try { return decodeURIComponent(String(req.get('x-file-name') || '')).slice(0, 80); } catch (e) { return ''; } })(),
+    });
+    return res.json({ ok: true, message: '올렸습니다. 앱으로 돌아가 미리 보기를 확인하고 [이대로 저장]을 누르세요.' });
+  } catch (e) {
+    logger.error('excelJob failed', e);
+    return fail(500, '서버에서 처리하지 못했습니다. 잠시 뒤 다시 해 주세요.');
+  }
+});
+
 /* 대회를 지우면 휴지통에 이름만 남긴다 — 앱 대회 목록의 [최근 지운 대회 · 되살리기](운영진).
    내용은 남기지 않는다(서버 백업에서 지운 그 분의 상태로 되살린다 — onRestoreJobCreated) */
 exports.onTournamentDeleted = onDocumentDeleted(

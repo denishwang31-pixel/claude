@@ -23,6 +23,13 @@
         }
       },
       {
+        "source": "/api/excel",
+        "function": {
+          "functionId": "excelJob",
+          "region": "asia-northeast3"
+        }
+      },
+      {
         "source": "/api/rsvp",
         "function": {
           "functionId": "rsvpLink",

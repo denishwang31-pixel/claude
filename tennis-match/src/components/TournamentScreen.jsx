@@ -948,7 +948,7 @@ export function Tournaments({
         )}
         <TournamentRoster t={t} members={members} flash={flash}
           onPatch={(patch) => updateTournament(clubId, t.id, patch)} />
-        <TournamentImport t={t} members={members} flash={flash}
+        <TournamentImport clubId={clubId} t={t} members={members} flash={flash}
           onPatch={(patch) => updateTournament(clubId, t.id, patch)} />
         <TournamentRestore clubId={clubId} t={t} flash={flash} />
       </>

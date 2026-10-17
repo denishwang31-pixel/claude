@@ -1422,6 +1422,22 @@ console.log('\n[대회 점수 — 동시에 넣어도 모두 남는다]');
   await T('(예전 방식 재현) 옛 목록 통째로 쓰면 먼저 넣은 점수가 지워진다', expect('-,4:6,-'));
 }
 
+/* ---- 엑셀 작업 링크 일감 (2026-10-17) — 운영진이 만들고, 올라온 내용은 서버만 ---- */
+console.log('\n[엑셀 작업 링크 일감]');
+{
+  const { serverTimestamp } = await import('firebase/firestore');
+  const job = (by, extra = {}) => ({ by, status: 'waiting', tournamentId: 't1', tournamentName: '대회', fileName: 'a.xlsx', template: 'UEs=', expiresAt: Date.now() + 3 * 3600 * 1000, createdAt: serverTimestamp(), ...extra });
+  await T('운영진은 일감을 만든다', assertSucceeds(setDoc(doc(staffDb, 'clubs', CLUB, 'importJobs', 'j1'), job('staff1'))));
+  await T('운영진은 일감을 읽는다', assertSucceeds(getDoc(doc(staffDb, 'clubs', CLUB, 'importJobs', 'j1'))));
+  await T('회원은 일감을 못 만든다', assertFails(setDoc(doc(mem1, 'clubs', CLUB, 'importJobs', 'j2'), job('mem1'))));
+  await T('회원은 일감을 못 읽는다', assertFails(getDoc(doc(mem1, 'clubs', CLUB, 'importJobs', 'j1'))));
+  await T('남의 이름으로 못 만든다', assertFails(setDoc(doc(staffDb, 'clubs', CLUB, 'importJobs', 'j3'), job('owner1'))));
+  await T('올라온 척(uploaded)으로 못 만든다', assertFails(setDoc(doc(staffDb, 'clubs', CLUB, 'importJobs', 'j4'), job('staff1', { status: 'uploaded' }))));
+  await T('올라온 내용을 앱이 못 적는다', assertFails(setDoc(doc(staffDb, 'clubs', CLUB, 'importJobs', 'j5'), job('staff1', { sheetsJson: '{}' }))));
+  await T('너무 오래 열린 링크는 못 만든다', assertFails(setDoc(doc(staffDb, 'clubs', CLUB, 'importJobs', 'j6'), job('staff1', { expiresAt: Date.now() + 9 * 3600 * 1000 }))));
+  await T('앱은 일감을 고치지 못한다(서버만)', assertFails(updateDoc(doc(staffDb, 'clubs', CLUB, 'importJobs', 'j1'), { status: 'uploaded' })));
+}
+
 await env.cleanup();
 if (failures.length) {
   console.log('\n실패한 검사 —');

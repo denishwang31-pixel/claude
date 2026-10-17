@@ -302,6 +302,20 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['by', 'type', 'tournamentId', 'at', 'status', 'createdAt']);
       }
 
+      /* 엑셀 작업 링크 일감 — 운영진이 양식을 넣어 만들고(3시간), 올린 파일 내용은 서버(excelJob)만 적는다.
+         대회는 여기서 바뀌지 않는다 — 앱에서 운영진이 미리 보기를 보고 저장해야 바뀐다(src/lib/excelJob.js) */
+      match /importJobs/{jobId} {
+        allow read: if isClubAdmin(clubId);
+        allow create: if isClubAdmin(clubId)
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.status == 'waiting'
+          && request.resource.data.tournamentId is string
+          && request.resource.data.template is string && request.resource.data.template.size() < 700000
+          && request.resource.data.expiresAt is number
+          && request.resource.data.expiresAt < request.time.toMillis() + 4 * 3600 * 1000
+          && request.resource.data.keys().hasOnly(['by', 'status', 'tournamentId', 'tournamentName', 'fileName', 'template', 'expiresAt', 'createdAt']);
+      }
+
       /* 지운 대회 이름 목록(휴지통) — 서버(onTournamentDeleted)만 쓴다. 운영진이 [되살리기] 할 때 본다 */
       match /tournamentTrash/{tournamentId} {
         allow read: if isClubAdmin(clubId);
