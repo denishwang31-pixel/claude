@@ -433,7 +433,7 @@ section('대회 참가자 바꾸기 — 확정한 뒤에도 운영진이 넣고 
   ok(/missingFromTeams\(roster, \[\.\.\.saved\.teams, base\]\)/.test(tls) && /missingFromTeams\(attendees, \[saved\.teamA, saved\.teamB, saved\.unassigned\]\)/.test(tms),
     '2팀·3팀 화면 모두 명단에만 있는 사람을 미배정으로(교류전은 우리 클럽 쪽)');
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
-  ok(/<TournamentRoster t=\{t\} members=\{members\}/.test(ts) && (ts.match(/key=\{`\$\{t\.id\}-\$\{t\.rosterVer \|\| 0\}-\$\{t\.restoredAt \|\| 0\}`\}/g) || []).length === 2, '대회 화면: 참가자 관리(운영진) + 바꾸면 편성 화면이 다시 읽는다');
+  ok(/<TournamentRoster t=\{t\} members=\{members\}/.test(ts) && (ts.match(/key=\{`\$\{t\.id\}-\$\{t\.rosterVer \|\| 0\}-\$\{t\.restoredAt \|\| 0\}`\}/g) || []).length >= 2, '대회 화면: 참가자 관리(운영진) + 바꾸면 편성 화면이 다시 읽는다');
   for (const f of ['TeamLeagueScreen.jsx', 'TeamMatchScreen.jsx']) {
     ok(/useState\(!hasDrawAtOpen \|\| unassigned\.length > 0\)/.test(readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8')),
       `${f}: 미배정이 있으면 [팀 배치 현황]을 펼친 채로(새로 넣은 사람이 접힌 칸에 숨었다)`);

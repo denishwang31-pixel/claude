@@ -184,10 +184,11 @@ section('화면 연결');
   const ui = readFileSync(new URL('../src/components/TournamentImport.jsx', import.meta.url), 'utf8');
   ok(/requireOptionalNativeModule\('ExpoDocumentPicker'\)/.test(ui) && /requireOptionalNativeModule\('ExpoSharing'\)/.test(ui), '옛 앱(모듈 없음)에서는 버튼 대신 안내 — 앱이 꺼지지 않게');
   ok(!/^import .*expo-document-picker|^import .*expo-sharing/m.test(ui), '파일 고르기·보내기 모듈은 쓸 때만 불러온다');
-  ok(/parseImport\(/.test(ui) && /buildTemplate\(/.test(ui) && /Alert\.alert/.test(ui) && /onPatch\(/.test(ui), '양식 받기 · 미리 보기 · 확인 후 저장');
+  ok(/parseFor\(/.test(ui) && /templateFor\(/.test(ui) && /Alert\.alert/.test(ui) && /onPatch\(/.test(ui), '양식 받기 · 미리 보기 · 확인 후 저장(대회 방식에 맞는 양식)');
   ok(/errors\.length/.test(ui) && /disabled=\{!!preview\.errors\.length|preview\.errors\.length \?/.test(ui), '오류가 있으면 저장 버튼을 막는다');
   const ts = readFileSync(new URL('../src/components/TournamentScreen.jsx', import.meta.url), 'utf8');
   ok(/<TournamentImport clubId=\{clubId\} t=\{t\} members=\{members\} flash=\{flash\}/.test(ts), '대회 운영 묶음에 엑셀로 불러오기');
+  ok(/isAdmin && !opsExtra && t\.stage === 'draw' && \(\s*<TournamentImport/.test(ts) && /TournamentDraw key=\{`\$\{t\.id\}-\$\{t\.rosterVer \|\| 0\}/.test(ts), '조별리그·토너먼트 대회에도(운영진) · 불러온 뒤 화면을 다시 읽는다');
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   ok(pkg.dependencies['expo-document-picker'] && pkg.dependencies['expo-sharing'] && pkg.dependencies.fflate, '필요한 모듈');
 }
@@ -198,8 +199,9 @@ section('엑셀 작업 링크 — 지금 깔린 앱에서 (웹으로 내려받�
   eq('링크', X.excelUrl('p1', 'c1', 'j/1'), 'https://p1.web.app/excel?c=c1&j=j%2F1');
   ok(X.validId('AbC_-9') && !X.validId('a/b') && !X.validId('') && !X.validId('x'.repeat(65)), '일감·클럽 id 모양');
   ok(X.jobOpen({ expiresAt: 2000 }, 1000).ok && !X.jobOpen({ expiresAt: 1000 }, 2000).ok && /시간이 지났/.test(X.jobOpen({ expiresAt: 1 }, 2).message) && !X.jobOpen(null).ok, '3시간 지나면 닫힌다');
-  const picked = X.pickImportSheets({ ' 참가자 ': [['이름', '성별'], ['가', '남', ...Array(30).fill('x')], ['y'.repeat(300)]], 안내: [['a']], 기타: [['b']], 대진: [[1, true]] });
-  ok(Object.keys(picked.sheets).join() === '참가자,대진' && picked.sheets['참가자'][1].length === 20 && picked.sheets['참가자'][2][0].length === 100 && picked.sheets['대진'][0][1] === true, '쓸 시트만 · 칸·글자 수 자르기');
+  const picked = X.pickImportSheets({ ' 참가자 ': [['이름', '성별'], ['가', '남', ...Array(30).fill('x')], ['y'.repeat(300)]], 안내: [['a']], 본선: [['b']], 대진: [[1, true]] });
+  ok(Object.keys(picked.sheets).join() === '참가자,본선,대진' && picked.sheets['참가자'][1].length === 20 && picked.sheets['참가자'][2][0].length === 100 && picked.sheets['대진'][0][1] === true, '안내만 빼고 · 칸·글자 수 자르기');
+  eq('시트는 8개까지', Object.keys(X.pickImportSheets(Object.fromEntries([['참가자', []], ...Array.from({ length: 12 }, (_, i) => [`s${i}`, []])])).sheets).length, 8);
   eq('JSON 으로 담는다(문서에 배열 안 배열을 못 넣어서)', JSON.parse(picked.json)['대진'], [[1, true]]);
   ok(/참가자」 시트가 없습니다/.test(X.pickImportSheets({ Sheet1: [] }).error), '참가자 시트가 없으면');
   ok(/too|많습니다/.test(X.pickImportSheets({ 참가자: Array.from({ length: 600 }, () => Array(20).fill('가'.repeat(100))) }).error || ''), '너무 크면 거절');
@@ -232,6 +234,101 @@ section('엑셀 작업 링크 — 지금 깔린 앱에서 (웹으로 내려받�
   const ui = readFileSync(new URL('../src/components/TournamentImport.jsx', import.meta.url), 'utf8');
   ok(/createExcelJob\(clubId/.test(ui) && /subExcelJob\(clubId, job\.id/.test(ui) && /JSON\.parse\(d\.sheetsJson\)/.test(ui) && /Share\.share/.test(ui), '앱: 링크 만들기 · 보내기 · 올라오면 미리 보기');
   ok(/\{ready && \(/.test(ui) && ui.indexOf('makeLink') < ui.indexOf('{ready && ('), '앱: 링크 길은 늘, 휴대폰 바로 고르기는 새 앱에서만');
+}
+
+section('조별리그 · 토너먼트 — 양식 → 그대로 올리기');
+{
+  const { buildBracketTemplate, parseBracketImport, bracketSupport, eventKeyOf, groupNameOf } = await import('../src/lib/bracketImport.js');
+  const { importKind, templateFor } = await import('../src/lib/excelImport.js');
+  const { drawAll } = await import('../src/lib/groupLeague.js');
+  const { buildBracket, applyResult } = await import('../src/lib/tournament.js');
+  eq('부 이름', ['남복', '남자복식', 'md', '혼복', '단식', '', '배드민턴'].map(eventKeyOf), ['MD', 'MD', 'MD', 'XD', 'OS', '', null]);
+  eq('조 이름', ['A', 'b조', '3', ' C 조 ', '', '가', '0'].map(groupNameOf), ['A조', 'B조', 'C조', 'C조', '', null, null]);
+  const roster = [...Array.from({ length: 8 }, (_, i) => ({ id: `m${i}`, name: `남${i}`, gender: 'M', skill: 3 })), ...Array.from({ length: 4 }, (_, i) => ({ id: `w${i}`, name: `여${i}`, gender: 'F', skill: 3 }))];
+  const d = drawAll(roster, { groupCount: 2, advance: 2, knockout: true }, ['MD', 'WD'], { courts: 3 }, () => 0.5);
+  d.groups[0].matches[0].score = { a: 6, b: 3 };
+  const md = d.entries.filter((e) => e.div === 'MD');
+  let br = buildBracket(md.map((e) => e.id));
+  br = applyResult(br, br.rounds[0].matches[0].id, 6, 2);
+  const t = { id: 't', name: '봄 대회', date: '2026-11-01', stage: 'draw', format: 'group_bracket', events: ['MD', 'WD'], roster, guests: [], entries: d.entries, groups: d.groups,
+    ko: { MD: { bracket: br, championId: null } }, courts: 3, rules: { groupCount: 2, advance: 2, knockout: true, groupAdvance: { [d.groups[0].id]: 1, gone: 2 } }, rosterVer: 2 };
+  eq('대회 방식 고르기', [importKind(t), importKind({ stage: 'league' }), typeof importKind({ stage: 'draw', rules: { format: 'kdk' } }), typeof importKind({ stage: 'knockout' })], ['bracket', 'team', 'object', 'object']);
+  ok(!bracketSupport({ stage: 'draw', kdk: { MD: { matches: [{}] } } }).ok, 'KDK 개인전은 아직');
+  const tpl = buildBracketTemplate(t);
+  eq('양식 시트', tpl.map((x) => x.name), ['안내', '참가자', '팀', '조별경기', '본선']);
+  ok(templateFor(t)[2].name === '팀', '대회 방식에 맞는 양식');
+  eq('팀 줄', tpl[2].rows[1].slice(0, 2).concat(tpl[2].rows[1][2] ? 'x' : ''), ['남복', d.groups[0].name, 'x']);
+  ok(tpl[4].rows.some((r) => r[1] === '준결승' && r[7] === 6) && tpl[4].rows.some((r) => r[1] === '결승'), '본선 줄(라운드 이름·점수)');
+  const r = parseBracketImport(readXlsx(writeXlsx(tpl)), { t, members: [] });
+  eq('오류 없음', r.errors, []);
+  ok(r.patch.entries.every((e) => d.entries.some((o) => o.id === e.id)) && r.patch.groups.map((g) => g.id).join() === d.groups.map((g) => g.id).join(), '팀·조 id 그대로(다시 올려도 같은 팀)');
+  ok(r.patch.groups[0].matches.find((m) => m.id === d.groups[0].matches[0].id)?.score?.a === 6, '조별 결과 그대로');
+  const k = r.patch.ko.MD.bracket;
+  ok(k.rounds[0].matches[0].a === br.rounds[0].matches[0].a && k.rounds[0].matches[0].score.a === 6 && k.rounds[1].matches[0].a === br.rounds[1].matches[0].a, '본선: 자리·결과·올라간 팀 그대로');
+  ok(!r.patch.ko.WD && r.summary.kind === 'bracket' && r.summary.divs.length === 2 && r.patch.rosterVer === 3, '본선이 없는 부는 비워 둔다(조별리그 뒤 앱에서) · 숫자');
+  eq('조별 진출 지정은 남은 조만', r.patch.rules.groupAdvance, { [d.groups[0].id]: 1 });
+}
+
+section('조별리그 · 토너먼트 — 새로 적어 올리기');
+{
+  const { parseBracketImport } = await import('../src/lib/bracketImport.js');
+  const P = (id, name, g) => ({ id, name, gender: g, status: '활동' });
+  const mem = [P('a', '김일', 'M'), P('b', '김이', 'M'), P('c', '김삼', 'M'), P('d', '김사', 'M'), P('e', '이일', 'F'), P('f', '이이', 'F'), P('g', '김오', 'M'), P('h', '김육', 'M')];
+  const t = { id: 't2', stage: 'draw', format: 'group_bracket', events: ['MD', 'XD'], roster: [], guests: [], entries: [], groups: [], ko: {}, courts: 2, rules: { groupCount: 1, knockout: true } };
+  const people = [['이름', '성별'], ...mem.map((m) => [m.name, m.gender === 'F' ? '여' : '남']), ['손님', '여']];
+  const teams = [['부', '조', '선수1', '선수2'], ['남복', 'A', '김일', '김이'], ['남복', 'A', '김삼', '김사'], ['남복', 'B', '김오', '김육'], ['남복', 'B', '김일2', '']];
+  const bad = parseBracketImport({ 참가자: people, 팀: teams }, { t, members: mem });
+  ok(bad.errors.some((e) => /「김일2」이\(가\) 참가자 시트에 없습니다/.test(e)), '참가자에 없는 선수');
+  const t2 = [['부', '조', '선수1', '선수2'], ['남복', 'A', '김일', '김이'], ['남복', 'A', '김삼', '김사'], ['남복', 'B', '김오', '김육'], ['남복', 'B', '김일', '김오'], ['혼복', 'A', '김일', '이일'], ['혼복', 'A', '김이', '손님'], ['남복', '', '김삼', ''], ['배구', 'A', '김일', '김이']];
+  const e2 = parseBracketImport({ 참가자: people, 팀: t2 }, { t, members: mem });
+  ok(e2.errors.some((e) => /「김일」이\(가\) 남복에서 2번째 줄 팀에도/.test(e)), '한 부에서 두 팀에 든 사람');
+  ok(e2.errors.some((e) => /남자복식는 한 팀이 2명/.test(e)), '복식인데 한 명');
+  ok(e2.errors.some((e) => /「배구」은\(는\) 모르는 부/.test(e)), '모르는 부');
+  /* 조별경기를 비우면 자동으로 — 조마다 풀리그 + 시간표 */
+  const okTeams = [['부', '조', '선수1', '선수2', '시드'], ['남복', 'A', '김일', '김이', 1], ['남복', 'A', '김삼', '김사'], ['남복', 'A', '김오', '김육'], ['혼복', 'A', '김일', '이일'], ['혼복', 'A', '김이', '손님'], ['혼복', 'A', '김삼', '이이']];
+  const auto = parseBracketImport({ 참가자: people, 팀: okTeams, 조별경기: [['부', '조', '타임', '코트']], 본선: [['부', '라운드']] }, { t, members: mem });
+  eq('오류 없음', auto.errors, []);
+  ok(auto.summary.auto && auto.patch.groups.length === 2 && auto.patch.groups.every((g) => g.matches.length === 3 && g.matches.every((m) => m.round && m.court)), '조별경기를 비우면 풀리그·시간표 자동');
+  ok(auto.patch.guests.length === 1 && auto.patch.guests[0].name === '손님' && auto.patch.roster.some((p) => p.guest && p.name === '손님'), '게스트는 명단·게스트 목록에 함께');
+  ok(auto.patch.entries[0].seed === 1 && auto.patch.entries[0].name === '김일 / 김이' && auto.patch.entries.every((e) => e.div), '팀 이름·시드·부');
+  eq('부 목록', auto.patch.events, ['MD', 'XD']);
+  ok(auto.warnings.some((w) => /이이.*혼합복식에 맞지 않는|김삼 \/ 이이/.test(w)) === false, '혼복 남녀 짝은 경고 없음');
+  /* 조별경기를 직접 */
+  const games = [['부', '조', '타임', '코트', 'A선수1', 'A선수2', 'B선수1', 'B선수2', 'A점수', 'B점수'],
+    ['남복', 'A', 1, 1, '김일', '김이', '김삼', '김사', 6, 2], ['남복', 'A', 2, 1, '김일', '김이', '김오', '김육'], ['남복', 'A', 3, 1, '김삼', '김사', '김오', '김육'],
+    ['혼복', 'A', 1, 2, '김오', '이일', '김이', '손님']];
+  const ex = parseBracketImport({ 참가자: people, 팀: okTeams, 조별경기: games }, { t, members: mem });
+  ok(ex.errors.some((e) => /「김오 \/ 이일」 팀이 「팀」 시트\(혼복\)에 없습니다/.test(e)), '없는 팀(짝이 다름)');
+  const ex2 = parseBracketImport({ 참가자: people, 팀: okTeams, 조별경기: [...games.slice(0, 4), ['혼복', 'A', 1, 2, '김일', '이일', '김이', '손님'], ['혼복', 'A', 7, 2, '김이', '손님', '김삼', '이이', 3, 3]] }, { t, members: mem });
+  ok(ex2.errors.some((e) => /「김일」이\(가\) 1타임에 \d+번째 줄 경기에도/.test(e)), '남복·혼복에 같은 타임 겹침');
+  ok(ex2.errors.some((e) => /무승부가 없습니다/.test(e)), '조별 무승부');
+  const ex3 = parseBracketImport({ 참가자: people, 팀: okTeams, 조별경기: [...games.slice(0, 4), ['혼복', 'A', 4, 2, '김일', '이일', '김이', '손님', 6, 1], ['혼복', 'A', 5, 2, '김이', '손님', '김삼', '이이'], ['혼복', 'A', 6, 2, '김일', '이일', '김삼', '이이']] }, { t, members: mem });
+  eq('직접 적은 조별경기', ex3.errors, []);
+  ok(!ex3.summary.auto && ex3.patch.groups[0].matches[0].score.a === 6 && ex3.patch.groups[1].matches.find((m) => m.round === 4).score.b === 1, '타임·코트·점수 그대로');
+  const miss = parseBracketImport({ 참가자: people, 팀: okTeams, 조별경기: games.slice(0, 2) }, { t, members: mem });
+  ok(miss.errors.some((e) => /혼합복식 A조 경기가 없습니다/.test(e)), '직접 적으면 모든 조를 적어야');
+  /* 본선 — 1라운드 자리 + 점수 */
+  const tko = { ...t, useGroupStage: false, events: ['MD'] };
+  const kTeams = [['부', '조', '선수1', '선수2'], ['', '', '김일', '김이'], ['', '', '김삼', '김사'], ['', '', '김오', '김육']];
+  const autoKo = parseBracketImport({ 참가자: people, 팀: kTeams }, { t: tko, members: mem });
+  eq('토너먼트만 — 본선을 비우면 팀 순서로(부전승)', [autoKo.errors, autoKo.patch.ko.MD.bracket.rounds.length, autoKo.patch.groups.length], [[], 2, 0]);
+  const ko = [['부', '라운드', '경기', 'A선수1', 'A선수2', 'B선수1', 'B선수2', 'A점수', 'B점수'],
+    ['남복', '4강', 1, '김일', '김이', '', '', '', ''], ['남복', '4강', 2, '김삼', '김사', '김오', '김육', 3, 6], ['남복', '결승', 1, '김일', '김이', '김오', '김육', 6, 4]];
+  const withKo = parseBracketImport({ 참가자: people, 팀: kTeams, 본선: ko }, { t: tko, members: mem });
+  eq('본선 오류 없음', withKo.errors, []);
+  const kb = withKo.patch.ko.MD;
+  ok(kb.bracket.rounds[0].matches[0].winner && kb.bracket.rounds[1].matches[0].score.a === 6 && kb.championId === kb.bracket.rounds[0].matches[0].a, '부전승 · 결과 · 우승');
+  const swapped = parseBracketImport({ 참가자: people, 팀: kTeams, 본선: [...ko.slice(0, 3), ['남복', '결승', 1, '김오', '김육', '김일', '김이', 4, 6]] }, { t: tko, members: mem });
+  const champ = (x) => x.patch.entries.find((e) => e.id === x.patch.ko.MD.championId)?.name;
+  ok(!swapped.errors.length && champ(swapped) === champ(withKo) && champ(withKo) === '김일 / 김이', '결승 양쪽을 거꾸로 적어도 같은 결과');
+  const wrong = parseBracketImport({ 참가자: people, 팀: kTeams, 본선: [...ko.slice(0, 3), ['남복', '결승', 1, '김삼', '김사', '김일', '김이', 6, 4]] }, { t: tko, members: mem });
+  ok(wrong.errors.some((e) => /앞 라운드 결과로 올라온 팀과 다릅니다/.test(e)), '진 팀이 다음 라운드에 적히면');
+  const early = parseBracketImport({ 참가자: people, 팀: kTeams, 본선: [ko[0], ko[1], ['남복', '4강', 2, '김삼', '김사', '김오', '김육'], ['남복', '결승', 1, '', '', '', '', 6, 4]] }, { t: tko, members: mem });
+  ok(early.errors.some((e) => /아직 양쪽 팀이 정해지지 않은/.test(e)), '앞 경기 결과 없이 결승 점수');
+  const holes = parseBracketImport({ 참가자: people, 팀: kTeams, 본선: [ko[0], ko[1]] }, { t: tko, members: mem });
+  ok(holes.errors.some((e) => /경기 1 ~ 2을 한 줄씩 모두/.test(e)), '1라운드 줄이 빠지면');
+  const r9 = parseBracketImport({ 참가자: people, 팀: kTeams, 본선: [ko[0], ko[1], ko[2], ['남복', '9강', 1, '', '', '', '', '', '']] }, { t: tko, members: mem });
+  ok(r9.errors.some((e) => /라운드는/.test(e)), '이상한 라운드 이름');
 }
 
 console.log(`\n엑셀 불러오기 테스트: ${pass} 통과 / ${fail} 실패`);

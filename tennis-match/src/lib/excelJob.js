@@ -17,7 +17,7 @@ export const EXCEL_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_ROWS = 600;
 const MAX_COLS = 20;
 const MAX_CELL = 100;
-const KEEP = ['안내', '참가자', '대진'];
+const MAX_SHEETS = 8;
 
 export const excelUrl = (projectId, clubId, jobId) =>
   `https://${projectId}.web.app/excel?c=${encodeURIComponent(clubId)}&j=${encodeURIComponent(jobId)}`;
@@ -32,15 +32,17 @@ export function jobOpen(job, nowMs = Date.now()) {
 }
 
 /**
- * 올린 엑셀에서 쓸 시트만 — 참가자·대진(이름 앞뒤 공백 무시). 줄·칸·글자 수를 잘라 문서 한 개에 들어가게
+ * 올린 엑셀에서 쓸 시트만 — 「안내」를 뺀 시트(8개까지). 팀 대항은 참가자·대진, 조별리그·토너먼트는
+ * 참가자·팀·조별경기·본선(2026-10-27). 어떤 시트가 필요한지는 앱이 대회 방식에 맞춰 본다.
+ * 줄·칸·글자 수를 잘라 문서 한 개에 들어가게
  * @returns { sheets, json } | { error }
  */
 export function pickImportSheets(all) {
   const norm = (s) => String(s || '').replace(/\s+/g, '');
   const out = {};
   Object.keys(all || {}).forEach((name) => {
-    const k = KEEP.find((x) => x === norm(name));
-    if (!k || k === '안내') return;
+    const k = norm(name);
+    if (!k || k === '안내' || Object.keys(out).length >= MAX_SHEETS) return;
     out[k] = (all[name] || []).slice(0, MAX_ROWS).map((row) => (row || []).slice(0, MAX_COLS)
       .map((v) => (typeof v === 'number' || typeof v === 'boolean' ? v : String(v ?? '').slice(0, MAX_CELL))));
   });

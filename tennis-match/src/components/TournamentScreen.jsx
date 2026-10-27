@@ -1013,7 +1013,7 @@ export function Tournaments({
         ) : t.stage === 'skillGroups' ? (
           <SkillGroupsView clubId={clubId} t={t} members={members} isAdmin={isAdmin} flash={flash} />
         ) : t.stage === 'draw' ? (
-          <TournamentDraw key={`${t.id}-${t.restoredAt || 0}`} clubId={clubId} t={t} members={members} isAdmin={isAdmin} me={me} flash={flash} />
+          <TournamentDraw key={`${t.id}-${t.rosterVer || 0}-${t.restoredAt || 0}`} clubId={clubId} t={t} members={members} isAdmin={isAdmin} me={me} flash={flash} />
         ) : t.stage === 'group' ? (
           <GroupLeagueView
             key={`${t.id}-${t.restoredAt || 0}`} t={t} members={members} isAdmin={isAdmin} me={me} flash={flash}
@@ -1075,6 +1075,11 @@ export function Tournaments({
           members={members} canReset={memberRoles(meVal || {}).includes(ROLES.PRESIDENT)}
         />
 
+        {/* 엑셀로 불러오기 — 조별리그·토너먼트(2026-10-27). 청백전·팀 리그는 [대회 운영] 묶음(opsExtra) 안에 있다 */}
+        {isAdmin && !opsExtra && t.stage === 'draw' && (
+          <TournamentImport clubId={clubId} t={t} members={members} flash={flash}
+            onPatch={(patch) => updateTournament(clubId, t.id, patch)} />
+        )}
         {/* 되돌리기 — 청백전·팀 리그는 [대회 운영] 묶음(opsExtra) 안에 있다 */}
         {isAdmin && !opsExtra && <TournamentRestore clubId={clubId} t={t} flash={flash} />}
 

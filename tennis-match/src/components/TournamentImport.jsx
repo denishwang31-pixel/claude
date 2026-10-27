@@ -22,7 +22,10 @@ import { Card, Btn } from './ui';
 import { Fold } from './MatchBoard';
 import { C, S } from '../lib/theme';
 import { rosterPerson } from './TournamentRoster';
-import { buildTemplate, parseImport, templateFileName } from '../lib/tourneyImport';
+import { templateFileName } from '../lib/tourneyImport';
+import { importKind, templateFor, parseFor } from '../lib/excelImport';
+import { tournamentSkill } from '../lib/grades';
+import { effectiveNtrp } from '../lib/ntrp';
 import { readXlsx, writeXlsx, base64ToBytes, bytesToBase64, XlsxError } from '../lib/xlsxLite';
 import { breadcrumb, later } from '../lib/crashReport';
 import { createExcelJob, subExcelJob } from '../lib/firestore';
@@ -32,6 +35,14 @@ import { auth, firebaseConfig } from '../../firebaseConfig';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const MAX_BYTES = 5 * 1024 * 1024;
 const hasPicker = () => !!requireOptionalNativeModule('ExpoDocumentPicker');
+/* 회원 → 명단 한 사람. 팀 대항은 참가자 관리와 같은 모양, 조별리그는 대회 개설 때와 같은 모양(실력 skill 포함) */
+const personOfFor = (t) => ({
+  team: (m) => rosterPerson(m, t),
+  bracket: (m) => {
+    const tg = t?.tgrades?.[m.id];
+    return { id: m.id, name: m.name, gender: m.gender || '', skill: tournamentSkill(tg, effectiveNtrp(m).value, t?.tgScheme) ?? 3.0, ...(tg ? { tgrade: tg } : {}) };
+  },
+});
 const hasSharing = () => !!requireOptionalNativeModule('ExpoSharing');
 
 export function TournamentImport({ clubId, t, members = [], onPatch, flash }) {
@@ -53,7 +64,7 @@ export function TournamentImport({ clubId, t, members = [], onPatch, flash }) {
       seenUpload.current = d.uploadedAt;
       try {
         const { t: tt, members: ms } = latest.current;
-        const r = parseImport(JSON.parse(d.sheetsJson), { t: tt, members: ms, personOf: (m) => rosterPerson(m, tt) });
+        const r = parseFor(JSON.parse(d.sheetsJson), { t: tt, members: ms, personOf: personOfFor(tt) });
         setPreview({ ...r, fileName: d.upName || '' });
         setOpen(true);
         flash('엑셀이 올라왔습니다 — 미리 보기를 확인하세요');
@@ -72,7 +83,7 @@ export function TournamentImport({ clubId, t, members = [], onPatch, flash }) {
       const expiresAt = Date.now() + EXCEL_JOB_HOURS * 3600 * 1000;
       const ref = await createExcelJob(clubId, {
         by: uid, tournamentId: t.id, tournamentName: String(t.name || '').slice(0, 60), fileName: templateFileName(t),
-        template: bytesToBase64(writeXlsx(buildTemplate(t))), expiresAt,
+        template: bytesToBase64(writeXlsx(templateFor(t))), expiresAt,
       });
       seenUpload.current = 0;
       setPreview(null);
@@ -94,7 +105,7 @@ export function TournamentImport({ clubId, t, members = [], onPatch, flash }) {
       const FS = await import('expo-file-system/legacy');
       const Sharing = await import('expo-sharing');
       const uri = `${FS.cacheDirectory}${templateFileName(t)}`;
-      await FS.writeAsStringAsync(uri, bytesToBase64(writeXlsx(buildTemplate(t))), { encoding: FS.EncodingType.Base64 });
+      await FS.writeAsStringAsync(uri, bytesToBase64(writeXlsx(templateFor(t))), { encoding: FS.EncodingType.Base64 });
       await Sharing.shareAsync(uri, { mimeType: XLSX_MIME, dialogTitle: '대회 양식 보내기', UTI: 'org.openxmlformats.spreadsheetml.sheet' });
     } catch (e) {
       flash('양식을 만들지 못했습니다. 잠시 뒤 다시 해 주세요');
@@ -114,7 +125,7 @@ export function TournamentImport({ clubId, t, members = [], onPatch, flash }) {
       if (file.size && file.size > MAX_BYTES) { flash('파일이 너무 큽니다(5MB까지). 양식 파일인지 확인해 주세요'); return; }
       const FS = await import('expo-file-system/legacy');
       const bytes = base64ToBytes(await FS.readAsStringAsync(file.uri, { encoding: FS.EncodingType.Base64 }));
-      const r = parseImport(readXlsx(bytes), { t, members, personOf: (m) => rosterPerson(m, t) });
+      const r = parseFor(readXlsx(bytes), { t, members, personOf: personOfFor(t) });
       setPreview({ ...r, fileName: file.name || '' });
     } catch (e) {
       flash(e instanceof XlsxError ? e.message : '파일을 읽지 못했습니다. 받은 양식에 적어 .xlsx 로 저장해 올려 주세요');
@@ -127,7 +138,7 @@ export function TournamentImport({ clubId, t, members = [], onPatch, flash }) {
     if (!preview?.patch || preview.errors.length) return;
     const s = preview.summary;
     Alert.alert('엑셀 내용으로 바꿀까요?',
-      `참가자 ${s.people}명 · 대진 ${s.games}경기${s.done ? `(결과 ${s.done})` : ''}로 이 대회의 참가자·팀·대진을 바꿉니다.\n`
+      `참가자 ${s.people}명 · 대진 ${s.games}경기${s.done ? `(결과 ${s.done})` : ''}로 이 대회의 참가자·팀·${s.kind === 'bracket' ? '조·경기·본선' : '대진'}을 바꿉니다.\n`
       + '잘못 올렸으면 같은 화면의 [되돌리기 (서버 백업)]로 되돌릴 수 있습니다.', [
         { text: '취소', style: 'cancel' },
         {
@@ -147,9 +158,11 @@ export function TournamentImport({ clubId, t, members = [], onPatch, flash }) {
   };
 
   const s = preview?.summary;
+  const kind = importKind(t);
+  if (typeof kind === 'object') return null;      // 이 대회 방식은 아직(KDK 등) — 칸을 그리지 않는다
   return (
     <Fold title="엑셀로 불러오기" open={open} onToggle={() => setOpen(!open)}
-      summary="참가자·팀·대진(점수)을 엑셀 양식으로 한꺼번에 넣습니다">
+      summary={kind === 'bracket' ? '참가자·팀·조·경기·본선(점수)을 엑셀 양식으로 한꺼번에 넣습니다' : '참가자·팀·대진(점수)을 엑셀 양식으로 한꺼번에 넣습니다'}>
       <Card>
         <Text style={{ fontSize: 12, color: C.sub, lineHeight: 18 }}>
           ① [엑셀 작업 링크 만들기] → [링크 보내기]로 카톡 「나와의 채팅」 등에 보내 PC에서 엽니다{'\n'}
@@ -196,8 +209,10 @@ export function TournamentImport({ clubId, t, members = [], onPatch, flash }) {
                 <Text style={{ fontSize: 12, color: C.text, marginTop: 6, lineHeight: 18 }}>
                   참가자 {s.people}명 (회원 {s.members} · 게스트 {s.guests})
                   {s.added || s.removed ? ` · 새로 ${s.added}명 · 빠짐 ${s.removed}명` : ''}{'\n'}
-                  {s.teams.map((x) => `${x.name} ${x.n}명`).join(' · ')}{s.unassigned ? ` · 미배정 ${s.unassigned}명` : ''}{'\n'}
-                  대진 {s.games}경기{s.done ? ` · 결과 ${s.done}` : ''}
+                  {s.kind === 'bracket'
+                    ? s.divs.map((d) => `${d.name}: ${d.teams}팀${d.groups ? ` · ${d.groups}개 조 · 조별 ${d.games}경기${d.done ? `(결과 ${d.done})` : ''}` : ''}${d.ko ? ` · 본선 ${d.ko.size === 2 ? '결승' : d.ko.size === 4 ? '4강' : `${d.ko.size}강`}${d.ko.done ? `(결과 ${d.ko.done})` : ''}` : ''}`).join('\n')
+                      + (s.auto ? '\n조별 경기·시간표는 자동으로 짭니다' : '')
+                    : `${s.teams.map((x) => `${x.name} ${x.n}명`).join(' · ')}${s.unassigned ? ` · 미배정 ${s.unassigned}명` : ''}\n대진 ${s.games}경기${s.done ? ` · 결과 ${s.done}` : ''}`}
                   {s.switched ? `\n${s.kind === 'league' ? '3팀 이상이라 3팀 화면으로 바뀝니다' : '2팀 화면으로 바뀝니다'}` : ''}
                 </Text>
                 {preview.warnings.slice(0, 10).map((w, i) => (
