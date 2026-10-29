@@ -25,7 +25,7 @@ import {
   EVENTS, eventOf, eligible, drawAll, redrawDivision, schedule, playersOfFn, addTeam, removeTeam,
   leagueQualifiers, nameLookup, progress, KDK_RANK_TEXT, divRules, advanceOf, bracketPlan, leagueChampions, standings,
   groupSizesFor, gamesCheck, gamesFixes, gamesProblemText,
-  koOrder, reseedGroups, drawEstimate, KO_SEED_HELP, ORDER_HELP, slotConflicts, cellCollisions,
+  koOrder, reseedGroups, drawEstimate, KO_SEED_HELP, ORDER_HELP, slotConflicts, cellCollisions, koGridCells,
 } from '../lib/groupLeague';
 import { tournamentRoundTimes, tournamentSchedule, timingRounds } from '../lib/schedule';
 import { RoundTimingEditor } from './RoundTimingEditor';
@@ -451,6 +451,12 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
   /* ---- 시간 (2026-10-29 앱 주인: "몇 타임 할지가 아니라 팀당 경기 수·코트 수에 맞게, 타임당 시간도 설정") ----
      타임 수는 정하지 않는다 — 대진을 짜면 경기 수·코트 수로 정해진다. 시작 시간·한 타임 길이로 시각을 그린다. */
   const timing = t.timing || null;
+  /* 시간표의 본선 칸 — 조별리그 다음 타임부터 1코트부터(groupLeague.koGridCells, 저장하지 않고 그때그때 계산) */
+  const koItems = useMemo(() => (isKdk ? [] : koGridCells(t)).map((c) => ({
+    id: c.id, round: c.round, court: c.court, teamA: c.a.ids, teamB: c.b.ids, score: c.score || null, type: c.type, div: c.div, ko: true,
+  })), [t, isKdk]);
+  const koMax = koItems.reduce((n, m) => Math.max(n, m.round), 0);
+  const nameOfAny = (id) => (String(id).startsWith('ko:') ? String(id).slice(3) : nameOfPlayer(id));
   const maxRound = groups.reduce((n, g) => Math.max(n, ...(g.matches || []).map((m) => Number(m.round) || 0)), 0);
   const roundTimesNow = useMemo(() => tournamentRoundTimes(timing, maxRound), [timing, maxRound]);
   const eventBands = useMemo(() => tournamentSchedule(timing, maxRound).events, [timing, maxRound]);
@@ -458,7 +464,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
   /* 시간 안에 들어가는 타임 수(시작~종료 ÷ 한 타임) — 시간표에 빈 타임도 줄로 보이게(2026-10-29 앱 주인:
      "시간은 들어왔는데 대진표에 타임만큼 반영되지 않아 — 3타임으로 고정된 것 같다") */
   const availRounds = timingRounds(timing) || 0;
-  const gridRounds = Math.max(availRounds, maxRound);
+  const gridRounds = Math.max(availRounds, maxRound, koMax);
   const gridTimes = useMemo(() => tournamentRoundTimes(timing, gridRounds), [timing, gridRounds]);
   const gridBands = useMemo(() => tournamentSchedule(timing, gridRounds).events, [timing, gridRounds]);
 
@@ -494,6 +500,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
       div: g.div,
     }))),
     ...kdkDivs.flatMap((k) => kdk[k].matches.map((m) => ({ ...m, type: `${eventOf(k).short} KDK` }))),
+    ...koItems,
   ];
   const [tabAll, setTabAll] = useState(false);
 
@@ -516,6 +523,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
           {maxRound > 0 && (
             <Text style={{ fontSize: 11.5, color: C.sub, marginTop: 4 }}>
               조별리그 {maxRound}타임{roundTimesNow.length ? ` · ${roundTimesNow[0].start} ~ ${roundTimesNow[roundTimesNow.length - 1].end}` : ''}
+              {koMax > maxRound ? ` · 본선 ${maxRound + 1}~${koMax}타임${gridTimes[koMax - 1] ? ` (~${gridTimes[koMax - 1].end})` : ''}` : ''}
               {availRounds ? ` (시간 안에 ${availRounds}타임 가능)` : ''}
               {' · '}{RULE_LABELS.order[rules.order]}{useGroups && rules.knockout ? ` · 본선 ${RULE_LABELS.koSeed[rules.koSeed]}` : ''}
             </Text>
@@ -884,7 +892,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         <>
           <SectionTitle hint="모든 부를 한 표에 — 칸 위 꼬리표가 부·조입니다">전체 시간표</SectionTitle>
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={allGrid()} nameOf={nameOfPlayer} me={me} venue={{ courts, courtNames }} roundTimes={gridTimes} events={gridBands}
+            <MatchGrid matches={allGrid()} nameOf={nameOfAny} me={me} venue={{ courts, courtNames }} roundTimes={gridTimes} events={gridBands}
               roundCount={gridRounds} courtCount={courts}
               genderOf={(id) => members.find((m) => m.id === id)?.gender || roster.find((p) => p.id === id)?.gender || ''} />
           </Card>
@@ -935,10 +943,12 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
                 onKnockout={divKo?.bracket || !rules.knockout ? undefined : goKnockout}
                 courtNames={courtNames} label={events.length > 1 ? `${ev.short} ` : ''}
                 times={gridTimes} events={gridBands} gridRounds={gridRounds}
-                otherMatches={allGrid().filter((m) => m.div && m.div !== div)}
+                otherMatches={allGrid().filter((m) => m.ko || (m.div && m.div !== div))}
                 blocked={(r, c) => {
                   const hit = groups.find((g) => g.div !== div && (g.matches || []).some((m) => m.round === r && m.court === c));
-                  return hit ? `${eventOf(hit.div).short} ${hit.name}` : '';
+                  if (hit) return `${eventOf(hit.div).short} ${hit.name}`;
+                  const k = koItems.find((m) => m.round === r && m.court === c);
+                  return k ? `본선(${k.type})` : '';
                 }}
                 checkConflicts={(mine) => slotConflicts([...groups.filter((g) => g.div !== div), ...mine], playersOfEntry)}
                 editOpen={editOpen} onRemoveTeam={dropTeam} hideRules

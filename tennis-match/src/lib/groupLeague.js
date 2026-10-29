@@ -1066,6 +1066,96 @@ export function leagueChampions(t, rulesIn) {
   return out;
 }
 
+/* ---------------- 시간표에 본선도 (2026-10-29 앱 주인) ----------------
+   "시간표에 토너먼트도 넣어 줘. 1코트부터 순서대로 — A조 1등·B조 2등부터. 결과가 없으면 A조 1등, B조 2등으로
+   넣어 두고, 순위가 정해지면 바로 바꿔 줘."
+   본선 경기는 저장하지 않고 그때그때 계산한다 — 조별리그 마지막 타임 다음부터, 라운드(8강 → 준결승 → 결승)마다
+   새 타임에서 시작해 1코트부터 차례로 채운다. 같은 라운드는 모든 부를 이어서.
+     · 본선을 아직 안 만들었으면 작성 기준의 본선 배정대로 「A조 1위」 자리 — 그 조 경기가 끝나면 팀 이름
+     · 본선을 만들었으면 실제 대진·결과. 아직 모르는 자리는 「A1·B2 승자」
+   첫 라운드는 1위 팀 조 순서로(A조 1위 경기 → B조 1위 경기 …), 다음 라운드부터는 대진표 순서. 부전승은 빠진다. */
+export function koGridCells(t) {
+  const rules = normRules({ ...(t?.rules || {}), advance: t?.rules?.advance ?? t?.advancePerGroup ?? 2 });
+  const useGroups = t?.useGroupStage !== false;
+  const courts = Math.max(1, Number(t?.courts) || 2);
+  const gsAll = t?.groups || [];
+  const entries = t?.entries || [];
+  const entryOf = new Map(entries.map((e) => [e.id, e]));
+  const start = gsAll.reduce((n, g) => Math.max(n, ...(g.matches || []).map((m) => Number(m.round) || 0)), 0);
+  const divs = [...new Set([...(t?.events || []), ...gsAll.map((g) => g.div || ''), ...Object.keys(t?.ko || {})])];
+  const perDiv = [];
+  divs.forEach((div) => {
+    const gs = gsAll.filter((g) => (g.div || '') === div);
+    const bracket = t?.ko?.[div]?.bracket;
+    /* 조 순위 → 「A조 1위」·짧은 표(A1)·조/순위(첫 라운드 정렬) */
+    const meta = new Map();
+    gs.forEach((g, gi) => {
+      const fin = progress(g).finished;
+      standings(g).slice(0, advanceOf(rules, g)).forEach((r, pos) => {
+        const base = String(g.name || '').replace(/\s*\(.*\)$/, '');
+        meta.set(r.id, { label: `${base} ${pos + 1}위`, tag: `${base.replace(/조$/, '')}${pos + 1}`, gi, pos, fin });
+      });
+    });
+    let slots = null;
+    if (bracket?.rounds?.length) {
+      slots = bracket.rounds.map((r) => (r.matches || []).map((m) => ({ id: m.id, a: m.a || null, b: m.b || null, score: m.score || null, bye: false })));
+      /* 첫 라운드 부전승 — 한쪽 자리가 비어 있고 다음 라운드로 바로 간 경기 */
+      slots[0].forEach((m) => { if (!m.a || !m.b) m.bye = true; });
+    } else if (useGroups && rules.knockout && gs.length) {
+      const ids = koOrder(gs, (g) => advanceOf(rules, g), rules.koSeed === 'random' ? 'cross' : rules.koSeed, entries);
+      if (ids.length < 2) return;
+      const size = 2 ** Math.ceil(Math.log2(ids.length));
+      const pos = seedPositions(size).map((sd) => (sd <= ids.length ? ids[sd - 1] : null));
+      slots = [];
+      for (let n = size / 2, L = 0; n >= 1; n /= 2, L++) {
+        slots.push(Array.from({ length: n }, (_, i) => (L === 0
+          ? { id: `ko_${div}_0_${i}`, a: pos[i * 2], b: pos[i * 2 + 1], score: null, bye: !pos[i * 2] || !pos[i * 2 + 1], preview: true }
+          : { id: `ko_${div}_${L}_${i}`, a: null, b: null, score: null, bye: false, preview: true })));
+      }
+    } else return;
+    /* 자리 이름 — 정해진 팀이면 팀, 아니면 「A조 1위」, 앞 경기에서 올라올 자리면 「A1·B2 승자」 */
+    const sideOf = (id, preview) => {
+      const mt = meta.get(id);
+      if (!id) return null;
+      if (preview && mt && !mt.fin) return { entryId: null, label: mt.label, tag: mt.tag, ids: [`ko:${mt.label}`] };
+      const e = entryOf.get(id);
+      return { entryId: id, label: e?.name || mt?.label || '', tag: mt?.tag || e?.name || '', ids: e?.players || [`ko:${mt?.label || ''}`] };
+    };
+    const tagOfSlot = (L, i) => {
+      const m = slots[L][i];
+      if (!m) return '';
+      const a = sideOf(m.a, m.preview); const b = sideOf(m.b, m.preview);
+      if (L === 0) { if (m.bye) return (a || b)?.tag || ''; return `${a?.tag || ''}·${b?.tag || ''} 승자`; }
+      return `${koRound(L, slots.length)} ${i + 1} 승자`;     // 둘째 라운드부터는 대진표 순서 = 시간표 순서
+    };
+    const total = slots.length;
+    const levels = slots.map((row, L) => row.map((m, i) => {
+      if (m.bye) return null;
+      const known = (id, feeder) => (id ? sideOf(id, m.preview) : { entryId: null, label: feeder, tag: feeder, ids: [`ko:${feeder}`] });
+      const a = L === 0 ? sideOf(m.a, m.preview) : known(m.a, tagOfSlot(L - 1, i * 2));
+      const b = L === 0 ? sideOf(m.b, m.preview) : known(m.b, tagOfSlot(L - 1, i * 2 + 1));
+      /* 첫 라운드는 1위 쪽 조 순서로 — A조 1위 경기, B조 1위 경기 … */
+      const key = L === 0 ? Math.min(...[m.a, m.b].map((id) => { const mt = meta.get(id); return mt ? mt.pos * 100 + mt.gi : 999; })) * 1000 + i : i;
+      return { id: m.id, div, level: L, idx: i, a, b, score: m.score, key, type: `${div && div !== LEGACY && eventOf(div).short ? `${eventOf(div).short} ` : ''}${koRound(L, total)}` };
+    }).filter(Boolean).sort((x, y) => x.key - y.key));
+    perDiv.push(levels);
+  });
+  /* 타임·코트 — 라운드마다 새 타임에서 1코트부터 */
+  const out = [];
+  let round = start + 1;
+  let court = 1;
+  const depth = Math.max(0, ...perDiv.map((lv) => lv.length));
+  for (let L = 0; L < depth; L++) {
+    perDiv.forEach((lv) => (lv[L] || []).forEach((c) => {
+      out.push({ ...c, round, court });
+      court += 1;
+      if (court > courts) { court = 1; round += 1; }
+    }));
+    if (court !== 1) { court = 1; round += 1; }
+  }
+  return out;
+}
+
 /* ---------------- 외부 공개 보기 ----------------
    앱이 없는 사람에게 보여 줄 것만 — 이름·조·시간표·결과·순위·본선.
    회원 id·전화·신청자 목록·등급 같은 것은 내보내지 않는다(서버 함수 liveTournament 가 쓴다). */
@@ -1108,6 +1198,8 @@ export function liveView(t, clubName = '') {
       const pn = (id) => (d.players || []).find((p) => p.id === id)?.name || '';
       return (d.matches || []).map((m) => ({ m, tag: label(div, 'KDK'), a: (m.teamA || []).map(pn).join('·'), b: (m.teamB || []).map(pn).join('·') }));
     }),
+    /* 본선도 시간표에 — 조별리그 다음 타임부터(koGridCells) */
+    ...koGridCells(t).map((c) => ({ m: { round: c.round, court: c.court, score: c.score || null }, tag: c.type, a: c.a.label, b: c.b.label })),
   ].filter((x) => x.m.round && x.m.court);
   const maxRound = cells.reduce((n, x) => Math.max(n, Number(x.m.round) || 0), 0);
   const clock = scheduleOf(t.timing, maxRound);

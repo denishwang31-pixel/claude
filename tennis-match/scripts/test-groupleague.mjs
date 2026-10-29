@@ -484,11 +484,50 @@ console.log('[조마다 경기 수 같게]');
     rules: { advance: 2, knockout: true, koSeed: 'cross' }, timing: { startTime: '09:00', roundMinutes: 30 } };
   const v = GL.liveView(t, '클럽');
   ok(v.grid.courts.map((c) => c.label).join() === 'A,B,C,D' && v.grid.rounds[0].time === '09:00' && v.grid.rounds[1].time === '09:30', '웹 시간표: 코트 이름 · 타임 시각');
-  eq(v.grid.rounds.reduce((n, r) => n + r.matches.length, 0), dd.groups.reduce((n, g) => n + g.matches.length, 0), '웹 시간표에 모든 조 경기');
+  eq(v.grid.rounds.reduce((n, r) => n + r.matches.filter((m) => /조$/.test(m.tag)).length, 0), dd.groups.reduce((n, g) => n + g.matches.length, 0), '웹 시간표에 모든 조 경기(+ 본선 칸)');
   eq(v.koPreview[0].rounds[0].matches.map((m) => `${m.a}-${m.b}`), ['A조 1위-B조 2위', 'D조 1위-C조 2위', 'B조 1위-A조 2위', 'C조 1위-D조 2위'], '웹 본선(예정): 교차 자리');
   ok(v.groups[0].matches[0].time === '09:00' && !JSON.stringify(v).includes('"q1"'), '조 경기 목록에도 시각 · 회원 id 는 내보내지 않음');
   const done = GL.liveView({ ...t, ko: { MD: { bracket: { rounds: [{ matches: [{ a: dd.entries[0].id, b: dd.entries[1].id }] }] } } } }, '');
   eq(done.koPreview.length, 0, '본선을 만들면 예정은 빠진다');
+}
+
+/* ---------- 시간표에 본선도 ---------- */
+{
+  const GL = await import('../src/lib/groupLeague.js');
+  const { buildBracket, applyResult } = await import('../src/lib/tournament.js');
+  const roster = Array.from({ length: 32 }, (_, i) => ({ id: `k${i}`, name: `선수${i}`, gender: 'M', skill: 3 }));
+  const d = GL.drawAll(roster, { groupCount: 4, advance: 2 }, ['MD'], { courts: 3 }, () => 0.5);
+  const t = { stage: 'draw', events: ['MD'], entries: d.entries, groups: d.groups, courts: 3, rules: { advance: 2, knockout: true, koSeed: 'cross' } };
+  const last = Math.max(...d.groups.flatMap((g) => g.matches.map((m) => m.round)));
+  const cells = GL.koGridCells(t);
+  const line = (c) => `${c.round - last}-${c.court} ${c.type} ${c.a.label}|${c.b.label}`;
+  eq(cells.map(line), [
+    '1-1 남복 8강 A조 1위|B조 2위', '1-2 남복 8강 B조 1위|A조 2위', '1-3 남복 8강 C조 1위|D조 2위', '2-1 남복 8강 D조 1위|C조 2위',
+    '3-1 남복 준결승 A1·B2 승자|D1·C2 승자', '3-2 남복 준결승 B1·A2 승자|C1·D2 승자', '4-1 남복 결승 준결승 1 승자|준결승 2 승자',
+  ], '조별리그 다음 타임부터 1코트부터 · A조 1위 경기부터 · 라운드마다 새 타임');
+  d.groups[0].matches.forEach((m) => { m.score = { a: 6, b: 1 }; });
+  const after = GL.koGridCells(t);
+  ok(after[0].a.entryId && after[0].a.ids.every((id) => !id.startsWith('ko:')) && after[0].b.label === 'B조 2위' && after[1].b.entryId, 'A조가 끝나면 A조 1·2위 자리에 바로 팀이 들어간다');
+  /* 본선을 만든 뒤 — 실제 대진·결과, 모르는 자리는 승자 표시 */
+  const q = GL.koOrder(d.groups, 2, 'cross');
+  let br = buildBracket(q);
+  br = applyResult(br, br.rounds[0].matches[0].id, 6, 3);
+  const real = GL.koGridCells({ ...t, ko: { MD: { bracket: br } } });
+  ok(real[0].id === br.rounds[0].matches[0].id && real[0].score.a === 6 && real.find((c) => c.level === 1).a.entryId === br.rounds[0].matches[0].winner, '본선을 만들면 실제 경기·결과 · 이긴 팀이 다음 칸에');
+  ok(real.find((c) => c.level === 1 && c.idx === 0).b.label === 'D1·C2 승자', '아직 모르는 자리는 「D1·C2 승자」');
+  /* 3개 조(6팀, 부전승 2) — 부전승 경기는 시간표에 없다 */
+  const d3 = GL.drawAll(roster.slice(0, 24), { groupCount: 3, advance: 2 }, ['MD'], { courts: 4 }, () => 0.5);
+  const c3 = GL.koGridCells({ ...t, entries: d3.entries, groups: d3.groups, courts: 4 });
+  eq(c3.filter((c) => c.level === 0).length, 2, '부전승은 빠진다(6팀 → 첫 라운드 2경기)');
+  /* 두 부 — 같은 라운드는 이어서 */
+  const r2 = [...roster, ...Array.from({ length: 16 }, (_, i) => ({ id: `w${i}`, name: `여${i}`, gender: 'F', skill: 3 }))];
+  const d2 = GL.drawAll(r2, { groupCount: 2, advance: 2 }, ['MD', 'WD'], { courts: 4 }, () => 0.5);
+  const c2 = GL.koGridCells({ ...t, events: ['MD', 'WD'], entries: d2.entries, groups: d2.groups, courts: 4 });
+  ok(c2.filter((c) => c.level === 0).map((c) => c.type).join() === '남복 준결승,남복 준결승,여복 준결승,여복 준결승' && GL.cellCollisions([{ matches: c2 }]) === 0, '두 부 첫 라운드를 이어서 · 칸 겹침 없음');
+  ok(GL.koGridCells({ ...t, rules: { ...t.rules, knockout: false } }).length === 0 && GL.koGridCells({ ...t, useGroupStage: true, groups: [] }).length === 0, '조별리그만이면 본선 칸 없음');
+  /* 웹 */
+  const v = GL.liveView(t, '');
+  ok(v.grid.rounds.some((r) => r.matches.some((m) => /8강/.test(m.tag) && m.b === 'B조 2위')), '웹 시간표에도 본선 칸');
 }
 
 /* 화면 연결 — 대진 작성 화면 */
@@ -501,8 +540,9 @@ console.log('[조마다 경기 수 같게]');
   ok((ui.match(/order: rules\.order/g) || []).length >= 3, '시간표를 다시 짤 때 경기 순서를 지킨다');
   ok(/roundTimes=\{gridTimes\} events=\{gridBands\}/.test(ui), '시간표에 타임별 시각');
   ok(/const availRounds = timingRounds\(timing\)/.test(ui) && /roundCount=\{gridRounds\} courtCount=\{courts\}/.test(ui), '시간표에 시간 안의 타임을 모두 줄로(빈 타임 포함)');
-  ok(/otherMatches=\{allGrid\(\)\.filter\(\(m\) => m\.div && m\.div !== div\)\}/.test(ui) && /checkConflicts=\{\(mine\) => slotConflicts\(/.test(ui) && /blocked=\{\(r, c\) =>/.test(ui), '대진 수기 수정: 다른 부 경기도 함께 · 모든 부 겹침 확인');
+  ok(/otherMatches=\{allGrid\(\)\.filter\(\(m\) => m\.ko \|\| \(m\.div && m\.div !== div\)\)\}/.test(ui) && /checkConflicts=\{\(mine\) => slotConflicts\(/.test(ui) && /blocked=\{\(r, c\) =>/.test(ui), '대진 수기 수정: 다른 부 경기도 함께 · 모든 부 겹침 확인');
   ok(/cellCollisions\(groups\)/.test(ui) && /fixCollisions/.test(ui), '예전 시간표의 칸 겹침 — 알리고 [시간표 다시 짜기]');
+  ok(/koGridCells\(t\)/.test(ui) && /\.\.\.koItems,/.test(ui) && /Math\.max\(availRounds, maxRound, koMax\)/.test(ui) && /m\.ko \|\| \(m\.div && m\.div !== div\)/.test(ui), '앱 시간표에 본선 칸(전체·조 화면)');
   ok(/koPreview && \(/.test(ui) && /본선 토너먼트 \(예정\)/.test(ui) && /<BracketTree bracket=\{koPreview\.bracket\}/.test(ui), '본선을 만들기 전에도 본선 대진(예정)을 아래에');
   ok(/toggleSeed\(e\)/.test(ui) && /reseedGroups\(entries, groups, div/.test(ui) && /시드대로 조 다시 나누기/.test(ui), '시드 배정 · 시드대로 조 다시 나누기');
   const gv = readFileSync(new URL('../src/components/GroupLeagueView.jsx', import.meta.url), 'utf8');

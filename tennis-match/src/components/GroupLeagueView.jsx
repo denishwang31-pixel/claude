@@ -104,6 +104,8 @@ export function GroupLeagueView({
   const entries = t.entries || [];
   const nameOfPlayer = useMemo(() => nameLookup(members, t.guests || []), [members, t.guests]);
   const nameOfEntry = (id) => entries.find((e) => e.id === id)?.name || '?';
+  /* 시간표 칸 이름 — 본선 자리(「A조 1위」 등, id 가 ko: 로 시작)는 그 글자 그대로 */
+  const nameOfCell = (id) => (String(id).startsWith('ko:') ? String(id).slice(3) : nameOfPlayer(id));
   const myEntryId = entries.find((e) => (e.players || []).includes(me))?.id || '';
   const myGroup = groups.find((g) => g.entryIds.includes(myEntryId));
   const [tab, setTab] = useState(myGroup?.id || ALL);
@@ -158,6 +160,7 @@ export function GroupLeagueView({
   const [drawEdit, setDrawEdit] = useState(false);
   const [draft, setDraft] = useState(null);             // { id?, groupId, a, b, round, court }
   const openMatch = (m) => {
+    if (m.ko) { flash('본선 경기는 아래 본선 대진표에서 고치고 결과를 넣습니다'); return; }
     if (!groups.some((g) => (g.matches || []).some((x) => x.id === m.id))) { flash('다른 부 경기는 그 부 화면에서 고칩니다'); return; }
     setDraft({ id: m.id, groupId: m.groupId || groups.find((g) => (g.matches || []).some((x) => x.id === m.id))?.id, a: m.a, b: m.b, round: m.round, court: m.court });
   };
@@ -191,7 +194,7 @@ export function GroupLeagueView({
   const editRounds = drawEdit ? maxR + 1 : gridRounds;      // 고치는 동안은 맨 아래 빈 줄 하나(뒤 타임으로 미루기)
   const gridProps = (forGroupId) => ({
     roundCount: editRounds, courtCount: editRounds ? courts : 0,
-    onPressMatch: canEdit ? (drawEdit ? openMatch : (gm) => record(gm)) : undefined,
+    onPressMatch: canEdit ? (drawEdit ? openMatch : (gm) => (gm.ko ? flash('본선 경기 결과는 아래 본선 대진표에서 넣습니다') : record(gm))) : undefined,
     onPressEmpty: canEdit && drawEdit ? (r, c) => openEmpty(r, c, forGroupId) : undefined,
     selected: draft?.id ? [draft.id] : [],
   });
@@ -359,7 +362,7 @@ export function GroupLeagueView({
             전체 시간표
           </SectionTitle>
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={[...gridMatches(groups), ...otherMatches]} nameOf={nameOfPlayer} genderOf={genderOf} me={me} venue={venue} roundTimes={times} events={events}
+            <MatchGrid matches={[...gridMatches(groups), ...otherMatches]} nameOf={nameOfCell} genderOf={genderOf} me={me} venue={venue} roundTimes={times} events={events}
               {...gridProps(null)} />
           </Card>
           {draftCard}
@@ -384,7 +387,7 @@ export function GroupLeagueView({
             </Text>
           )}
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={drawEdit ? [...gridMatches(groups), ...otherMatches] : gridMatches([shown])} nameOf={nameOfPlayer} genderOf={genderOf} me={me} venue={venue} roundTimes={times} events={events}
+            <MatchGrid matches={drawEdit ? [...gridMatches(groups), ...otherMatches] : gridMatches([shown])} nameOf={nameOfCell} genderOf={genderOf} me={me} venue={venue} roundTimes={times} events={events}
               {...(drawEdit ? gridProps(shown.id) : { onPressMatch: canEdit ? (gm) => record(gm) : undefined })} />
           </Card>
           {draftCard}
