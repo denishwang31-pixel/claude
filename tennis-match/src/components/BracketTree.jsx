@@ -21,6 +21,7 @@ const VG = 34;           // 위아래 줄 사이(선이 지나가는 곳)
 const HG = 8;            // 옆 상자 사이
 const TOP = 18;          // 첫 줄 위 라운드 이름 자리
 const MIN_SLOT = 78;     // 상자 하나 최소 폭(이보다 좁으면 옆으로 넘긴다) — 16강까지 한 폭에
+const SLOT_H = 16;       // 경기 상자 위 「3T 10:30 · 코트 A」 줄(slotOf 를 줄 때만)
 const THIN = 1.5;
 const THICK = 3.5;
 
@@ -46,18 +47,23 @@ function TeamRow({ name, score, state, top }) {
   );
 }
 
-function MatchBox({ m, firstRound, nameOf, x, y, w, onPress, selected, isFinal }) {
+function MatchBox({ m, firstRound, nameOf, x, y, w, h = H, slot = null, onPress, selected, isFinal }) {
   /* 부전승은 첫 라운드에서 상대 자리가 비어 있을 때만 — 뒤 라운드의 빈칸은 "아직" */
   const bye = firstRound && ((m.a && !m.b) || (!m.a && m.b));
   const st = (side) => (!m.winner ? '' : m.winner === m[side] ? 'win' : 'lose');
   return (
     <Pressable onPress={onPress ? () => onPress(m) : undefined} disabled={!onPress || !m.a || !m.b}
       style={{
-        position: 'absolute', left: x, top: y, width: w, height: H,
+        position: 'absolute', left: x, top: y, width: w, height: h,
         borderRadius: 7, overflow: 'hidden', backgroundColor: C.surface,
         borderWidth: selected || isFinal ? 2 : 1,
         borderColor: selected || isFinal ? C.green : C.border,
       }}>
+      {slot != null && (
+        <View style={{ height: SLOT_H, justifyContent: 'center', paddingHorizontal: 6, backgroundColor: slot ? C.ink : C.fill }}>
+          <Text numberOfLines={1} style={{ fontSize: 9.5, fontWeight: '800', color: slot ? C.lime : C.faint }}>{slot || (bye ? '부전승' : '시간 미정')}</Text>
+        </View>
+      )}
       <TeamRow top name={m.a ? nameOf(m.a) : (bye ? '부전승' : '')} score={m.score ? m.score.a : null} state={st('a')} />
       <TeamRow name={m.b ? nameOf(m.b) : (bye ? '부전승' : '')} score={m.score ? m.score.b : null} state={st('b')} />
     </Pressable>
@@ -80,8 +86,10 @@ const Line = ({ x, y, w = 0, h = 0, thick }) => {
  * @param onPressMatch  운영진 — 경기를 누르면 결과 입력(양 팀이 정해진 경기만)
  * @param selectedId    지금 고른 경기(테두리 강조)
  * @param champion      우승 이름(있으면 결승 줄 이름 옆에 🏆)
+ * @param slotOf        (라운드, 순서) → 「3T 10:30 · 코트 A」 — 주면 상자마다 언제·어느 코트인지 한 줄
+ *                      (2026-10-29 앱 주인: "본선 토너먼트에 코트·시간 표시가 필요해")
  */
-export function BracketTree({ bracket, nameOf, onPressMatch, selectedId, champion }) {
+export function BracketTree({ bracket, nameOf, onPressMatch, selectedId, champion, slotOf = null }) {
   const [avail, setAvail] = useState(330);
   const rounds = bracket?.rounds || [];
   const RN = rounds.length;
@@ -94,8 +102,9 @@ export function BracketTree({ bracket, nameOf, onPressMatch, selectedId, champio
   const boxW = Math.min(slotW - HG, 170);
   const width = Math.max(avail, perRow * slotW);
   const rows = twoSided ? 2 * (RN - 1) + 1 : 1;
-  const rowY = (row) => TOP + row * (H + VG);
-  const height = rowY(rows - 1) + H + 4;
+  const BH = slotOf ? H + SLOT_H : H;     // 상자 높이(시간 줄 포함)
+  const rowY = (row) => TOP + row * (BH + VG);
+  const height = rowY(rows - 1) + BH + 4;
 
   /* 경기 위치 — 결승은 가운데 줄, 위쪽 절반은 위 줄들, 아래쪽 절반은 거울처럼 */
   const posOf = (r, i) => {
@@ -116,6 +125,7 @@ export function BracketTree({ bracket, nameOf, onPressMatch, selectedId, champio
       const p = posOf(r, i);
       const y = rowY(p.row);
       boxes.push(<MatchBox key={m.id} m={m} firstRound={r === 0} nameOf={nameOf} x={p.cx - boxW / 2} y={y} w={boxW}
+        h={BH} slot={slotOf ? slotOf(r, i, m) || '' : null}
         onPress={onPressMatch} selected={selectedId === m.id} isFinal={p.side === 'final'} />);
       if (r === RN - 1) return;
       /* 다음 경기로 잇는 선 — 이긴 팀이 있으면 그 길이 굵어진다 */
@@ -124,7 +134,7 @@ export function BracketTree({ bracket, nameOf, onPressMatch, selectedId, champio
       const thick = !!m.winner;
       const k = m.id;
       if (p.side === 'top') {
-        const y0 = y + H; const ym = y0 + VG / 2;
+        const y0 = y + BH; const ym = y0 + VG / 2;
         lines.push(<Line key={`${k}-a`} x={p.cx} y={y0} h={VG / 2} thick={thick} />);
         lines.push(<Line key={`${k}-b`} x={Math.min(p.cx, pp.cx)} y={ym} w={Math.abs(pp.cx - p.cx)} thick={thick} />);
         lines.push(<Line key={`${k}-c`} x={pp.cx} y={ym} h={py - ym} thick={thick} />);
@@ -132,7 +142,7 @@ export function BracketTree({ bracket, nameOf, onPressMatch, selectedId, champio
         const y0 = y; const ym = y0 - VG / 2;
         lines.push(<Line key={`${k}-a`} x={p.cx} y={ym} h={VG / 2} thick={thick} />);
         lines.push(<Line key={`${k}-b`} x={Math.min(p.cx, pp.cx)} y={ym} w={Math.abs(pp.cx - p.cx)} thick={thick} />);
-        lines.push(<Line key={`${k}-c`} x={pp.cx} y={py + H} h={ym - (py + H)} thick={thick} />);
+        lines.push(<Line key={`${k}-c`} x={pp.cx} y={py + BH} h={ym - (py + BH)} thick={thick} />);
       }
     });
     /* 라운드 이름 — 그 줄 왼쪽 위 */

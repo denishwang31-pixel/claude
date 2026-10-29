@@ -164,7 +164,7 @@ console.log('[외부 공개 보기 — 필요한 것만]');
   ok(!raw.includes('applicants') && !raw.includes('비밀') && !raw.includes('010') && !raw.includes('tgrade') && !/"p\d"/.test(raw),
     '신청자·전화·등급·회원 id 는 내보내지 않는다');
   eq(liveView({ entries: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], bracket: { rounds: [{ matches: [{ a: 'a', b: 'b', score: { a: 6, b: 2 }, winner: 'a' }] }] }, championId: 'a' }).bracket[0],
-    { name: '결승', matches: [{ a: 'A', b: 'B', score: { a: 6, b: 2 }, winner: 'A' }] }, '본선 대진도 이름으로');
+    { name: '결승', matches: [{ a: 'A', b: 'B', score: { a: 6, b: 2 }, winner: 'A', at: '' }] }, '본선 대진도 이름으로');
   /* 사다리 그림용 — 부마다 라운드 구조 그대로, 이긴 쪽은 a/b 로 */
   const es = ['a', 'b', 'c', 'd'].map((id) => ({ id, name: id.toUpperCase(), div: 'MD' }));
   const kv = liveView({ entries: es, events: ['MD'], ko: { MD: { championId: null, bracket: { rounds: [
@@ -561,6 +561,17 @@ console.log('[조마다 경기 수 같게]');
   const real = GL.koGridCells({ ...t, ko: { MD: { bracket: br } }, koPlace: r1.koPlace });
   ok(real[0].id === br.rounds[0].matches[0].id && real[0].round === last + 6 && real[0].court === 2, '본선을 만든 뒤에도 옮긴 자리 그대로');
   ok(GL.liveView({ ...t, koPlace: r1.koPlace }, '').grid.rounds.find((r) => r.round === last + 6).matches.some((m) => m.c === 2 && /8강/.test(m.tag)), '웹 시간표도 옮긴 자리');
+  /* 본선 대진표 상자마다 시간·코트 — 시간표의 본선 칸과 같은 값(옮긴 자리 포함) */
+  const tt = { ...t, courtNames: ['A', 'B', 'C'], timing: { startTime: '09:00', roundMinutes: 30 } };
+  const lvp = GL.liveView({ ...tt, koPlace: r1.koPlace }, '');
+  eq(lvp.koPreview[0].rounds[0].matches[0].at, `${last + 6}T ${lvp.grid.rounds[last + 5].time} · 코트 B`, '웹 본선(예정) 상자: 옮긴 자리의 타임·시각·코트 이름');
+  const c2 = GL.koGridCells(tt);
+  ok(lvp.koPreview[0].rounds[1].matches.every((m) => /^\d+T \d\d:\d\d · 코트 [ABC]$/.test(m.at)) && c2.length === lvp.koPreview[0].rounds.reduce((n, r) => n + r.matches.filter((m) => m.at).length, 0), '모든 본선 경기에 시간·코트(부전승 빼고)');
+  const lvk = GL.liveView({ ...tt, ko: { MD: { bracket: br } } }, '');
+  ok(lvk.kos[0].rounds[0].matches[0].at === `${c2[0].round}T ${lvk.grid.rounds[c2[0].round - 1].time} · 코트 A` && lvk.bracket[0].matches[0].at === lvk.kos[0].rounds[0].matches[0].at, '본선을 만든 뒤에도 상자마다 시간·코트');
+  const { readFileSync: rf } = await import('node:fs');
+  ok(/slotOf=\{koSlot\}/.test(rf(new URL('../src/components/TournamentDraw.jsx', import.meta.url), 'utf8')) && /slot=\{slotOf \? slotOf\(r, i, m\)/.test(rf(new URL('../src/components/BracketTree.jsx', import.meta.url), 'utf8'))
+    && /class="sl' \+ \(m\.at/.test(rf(new URL('../web/live.html', import.meta.url), 'utf8')), '앱·웹 본선 대진표 상자에 「3T 10:30 · 코트 A」');
 }
 
 /* 화면 연결 — 길게 눌러 끌기 · 조별 예선/본선 분류 */

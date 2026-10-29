@@ -1224,6 +1224,7 @@ export function liveView(t, clubName = '') {
   });
   /* 전체 시간표(코트 × 타임) — 모든 부·조를 한 표에, 타임 옆 시각·행사 띠(2026-10-29 앱 주인: 바뀐 구조를 웹에도) */
   const sched = ensureSchedule(t.groups || [], Number(t.courts) || 2);
+  const koCells = koGridCells(t);
   const cells = [
     ...sched.flatMap((g) => (g.matches || []).map((m) => ({ m, tag: label(g.div, g.name), a: nameOf(m.a), b: nameOf(m.b) }))),
     ...Object.entries(t.kdk || {}).flatMap(([div, d]) => {
@@ -1231,7 +1232,7 @@ export function liveView(t, clubName = '') {
       return (d.matches || []).map((m) => ({ m, tag: label(div, 'KDK'), a: (m.teamA || []).map(pn).join('·'), b: (m.teamB || []).map(pn).join('·') }));
     }),
     /* 본선도 시간표에 — 조별리그 다음 타임부터(koGridCells) */
-    ...koGridCells(t).map((c) => ({ m: { round: c.round, court: c.court, score: c.score || null }, tag: c.type, a: c.a.label, b: c.b.label })),
+    ...koCells.map((c) => ({ m: { round: c.round, court: c.court, score: c.score || null }, tag: c.type, a: c.a.label, b: c.b.label })),
   ].filter((x) => x.m.round && x.m.court);
   const maxRound = cells.reduce((n, x) => Math.max(n, Number(x.m.round) || 0), 0);
   const clock = scheduleOf(t.timing, maxRound);
@@ -1246,6 +1247,13 @@ export function liveView(t, clubName = '') {
     events: clock.events,
   };
   groups.forEach((g, gi) => { if (!g.kind && sched[gi]) g.matches.forEach((m) => { m.time = clock.start(m.round); }); });
+  /* 본선 대진표 상자마다 「3T 10:30 · 코트 A」(2026-10-29 앱 주인: "본선 토너먼트에 코트·시간 표시") */
+  const koAt = (div, ri, i) => {
+    const c = koCells.find((x) => x.place === koPlaceKey(div, ri, i));
+    if (!c) return '';
+    const tm = clock.start(c.round);
+    return `${c.round}T${tm ? ` ${tm}` : ''} · 코트 ${courtName(c.court)}`;
+  };
 
   /* 본선 미리 보기 — 본선을 만들기 전, 「A조 1위 – B조 2위」 자리로(앱 대진 화면과 같은 기준) */
   const koPreview = [];
@@ -1266,7 +1274,7 @@ export function liveView(t, clubName = '') {
       for (let n = size / 2, ri = 0; n >= 1; n /= 2, ri++) {
         rounds.push({
           name: koRound(ri, Math.log2(size)),
-          matches: Array.from({ length: n }, (_, i) => (ri === 0 ? { a: pos[i * 2], b: pos[i * 2 + 1], score: null, winner: '' } : { a: '', b: '', score: null, winner: '' })),
+          matches: Array.from({ length: n }, (_, i) => ({ ...(ri === 0 ? { a: pos[i * 2], b: pos[i * 2 + 1] } : { a: '', b: '' }), score: null, winner: '', at: koAt(div, ri, i) })),
         });
       }
       koPreview.push({ name: div && div !== LEGACY ? eventOf(div).name : '', rule: RULE_LABELS.koSeed[rules.koSeed], rounds });
@@ -1300,13 +1308,13 @@ export function liveView(t, clubName = '') {
       champion: k.championId ? nameOf(k.championId) : '',
       rounds: k.bracket.rounds.map((r, ri) => ({
         name: koRound(ri, k.bracket.rounds.length),
-        matches: (r.matches || []).map((m) => ({ a: nameOf(m.a), b: nameOf(m.b), score: m.score || null, winner: m.winner ? (m.winner === m.a ? 'a' : 'b') : '' })),
+        matches: (r.matches || []).map((m, i) => ({ a: nameOf(m.a), b: nameOf(m.b), score: m.score || null, winner: m.winner ? (m.winner === m.a ? 'a' : 'b') : '', at: koAt(k.div, ri, i) })),
       })),
     })),
     /* 예전 페이지용 평평한 목록(새 페이지는 kos 를 쓴다) */
     bracket: kos.flatMap((k) => k.bracket.rounds.map((r, ri) => ({
       name: label(k.div, koRound(ri, k.bracket.rounds.length)),
-      matches: (r.matches || []).map((m) => ({ a: nameOf(m.a), b: nameOf(m.b), score: m.score || null, winner: m.winner ? nameOf(m.winner) : '' })),
+      matches: (r.matches || []).map((m, i) => ({ a: nameOf(m.a), b: nameOf(m.b), score: m.score || null, winner: m.winner ? nameOf(m.winner) : '', at: koAt(k.div, ri, i) })),
     }))),
   };
 }
