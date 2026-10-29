@@ -134,7 +134,13 @@
      내 이름은 진한 초록 상자에 흰 굵은 글씨 */
   table.grid td.mine { outline: 2.5px solid var(--green); outline-offset: -2.5px; }
   table.grid td.mine:not(.done) { background: var(--green-soft); }
-  .gn .me { background: var(--green); color: #fff !important; font-weight: 900; border-radius: 4px; padding: 0 4px; }
+  .gn .me, .me { background: var(--green); color: #fff !important; font-weight: 900; border-radius: 4px; padding: 0 4px; }
+  /* 조별리그 — 내 경기 줄 · 내 조 탭(초록 점) · [내 조 순위 보기] */
+  .m.mine { background: var(--green-soft); border-radius: 10px; padding: 9px 8px; margin: 0 -8px; border-top-color: transparent; }
+  .tab.mt::after { content: ' ●'; color: var(--green2); }
+  .tab.on.mt::after { color: #BEF264; }
+  .golink { font: inherit; font-size: 13px; font-weight: 800; padding: 6px 11px; border-radius: 999px; border: 0; background: var(--green); color: #fff; cursor: pointer; margin-left: 6px; }
+  .myg { font-size: 13px; color: var(--sub); margin: 0 0 6px; line-height: 1.7; }
   .mvp { display: flex; gap: 12px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #FEF9C3; font-size: 13px; }
   .mvp > b { color: #854D0E; font-size: 12px; width: 34px; line-height: 1.3; }
   .mvp > div { flex: 1; } .mvp small { display: block; color: #A16207; font-weight: 700; font-size: 11px; }
@@ -160,29 +166,32 @@
   var tab = null, data = null;
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (x) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[x]; }); };
 
-  function standings(g, advance) {
+  function standings(g, advance, me) {
     var kdk = g.kind === 'kdk';
     if (kdk) advance = 0;          // KDK 는 개인 순위로 끝(본선 없음)
     var rows = g.standings.map(function (r) {
       var up = advance > 0 && r.rank <= advance && r.played > 0;
       var d = r.diff > 0 ? '<span class="plus">+' + r.diff + '</span>' : r.diff < 0 ? '<span class="minus">' + r.diff + '</span>' : '0';
-      return '<tr><td><span class="rk' + (up ? ' up' : '') + '">' + r.rank + (r.tie ? '=' : '') + '</span></td>' +
-        '<td class="l">' + esc(r.name) + '</td><td>' + r.played + '</td><td class="w">' + r.w + '</td><td>' + r.l + '</td>' +
+      return '<tr' + (me && hasName(r.name, me) ? ' class="meRow"' : '') + '><td><span class="rk' + (up ? ' up' : '') + '">' + r.rank + (r.tie ? '=' : '') + '</span></td>' +
+        '<td class="l">' + hiNames(r.name, me) + '</td><td>' + r.played + '</td><td class="w">' + r.w + '</td><td>' + r.l + '</td>' +
         '<td>' + r.gf + '</td><td>' + r.ga + '</td><td>' + d + '</td></tr>';
     }).join('');
     return '<table><tr><th>순위</th><th class="l">' + (kdk ? '이름' : '팀') + '</th><th>경기</th><th>승</th><th>패</th><th>득</th><th>실</th><th>득실</th></tr>' + rows + '</table>' +
       '<p class="note">경기 ' + g.progress.done + '/' + g.progress.total + (advance > 0 ? ' · 초록 순위 = 본선 진출권(상위 ' + advance + '팀)' : '') + '</p>';
   }
-  function matches(list) {
+  /* 조 경기 목록의 코트도 시간표와 같은 이름으로(운영진이 코트 이름을 정했으면 그 이름) */
+  var courtNames = {};
+  function courtLabel(c) { return courtNames[c] || c; }
+  function matches(list, me) {
     return list.map(function (m) {
       var aw = m.score && m.score.a > m.score.b, bw = m.score && m.score.b > m.score.a;
-      return '<div class="m"><div class="when">' + (m.round ? m.round + '타임' : '') + (m.time ? ' ' + esc(m.time) : '') + '<span>' + (m.court ? '코트 ' + m.court : '') + '</span></div>' +
-        '<div class="teams"><div class="' + (aw ? 'win' : '') + '">' + esc(m.a || '—') + '</div><div class="' + (bw ? 'win' : '') + '">' + esc(m.b || '—') + '</div></div>' +
+      return '<div class="m' + (me && isMine(m, me) ? ' mine' : '') + '"><div class="when">' + (m.round ? m.round + '타임' : '') + (m.time ? ' ' + esc(m.time) : '') + '<span>' + (m.court ? '코트 ' + esc(courtLabel(m.court)) : '') + '</span></div>' +
+        '<div class="teams"><div class="' + (aw ? 'win' : '') + '">' + (m.a ? hiNames(m.a, me) : '—') + '</div><div class="' + (bw ? 'win' : '') + '">' + (m.b ? hiNames(m.b, me) : '—') + '</div></div>' +
         (m.score ? '<div class="sc">' + m.score.a + ' : ' + m.score.b + '</div>' : '<div class="sc wait">경기 전</div>') + '</div>';
     }).join('');
   }
   /* 조별리그 전체 시간표 — 가로 코트 × 세로 타임(앱 대진표와 같은 모양), 타임 옆 시각, 행사 띠 */
-  function groupGrid(gd) {
+  function groupGrid(gd, me) {
     var cols = gd.courts || [];
     var evRow = function (e) {
       return '<tr class="ev"><td colspan="' + (cols.length + 1) + '"><b>' + esc(e.name) + '</b> <i>' + esc(e.start) + '~' + esc(e.end) + '</i></td></tr>';
@@ -196,19 +205,20 @@
         var m = r.matches.filter(function (x) { return x.c === c.c; })[0];
         if (!m) return '<td class="e">—</td>';
         var aw = m.score && m.score.a > m.score.b, bw = m.score && m.score.b > m.score.a;
-        var nm = function (n, won) { return '<div class="gn"' + (m.score ? (won ? ' style="color:var(--green);font-weight:800"' : ' style="color:var(--faint)"') : '') + '>' + esc(n || '—') + '</div>'; };
-        return '<td' + (m.score ? ' class="done"' : '') + '><div class="gt"><span class="ty">' + esc(m.tag) + '</span>' +
+        var nm = function (n, won) { return '<div class="gn"' + (m.score ? (won ? ' style="color:var(--green);font-weight:800"' : ' style="color:var(--faint)"') : '') + '>' + (n ? hiNames(n, me) : '—') + '</div>'; };
+        var cls = (m.score ? 'done' : '') + (me && isMine(m, me) ? ' mine' : '');
+        return '<td' + (cls ? ' class="' + cls.trim() + '"' : '') + '><div class="gt"><span class="ty">' + esc(m.tag) + '</span>' +
           (m.score ? '<span class="gs" style="background:var(--green)">' + m.score.a + ':' + m.score.b + '</span>' : '<span class="gs wait">경기 전</span>') + '</div>' +
           nm(m.a, aw) + '<div class="gv">vs</div>' + nm(m.b, bw) + '</td>';
       }).join('') + '</tr>';
     });
     (gd.events || []).filter(function (e) { return !e.beforeRound || !gd.rounds.some(function (r) { return r.round === e.beforeRound; }); }).forEach(function (e) { h += evRow(e); });
-    return h + '</table></div><p class="note">표가 넓으면 옆으로 밀어 보세요 · 초록 이름 = 이긴 팀</p>';
+    return h + '</table></div><p class="note">표가 넓으면 옆으로 밀어 보세요 · 초록 이름 = 이긴 팀' + (me ? ' · 초록 테두리 = 내 경기' : '') + '</p>';
   }
   /* 본선 사다리 — r 라운드 i 경기의 승자 → r+1 라운드 floor(i/2) 경기.
      위쪽 절반은 위에서 아래로, 아래쪽 절반은 아래에서 위로 올라와 가운데 결승에서 만난다.
      이긴 팀이 올라간 길은 굵은 초록 선, 진 팀 칸은 흐리게. */
-  function ladder(ko, avail) {
+  function ladder(ko, avail, me) {
     var R = ko.rounds || [], RN = R.length;
     if (!RN) return '';
     var ROW = 26, H = ROW * 2 + 3, VG = 36, TOP = 20, MIN = 84, THIN = 1.5, THICK = 3.5;
@@ -236,7 +246,7 @@
       var bye = first && !nm && other;
       var st = !m.winner ? '' : m.winner === side ? 'win' : 'lose';
       var sc = m.score ? m.score[side] : null;
-      return '<div class="tr ' + st + '"><span class="nm' + (nm ? '' : ' empty') + '">' + esc(nm || (bye ? '부전승' : '—')) + '</span>' +
+      return '<div class="tr ' + st + '"><span class="nm' + (nm ? '' : ' empty') + '">' + (nm ? hiNames(nm, me) : esc(bye ? '부전승' : '—')) + '</span>' +
         (sc != null ? '<span class="s">' + sc + '</span>' : '') + '</div>';
     };
     R.forEach(function (round, r) {
@@ -273,7 +283,7 @@
   function renderTeams(d) {
     var byIdx = {};
     d.teams.forEach(function (x) { byIdx[x.idx] = x; });
-    mountTeams();
+    mountFind();
     var top = '<div class="club">' + esc(d.club) + '</div><h1>' + esc(d.name) + '</h1>' +
       '<div class="meta">' + esc(d.date) + (d.rounds[0] && d.rounds[0].time ? ' ' + esc(d.rounds[0].time) : '') + ' · ' + d.done + '/' + d.total + '경기 끝남</div>' +
       '<div class="live"><span class="dot"></span>' + (d.status === 'finished' ? '대회 종료' : '실시간 — 30초마다 새로 고침') + '</div>';
@@ -433,11 +443,25 @@
   var meQ = '';
   var foldOpen = false;   // [종목별 · 맞대결 승점] 펼침 — 다시 그릴 때 유지
   try { meQ = localStorage.getItem('court-live-me') || ''; } catch (e) { meQ = ''; }
-  function splitNames(joined) { return String(joined || '').split('·').map(function (x) { return x.trim(); }).filter(Boolean); }
-  function isMine(m, name) { return splitNames(m.a).indexOf(name) >= 0 || splitNames(m.b).indexOf(name) >= 0; }
+  /* 팀 대항은 "갑·을", 조별리그 팀은 "갑 / 을"(KDK 는 "갑·을") — 둘 다 사람 이름으로 나눈다 */
+  function splitNames(joined) { return String(joined || '').split(/[·\/]/).map(function (x) { return x.trim(); }).filter(Boolean); }
+  function hasName(joined, name) { return splitNames(joined).indexOf(name) >= 0; }
+  function isMine(m, name) { return hasName(m.a, name) || hasName(m.b, name); }
+  /* 찾은 이름만 초록 상자로 — 나머지 글자(구분 기호 포함)는 그대로 */
+  function hiNames(joined, me) {
+    var s = String(joined || '');
+    if (!me) return esc(s);
+    return s.split(/(\s*[·\/]\s*)/).map(function (p, i) { return i % 2 === 0 && p.trim() === me ? '<span class="me">' + esc(p) + '</span>' : esc(p); }).join('');
+  }
   function allNames(d) {
     var seen = {}, out = [];
-    d.rounds.forEach(function (r) { r.matches.forEach(function (m) { splitNames(m.a).concat(splitNames(m.b)).forEach(function (n) { if (!seen[n]) { seen[n] = 1; out.push(n); } }); }); });
+    var add = function (joined) { splitNames(joined).forEach(function (n) { if (!seen[n]) { seen[n] = 1; out.push(n); } }); };
+    if (d.kind === 'teams') d.rounds.forEach(function (r) { r.matches.forEach(function (m) { add(m.a); add(m.b); }); });
+    /* 조별리그 — 조 순위·조 경기의 이름만(본선 「A조 1위」 같은 자리 이름은 사람이 아니다) */
+    else (d.groups || []).forEach(function (g) {
+      g.standings.forEach(function (r) { add(r.name); });
+      g.matches.forEach(function (m) { add(m.a); add(m.b); });
+    });
     return out;
   }
   /* 넣은 글자로 한 사람을 고른다 — 이름과 똑같거나, 그 글자가 든 이름이 하나뿐일 때 */
@@ -452,7 +476,7 @@
     var exact = c.filter(function (n) { return n.replace(/\s+/g, '') === q; });
     return exact.length === 1 ? exact[0] : c.length === 1 ? c[0] : '';
   }
-  function mountTeams() {
+  function mountFind() {
     if (document.getElementById('find')) return;
     app.innerHTML = '<div id="top"></div>' +
       '<div class="card find" id="find"><h2>내 경기 찾기</h2>' +
@@ -463,22 +487,23 @@
     inp.oninput = function () {
       meQ = inp.value.trim();
       try { localStorage.setItem('court-live-me', meQ); } catch (e) { /* 못 남겨도 그대로 */ }
-      if (data) renderTeams(data);
+      if (data) render();
     };
+  }
+  /* 아직 한 사람으로 못 정했을 때 — 고를 이름 단추, 없으면 알림 */
+  function pickBox(d, box) {
+    var c = candidates(d);
+    box.innerHTML = c.length
+      ? '<p class="note">누구인가요? 눌러서 고르세요</p><div class="pick">' + c.slice(0, 20).map(function (n) { return '<button data-n="' + esc(n) + '">' + esc(n) + '</button>'; }).join('') + '</div>'
+      : '<p class="note">이 대진에 "' + esc(meQ) + '" 이름이 없습니다. 운영진이 적은 이름 그대로 넣어 보세요.</p>';
+    Array.prototype.forEach.call(box.querySelectorAll('.pick button'), function (b) {
+      b.onclick = function () { var inp = document.getElementById('meq'); inp.value = b.getAttribute('data-n'); inp.oninput(); };
+    });
   }
   function renderMine(d, byIdx, me) {
     var box = document.getElementById('mine');
     if (!meQ) { box.innerHTML = '<p class="note">이름을 넣으면 내 경기만 모아 보이고, 아래 대진표에서도 내 칸이 칠해집니다.</p>'; return; }
-    if (!me) {
-      var c = candidates(d);
-      box.innerHTML = c.length
-        ? '<p class="note">누구인가요? 눌러서 고르세요</p><div class="pick">' + c.slice(0, 20).map(function (n) { return '<button data-n="' + esc(n) + '">' + esc(n) + '</button>'; }).join('') + '</div>'
-        : '<p class="note">이 대진에 "' + esc(meQ) + '" 이름이 없습니다. 운영진이 적은 이름 그대로 넣어 보세요.</p>';
-      Array.prototype.forEach.call(box.querySelectorAll('.pick button'), function (b) {
-        b.onclick = function () { var inp = document.getElementById('meq'); inp.value = b.getAttribute('data-n'); inp.oninput(); };
-      });
-      return;
-    }
+    if (!me) { pickBox(d, box); return; }
     var games = [];
     d.rounds.forEach(function (r) {
       r.matches.forEach(function (m) {
@@ -509,51 +534,121 @@
       (w + l ? ' · ' + w + '승 ' + l + '패' : '') + '</p>' + (rows || '<p class="note">아직 이 사람 경기가 없습니다.</p>');
   }
 
+  /* 조별리그 · 토너먼트 — 내 경기(시간표 기준: 타임·시각·코트) · 내 조 순위
+     (2026-10-29 앱 주인: "전에 했던 대회처럼 시간표도 나오고 본인 이름 치면 하이라이트 돼서 언제 경기인지,
+      본인 조 순위에도 하이라이트") */
+  function myGroups(d, me) {
+    var out = [];
+    if (me) d.groups.forEach(function (g, i) { g.standings.forEach(function (r) { if (hasName(r.name, me)) out.push({ g: g, i: i, r: r }); }); });
+    return out;
+  }
+  function renderMineGroups(d, me) {
+    var box = document.getElementById('mine');
+    if (!meQ) { box.innerHTML = '<p class="note">이름을 넣으면 내 경기 시간이 모아 보이고, 시간표·조 순위에서도 내 칸이 칠해집니다.</p>'; return; }
+    if (!me) { pickBox(d, box); return; }
+    var games = [];
+    var gd = d.grid && d.grid.rounds && d.grid.rounds.length ? d.grid : null;
+    if (gd) {
+      var label = function (c) { var x = (gd.courts || []).filter(function (k) { return k.c === c; })[0]; return x ? x.label : c; };
+      gd.rounds.forEach(function (r) {
+        r.matches.forEach(function (m) { if (isMine(m, me)) games.push({ round: r.round, time: r.time, court: label(m.c), tag: m.tag, m: m }); });
+      });
+    } else {
+      /* 서버 함수가 아직 예전 판(시간표 자료 없음)일 때 — 조 경기에서 */
+      d.groups.forEach(function (g) {
+        g.matches.forEach(function (m) { if (isMine(m, me)) games.push({ round: m.round, time: m.time, court: m.court, tag: g.name, m: m }); });
+      });
+      games.sort(function (x, y) { return x.round - y.round; });
+    }
+    var nextIdx = -1;
+    games.some(function (g, i) { if (!g.m.score) { nextIdx = i; return true; } return false; });
+    var w = 0, l = 0;
+    var rows = games.map(function (g, i) {
+      var m = g.m, mineA = hasName(m.a, me);
+      var partner = splitNames(mineA ? m.a : m.b).filter(function (n) { return n !== me; }).join('·');
+      var opp = mineA ? m.b : m.a;
+      var res = '<span class="rs" style="color:var(--faint)">대기</span>';
+      if (m.score) {
+        var my = mineA ? m.score.a : m.score.b, op = mineA ? m.score.b : m.score.a;
+        if (my > op) w += 1; else if (my < op) l += 1;
+        res = '<span class="rs" style="color:' + (my > op ? 'var(--green)' : my < op ? 'var(--no)' : 'var(--sub)') + '">' + my + ':' + op + ' ' + (my > op ? '승' : my < op ? '패' : '무') + '</span>';
+      }
+      return '<div class="mg' + (i === nextIdx ? ' next' : '') + '"><div class="wh">' + (g.round ? g.round + '타임' : '') + (g.time ? ' ' + esc(g.time) : '') +
+        '<span>' + (g.court ? '코트 ' + esc(g.court) : '') + (g.tag ? ' · ' + esc(g.tag) : '') + '</span></div>' +
+        '<div class="vs">' + (partner ? '짝 <b>' + esc(partner) + '</b><br>' : '') + '상대 <b>' + esc(opp || '—') + '</b></div>' + res + '</div>';
+    }).join('');
+    /* 내 조 — 지금 순위 · 승패 · [순위 보기] */
+    var mg = myGroups(d, me).map(function (x) {
+      var adv = x.g.kind === 'kdk' ? 0 : (x.g.advance != null ? x.g.advance : d.rules.advance);
+      var up = adv > 0 && x.r.rank <= adv && x.r.played > 0;
+      return '<p class="myg">' + (x.g.kind === 'kdk' ? '내 순위' : '내 조') + ' <b style="color:var(--ink)">' + esc(x.g.name) + '</b> ' + x.r.rank + (x.r.tie ? '=' : '') + '위 · ' +
+        x.r.w + '승 ' + x.r.l + '패' + (up ? ' · <b style="color:var(--green)">본선 진출권</b>' : '') +
+        '<button class="golink" data-k="g' + x.i + '">순위 보기</button></p>';
+    }).join('');
+    var koWait = d.groups.some(function (g) { return !g.kind && g.progress && g.progress.done < g.progress.total; }) && ((d.koPreview || []).length || d.kos && d.kos.length);
+    box.innerHTML = '<p class="sum" style="margin:2px 0 6px"><b style="color:var(--ink)">' + esc(me) + '</b> · ' + games.length + '경기' +
+      (w + l ? ' · ' + w + '승 ' + l + '패' : '') + '</p>' + mg + (rows || '<p class="note">아직 이 사람 경기가 없습니다.</p>') +
+      (koWait ? '<p class="note">본선 경기는 조 순위가 정해지면 내 이름으로 바뀌어 여기에 들어옵니다.</p>' : '');
+    Array.prototype.forEach.call(box.querySelectorAll('.golink'), function (b) {
+      b.onclick = function () { tab = b.getAttribute('data-k'); render(); window.scrollTo(0, document.getElementById('rest').offsetTop - 8); };
+    });
+  }
+
   function render() {
     var d = data;
     if (d.kind === 'teams') { renderTeams(d); return; }
+    mountFind();
+    courtNames = {};
+    ((d.grid || {}).courts || []).forEach(function (k) { courtNames[k.c] = k.label; });
+    var me = findMe(d);
+    var mine = {};
+    myGroups(d, me).forEach(function (x) { mine['g' + x.i] = 1; });
     var tabs = [];
+    /* 시간표를 맨 앞에 — 언제·어느 코트인지가 제일 먼저 궁금하다(팀 대항 화면과 같다) */
+    if (d.grid && d.grid.rounds && d.grid.rounds.length) tabs.push(['grid', '시간표']);
     if (d.bracket.length) tabs.push(['ko', '본선']);
     if (d.groups.length) tabs.push(['all', '전체 순위']);
-    /* 전체 시간표(코트 × 타임, 시각) · 본선 예정 — 조별리그 대회(2026-10-29) */
-    if (d.grid && d.grid.rounds && d.grid.rounds.length) tabs.push(['grid', '시간표']);
     if (!d.bracket.length && (d.koPreview || []).length) tabs.push(['pre', '본선(예정)']);
     d.groups.forEach(function (g, i) { tabs.push(['g' + i, g.name]); });
     if (!tab || !tabs.some(function (x) { return x[0] === tab; })) tab = tabs.length ? tabs[0][0] : null;
-    var h = '<div class="club">' + esc(d.club) + '</div><h1>' + esc(d.name) + '</h1>' +
+    var top = '<div class="club">' + esc(d.club) + '</div><h1>' + esc(d.name) + '</h1>' +
       '<div class="meta">' + esc(d.date) + ' · ' + d.rules.games + '게임 선승 · 순위: ' + esc(d.rankRule) + '</div>' +
       '<div class="live"><span class="dot"></span>' + (d.status === 'finished' ? '대회 종료' : '실시간 — 30초마다 새로 고침') + '</div>';
-    if (d.champion) h += '<div class="champ"><small>CHAMPION</small><b>🏆 ' + esc(d.champion) + '</b></div>';
-    h += '<div class="tabs">' + tabs.map(function (x) { return '<button class="tab' + (tab === x[0] ? ' on' : '') + '" data-k="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>';
+    if (d.champion) top += '<div class="champ"><small>CHAMPION</small><b>🏆 ' + esc(d.champion) + '</b></div>';
+    var h = '<div class="tabs">' + tabs.map(function (x) {
+      return '<button class="tab' + (tab === x[0] ? ' on' : '') + (mine[x[0]] ? ' mt' : '') + '" data-k="' + x[0] + '">' + esc(x[1]) + '</button>';
+    }).join('') + '</div>';
     if (tab === 'ko' && d.kos) {
       var av = koAvail();
       d.kos.forEach(function (k) {
-        h += '<div class="card"><h2>' + esc(k.name ? k.name + ' 본선' : '본선 토너먼트') + '</h2>' + ladder(k, av) +
+        h += '<div class="card"><h2>' + esc(k.name ? k.name + ' 본선' : '본선 토너먼트') + '</h2>' + ladder(k, av, me) +
           '<p class="note">굵은 초록 선 = 이긴 팀이 올라간 길 · 흐린 칸 = 진 팀</p></div>';
       });
     } else if (tab === 'ko') {
       /* 서버 함수가 아직 예전 판(사다리 자료 없음)일 때 — 라운드별 목록 */
-      d.bracket.forEach(function (r) { h += '<div class="card"><h2>' + esc(r.name) + '</h2>' + matches(r.matches) + '</div>'; });
+      d.bracket.forEach(function (r) { h += '<div class="card"><h2>' + esc(r.name) + '</h2>' + matches(r.matches, me) + '</div>'; });
     } else if (tab === 'grid') {
-      h += '<div class="card"><h2>전체 시간표</h2>' + groupGrid(d.grid) + '</div>';
+      h += '<div class="card"><h2>전체 시간표</h2>' + groupGrid(d.grid, me) + '</div>';
     } else if (tab === 'pre') {
       var av2 = koAvail();
       d.koPreview.forEach(function (k) {
-        h += '<div class="card"><h2>' + esc(k.name ? k.name + ' 본선 (예정)' : '본선 토너먼트 (예정)') + '</h2>' + ladder(k, av2) +
+        h += '<div class="card"><h2>' + esc(k.name ? k.name + ' 본선 (예정)' : '본선 토너먼트 (예정)') + '</h2>' + ladder(k, av2, me) +
           '<p class="note">' + esc(k.rule) + ' — 조별리그가 끝나면 그 자리에 팀이 들어갑니다. 운영진이 본선을 만들면 「본선」 탭으로 바뀝니다.</p></div>';
       });
     } else if (tab === 'all') {
-      d.groups.forEach(function (g) { h += '<div class="card"><h2>' + esc(g.name) + '</h2>' + standings(g, g.advance != null ? g.advance : d.rules.advance) + '</div>'; });
+      d.groups.forEach(function (g) { h += '<div class="card"><h2>' + esc(g.name) + '</h2>' + standings(g, g.advance != null ? g.advance : d.rules.advance, me) + '</div>'; });
     } else if (tab) {
       var g = d.groups[Number(tab.slice(1))];
-      h += '<div class="card"><h2>' + esc(g.name) + ' 순위</h2>' + standings(g, g.advance != null ? g.advance : d.rules.advance) + '</div>';
-      h += '<div class="card"><h2>' + esc(g.name) + ' 경기</h2>' + matches(g.matches) + '</div>';
+      h += '<div class="card"><h2>' + esc(g.name) + ' 순위</h2>' + standings(g, g.advance != null ? g.advance : d.rules.advance, me) + '</div>';
+      h += '<div class="card"><h2>' + esc(g.name) + ' 경기</h2>' + matches(g.matches, me) + '</div>';
     }
     h += '<p class="foot">Court · 테니스 클럽 운영 앱</p>';
-    app.innerHTML = h;
-    Array.prototype.forEach.call(app.querySelectorAll('.tab'), function (b) {
+    document.getElementById('top').innerHTML = top;
+    document.getElementById('rest').innerHTML = h;
+    Array.prototype.forEach.call(document.querySelectorAll('#rest .tab'), function (b) {
       b.onclick = function () { tab = b.getAttribute('data-k'); render(); };
     });
+    renderMineGroups(d, me);
   }
   /* 30초마다 다시 읽되, 화면을 안 보고 있을 때(다른 앱·화면 꺼짐)는 쉰다 — 돌아오면 바로 한 번 읽는다.
      켜 둔 채 잊어도 서버를 계속 부르지 않게(2026-10-04 앱 주인: 비용). 대회가 끝나면 아예 멈춘다. */

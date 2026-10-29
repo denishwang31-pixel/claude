@@ -530,6 +530,18 @@ console.log('[조마다 경기 수 같게]');
   ok(v.grid.rounds.some((r) => r.matches.some((m) => /8강/.test(m.tag) && m.b === 'B조 2위')), '웹 시간표에도 본선 칸');
 }
 
+/* 웹 — 내 경기 찾기(조별리그도 팀 대항처럼, 2026-10-29) */
+{
+  const { readFileSync } = await import('node:fs');
+  const lh = readFileSync(new URL('../web/live.html', import.meta.url), 'utf8');
+  ok(/function renderMineGroups\(d, me\)/.test(lh) && /mountFind\(\);\n    courtNames = \{\};/.test(lh) && /if \(data\) render\(\);/.test(lh), '웹 조별리그: 이름 찾기 칸(팀 대항과 같은 칸 · 같은 기억)');
+  ok(/split\(\/\[·\\\/\]\/\)/.test(lh) && /else \(d\.groups \|\| \[\]\)\.forEach/.test(lh), '웹: "갑 / 을" 팀 이름도 사람 이름으로 나눠 찾는다(본선 자리 이름은 빼고)');
+  ok(/groupGrid\(d\.grid, me\)/.test(lh) && /me && isMine\(m, me\) \? ' mine' : ''/.test(lh), '웹 시간표: 내 경기 칸 칠하기');
+  ok(/me && hasName\(r\.name, me\) \? ' class="meRow"'/.test(lh) && /standings\(g, g\.advance != null \? g\.advance : d\.rules\.advance, me\)/.test(lh), '웹 조 순위: 내 팀 줄 칠하기');
+  ok(/\(mine\[x\[0\]\] \? ' mt' : ''\)/.test(lh) && /class="golink" data-k="g/.test(lh), '웹: 내 조 탭 표시 · [순위 보기]');
+  ok(lh.indexOf("tabs.push(['grid', '시간표'])") < lh.indexOf("tabs.push(['ko', '본선'])"), '웹: 시간표 탭이 맨 앞');
+}
+
 /* 화면 연결 — 대진 작성 화면 */
 {
   const { readFileSync } = await import('node:fs');
