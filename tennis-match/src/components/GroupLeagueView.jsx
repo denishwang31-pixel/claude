@@ -12,10 +12,11 @@
    계산은 전부 src/lib/groupLeague.js (테스트: scripts/test-groupleague.mjs).
    ============================================================ */
 import React, { useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { View, Text, Pressable, ScrollView, Alert } from 'react-native';
 import {
   normRules, RULE_LABELS, RANK_RULE_TEXT, standings, progress, ensureSchedule, setScore,
   moveEntry, swapPlayers, replacePlayer, advanceOf, setGroupCourts, schedule, scoreChoices, nameLookup,
+  editGroupMatch, removeGroupMatch,
 } from '../lib/groupLeague';
 import { MatchGrid } from './MatchGrid';
 import { mineStyle, MineLegend, MINE } from './Mine';
@@ -91,7 +92,10 @@ export function GroupLeagueView({
   t, members = [], isAdmin, me = '', flash = () => {}, onUpdate, onKnockout,
   courtNames = [], label = '', editOpen, onRemoveTeam, extraEdit = null, hideRules = false,
   candidates = null, sameGender = false, times = [], events = [], gridRounds = 0,
+  otherMatches = [], blocked = () => '', checkConflicts = null,
 }) {
+  /* otherMatches — 다른 부 경기(시간표에 같이 보이게, 고치지는 못함) · blocked(타임, 코트) — 그 칸의 다른 부 경기 이름
+     checkConflicts(이 부의 새 조 목록) — 모든 부를 합쳐 같은 타임 두 경기인 사람(부모가 계산) */
   /* candidates — 이 부에 나갈 수 있는 사람 [{id,name,gender}]. 있으면 선수를 누를 때
      "누구로 바꿀까요?" 목록이 뜬다(대진 밖 사람으로 바꾸기 포함). sameGender — 혼복: 남↔남, 여↔여만 */
   const rules = normRules({ ...(t.rules || {}), advance: t.rules?.advance ?? t.advancePerGroup ?? 2 });
@@ -148,6 +152,101 @@ export function GroupLeagueView({
     saveGroups(setScore(groups, typed.id, { a: +typed.a, b: +typed.b }));
     return setTyped(null);
   };
+
+  /* ---- 대진 수기 수정 (2026-10-29 앱 주인: "예전 대회처럼 시간표에 대진 수기 수정 버튼 → 대진표를 누르면 상대를 바꾸게") ----
+     버튼을 켜면 시간표 칸을 눌러 고친다: 경기 칸 → 상대(두 팀)·타임·코트 바꾸기·지우기, 빈칸 → 그 자리에 경기 넣기 */
+  const [drawEdit, setDrawEdit] = useState(false);
+  const [draft, setDraft] = useState(null);             // { id?, groupId, a, b, round, court }
+  const openMatch = (m) => {
+    if (!groups.some((g) => (g.matches || []).some((x) => x.id === m.id))) { flash('다른 부 경기는 그 부 화면에서 고칩니다'); return; }
+    setDraft({ id: m.id, groupId: m.groupId || groups.find((g) => (g.matches || []).some((x) => x.id === m.id))?.id, a: m.a, b: m.b, round: m.round, court: m.court });
+  };
+  const openEmpty = (round, court, groupId) => {
+    const ext = blocked(round, court);
+    if (ext) { flash(`그 칸에는 ${ext} 경기가 있습니다`); return; }
+    setDraft({ id: null, groupId: groupId || groups[0]?.id, a: '', b: '', round, court });
+  };
+  const saveDraft = () => {
+    const r = editGroupMatch(groups, draft, { blocked });
+    if (r.error) { flash(r.error); return; }
+    const conflicts = checkConflicts ? checkConflicts(r.groups) : r.conflicts;
+    const touched = new Set([draft.round, ...(r.swapped ? [groups.flatMap((g) => g.matches || []).find((m) => m.id === draft.id)?.round] : [])]);
+    const hits = conflicts.filter((c) => touched.has(c.round));
+    const msg = draft.id ? `경기를 고쳤습니다${r.swapped ? ' — 그 칸의 경기와 자리를 맞바꿨습니다' : ''}${r.scoreCleared ? ' (팀이 바뀌어 결과는 지움)' : ''}` : '경기를 넣었습니다';
+    const go = () => { saveGroups(r.groups, msg); setDraft(null); };
+    const warns = [
+      ...hits.map((c) => `${c.round}타임에 두 경기: ${c.players.map((p) => nameOfPlayer(p)).join(', ')}`),
+      ...(r.dupPair ? ['같은 두 팀의 경기가 이미 있습니다'] : []),
+    ];
+    if (!warns.length) { go(); return; }
+    Alert.alert('확인해 주세요', `${warns.join('\n')}\n\n그래도 저장할까요?`, [
+      { text: '취소', style: 'cancel' }, { text: '그래도 저장', style: 'destructive', onPress: go },
+    ]);
+  };
+  const deleteDraft = () => Alert.alert('이 경기를 지울까요?', '시간표에서 빠지고 그 칸은 빈칸이 됩니다.', [
+    { text: '취소', style: 'cancel' },
+    { text: '지우기', style: 'destructive', onPress: () => { saveGroups(removeGroupMatch(groups, draft.id), '경기를 지웠습니다'); setDraft(null); } },
+  ]);
+  const maxR = Math.max(gridRounds, ...groups.flatMap((g) => (g.matches || []).map((m) => Number(m.round) || 0)), ...otherMatches.map((m) => Number(m.round) || 0));
+  const editRounds = drawEdit ? maxR + 1 : gridRounds;      // 고치는 동안은 맨 아래 빈 줄 하나(뒤 타임으로 미루기)
+  const gridProps = (forGroupId) => ({
+    roundCount: editRounds, courtCount: editRounds ? courts : 0,
+    onPressMatch: canEdit ? (drawEdit ? openMatch : (gm) => record(gm)) : undefined,
+    onPressEmpty: canEdit && drawEdit ? (r, c) => openEmpty(r, c, forGroupId) : undefined,
+    selected: draft?.id ? [draft.id] : [],
+  });
+  const editToggle = canEdit ? (
+    <Chip tone={drawEdit ? 'green' : 'outline'} onPress={() => { setDrawEdit(!drawEdit); setDraft(null); }}>
+      {drawEdit ? '수정 끝내기' : '대진 수기 수정'}
+    </Chip>
+  ) : null;
+  const draftCard = draft && (() => {
+    const g = groups.find((x) => x.id === draft.groupId);
+    const pick = (key, eid) => setDraft({ ...draft, [key]: eid });
+    return (
+      <Card style={{ marginTop: 8, borderColor: C.green, borderWidth: 1.5 }}>
+        <Text style={F.bodyBold}>{draft.id ? '경기 고치기' : '경기 넣기'} — {draft.round}타임 · 코트 {cn(draft.court)}</Text>
+        {!draft.id && groups.length > 1 && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            {groups.map((x) => <Chip key={x.id} tone={draft.groupId === x.id ? 'green' : 'outline'} onPress={() => setDraft({ ...draft, groupId: x.id, a: '', b: '' })}>{x.name}</Chip>)}
+          </View>
+        )}
+        {[['a', '위 팀'], ['b', '아래 팀']].map(([key, lbl]) => (
+          <View key={key} style={{ marginTop: 10 }}>
+            <Text style={{ fontSize: 11.5, color: C.sub, fontWeight: '700', marginBottom: 6 }}>{lbl}{g ? ` (${g.name})` : ''}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {(g?.entryIds || []).map((eid) => (
+                <Chip key={eid} tone={draft[key] === eid ? 'green' : 'outline'} onPress={() => pick(key, eid)}>
+                  {nameOfEntry(eid)}
+                </Chip>
+              ))}
+            </View>
+          </View>
+        ))}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 }}>
+          <Text style={{ fontSize: 11.5, color: C.sub, fontWeight: '700', width: 34 }}>타임</Text>
+          <Chip tone="outline" onPress={() => setDraft({ ...draft, round: Math.max(1, draft.round - 1) })}>－</Chip>
+          <Text style={{ fontSize: 14, fontWeight: '800', minWidth: 40, textAlign: 'center' }}>{draft.round}타임</Text>
+          <Chip tone="outline" onPress={() => setDraft({ ...draft, round: draft.round + 1 })}>＋</Chip>
+          {times.find((x) => x.round === draft.round) && <Text style={{ fontSize: 11.5, color: C.faint }}>{times.find((x) => x.round === draft.round).start}</Text>}
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 8 }}>
+          <Text style={{ fontSize: 11.5, color: C.sub, fontWeight: '700', width: 34 }}>코트</Text>
+          {Array.from({ length: courts }, (_, i) => i + 1).map((c) => (
+            <Chip key={c} tone={draft.court === c ? 'green' : 'outline'} onPress={() => setDraft({ ...draft, court: c })}>{cn(c)}</Chip>
+          ))}
+        </View>
+        <Text style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 16 }}>
+          고른 칸에 같은 부의 다른 경기가 있으면 두 경기 자리를 맞바꿉니다. 팀을 바꾸면 그 경기 결과는 지워집니다.
+        </Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+          <Btn small onPress={saveDraft}>저장</Btn>
+          {!!draft.id && <Btn small tone="ghost" onPress={deleteDraft}>경기 지우기</Btn>}
+          <Btn small tone="ghost" onPress={() => setDraft(null)}>닫기</Btn>
+        </View>
+      </Card>
+    );
+  })();
 
   /* 편성 수정 */
   const moveTo = (entryId) => {
@@ -255,14 +354,15 @@ export function GroupLeagueView({
 
       {tab === GRID && (
         <>
-          <SectionTitle hint={canEdit ? '경기를 누르면 결과를 넣습니다. 칸 위 꼬리표가 조 이름입니다.' : '칸 위 꼬리표가 조 이름입니다. 내 이름은 초록으로 칠해집니다.'}>
+          <SectionTitle right={editToggle}
+            hint={drawEdit ? '경기 칸 → 상대·타임·코트 바꾸기 · 빈칸 → 경기 넣기' : canEdit ? '경기를 누르면 결과를 넣습니다. 칸 위 꼬리표가 조 이름입니다.' : '칸 위 꼬리표가 조 이름입니다. 내 이름은 초록으로 칠해집니다.'}>
             전체 시간표
           </SectionTitle>
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={gridMatches(groups)} nameOf={nameOfPlayer} genderOf={genderOf} me={me} venue={venue} roundTimes={times} events={events}
-              roundCount={gridRounds} courtCount={gridRounds ? (venue?.courts || 0) : 0}
-              onPressMatch={canEdit ? (gm) => record(gm) : undefined} />
+            <MatchGrid matches={[...gridMatches(groups), ...otherMatches]} nameOf={nameOfPlayer} genderOf={genderOf} me={me} venue={venue} roundTimes={times} events={events}
+              {...gridProps(null)} />
           </Card>
+          {draftCard}
         </>
       )}
 
@@ -274,18 +374,20 @@ export function GroupLeagueView({
           </Card>
 
           {/* 경기 목록은 따로 두지 않는다 — 시간표 칸을 눌러 결과를 넣는다(앱 주인: 같은 경기가 두 번 나와 헷갈림) */}
-          <SectionTitle hint={canEdit ? '칸을 누르면 결과를 넣습니다 · 결과가 들어간 칸에 점수가 보입니다' : '내 경기는 초록 테두리로 보입니다'}>
+          <SectionTitle right={editToggle}
+            hint={drawEdit ? '경기 칸 → 상대·타임·코트 바꾸기 · 빈칸 → 이 조 경기 넣기' : canEdit ? '칸을 누르면 결과를 넣습니다 · 결과가 들어간 칸에 점수가 보입니다' : '내 경기는 초록 테두리로 보입니다'}>
             {shown.name} 경기 · 시간표
           </SectionTitle>
-          {canEdit && (
+          {canEdit && !drawEdit && (
             <Text style={{ fontSize: 11.5, color: C.sub, marginTop: -4, marginBottom: 8, lineHeight: 17 }}>
               👆 경기 칸을 누르면 「6 : 0」 같은 빠른 버튼이 뜹니다. 점수가 다르면 「직접 입력」, 잘못 넣었으면 「결과 지우기」.
             </Text>
           )}
           <Card style={{ padding: 10 }}>
-            <MatchGrid matches={gridMatches([shown])} nameOf={nameOfPlayer} genderOf={genderOf} me={me} venue={venue} roundTimes={times} events={events}
-              onPressMatch={canEdit ? (gm) => record(gm) : undefined} />
+            <MatchGrid matches={drawEdit ? [...gridMatches(groups), ...otherMatches] : gridMatches([shown])} nameOf={nameOfPlayer} genderOf={genderOf} me={me} venue={venue} roundTimes={times} events={events}
+              {...(drawEdit ? gridProps(shown.id) : { onPressMatch: canEdit ? (gm) => record(gm) : undefined })} />
           </Card>
+          {draftCard}
         </>
       )}
 

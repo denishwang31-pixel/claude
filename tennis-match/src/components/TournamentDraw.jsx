@@ -25,7 +25,7 @@ import {
   EVENTS, eventOf, eligible, drawAll, redrawDivision, schedule, playersOfFn, addTeam, removeTeam,
   leagueQualifiers, nameLookup, progress, KDK_RANK_TEXT, divRules, advanceOf, bracketPlan, leagueChampions, standings,
   groupSizesFor, gamesCheck, gamesFixes, gamesProblemText,
-  koOrder, reseedGroups, drawEstimate, KO_SEED_HELP, ORDER_HELP, moveGroupMatch, slotConflicts,
+  koOrder, reseedGroups, drawEstimate, KO_SEED_HELP, ORDER_HELP, slotConflicts, cellCollisions,
 } from '../lib/groupLeague';
 import { tournamentRoundTimes, tournamentSchedule, timingRounds } from '../lib/schedule';
 import { RoundTimingEditor } from './RoundTimingEditor';
@@ -407,6 +407,23 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
       `${ev.name} 본선 토너먼트 대진을 만들었습니다(${RULE_LABELS.koSeed[rules.koSeed]})`);
   };
 
+  /* ---- 본선 미리 보기 (2026-10-29 앱 주인: "토너먼트 대진은 안 보이는데 밑에 볼 수 있게") ----
+     본선을 만들기 전에도 「A조 1위 – B조 2위」 자리로 사다리를 보여 준다. 조가 끝나면 그 자리에 팀 이름이 붙는다.
+     성적순·대회 시드·무작위 기준은 결과에 따라 자리가 바뀐다(지금 순위로 그린 것). */
+  const koPreview = useMemo(() => {
+    if (!useGroups || !rules.knockout || divKo?.bracket || !divGroups.length) return null;
+    const label = new Map();
+    divGroups.forEach((g) => {
+      const fin = progress(g).finished;
+      standings(g).slice(0, advanceOf(rules, g)).forEach((r, pos) => {
+        label.set(r.id, `${g.name} ${pos + 1}위${fin ? ` · ${nameOfEntry(r.id)}` : ''}`);
+      });
+    });
+    const order = koOrder(divGroups, (g) => advanceOf(rules, g), rules.koSeed === 'random' ? 'cross' : rules.koSeed, entries);
+    if (order.length < 2) return null;
+    return { bracket: buildBracket(order), nameOf: (id) => label.get(id) || '' };
+  }, [useGroups, rules, divKo, divGroups, entries]);
+
   /* ---- 시드 (2026-10-29 앱 주인: "시드배정 기능") ----
      팀을 누르면 다음 번호 시드, 시드 팀을 다시 누르면 빼고 번호를 당긴다.
      [시드대로 조 다시 나누기] — 1번 시드 A조, 2번 B조 … (결과가 없을 때만). 본선 「대회 시드 우선」 기준에도 쓰인다. */
@@ -445,31 +462,16 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
   const gridTimes = useMemo(() => tournamentRoundTimes(timing, gridRounds), [timing, gridRounds]);
   const gridBands = useMemo(() => tournamentSchedule(timing, gridRounds).events, [timing, gridRounds]);
 
-  /* ---- 시간표 수정 — 경기를 눌러 고른 뒤 옮길 칸(빈칸 또는 다른 경기)을 누른다 ---- */
-  const [slotEdit, setSlotEdit] = useState(false);
-  const [moving, setMoving] = useState(null);
+  /* ---- 대진 수기 수정은 조 화면 시간표에서(GroupLeagueView 「대진 수기 수정」) — 다른 부 경기도 같이 보여 주고
+     같은 칸·같은 타임 겹침을 모든 부를 합쳐 확인한다 ---- */
   const playersOfEntry = useMemo(() => playersOfFn(entries), [entries]);
-  const nameList = (ids) => ids.map((id) => nameOfPlayer(id) !== '?' ? nameOfPlayer(id) : (roster.find((p) => p.id === id)?.name || '?')).join(', ');
+  const nameList = (ids) => ids.map((id) => (nameOfPlayer(id) !== '?' ? nameOfPlayer(id) : (roster.find((p) => p.id === id)?.name || '?'))).join(', ');
   const conflictsNow = useMemo(() => slotConflicts(groups, playersOfEntry), [groups, playersOfEntry]);
-  const doMove = (round, court) => {
-    const id = moving;
-    setMoving(null);
-    const r = moveGroupMatch(groups, id, round, court, playersOfEntry);
-    if (r.error) { flash(r.error); return; }
-    if (r.groups === groups) return;
-    const msg = r.swapped ? '두 경기의 자리를 맞바꿨습니다' : `${round}타임 코트 ${courtNames[court - 1] || court}(으)로 옮겼습니다`;
-    if (!r.conflicts.length) { save({ groups: r.groups }, msg); return; }
-    const text = r.conflicts.map((c) => `${c.round}타임: ${nameList(c.players)}`).join('\n');
-    Alert.alert('같은 타임에 경기가 겹칩니다', `${text}\n\n그래도 옮길까요?`, [
-      { text: '취소', style: 'cancel' },
-      { text: '그래도 옮기기', style: 'destructive', onPress: () => save({ groups: r.groups }, msg) },
-    ]);
-  };
-  const onSlotMatch = (m) => {
-    if (!moving) { setMoving(m.id); return; }
-    if (moving === m.id) { setMoving(null); return; }
-    doMove(m.round, m.court);
-  };
+  const collisions = useMemo(() => cellCollisions(groups), [groups]);
+  const fixCollisions = () => Alert.alert('시간표를 다시 짤까요?', '같은 칸에 두 경기가 겹쳐 있어 일부 경기가 시간표에 안 보입니다. 결과는 그대로 두고 모든 경기의 타임·코트를 다시 정합니다.', [
+    { text: '취소', style: 'cancel' },
+    { text: '다시 짜기', onPress: () => save({ groups: schedule(groups, courts, { playersOf: playersOfEntry, order: rules.order }) }, '시간표를 다시 짰습니다(결과는 그대로)') },
+  ]);
   const saveKo = (k) => {
     const next = { ...(t.ko || {}), [div]: k };
     const allDone = events.every((e) => next[e]?.championId);
@@ -489,6 +491,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
       teamA: entries.find((e) => e.id === m.a)?.players || [],
       teamB: entries.find((e) => e.id === m.b)?.players || [],
       type: `${eventOf(g.div).short} ${g.name}`,
+      div: g.div,
     }))),
     ...kdkDivs.flatMap((k) => kdk[k].matches.map((m) => ({ ...m, type: `${eventOf(k).short} KDK` }))),
   ];
@@ -525,7 +528,6 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
             <Btn tone="ghost" onPress={() => setSetupOpen(!setupOpen)}>{setupOpen ? '기준 닫기' : '작성 기준 설정'}</Btn>
             {entries.length > 0 && useGroups && <Btn tone="ghost" onPress={() => setEditOpen(!editOpen)}>{editOpen ? '수정 닫기' : '수기 수정'}</Btn>}
             {entries.length > 0 && !isKdk && <Btn tone="ghost" onPress={() => setSeedOpen(!seedOpen)}>{seedOpen ? '시드 닫기' : '시드 배정'}</Btn>}
-            {maxRound > 0 && !isKdk && <Btn tone="ghost" onPress={() => { setSlotEdit(!slotEdit); setMoving(null); }}>{slotEdit ? '시간표 수정 닫기' : '시간표 수정'}</Btn>}
           </View>
           {(t.drawNotes || []).length > 0 && (
             <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: C.warnBg }}>
@@ -536,39 +538,31 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         </Card>
       )}
 
-      {isAdmin && slotEdit && maxRound > 0 && !isKdk && (
-        <>
-          <SectionTitle hint="경기를 누른 뒤, 옮길 빈칸이나 맞바꿀 경기를 누르세요. 결과는 그대로입니다.">시간표 수정 (모든 부)</SectionTitle>
-          <Card style={{ padding: 10 }}>
-            <Text style={{ fontSize: 12, color: moving ? C.green : C.sub, fontWeight: '700', marginBottom: 8, lineHeight: 18 }}>
-              {moving ? '👉 옮길 칸(빈칸) 또는 맞바꿀 경기를 누르세요 · 같은 경기를 다시 누르면 취소' : '👆 옮길 경기를 먼저 누르세요'}
-            </Text>
-            <MatchGrid matches={allGrid()} nameOf={nameOfPlayer} me={me} venue={{ courts, courtNames }}
-              roundTimes={tournamentRoundTimes(timing, gridRounds + 1)} events={tournamentSchedule(timing, gridRounds + 1).events}
-              roundCount={gridRounds + 1} courtCount={courts}
-              selected={moving ? [moving] : []}
-              onPressMatch={onSlotMatch}
-              onPressEmpty={moving ? (r, c) => doMove(r, c) : undefined} />
-            {availRounds > 0 && maxRound > availRounds && (
-              <Text style={{ fontSize: 11.5, color: C.warn, marginTop: 8, lineHeight: 17 }}>
-                ⚠️ 경기가 {maxRound}타임까지 있어 종료 시간({timing?.endTime}) 안에 다 못 칩니다(시간 안에 {availRounds}타임). 코트를 늘리거나 팀당 경기 수를 줄이세요.
+      {isAdmin && !isKdk && (collisions > 0 || conflictsNow.length > 0 || (availRounds > 0 && maxRound > availRounds)) && (
+        <Card style={{ marginTop: S.md, backgroundColor: C.warnBg, borderColor: '#F5C27A' }}>
+          {collisions > 0 && (
+            <>
+              <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.warn }}>⚠️ 같은 타임·같은 코트에 경기가 {collisions}개 겹쳐 있습니다</Text>
+              <Text style={{ fontSize: 11.5, color: C.warn, marginTop: 4, lineHeight: 17 }}>
+                겹친 경기는 시간표에 하나만 보입니다(예전에 같은 코트를 쓰는 조끼리 겹치던 문제). 아래 버튼으로 시간표를 다시 짜면 고쳐집니다 — 결과는 그대로.
               </Text>
-            )}
-            {conflictsNow.length > 0 ? (
-              <View style={{ marginTop: 8, padding: 10, borderRadius: R.md, backgroundColor: C.warnBg }}>
-                <Text style={{ fontSize: 12, fontWeight: '800', color: C.warn }}>같은 타임에 두 경기인 사람</Text>
-                {conflictsNow.slice(0, 8).map((c) => (
-                  <Text key={c.round} style={{ fontSize: 11.5, color: C.warn, marginTop: 3 }}>· {c.round}타임: {nameList(c.players)}</Text>
-                ))}
-              </View>
-            ) : (
-              <Text style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>같은 타임에 두 경기인 사람은 없습니다.</Text>
-            )}
-            <Text style={{ fontSize: 11, color: C.faint, marginTop: 6, lineHeight: 16 }}>
-              맨 아래 한 줄은 늘 비워 둡니다 — 경기를 뒤 타임으로 미룰 때 씁니다. 「작성 기준」의 경기 순서·코트 수를 바꾸면 시간표를 자동으로 다시 짜서, 여기서 옮긴 자리는 사라집니다.
+              <View style={{ marginTop: 8 }}><Btn small onPress={fixCollisions}>시간표 다시 짜기</Btn></View>
+            </>
+          )}
+          {conflictsNow.length > 0 && (
+            <View style={{ marginTop: collisions ? 10 : 0 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: C.warn }}>같은 타임에 두 경기인 사람</Text>
+              {conflictsNow.slice(0, 6).map((c) => (
+                <Text key={c.round} style={{ fontSize: 11.5, color: C.warn, marginTop: 3 }}>· {c.round}타임: {nameList(c.players)}</Text>
+              ))}
+            </View>
+          )}
+          {availRounds > 0 && maxRound > availRounds && (
+            <Text style={{ fontSize: 11.5, color: C.warn, marginTop: 8, lineHeight: 17 }}>
+              경기가 {maxRound}타임까지 있어 종료 시간({timing?.endTime}) 안에 다 못 칩니다(시간 안에 {availRounds}타임).
             </Text>
-          </Card>
-        </>
+          )}
+        </Card>
       )}
 
       {isAdmin && seedOpen && entries.length > 0 && !isKdk && (
@@ -940,7 +934,13 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
                 onUpdate={applyDiv}
                 onKnockout={divKo?.bracket || !rules.knockout ? undefined : goKnockout}
                 courtNames={courtNames} label={events.length > 1 ? `${ev.short} ` : ''}
-                times={gridTimes} events={gridBands} gridRounds={events.length === 1 ? gridRounds : 0}
+                times={gridTimes} events={gridBands} gridRounds={gridRounds}
+                otherMatches={allGrid().filter((m) => m.div && m.div !== div)}
+                blocked={(r, c) => {
+                  const hit = groups.find((g) => g.div !== div && (g.matches || []).some((m) => m.round === r && m.court === c));
+                  return hit ? `${eventOf(hit.div).short} ${hit.name}` : '';
+                }}
+                checkConflicts={(mine) => slotConflicts([...groups.filter((g) => g.div !== div), ...mine], playersOfEntry)}
                 editOpen={editOpen} onRemoveTeam={dropTeam} hideRules
                 candidates={divPlayers.map((p) => ({ id: p.id, name: p.name, gender: p.gender || '' }))}
                 sameGender={ev.gender === 'X'}
@@ -967,6 +967,16 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
                   </View>
                 )}
               />
+            </>
+          )}
+          {koPreview && (
+            <>
+              <SectionTitle hint={`${RULE_LABELS.koSeed[rules.koSeed]} — ${rules.koSeed === 'cross' || rules.koSeed === 'far' ? '조가 끝나면 그 자리에 팀 이름이 붙습니다' : rules.koSeed === 'random' ? '본선을 만들 때 무작위로 정해집니다(같은 조는 첫 경기 피함). 지금은 교차 기준으로 그린 모양' : '조별리그 결과에 따라 자리가 바뀝니다(지금 순위로 그린 모양)'}`}>
+                {events.length > 1 ? `${ev.name} ` : ''}본선 토너먼트 (예정)
+              </SectionTitle>
+              <Card style={{ padding: 8 }}>
+                <BracketTree bracket={koPreview.bracket} nameOf={koPreview.nameOf} />
+              </Card>
             </>
           )}
           {useGroups && divGroups.length === 0 && (

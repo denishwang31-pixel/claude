@@ -59,7 +59,7 @@ const mins = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim(
 const hhmm = (v) => { const x = ((v % 1440) + 1440) % 1440; return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; };
 /** 타임 시작 시각 + 이벤트(행사·식사) 자리 — 앱 schedule.tournamentSchedule 과 같은 계산.
  *  이벤트와 겹치는 타임은 이벤트가 끝난 뒤로 밀린다. 시작 시간을 안 정했으면 시각 없음 */
-function scheduleOf(timing, maxRound) {
+export function scheduleOf(timing, maxRound) {
   const s0 = mins(timing?.startTime);
   if (s0 == null) return { start: () => '', events: [] };
   const per = Math.min(180, Math.max(5, Number(timing.roundMinutes) || 30));

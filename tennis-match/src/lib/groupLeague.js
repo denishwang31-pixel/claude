@@ -17,6 +17,8 @@
      5. 그래도 같으면 공동 순위 — 추첨·재경기는 운영진이 정한다
    ============================================================ */
 
+import { scheduleOf } from './teamLive.js';
+
 let _seq = 0;
 const uid = (p) => `${p}_${Date.now().toString(36)}_${(_seq++).toString(36)}`;
 
@@ -381,11 +383,19 @@ export function schedule(groups, courts = 2, { playersOf = null, order = 'altern
     return cs.length ? [...new Set(cs)].sort((a, b) => a - b) : null;
   };
   const out = groups.map((g) => ({ ...g, matches: (g.matches || []).map((m) => ({ ...m })) }));
-  /* 코트를 따로 가진 조는 따로, 나머지는 남은 코트를 같이 쓴다 */
+  /* 코트를 따로 가진 조는 따로, 나머지는 남은 코트를 같이 쓴다.
+     ⚠️ 같은 코트를 정한 조끼리는 한 줄(lane)로 묶는다 — 예전엔 조마다 따로 줄을 세워
+        A조·E조가 둘 다 1코트면 같은 타임 같은 코트에 두 경기가 겹쳐 들어갔다. 시간표 칸에는 하나만 보여
+        「E~H조가 시간표에 없다 · 3타임까지만 나온다」(2026-10-29 앱 주인). 묶으면 번갈아/몰아서 순서대로 나눠 친다. */
   const lanes = [];
+  const byCourts = new Map();
+  out.filter(own).forEach((g) => {
+    const key = own(g).join(',');
+    if (!byCourts.has(key)) { byCourts.set(key, { groups: [], courts: own(g) }); lanes.push(byCourts.get(key)); }
+    byCourts.get(key).groups.push(g);
+  });
   const shared = out.filter((g) => !own(g));
   const taken = new Set(out.filter(own).flatMap(own));
-  out.filter(own).forEach((g) => lanes.push({ groups: [g], courts: own(g) }));
   if (shared.length) {
     const free = allCourts.filter((c) => !taken.has(c));
     lanes.push({ groups: shared, courts: free.length ? free : allCourts });
@@ -404,16 +414,20 @@ export function schedule(groups, courts = 2, { playersOf = null, order = 'altern
   });
   /* 타임을 하나씩 — 모든 줄(lane)이 같은 시계를 쓴다(한 사람이 두 코트에 동시에 서지 않게) */
   let slot = 0;
+  /* 코트도 타임마다 한 경기 — 줄끼리 코트가 일부 겹쳐도(A조 1·2코트, B조 2·3코트) 한 칸에 두 경기가 들어가지 않게 */
   while (lanes.some((l) => l.queue.length) && slot < 500) {
     slot += 1;
     const busy = new Set();
+    const used = new Set();
     lanes.forEach((lane) => {
+      const free = lane.courts.filter((c) => !used.has(c));
       let ci = 0;
-      for (let i = 0; i < lane.queue.length && ci < lane.courts.length;) {
+      for (let i = 0; i < lane.queue.length && ci < free.length;) {
         const m = lane.queue[i];
         const ps = [...who(m.a), ...who(m.b)];
         if (ps.some((p) => busy.has(p))) { i += 1; continue; }
-        m.round = slot; m.court = lane.courts[ci]; ci += 1;
+        m.round = slot; m.court = free[ci]; ci += 1;
+        used.add(m.court);
         ps.forEach((p) => busy.add(p));
         lane.queue.splice(i, 1);
       }
@@ -465,6 +479,62 @@ export function moveGroupMatch(groups, matchId, round, court, playersOf = (id) =
   const touched = [...new Set([r, other ? from.round : null].filter(Boolean))];
   return { groups: next, swapped: other ? other.id : null, conflicts: slotConflicts(next, playersOf, touched) };
 }
+
+/** 한 칸(타임·코트)에 경기가 둘 이상 — 예전 시간표(같은 코트를 쓰는 조가 겹치던 때)를 찾는다 */
+export function cellCollisions(groups) {
+  const seen = new Map();
+  let n = 0;
+  (groups || []).forEach((g) => (g.matches || []).forEach((m) => {
+    if (!m.round || !m.court) return;
+    const k = `${m.round}|${m.court}`;
+    if (seen.has(k)) n += 1; else seen.set(k, true);
+  }));
+  return n;
+}
+
+/**
+ * 대진 수기 수정 — 시간표의 경기 하나를 고치거나(상대·타임·코트) 새로 넣는다(2026-10-29 앱 주인:
+ * "예전 대회처럼 시간표에 대진 수기 수정 버튼 → 경기를 누르면 상대를 바꿀 수 있게").
+ * @param draft { id?(없으면 새 경기), groupId, a, b, round, court }
+ * @param opts  { playersOf, blocked(round, court) → 다른 부 경기 이름 | '' }
+ * @returns { groups, conflicts, swapped, scoreCleared, dupPair } | { error }
+ *   고른 칸에 같은 부의 다른 경기가 있으면 고치던 경기 자리와 맞바꾼다(새 경기면 막는다).
+ */
+export function editGroupMatch(groups, draft, { playersOf = (id) => [id], blocked = () => '' } = {}) {
+  const gs = groups || [];
+  const g = gs.find((x) => x.id === draft.groupId);
+  if (!g) return { error: '조를 고르세요' };
+  const { a, b } = draft;
+  if (!a || !b) return { error: '두 팀을 모두 고르세요' };
+  if (a === b) return { error: '같은 팀끼리는 붙일 수 없습니다' };
+  if (!g.entryIds.includes(a) || !g.entryIds.includes(b)) return { error: `${g.name} 팀끼리만 붙일 수 있습니다` };
+  const round = Math.round(Number(draft.round)); const court = Math.round(Number(draft.court));
+  if (!(round >= 1 && court >= 1)) return { error: '타임·코트를 고르세요' };
+  const all = gs.flatMap((x) => x.matches || []);
+  const old = draft.id ? all.find((m) => m.id === draft.id) : null;
+  if (draft.id && !old) return { error: '고칠 경기를 찾지 못했습니다' };
+  const ext = blocked(round, court);
+  if (ext) return { error: `${round}타임 그 코트에는 ${ext} 경기가 있습니다` };
+  const other = all.find((m) => m.id !== draft.id && m.round === round && m.court === court) || null;
+  if (other && !old) return { error: `${round}타임 그 코트에는 이미 경기가 있습니다 — 빈칸을 고르세요` };
+  const same = old && [old.a, old.b].sort().join() === [a, b].sort().join();
+  const score = !old || !old.score || !same ? null : (old.a === a ? old.score : { a: old.score.b, b: old.score.a });
+  const pk = [a, b].sort().join('|');
+  const dupPair = (g.matches || []).some((m) => m.id !== draft.id && [m.a, m.b].sort().join('|') === pk);
+  const id = old?.id || uid('gm');
+  const nextMatch = { ...(old || {}), id, groupId: g.id, a, b, rr: round, round, court, score, ...(g.div ? { div: g.div } : {}) };
+  const next = gs.map((x) => {
+    let ms = (x.matches || []).filter((m) => m.id !== id);
+    if (other) ms = ms.map((m) => (m.id === other.id ? { ...m, round: old.round, court: old.court } : m));
+    if (x.id === g.id) ms = [...ms, nextMatch].sort((p, q) => (p.round || 0) - (q.round || 0) || (p.court || 0) - (q.court || 0));
+    return { ...x, matches: ms };
+  });
+  const touched = [...new Set([round, other ? old.round : null].filter(Boolean))];
+  return { groups: next, conflicts: slotConflicts(next, playersOf, touched), swapped: other ? other.id : null, scoreCleared: !!(old?.score && !score), dupPair };
+}
+
+/** 경기 지우기 — 그 칸은 빈칸으로 */
+export const removeGroupMatch = (groups, id) => (groups || []).map((g) => ({ ...g, matches: (g.matches || []).filter((m) => m.id !== id) }));
 
 /** 처음부터 끝까지 — 참가자 → 팀 → 조 → 경기 → 시간표 */
 export function buildLeague(players, rulesIn, { courts = 2, pairs = [], seeds = {} } = {}, rnd = Math.random) {
@@ -1030,6 +1100,55 @@ export function liveView(t, clubName = '') {
         .sort((x, y) => x.round - y.round || x.court - y.court),
     }));
   });
+  /* 전체 시간표(코트 × 타임) — 모든 부·조를 한 표에, 타임 옆 시각·행사 띠(2026-10-29 앱 주인: 바뀐 구조를 웹에도) */
+  const sched = ensureSchedule(t.groups || [], Number(t.courts) || 2);
+  const cells = [
+    ...sched.flatMap((g) => (g.matches || []).map((m) => ({ m, tag: label(g.div, g.name), a: nameOf(m.a), b: nameOf(m.b) }))),
+    ...Object.entries(t.kdk || {}).flatMap(([div, d]) => {
+      const pn = (id) => (d.players || []).find((p) => p.id === id)?.name || '';
+      return (d.matches || []).map((m) => ({ m, tag: label(div, 'KDK'), a: (m.teamA || []).map(pn).join('·'), b: (m.teamB || []).map(pn).join('·') }));
+    }),
+  ].filter((x) => x.m.round && x.m.court);
+  const maxRound = cells.reduce((n, x) => Math.max(n, Number(x.m.round) || 0), 0);
+  const clock = scheduleOf(t.timing, maxRound);
+  const nCourts = Math.max(Number(t.courts) || 2, ...cells.map((x) => Number(x.m.court) || 0));
+  const courtName = (c) => String((t.courtNames || [])[c - 1] || '').trim() || String(c);
+  const grid = {
+    courts: Array.from({ length: nCourts }, (_, i) => ({ c: i + 1, label: courtName(i + 1) })),
+    rounds: Array.from({ length: maxRound }, (_, i) => i + 1).map((r) => ({
+      round: r, time: clock.start(r),
+      matches: cells.filter((x) => x.m.round === r).map((x) => ({ c: Number(x.m.court), tag: x.tag, a: x.a, b: x.b, score: x.m.score || null })),
+    })),
+    events: clock.events,
+  };
+  groups.forEach((g, gi) => { if (!g.kind && sched[gi]) g.matches.forEach((m) => { m.time = clock.start(m.round); }); });
+
+  /* 본선 미리 보기 — 본선을 만들기 전, 「A조 1위 – B조 2위」 자리로(앱 대진 화면과 같은 기준) */
+  const koPreview = [];
+  if (rules.knockout && t.useGroupStage !== false) {
+    [...new Set(sched.map((g) => g.div || ''))].forEach((div) => {
+      if (t.ko?.[div]?.bracket?.rounds?.length || (!div && t.bracket?.rounds?.length)) return;
+      const gs = sched.filter((g) => (g.div || '') === div);
+      const tagOf = new Map();
+      gs.forEach((g) => {
+        const fin = progress(g).finished;
+        standings(g).slice(0, advanceOf(rules, g)).forEach((r, pos) => tagOf.set(r.id, `${g.name} ${pos + 1}위${fin ? ` ${nameOf(r.id)}` : ''}`));
+      });
+      const ids = koOrder(gs, (g) => advanceOf(rules, g), rules.koSeed === 'random' ? 'cross' : rules.koSeed, t.entries || []);
+      if (ids.length < 2) return;
+      const size = 2 ** Math.ceil(Math.log2(ids.length));
+      const pos = seedPositions(size).map((sd) => (sd <= ids.length ? tagOf.get(ids[sd - 1]) || '' : '부전승'));
+      const rounds = [];
+      for (let n = size / 2, ri = 0; n >= 1; n /= 2, ri++) {
+        rounds.push({
+          name: koRound(ri, Math.log2(size)),
+          matches: Array.from({ length: n }, (_, i) => (ri === 0 ? { a: pos[i * 2], b: pos[i * 2 + 1], score: null, winner: '' } : { a: '', b: '', score: null, winner: '' })),
+        });
+      }
+      koPreview.push({ name: div && div !== LEGACY ? eventOf(div).name : '', rule: RULE_LABELS.koSeed[rules.koSeed], rounds });
+    });
+  }
+
   /* 본선 — 예전 대회는 t.bracket 하나, 부가 있는 대회는 부마다 t.ko[부] */
   const kos = [
     ...(t.bracket?.rounds?.length ? [{ div: '', bracket: t.bracket, championId: t.championId }] : []),
@@ -1049,6 +1168,8 @@ export function liveView(t, clubName = '') {
       ...leagueChampions(t, rules).map((c) => `${c.div ? `${eventOf(c.div).name} ` : ''}${c.groupName ? `${c.groupName} ` : ''}${nameOf(c.entryId)}`),
     ].join(' · '),
     groups,
+    grid,
+    koPreview,
     /* 부별 본선 — 사다리 그림용(라운드 순서·경기 위치를 그대로). r 라운드 i 경기의 승자 → r+1 라운드 i/2 경기 */
     kos: kos.map((k) => ({
       name: k.div && k.div !== LEGACY ? eventOf(k.div).name : '',
