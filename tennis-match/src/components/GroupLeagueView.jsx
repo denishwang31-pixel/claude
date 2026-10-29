@@ -93,7 +93,10 @@ export function GroupLeagueView({
   courtNames = [], label = '', editOpen, onRemoveTeam, extraEdit = null, hideRules = false,
   candidates = null, sameGender = false, times = [], events = [], gridRounds = 0,
   otherMatches = [], blocked = () => '', checkConflicts = null,
+  onMoveKo = null, onResetKo = null, onMoveOther = null, onRemoveOther = null,
 }) {
+  /* onMoveKo(본선 칸, 타임, 코트) · onResetKo() — 시간표의 본선 칸 옮기기(지우기는 없음)
+     onMoveOther·onRemoveOther — 다른 부 조별 경기를 이 표에서 끌었을 때(부모가 그 부에 저장) */
   /* otherMatches — 다른 부 경기(시간표에 같이 보이게, 고치지는 못함) · blocked(타임, 코트) — 그 칸의 다른 부 경기 이름
      checkConflicts(이 부의 새 조 목록) — 모든 부를 합쳐 같은 타임 두 경기인 사람(부모가 계산) */
   /* candidates — 이 부에 나갈 수 있는 사람 [{id,name,gender}]. 있으면 선수를 누를 때
@@ -169,14 +172,15 @@ export function GroupLeagueView({
     if (ext) { flash(`그 칸에는 ${ext} 경기가 있습니다`); return; }
     setDraft({ id: null, groupId: groupId || groups[0]?.id, a: '', b: '', round, court });
   };
-  const saveDraft = () => {
-    const r = editGroupMatch(groups, draft, { blocked });
+  /* 고친 경기 저장 — 카드의 [저장]과 끌어 옮기기가 같이 쓴다. 같은 타임에 두 경기인 사람이 생기면 한 번 묻는다 */
+  const applyDraft = (d, done = () => {}, verb = '고쳤습니다') => {
+    const r = editGroupMatch(groups, d, { blocked });
     if (r.error) { flash(r.error); return; }
     const conflicts = checkConflicts ? checkConflicts(r.groups) : r.conflicts;
-    const touched = new Set([draft.round, ...(r.swapped ? [groups.flatMap((g) => g.matches || []).find((m) => m.id === draft.id)?.round] : [])]);
+    const touched = new Set([d.round, ...(r.swapped ? [groups.flatMap((g) => g.matches || []).find((m) => m.id === d.id)?.round] : [])]);
     const hits = conflicts.filter((c) => touched.has(c.round));
-    const msg = draft.id ? `경기를 고쳤습니다${r.swapped ? ' — 그 칸의 경기와 자리를 맞바꿨습니다' : ''}${r.scoreCleared ? ' (팀이 바뀌어 결과는 지움)' : ''}` : '경기를 넣었습니다';
-    const go = () => { saveGroups(r.groups, msg); setDraft(null); };
+    const msg = d.id ? `경기를 ${verb}${r.swapped ? ' — 그 칸의 경기와 자리를 맞바꿨습니다' : ''}${r.scoreCleared ? ' (팀이 바뀌어 결과는 지움)' : ''}` : '경기를 넣었습니다';
+    const go = () => { saveGroups(r.groups, msg); done(); };
     const warns = [
       ...hits.map((c) => `${c.round}타임에 두 경기: ${c.players.map((p) => nameOfPlayer(p)).join(', ')}`),
       ...(r.dupPair ? ['같은 두 팀의 경기가 이미 있습니다'] : []),
@@ -186,18 +190,80 @@ export function GroupLeagueView({
       { text: '취소', style: 'cancel' }, { text: '그래도 저장', style: 'destructive', onPress: go },
     ]);
   };
+  const saveDraft = () => applyDraft(draft, () => setDraft(null));
+
+  /* ---- 길게 눌러 끌기 (2026-10-29 앱 주인: "오래 누르고 드래그해서 다른 곳으로 옮기거나 삭제 — 토너먼트는 옮기기만") ----
+     조별 경기: 다른 칸에 놓으면 옮기기(같은 부 경기 칸이면 맞바꾸기) · 🗑 띠에 놓으면 지우기
+     본선 칸: 옮기기만(부모가 t.koPlace 에 저장) · 움직이지 않고 떼면 메뉴(옮길 칸 누르기·고치기·지우기) */
+  const [moving, setMoving] = useState(null);           // 「옮길 칸 고르기」 중인 경기
+  const ownGroupOf = (m) => groups.find((g) => (g.matches || []).some((x) => x.id === m.id));
+  const placeMatch = (m, round, court) => {
+    setMoving(null);
+    if (m.ko) { if (onMoveKo) onMoveKo(m, round, court); else flash('본선 경기는 여기서 옮길 수 없습니다'); return; }
+    const g = ownGroupOf(m);
+    if (!g) { if (onMoveOther) onMoveOther(m, round, court); else flash('다른 부 경기는 그 부 화면에서 옮깁니다'); return; }
+    const d = { id: m.id, groupId: g.id, a: m.a, b: m.b, round, court };
+    /* 조 화면 표에는 그 조 경기만 보인다 — 안 보이는 다른 조 경기와 맞바꾸게 되면 먼저 묻는다 */
+    const hidden = tab !== GRID && !drawEdit && groups.find((x) => x.id !== g.id && (x.matches || []).some((y) => y.round === round && y.court === court));
+    if (hidden) {
+      Alert.alert('자리를 맞바꿀까요?', `${round}타임 코트 ${cn(court)}에는 ${hidden.name} 경기가 있습니다. 두 경기의 자리를 맞바꿉니다.`, [
+        { text: '취소', style: 'cancel' }, { text: '맞바꾸기', onPress: () => applyDraft(d, () => {}, '옮겼습니다') },
+      ]);
+      return;
+    }
+    applyDraft(d, () => {}, '옮겼습니다');
+  };
+  const dropMatch = (m) => {
+    if (m.ko) { flash('본선 경기는 지울 수 없습니다 — 옮기기만 됩니다'); return; }
+    const g = ownGroupOf(m);
+    if (!g) { if (onRemoveOther) onRemoveOther(m); else flash('다른 부 경기는 그 부 화면에서 지웁니다'); return; }
+    Alert.alert('이 경기를 지울까요?', `${g.name} · ${nameOfEntry(m.a)} vs ${nameOfEntry(m.b)}${m.score ? '\n입력한 결과도 함께 지워집니다.' : ''}\n시간표에서 빠지고 그 칸은 빈칸이 됩니다.`, [
+      { text: '취소', style: 'cancel' },
+      { text: '지우기', style: 'destructive', onPress: () => saveGroups(removeGroupMatch(groups, m.id), '경기를 지웠습니다') },
+    ]);
+  };
+  const holdMenu = (m) => {
+    const own = !m.ko && !!ownGroupOf(m);
+    sheet.open({
+      title: `${m.round}타임 · 코트 ${cn(m.court)}${m.ko ? ` · ${m.type}` : ''}\n끌어서 옮길 수도 있습니다`,
+      options: [
+        { key: 'move', label: '옮길 칸 고르기 (다음에 누르는 칸으로)' },
+        ...(own ? [{ key: 'edit', label: '상대·타임·코트 고치기' }, { key: 'del', label: '경기 지우기', destructive: true }] : []),
+        ...(m.ko && onResetKo ? [{ key: 'reset', label: '본선 시간표를 자동 배치로 되돌리기' }] : []),
+      ],
+      onSelect: (o) => {
+        if (o.key === 'move') { setDraft(null); setMoving(m); flash('옮길 칸을 누르세요(경기 칸이면 맞바꿉니다)'); }
+        if (o.key === 'edit') { setDrawEdit(true); openMatch(m); }
+        if (o.key === 'del') dropMatch(m);
+        if (o.key === 'reset') onResetKo();
+      },
+    });
+  };
   const deleteDraft = () => Alert.alert('이 경기를 지울까요?', '시간표에서 빠지고 그 칸은 빈칸이 됩니다.', [
     { text: '취소', style: 'cancel' },
     { text: '지우기', style: 'destructive', onPress: () => { saveGroups(removeGroupMatch(groups, draft.id), '경기를 지웠습니다'); setDraft(null); } },
   ]);
   const maxR = Math.max(gridRounds, ...groups.flatMap((g) => (g.matches || []).map((m) => Number(m.round) || 0)), ...otherMatches.map((m) => Number(m.round) || 0));
   const editRounds = drawEdit ? maxR + 1 : gridRounds;      // 고치는 동안은 맨 아래 빈 줄 하나(뒤 타임으로 미루기)
+  const dnd = canEdit ? {
+    canDrag: (m) => (m.ko ? !!onMoveKo : !!ownGroupOf(m) || !!onMoveOther),
+    canDelete: (m) => !m.ko && (!!ownGroupOf(m) || !!onRemoveOther),
+    onMove: placeMatch, onDelete: dropMatch, onHold: holdMenu,
+  } : null;
   const gridProps = (forGroupId) => ({
     roundCount: editRounds, courtCount: editRounds ? courts : 0,
-    onPressMatch: canEdit ? (drawEdit ? openMatch : (gm) => (gm.ko ? flash('본선 경기 결과는 아래 본선 대진표에서 넣습니다') : record(gm))) : undefined,
-    onPressEmpty: canEdit && drawEdit ? (r, c) => openEmpty(r, c, forGroupId) : undefined,
+    onPressMatch: canEdit ? (moving ? (gm) => (gm.id === moving.id ? setMoving(null) : placeMatch(moving, gm.round, gm.court))
+      : drawEdit ? openMatch : (gm) => (gm.ko ? flash('본선 경기 결과는 아래 본선 대진표에서 넣습니다') : record(gm))) : undefined,
+    onPressEmpty: canEdit && (moving || drawEdit) ? (r, c) => (moving ? placeMatch(moving, r, c) : openEmpty(r, c, forGroupId)) : undefined,
     selected: draft?.id ? [draft.id] : [],
+    dnd, lifted: moving?.id || null,
   });
+  const movingBar = moving ? (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, padding: 10, borderRadius: R.md, backgroundColor: C.greenSoft }}>
+      <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: C.green }}>옮길 칸을 누르세요 — 경기 칸이면 두 경기 자리를 맞바꿉니다</Text>
+      <Chip tone="outline" onPress={() => setMoving(null)}>취소</Chip>
+    </View>
+  ) : null;
   const editToggle = canEdit ? (
     <Chip tone={drawEdit ? 'green' : 'outline'} onPress={() => { setDrawEdit(!drawEdit); setDraft(null); }}>
       {drawEdit ? '수정 끝내기' : '대진 수기 수정'}
@@ -358,9 +424,10 @@ export function GroupLeagueView({
       {tab === GRID && (
         <>
           <SectionTitle right={editToggle}
-            hint={drawEdit ? '경기 칸 → 상대·타임·코트 바꾸기 · 빈칸 → 경기 넣기' : canEdit ? '경기를 누르면 결과를 넣습니다. 칸 위 꼬리표가 조 이름입니다.' : '칸 위 꼬리표가 조 이름입니다. 내 이름은 초록으로 칠해집니다.'}>
+            hint={drawEdit ? '경기 칸 → 상대·타임·코트 바꾸기 · 빈칸 → 경기 넣기' : canEdit ? '경기를 누르면 결과를 넣습니다 · 길게 눌러 끌면 옮기기(🗑 띠에 놓으면 지우기, 본선은 옮기기만)' : '칸 위 꼬리표가 조 이름입니다. 내 이름은 초록으로 칠해집니다.'}>
             전체 시간표
           </SectionTitle>
+          {movingBar}
           <Card style={{ padding: 10 }}>
             <MatchGrid matches={[...gridMatches(groups), ...otherMatches]} nameOf={nameOfCell} genderOf={genderOf} me={me} venue={venue} roundTimes={times} events={events}
               {...gridProps(null)} />
@@ -383,12 +450,14 @@ export function GroupLeagueView({
           </SectionTitle>
           {canEdit && !drawEdit && (
             <Text style={{ fontSize: 11.5, color: C.sub, marginTop: -4, marginBottom: 8, lineHeight: 17 }}>
-              👆 경기 칸을 누르면 「6 : 0」 같은 빠른 버튼이 뜹니다. 점수가 다르면 「직접 입력」, 잘못 넣었으면 「결과 지우기」.
+              👆 경기 칸을 누르면 「6 : 0」 같은 빠른 버튼이 뜹니다. 점수가 다르면 「직접 입력」, 잘못 넣었으면 「결과 지우기」.{'\n'}
+              ✋ 길게 누른 채 끌면 다른 칸으로 옮기고, 빨간 🗑 띠에 놓으면 지웁니다.
             </Text>
           )}
+          {movingBar}
           <Card style={{ padding: 10 }}>
             <MatchGrid matches={drawEdit ? [...gridMatches(groups), ...otherMatches] : gridMatches([shown])} nameOf={nameOfCell} genderOf={genderOf} me={me} venue={venue} roundTimes={times} events={events}
-              {...(drawEdit ? gridProps(shown.id) : { onPressMatch: canEdit ? (gm) => record(gm) : undefined })} />
+              {...(canEdit ? gridProps(shown.id) : {})} {...(canEdit && !drawEdit && !moving ? { onPressMatch: (gm) => record(gm) } : {})} />
           </Card>
           {draftCard}
         </>

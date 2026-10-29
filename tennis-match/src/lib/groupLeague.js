@@ -1136,24 +1136,56 @@ export function koGridCells(t) {
       const b = L === 0 ? sideOf(m.b, m.preview) : known(m.b, tagOfSlot(L - 1, i * 2 + 1));
       /* 첫 라운드는 1위 쪽 조 순서로 — A조 1위 경기, B조 1위 경기 … */
       const key = L === 0 ? Math.min(...[m.a, m.b].map((id) => { const mt = meta.get(id); return mt ? mt.pos * 100 + mt.gi : 999; })) * 1000 + i : i;
-      return { id: m.id, div, level: L, idx: i, a, b, score: m.score, key, type: `${div && div !== LEGACY && eventOf(div).short ? `${eventOf(div).short} ` : ''}${koRound(L, total)}` };
+      return { id: m.id, div, level: L, idx: i, place: koPlaceKey(div, L, i), a, b, score: m.score, key, type: `${div && div !== LEGACY && eventOf(div).short ? `${eventOf(div).short} ` : ''}${koRound(L, total)}` };
     }).filter(Boolean).sort((x, y) => x.key - y.key));
     perDiv.push(levels);
   });
+  /* 운영진이 시간표에서 끌어 옮긴 본선 칸(t.koPlace) — 그 자리에 그대로. 나머지는 빈칸을 찾아 차례로 */
+  const fixed = t?.koPlace || {};
+  const at = (c) => fixed[c.place];
+  const taken = new Set(perDiv.flat(2).filter(at).map((c) => `${at(c).round}|${at(c).court}`));
   /* 타임·코트 — 라운드마다 새 타임에서 1코트부터 */
   const out = [];
   let round = start + 1;
   let court = 1;
+  const step = () => { court += 1; if (court > courts) { court = 1; round += 1; } };
   const depth = Math.max(0, ...perDiv.map((lv) => lv.length));
   for (let L = 0; L < depth; L++) {
     perDiv.forEach((lv) => (lv[L] || []).forEach((c) => {
+      const p = at(c);
+      if (p) { out.push({ ...c, round: Number(p.round), court: Number(p.court), moved: true }); return; }
+      while (taken.has(`${round}|${court}`)) step();
       out.push({ ...c, round, court });
-      court += 1;
-      if (court > courts) { court = 1; round += 1; }
+      step();
     }));
     if (court !== 1) { court = 1; round += 1; }
   }
   return out;
+}
+
+/** 본선 칸 자리 이름 — 부 · 라운드 · 대진표 안 순서(본선을 만들기 전 「A조 1위」 자리와 만든 뒤 실제 경기가 같은 이름) */
+export const koPlaceKey = (div, level, idx) => `${div || ''}|${level}|${idx}`;
+
+/**
+ * 본선 칸 옮기기 — 시간표에서 끌어 놓은 자리(2026-10-29 앱 주인: "토너먼트도 끌어서 옮기기, 지우기는 안 되게")
+ * 하나를 옮기면 나머지 본선 칸도 지금 자리에 고정한다(다른 칸이 저절로 밀려 움직이지 않게).
+ * @param cells    koGridCells(t) 결과
+ * @param others   [{ round, court, type }] 본선이 아닌 경기(조별·KDK)
+ * @returns { koPlace, swapped } | { error }
+ */
+export function moveKoCell(cells, others, place, round, court) {
+  const me = (cells || []).find((c) => c.place === place);
+  if (!me) return { error: '본선 경기를 찾지 못했습니다' };
+  const r = Number(round); const c = Number(court);
+  if (!(r >= 1) || !(c >= 1)) return { error: '옮길 칸을 다시 골라 주세요' };
+  if (me.round === r && me.court === c) return { error: '' };
+  const hit = (others || []).find((m) => m.round === r && m.court === c);
+  if (hit) return { error: `그 칸에는 ${hit.type || '다른'} 경기가 있습니다 — 빈칸이나 다른 본선 칸으로 옮기세요` };
+  const koPlace = Object.fromEntries(cells.map((x) => [x.place, { round: x.round, court: x.court }]));
+  const other = cells.find((x) => x.place !== place && x.round === r && x.court === c);
+  koPlace[place] = { round: r, court: c };
+  if (other) koPlace[other.place] = { round: me.round, court: me.court };
+  return { koPlace, swapped: !!other };
 }
 
 /* ---------------- 외부 공개 보기 ----------------

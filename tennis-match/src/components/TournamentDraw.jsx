@@ -26,6 +26,7 @@ import {
   leagueQualifiers, nameLookup, progress, KDK_RANK_TEXT, divRules, advanceOf, bracketPlan, leagueChampions, standings,
   groupSizesFor, gamesCheck, gamesFixes, gamesProblemText,
   koOrder, reseedGroups, drawEstimate, KO_SEED_HELP, ORDER_HELP, slotConflicts, cellCollisions, koGridCells,
+  moveKoCell, editGroupMatch, removeGroupMatch,
 } from '../lib/groupLeague';
 import { tournamentRoundTimes, tournamentSchedule, timingRounds } from '../lib/schedule';
 import { RoundTimingEditor } from './RoundTimingEditor';
@@ -44,6 +45,7 @@ const GRID_ALL = '__grid_all';
 
 /* ---------------- 부별 본선 ---------------- */
 function DivKnockout({ ko, nameOfEntry, canEdit, onSave, title }) {
+  /* 제목은 부모의 「본선 토너먼트」 분류 머리줄이 단다 */
   const [edit, setEdit] = useState(null);
   const [sc, setSc] = useState({ a: '', b: '' });
   const bracket = ko?.bracket;
@@ -58,8 +60,7 @@ function DivKnockout({ ko, nameOfEntry, canEdit, onSave, title }) {
     setEdit(null); setSc({ a: '', b: '' });
   };
   return (
-    <View>
-      <SectionTitle>{title} 본선 토너먼트</SectionTitle>
+    <View style={{ marginTop: S.sm }}>
       {champion && (
         <Card style={{ backgroundColor: C.ink, borderColor: C.green, alignItems: 'center', paddingVertical: 18, marginBottom: 10 }}>
           <Text style={{ color: C.lime, fontSize: 11, fontWeight: '700', letterSpacing: 1 }}>{title ? `${title} 우승` : 'CHAMPION'}</Text>
@@ -87,6 +88,35 @@ function DivKnockout({ ko, nameOfEntry, canEdit, onSave, title }) {
       )}
     </View>
   );
+}
+
+/* ---------------- 분류 머리줄 — 「조별 예선」 「본선 토너먼트」 ----------------
+   2026-10-29 앱 주인: "본선 토너먼트는 아래에 중분류로, 위에 조별 예선도 분류로 — 누르면 조별 예선 대진·시간표가
+   숨었다가 나오게". onPress 가 있으면 접고 펴는 단추 */
+function CategoryHeader({ title, sub, open, onPress, badge }) {
+  const body = (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: S.lg, paddingVertical: 12, paddingHorizontal: 14,
+      borderRadius: R.lg, backgroundColor: C.ink,
+    }}>
+      <View style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, backgroundColor: C.lime }} />
+      <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={{ fontSize: 16.5, fontWeight: '900', color: '#fff' }}>{title}</Text>
+          {!!badge && (
+            <View style={{ backgroundColor: C.lime, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
+              <Text style={{ fontSize: 10.5, fontWeight: '900', color: C.ink }}>{badge}</Text>
+            </View>
+          )}
+        </View>
+        {!!sub && <Text style={{ fontSize: 11.5, color: '#BFE3D3', marginTop: 3 }}>{sub}</Text>}
+      </View>
+      {!!onPress && <Text style={{ fontSize: 12, fontWeight: '800', color: C.lime }}>{open ? '접기 ▲' : '펼치기 ▼'}</Text>}
+    </View>
+  );
+  return onPress
+    ? <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ expanded: !!open }}>{body}</Pressable>
+    : body;
 }
 
 /* ---------------- 작성 기준 한 줄 ---------------- */
@@ -282,7 +312,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         const d = drawKdkAll(roster, r, evs, { courts: n, excluded: t.excluded || {} });
         if (!Object.keys(d.kdk).length) { flash(d.problems[0] || 'KDK 대진을 짤 사람이 부족합니다(부마다 4명 이상)'); return; }
         await updateTournament(clubId, t.id, {
-          rules: r, courts: n, courtNames: names, events: evs, kdk: d.kdk, entries: [], groups: [], ko: {}, drawNotes: d.problems,
+          rules: r, courts: n, courtNames: names, events: evs, kdk: d.kdk, entries: [], groups: [], ko: {}, drawNotes: d.problems, koPlace: null,
         });
         flash(d.problems.length ? `KDK 대진을 작성했습니다 — 확인할 것 ${d.problems.length}건` : 'KDK 대진을 작성했습니다');
       } else if (scope === 'all') {
@@ -297,6 +327,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         const ko = ug ? {} : Object.fromEntries(evs.map((k) => [k, koFor(d.entries.filter((e) => e.div === k))]).filter(([, v]) => v.bracket?.rounds?.length));
         await updateTournament(clubId, t.id, {
           rules: { ...r, groupAdvance: {} }, useGroupStage: ug, courts: n, courtNames: names, events: evs, entries: d.entries, groups: d.groups, ko, drawNotes: d.problems, kdk: null,
+          koPlace: null,     // 끌어 옮긴 본선 자리도 새로
         });
         flash(d.problems.length ? `대진을 작성했습니다 — 확인할 것 ${d.problems.length}건` : '대진을 작성했습니다');
       } else {
@@ -319,6 +350,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         await updateTournament(clubId, t.id, {
           rules: r, courts: n, courtNames: names, entries: d.entries, groups: d.groups, ko,
           drawNotes: d.problem ? [d.problem] : [], kdk: null,
+          koPlace: Object.fromEntries(Object.entries(t.koPlace || {}).filter(([k]) => !k.startsWith(`${div}|`))),
         });
         flash(d.problem || `${ev.name} 대진을 다시 작성했습니다`);
       }
@@ -454,6 +486,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
   /* 시간표의 본선 칸 — 조별리그 다음 타임부터 1코트부터(groupLeague.koGridCells, 저장하지 않고 그때그때 계산) */
   const koItems = useMemo(() => (isKdk ? [] : koGridCells(t)).map((c) => ({
     id: c.id, round: c.round, court: c.court, teamA: c.a.ids, teamB: c.b.ids, score: c.score || null, type: c.type, div: c.div, ko: true,
+    place: c.place, moved: !!c.moved,
   })), [t, isKdk]);
   const koMax = koItems.reduce((n, m) => Math.max(n, m.round), 0);
   const nameOfAny = (id) => (String(id).startsWith('ko:') ? String(id).slice(3) : nameOfPlayer(id));
@@ -503,6 +536,64 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
     ...koItems,
   ];
   const [tabAll, setTabAll] = useState(false);
+  /* 다른 부 경기가 있는 칸 이름 — 그 부 조별 경기를 옮길 때 막는다(본선 칸도) */
+  const blockedFor = (d) => (r, c) => {
+    const hit = groups.find((g) => g.div !== d && (g.matches || []).some((m) => m.round === r && m.court === c));
+    if (hit) return `${eventOf(hit.div).short} ${hit.name}`;
+    const k = koItems.find((m) => m.round === r && m.court === c);
+    if (k) return `본선(${k.type})`;
+    const kd = kdkDivs.find((k2) => (kdk[k2].matches || []).some((m) => m.round === r && m.court === c));
+    return kd ? `${eventOf(kd).short} KDK` : '';
+  };
+
+  /* ---- 시간표에서 끌어 옮기기 (2026-10-29 앱 주인: "토너먼트도 — 토너먼트는 지우기는 안 되고 옮기기만") ----
+     본선 칸은 저장된 경기가 아니라 계산한 자리라서, 옮긴 자리를 t.koPlace 에 적는다(하나를 옮기면 나머지도 지금 자리에 고정) */
+  const moveKo = (m, r, c) => {
+    const res = moveKoCell(koGridCells(t), allGrid().filter((x) => !x.ko), m.place, r, c);
+    if (res.error) { flash(res.error); return; }
+    if (!res.koPlace) return;
+    save({ koPlace: res.koPlace }, res.swapped ? '본선 두 경기의 자리를 맞바꿨습니다' : `본선 경기를 ${r}타임 코트 ${courtNames[c - 1] || c}로 옮겼습니다`);
+  };
+  const resetKo = () => Alert.alert('본선 시간표를 자동 배치로 되돌릴까요?', '끌어 옮긴 본선 경기 자리를 지우고, 조별리그 다음 타임부터 1코트부터 다시 놓습니다.', [
+    { text: '취소', style: 'cancel' },
+    { text: '되돌리기', onPress: () => save({ koPlace: null }, '본선 시간표를 자동 배치로 되돌렸습니다') },
+  ]);
+  /* 다른 부(또는 전체 시간표)의 조별 경기 옮기기·지우기 — 그 부 조 안에서 고치고 대회 전체에 합친다 */
+  const moveAnyGroupMatch = (m, r, c) => {
+    if (m.ko) { moveKo(m, r, c); return; }
+    const g = groups.find((x) => (x.matches || []).some((y) => y.id === m.id));
+    if (!g) { flash('KDK 경기는 KDK 대진에서 고칩니다'); return; }
+    const mine = groups.filter((x) => x.div === g.div);
+    const res = editGroupMatch(mine, { id: m.id, groupId: g.id, a: m.a, b: m.b, round: r, court: c }, { blocked: blockedFor(g.div) });
+    if (res.error) { flash(res.error); return; }
+    const next = order([...groups.filter((x) => x.div !== g.div), ...res.groups]);
+    const hits = slotConflicts(next, playersOfEntry).filter((x) => x.round === r);
+    const go = () => save({ groups: next }, `경기를 옮겼습니다${res.swapped ? ' — 그 칸의 경기와 자리를 맞바꿨습니다' : ''}`);
+    if (!hits.length) { go(); return; }
+    Alert.alert('확인해 주세요', `${hits.map((x) => `${x.round}타임에 두 경기: ${nameList(x.players)}`).join('\n')}\n\n그래도 옮길까요?`, [
+      { text: '취소', style: 'cancel' }, { text: '그래도 옮기기', style: 'destructive', onPress: go },
+    ]);
+  };
+  const removeAnyGroupMatch = (m) => {
+    if (m.ko) { flash('본선 경기는 지울 수 없습니다 — 옮기기만 됩니다'); return; }
+    const g = groups.find((x) => (x.matches || []).some((y) => y.id === m.id));
+    if (!g) { flash('KDK 경기는 KDK 대진에서 고칩니다'); return; }
+    Alert.alert('이 경기를 지울까요?', `${eventOf(g.div).short} ${g.name} · ${nameOfEntry(m.a)} vs ${nameOfEntry(m.b)}${m.score ? '\n입력한 결과도 함께 지워집니다.' : ''}`, [
+      { text: '취소', style: 'cancel' },
+      { text: '지우기', style: 'destructive', onPress: () => save({ groups: removeGroupMatch(groups, m.id) }, '경기를 지웠습니다') },
+    ]);
+  };
+  /* 전체 시간표 탭 — 모든 부를 한 표에서 끌어 옮긴다(움직이지 않고 떼면 안내) */
+  const allDnd = isAdmin ? {
+    canDrag: (m) => !!m.ko || groups.some((x) => (x.matches || []).some((y) => y.id === m.id)),
+    canDelete: (m) => !m.ko && groups.some((x) => (x.matches || []).some((y) => y.id === m.id)),
+    onMove: moveAnyGroupMatch, onDelete: removeAnyGroupMatch,
+    onHold: (m) => (m.ko && t.koPlace ? resetKo() : flash('누른 채로 끌어서 다른 칸에 놓으세요')),
+  } : null;
+  /* 끌어 옮긴 본선 칸이 조별 경기와 같은 칸에 놓였는지(조 시간표를 다시 짠 뒤 등) */
+  const koClash = useMemo(() => koItems.filter((k) => groups.some((g) => (g.matches || []).some((m) => m.round === k.round && m.court === k.court))).length, [koItems, groups]);
+  /* 분류 머리줄 — 조별 예선은 접고 펼 수 있다. 본선을 만든 뒤에는 처음에 접어 둔다 */
+  const [groupOpen, setGroupOpen] = useState(null);
 
   return (
     <View>
@@ -546,7 +637,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         </Card>
       )}
 
-      {isAdmin && !isKdk && (collisions > 0 || conflictsNow.length > 0 || (availRounds > 0 && maxRound > availRounds)) && (
+      {isAdmin && !isKdk && (collisions > 0 || koClash > 0 || conflictsNow.length > 0 || (availRounds > 0 && maxRound > availRounds)) && (
         <Card style={{ marginTop: S.md, backgroundColor: C.warnBg, borderColor: '#F5C27A' }}>
           {collisions > 0 && (
             <>
@@ -557,8 +648,14 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
               <View style={{ marginTop: 8 }}><Btn small onPress={fixCollisions}>시간표 다시 짜기</Btn></View>
             </>
           )}
-          {conflictsNow.length > 0 && (
+          {koClash > 0 && (
             <View style={{ marginTop: collisions ? 10 : 0 }}>
+              <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.warn }}>⚠️ 옮겨 둔 본선 경기 {koClash}개가 조별 경기와 같은 칸에 있습니다</Text>
+              <View style={{ marginTop: 8 }}><Btn small onPress={resetKo}>본선 시간표 자동 배치로</Btn></View>
+            </View>
+          )}
+          {conflictsNow.length > 0 && (
+            <View style={{ marginTop: collisions || koClash ? 10 : 0 }}>
               <Text style={{ fontSize: 12, fontWeight: '800', color: C.warn }}>같은 타임에 두 경기인 사람</Text>
               {conflictsNow.slice(0, 6).map((c) => (
                 <Text key={c.round} style={{ fontSize: 11.5, color: C.warn, marginTop: 3 }}>· {c.round}타임: {nameList(c.players)}</Text>
@@ -890,10 +987,10 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
 
       {drawn && tabAll && (
         <>
-          <SectionTitle hint="모든 부를 한 표에 — 칸 위 꼬리표가 부·조입니다">전체 시간표</SectionTitle>
+          <SectionTitle hint={isAdmin ? '모든 부를 한 표에 — 길게 눌러 끌면 옮기기(🗑 띠에 놓으면 지우기, 본선은 옮기기만)' : '모든 부를 한 표에 — 칸 위 꼬리표가 부·조입니다'}>전체 시간표</SectionTitle>
           <Card style={{ padding: 10 }}>
             <MatchGrid matches={allGrid()} nameOf={nameOfAny} me={me} venue={{ courts, courtNames }} roundTimes={gridTimes} events={gridBands}
-              roundCount={gridRounds} courtCount={courts}
+              roundCount={gridRounds} courtCount={courts} dnd={allDnd}
               genderOf={(id) => members.find((m) => m.id === id)?.gender || roster.find((p) => p.id === id)?.gender || ''} />
           </Card>
         </>
@@ -931,10 +1028,19 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
               </Card>
             );
           })()}
-          <DivKnockout ko={divKo} nameOfEntry={nameOfEntry} canEdit={isAdmin} onSave={saveKo} title={events.length > 1 ? ev.name : ''} />
-          {useGroups && divGroups.length > 0 && (
+          {/* ---- 조별 예선(접고 펴기) → 본선 토너먼트 (2026-10-29 앱 주인) ---- */}
+          {useGroups && divGroups.length > 0 && (() => {
+            const open = groupOpen ?? !divKo?.bracket;
+            const pg = divGroups.reduce((a, g) => { const p = progress(g); return { done: a.done + p.done, total: a.total + p.total }; }, { done: 0, total: 0 });
+            const fin = pg.total > 0 && pg.done === pg.total;
+            return (
+              <CategoryHeader title={`${events.length > 1 ? `${ev.name} ` : ''}조별 예선`}
+                sub={`${divGroups.length}개 조 · 경기 ${pg.done}/${pg.total}${open ? ' · 순위 · 시간표' : ' · 누르면 순위·시간표가 나옵니다'}`}
+                badge={fin ? '예선 끝' : pg.done ? '진행 중' : ''} open={open} onPress={() => setGroupOpen(!open)} />
+            );
+          })()}
+          {useGroups && divGroups.length > 0 && (groupOpen ?? !divKo?.bracket) && (
             <>
-              {divKo?.bracket && <SectionTitle>{events.length > 1 ? `${ev.name} ` : ''}예선 조별 결과</SectionTitle>}
               <GroupLeagueView
                 key={`${t.id}-${div}`}
                 t={{ ...t, rules, entries: divEntries, groups: divGroups }}
@@ -944,12 +1050,9 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
                 courtNames={courtNames} label={events.length > 1 ? `${ev.short} ` : ''}
                 times={gridTimes} events={gridBands} gridRounds={gridRounds}
                 otherMatches={allGrid().filter((m) => m.ko || (m.div && m.div !== div))}
-                blocked={(r, c) => {
-                  const hit = groups.find((g) => g.div !== div && (g.matches || []).some((m) => m.round === r && m.court === c));
-                  if (hit) return `${eventOf(hit.div).short} ${hit.name}`;
-                  const k = koItems.find((m) => m.round === r && m.court === c);
-                  return k ? `본선(${k.type})` : '';
-                }}
+                blocked={blockedFor(div)}
+                onMoveKo={isAdmin ? moveKo : null} onResetKo={isAdmin && t.koPlace ? resetKo : null}
+                onMoveOther={isAdmin ? moveAnyGroupMatch : null} onRemoveOther={isAdmin ? removeAnyGroupMatch : null}
                 checkConflicts={(mine) => slotConflicts([...groups.filter((g) => g.div !== div), ...mine], playersOfEntry)}
                 editOpen={editOpen} onRemoveTeam={dropTeam} hideRules
                 candidates={divPlayers.map((p) => ({ id: p.id, name: p.name, gender: p.gender || '' }))}
@@ -979,11 +1082,20 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
               />
             </>
           )}
+          {(divKo?.bracket?.rounds?.length > 0 || !!koPreview) && (
+            <CategoryHeader title={`${events.length > 1 ? `${ev.name} ` : ''}본선 토너먼트`}
+              badge={divKo?.bracket ? (divKo.championId ? '종료' : '') : '예정'}
+              sub={divKo?.bracket
+                ? `${divKo.bracket.rounds.length === 1 ? '결승' : `${2 ** divKo.bracket.rounds.length}강부터`}${isAdmin ? ' · 경기를 누르면 결과를 넣습니다' : ''}`
+                : `${RULE_LABELS.koSeed[rules.koSeed]} — 조 순위가 정해지면 그 자리에 팀이 들어갑니다`} />
+          )}
+          <DivKnockout ko={divKo} nameOfEntry={nameOfEntry} canEdit={isAdmin} onSave={saveKo} title={events.length > 1 ? ev.name : ''} />
           {koPreview && (
             <>
-              <SectionTitle hint={`${RULE_LABELS.koSeed[rules.koSeed]} — ${rules.koSeed === 'cross' || rules.koSeed === 'far' ? '조가 끝나면 그 자리에 팀 이름이 붙습니다' : rules.koSeed === 'random' ? '본선을 만들 때 무작위로 정해집니다(같은 조는 첫 경기 피함). 지금은 교차 기준으로 그린 모양' : '조별리그 결과에 따라 자리가 바뀝니다(지금 순위로 그린 모양)'}`}>
-                {events.length > 1 ? `${ev.name} ` : ''}본선 토너먼트 (예정)
-              </SectionTitle>
+              <Text style={{ fontSize: 11.5, color: C.sub, marginTop: S.sm, marginBottom: 6, lineHeight: 17 }}>
+                {rules.koSeed === 'cross' || rules.koSeed === 'far' ? '조가 끝나면 그 자리에 팀 이름이 붙습니다.' : rules.koSeed === 'random' ? '본선을 만들 때 무작위로 정해집니다(같은 조는 첫 경기 피함). 지금은 교차 기준으로 그린 모양입니다.' : '조별리그 결과에 따라 자리가 바뀝니다(지금 순위로 그린 모양).'}
+                {isAdmin ? ' 시간표의 본선 칸은 길게 눌러 끌어 옮길 수 있습니다.' : ''}
+              </Text>
               <Card style={{ padding: 8 }}>
                 <BracketTree bracket={koPreview.bracket} nameOf={koPreview.nameOf} />
               </Card>

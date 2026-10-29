@@ -2,8 +2,9 @@
    1) MatchGrid     : 가로=코트, 세로=타임 매트릭스 (동호회 대진표 양식)
    2) AttendanceGrid: 가로=타임, 세로=참석자 — 누가 언제 뛰고 쉬는지 + 총 경기수
    좁은 화면을 위해 가로 스크롤을 지원한다. */
-import React from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import React, { Fragment, useMemo, useRef, useState } from 'react';
+import { View, Text, ScrollView, Pressable, Animated, Dimensions } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { C } from '../lib/theme';
 import { courtLabel } from '../lib/courtNames';
 
@@ -129,26 +130,111 @@ export function EventBand({ ev, width }) {
   );
 }
 
+/* ---- 길게 눌러 끌기 (2026-10-29 앱 주인: "시간표에서 오래 누르고 드래그해서 다른 곳으로 옮기거나 삭제") ----
+   칸을 0.35초 누르고 있으면 들려서 손가락을 따라온다 → 다른 칸에 놓으면 옮기기(경기 칸이면 맞바꾸기),
+   빨간 「지우기」 띠에 놓으면 지우기. 움직이지 않고 떼면 onHold(메뉴). 판단은 부모(dnd.onMove 등)가 한다.
+   ⚠️ 제스처 콜백은 이름 있는 함수로 넘긴다 — 바로 쓴 화살표 함수는 reanimated 가 UI 스레드용으로 바꿔 버린다.
+   ⚠️ 앱 맨 바깥이 GestureHandlerRootView 라서, 끄는 동안에는 화면 세로 스크롤이 손가락을 가로채지 않는다. */
+const HOLD_MS = 350;
+const TRASH_H = 46;
+function DragCell({ m, enabled, api, children }) {
+  const mRef = useRef(m);
+  mRef.current = m;
+  const gesture = useMemo(() => {
+    const start = (e) => api.current.start(mRef.current, e);
+    const move = (e) => api.current.move(e);
+    const end = (e) => api.current.end(e, false);
+    const fin = (e, ok) => { if (!ok) api.current.end(e, true); };
+    return Gesture.Pan().enabled(enabled).activateAfterLongPress(HOLD_MS).runOnJS(true)
+      .onStart(start).onUpdate(move).onEnd(end).onFinalize(fin);
+  }, [enabled, api]);
+  return <GestureDetector gesture={gesture}><View collapsable={false}>{children}</View></GestureDetector>;
+}
+
 export function MatchGrid({
   matches, nameOf, genderOf, me, roundTimes = [], onPressMatch, venue = null, pending, sideOf = null,
-  roundCount = 0, courtCount = 0, onPressEmpty, selected = null, events = [],
+  roundCount = 0, courtCount = 0, onPressEmpty, selected = null, events = [], dnd = null, lifted = null,
 }) {
+  /* dnd — { canDrag(m), canDelete(m), onMove(m, 타임, 코트), onDelete(m), onHold(m) } · lifted — 「옮길 칸 고르기」 중인 경기 id */
+  const [drag, setDrag] = useState(null);           // { id, target: '타임|코트' | 'trash' | '', trashTop, canDelete }
+  const live = useRef(null);                        // 끄는 동안의 값(다시 그리지 않고 바뀌는 것)
+  const rowsY = useRef({});                          // 타임 → { wrap, row, h } (표 안 세로 위치)
+  const scrollX = useRef(0);
+  const wrapRef = useRef(null);
+  const ghost = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const api = useRef({});
   const list = matches || [];
   const fixed = roundCount > 0 && courtCount > 0;
   if (!list.length && !fixed) return null;
   matches = list;
 
-  const rounds = fixed
+  const base = fixed
     ? [...new Set([...range(roundCount), ...matches.map((m) => m.round)])].sort((a, b) => a - b)
     : [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
+  /* 끄는 동안·옮길 칸을 고르는 동안은 맨 아래 빈 타임 하나 — 뒤 타임으로 미룰 수 있게 */
+  const rounds = (drag || lifted) && base.length ? [...base, base[base.length - 1] + 1] : base;
   const courts = fixed
     ? [...new Set([...range(courtCount), ...matches.map((m) => m.court)])].sort((a, b) => a - b)
     : [...new Set(matches.map((m) => m.court))].sort((a, b) => a - b);
   const at = (r, c) => matches.find((m) => m.round === r && m.court === c);
   const timeOf = (r) => roundTimes.find((t) => t.round === r);
 
+  /* 끌기 — 칸 안 손가락 위치(e.x·e.y) + 움직인 거리로 표 안 위치를 셈한다(화면 좌표를 안 써서 어긋나지 않는다) */
+  const rowTop = (r) => { const y = rowsY.current[r]; return y ? (y.wrap || 0) + (y.row || 0) : null; };
+  const hitAt = (x, y, l) => {
+    if (l.canDelete && l.trashTop != null && y >= l.trashTop && y <= l.trashTop + TRASH_H) return 'trash';
+    const c = courts[Math.floor((x - HEAD_W) / CELL_W)];
+    const r = rounds.find((k) => { const top = rowTop(k); return top != null && y >= top && y < top + (rowsY.current[k].h || 0); });
+    return c != null && r != null ? `${r}|${c}` : '';
+  };
+  api.current = {
+    start: (m, e) => {
+      const top = rowTop(m.round);
+      const ci = courts.indexOf(m.court);
+      if (top == null || ci < 0) return;
+      const canDelete = !!dnd?.canDelete?.(m);
+      const l = { m, x0: HEAD_W + ci * CELL_W + e.x, y0: top + e.y, target: '', trashTop: null, canDelete };
+      live.current = l;
+      ghost.setValue({ x: l.x0 - scrollX.current - CELL_W / 2, y: l.y0 - 34 });
+      setDrag({ id: m.id, target: '', trashTop: null, canDelete });
+      /* 「지우기」 띠 — 지금 화면 아래쪽(손가락 가까이)에, 표 안으로 */
+      if (canDelete && wrapRef.current?.measureInWindow) {
+        wrapRef.current.measureInWindow((wx, wy, ww, wh) => {
+          if (live.current !== l) return;
+          const want = Dimensions.get('window').height - 170 - wy;
+          l.trashTop = Math.max(0, Math.min(want, wh - TRASH_H));
+          setDrag((d) => (d ? { ...d, trashTop: l.trashTop } : d));
+        });
+      }
+    },
+    move: (e) => {
+      const l = live.current;
+      if (!l) return;
+      const x = l.x0 + e.translationX; const y = l.y0 + e.translationY;
+      ghost.setValue({ x: x - scrollX.current - CELL_W / 2, y: y - 34 });
+      const hit = hitAt(x, y, l);
+      if (hit !== l.target) { l.target = hit; setDrag((d) => (d ? { ...d, target: hit } : d)); }
+    },
+    end: (e, cancelled) => {
+      const l = live.current;
+      live.current = null;
+      if (!l) return;
+      setDrag(null);
+      if (cancelled) return;
+      if (Math.hypot(e.translationX || 0, e.translationY || 0) < 12) { dnd?.onHold?.(l.m); return; }
+      if (l.target === 'trash') { dnd?.onDelete?.(l.m); return; }
+      if (!l.target) return;
+      const [r, c] = l.target.split('|').map(Number);
+      if (r === l.m.round && c === l.m.court) return;
+      dnd?.onMove?.(l.m, r, c);
+    },
+  };
+  const names = (ids) => (ids || []).map((id) => nameOf(id)).join('·');
+
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+    <View ref={wrapRef} collapsable={false}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} scrollEnabled={!drag}
+      scrollEventThrottle={16} onScroll={(e) => { scrollX.current = e.nativeEvent.contentOffset.x; }}>
       <View>
         {/* 헤더: 코트 번호 */}
         <View style={{ flexDirection: 'row' }}>
@@ -170,9 +256,10 @@ export function MatchGrid({
           const t = timeOf(r);
           const bands = (events || []).filter((e) => e.beforeRound === r);
           return (
-            <View key={r}>
+            <View key={r} onLayout={(e) => { rowsY.current[r] = { ...rowsY.current[r], wrap: e.nativeEvent.layout.y }; }}>
             {bands.map((e) => <EventBand key={e.id} ev={e} width={HEAD_W + courts.length * CELL_W} />)}
-            <View style={{ flexDirection: 'row' }}>
+            <View style={{ flexDirection: 'row' }}
+              onLayout={(e) => { rowsY.current[r] = { ...rowsY.current[r], row: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height }; }}>
               {/* 타임 헤더 */}
               <View style={{
                 width: HEAD_W, alignItems: 'center', justifyContent: 'center',
@@ -185,15 +272,18 @@ export function MatchGrid({
 
               {courts.map((c) => {
                 const m = at(r, c);
+                const over = !!drag && drag.target === `${r}|${c}`;
                 if (!m) {
                   const cell = (
                     <View style={{
-                      width: CELL_W, minHeight: 62, backgroundColor: '#fafaf9',
-                      borderWidth: 1, borderColor: onPressEmpty ? '#d6d3d1' : '#f5f5f4',
-                      borderStyle: onPressEmpty ? 'dashed' : 'solid',
+                      width: CELL_W, minHeight: 62, backgroundColor: over ? C.greenSoft : '#fafaf9',
+                      borderWidth: over ? 2 : 1, borderColor: over ? C.green : onPressEmpty || drag ? '#d6d3d1' : '#f5f5f4',
+                      borderStyle: over || onPressEmpty || drag ? 'dashed' : 'solid',
                       alignItems: 'center', justifyContent: 'center',
                     }}>
-                      <Text style={{ fontSize: 10, color: C.faint }}>{onPressEmpty ? '＋ 경기 넣기' : '—'}</Text>
+                      <Text style={{ fontSize: 10, color: over ? C.green : C.faint, fontWeight: over ? '800' : '400' }}>
+                        {over ? '여기로 옮기기' : lifted ? '여기로 옮기기' : onPressEmpty ? '＋ 경기 넣기' : '—'}
+                      </Text>
                     </View>
                   );
                   return onPressEmpty
@@ -220,17 +310,25 @@ export function MatchGrid({
                 /* 끝난 경기는 점수만 또렷하게, 유형·팀·이름은 흐리게 — 남은 경기(특히 내 경기)가 먼저 보이게
                    (2026-10-04 앱 주인: "내 경기랑 결과 입력한 게 차이가 없어 보여") */
                 const fade = done && !picked ? 0.45 : 1;
-                return (
-                  <Pressable key={c} onPress={() => onPressMatch?.(m)}
+                /* 끄는 중인 칸은 흐리게, 놓을 칸(맞바꿀 경기)은 초록 점선, 「옮길 칸 고르기」 중인 칸은 초록 점선 + 꼬리표 */
+                const holding = !!drag && drag.id === m.id;
+                const isLifted = lifted === m.id;
+                const cellView = (
+                  <Pressable onPress={() => onPressMatch?.(m)}
                     style={{
                       width: CELL_W, minHeight: 62,
-                      backgroundColor: picked ? C.dangerBg : done ? tint : isMine ? C.greenSoft : '#fff',
-                      borderWidth: picked || isMine ? 2 : 1,
-                      borderColor: picked ? C.danger : isMine ? C.green : '#f5f5f4',
-                      borderLeftWidth: done && !picked ? 5 : picked || isMine ? 2 : 1,
-                      borderLeftColor: done && !picked ? accent : picked ? C.danger : isMine ? C.green : '#f5f5f4',
-                      padding: picked || isMine ? 5 : 6,
+                      backgroundColor: picked ? C.dangerBg : over ? C.greenSoft : done ? tint : isMine ? C.greenSoft : '#fff',
+                      borderWidth: picked || isMine || over || isLifted ? 2 : 1,
+                      borderColor: picked ? C.danger : over || isLifted ? C.green : isMine ? C.green : '#f5f5f4',
+                      borderStyle: over || isLifted ? 'dashed' : 'solid',
+                      borderLeftWidth: done && !picked && !over && !isLifted ? 5 : picked || isMine || over || isLifted ? 2 : 1,
+                      borderLeftColor: done && !picked && !over && !isLifted ? accent : picked ? C.danger : over || isLifted || isMine ? C.green : '#f5f5f4',
+                      padding: picked || isMine || over || isLifted ? 5 : 6,
+                      opacity: holding ? 0.3 : 1,
                     }}>
+                    {(over || isLifted) && (
+                      <Text style={{ position: 'absolute', right: 4, bottom: 2, fontSize: 9.5, fontWeight: '900', color: C.green }}>{over ? '⇄ 맞바꾸기' : '옮기는 중'}</Text>
+                    )}
                     {picked && (
                       <Text style={{ position: 'absolute', right: 4, bottom: 2, fontSize: 10, fontWeight: '900', color: C.danger }}>✓ 지움</Text>
                     )}
@@ -273,6 +371,9 @@ export function MatchGrid({
                     </View>
                   </Pressable>
                 );
+                return dnd
+                  ? <DragCell key={c} m={m} api={api} enabled={dnd.canDrag ? !!dnd.canDrag(m) : true}>{cellView}</DragCell>
+                  : <Fragment key={c}>{cellView}</Fragment>;
               })}
             </View>
             </View>
@@ -284,6 +385,35 @@ export function MatchGrid({
         ))}
       </View>
     </ScrollView>
+    {/* 끄는 동안 — 지우기 띠(지울 수 있는 경기만) · 손가락을 따라오는 칸 */}
+    {!!drag && drag.canDelete && drag.trashTop != null && (
+      <View pointerEvents="none" style={{
+        position: 'absolute', left: 0, right: 0, top: drag.trashTop, height: TRASH_H, borderRadius: 12,
+        backgroundColor: drag.target === 'trash' ? C.danger : C.dangerBg, borderWidth: 2, borderColor: C.danger, borderStyle: 'dashed',
+        alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Text style={{ fontSize: 13, fontWeight: '900', color: drag.target === 'trash' ? '#fff' : C.danger }}>
+          🗑 {drag.target === 'trash' ? '놓으면 이 경기를 지웁니다' : '여기에 놓으면 지우기'}
+        </Text>
+      </View>
+    )}
+    {!!drag && (() => {
+      const m = matches.find((x) => x.id === drag.id);
+      if (!m) return null;
+      return (
+        <Animated.View pointerEvents="none" style={{
+          position: 'absolute', left: 0, top: 0, width: CELL_W, padding: 6, borderRadius: 10,
+          backgroundColor: '#fff', borderWidth: 2, borderColor: C.green, elevation: 8,
+          shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
+          transform: ghost.getTranslateTransform(),
+        }}>
+          <Text style={{ fontSize: 9, fontWeight: '800', color: C.green }}>{m.type}{drag.canDelete ? '' : ' · 옮기기만'}</Text>
+          <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', color: C.text, marginTop: 2 }}>{names(m.teamA)}</Text>
+          <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', color: C.text }}>{names(m.teamB)}</Text>
+        </Animated.View>
+      );
+    })()}
+    </View>
   );
 }
 

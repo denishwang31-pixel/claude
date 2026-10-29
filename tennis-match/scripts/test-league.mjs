@@ -702,7 +702,7 @@ section('자동으로 짠 뒤 손보기 · 대진 삭제 (2팀·3팀)');
     '타임별 출전 현황: 팀별로 묶어(팀 이름 머리줄) 보여 준다');
   ok(/export function teamSolid/.test(read('MatchGrid.jsx')) && /WHITE_TEAM/.test(read('MatchGrid.jsx')) && /borderWidth: 2, borderColor: t\.border/.test(read('MatchGrid.jsx')),
     '팀 표시: 꽉 찬 색 상자(백팀은 흰 상자+검은 테두리) · 출전 현황은 팀마다 테두리 상자');
-  ok(/const tint = `\$\{accent\}\$\{whiteWin \? '14' : '1F'\}`;/.test(read('MatchGrid.jsx')) && /borderLeftColor: done && !picked \? accent/.test(read('MatchGrid.jsx')) && />경기 전</.test(read('MatchGrid.jsx')),
+  ok(/const tint = `\$\{accent\}\$\{whiteWin \? '14' : '1F'\}`;/.test(read('MatchGrid.jsx')) && /borderLeftColor: done && !picked && !over && !isLifted \? accent/.test(read('MatchGrid.jsx')) && />경기 전</.test(read('MatchGrid.jsx')),
     '끝난 경기: 이긴 팀 색으로 옅게 칠하고 왼쪽 띠·색 점수 상자, 입력 전은 흰 칸 \'경기 전\'');
   const ab = read('AdBanner.jsx');
   ok(/if \(list\.length < 2 \|\| !focused \|\| !active\) return undefined;/.test(ab) && /seenThisRun\.has\(ad\.id\)/.test(ab),

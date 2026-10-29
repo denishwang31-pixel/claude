@@ -530,6 +530,54 @@ console.log('[조마다 경기 수 같게]');
   ok(v.grid.rounds.some((r) => r.matches.some((m) => /8강/.test(m.tag) && m.b === 'B조 2위')), '웹 시간표에도 본선 칸');
 }
 
+/* ---------- 시간표에서 끌어 옮기기 — 본선 칸은 옮기기만(t.koPlace) ---------- */
+{
+  const GL = await import('../src/lib/groupLeague.js');
+  const { buildBracket } = await import('../src/lib/tournament.js');
+  const roster = Array.from({ length: 32 }, (_, i) => ({ id: `k${i}`, name: `선수${i}`, gender: 'M', skill: 3 }));
+  const d = GL.drawAll(roster, { groupCount: 4, advance: 2 }, ['MD'], { courts: 3 }, () => 0.5);
+  const t = { stage: 'draw', events: ['MD'], entries: d.entries, groups: d.groups, courts: 3, rules: { advance: 2, knockout: true, koSeed: 'cross' } };
+  const cells = GL.koGridCells(t);
+  const others = d.groups.flatMap((g) => g.matches.map((m) => ({ round: m.round, court: m.court, type: g.name })));
+  const last = Math.max(...others.map((m) => m.round));
+  ok(cells.every((c) => c.place === GL.koPlaceKey('MD', c.level, c.idx)), '본선 칸마다 자리 이름(부|라운드|순서)');
+  /* 빈칸으로 옮기기 — 옮긴 칸만 그 자리, 나머지는 지금 자리에 고정 */
+  const r1 = GL.moveKoCell(cells, others, cells[0].place, last + 6, 2);
+  ok(!r1.error && !r1.swapped && Object.keys(r1.koPlace).length === cells.length, '하나를 옮기면 나머지도 지금 자리에 고정');
+  const moved = GL.koGridCells({ ...t, koPlace: r1.koPlace });
+  ok(moved[0].round === last + 6 && moved[0].court === 2 && moved[0].moved && moved.slice(1).every((c, i) => c.round === cells[i + 1].round && c.court === cells[i + 1].court), '옮긴 칸만 바뀐다');
+  /* 다른 본선 칸 위에 놓으면 맞바꾸기 */
+  const r2 = GL.moveKoCell(cells, others, cells[0].place, cells[1].round, cells[1].court);
+  const sw = GL.koGridCells({ ...t, koPlace: r2.koPlace });
+  ok(r2.swapped && sw[0].court === cells[1].court && sw.find((c) => c.place === cells[1].place).court === cells[0].court, '본선 칸끼리는 맞바꾸기');
+  /* 조별 경기 칸에는 못 놓는다 · 같은 자리면 아무것도 안 함 */
+  ok(/A조|B조|C조|D조/.test(GL.moveKoCell(cells, others, cells[0].place, 1, 1).error), '조별 경기가 있는 칸에는 못 옮긴다');
+  ok(GL.moveKoCell(cells, others, cells[0].place, cells[0].round, cells[0].court).error === '' && !GL.moveKoCell(cells, others, cells[0].place, cells[0].round, cells[0].court).koPlace, '같은 자리면 그대로');
+  /* 일부만 고정된 옛 자리 — 나머지는 고정 칸을 피해 차례로 */
+  const part = GL.koGridCells({ ...t, koPlace: { [cells[1].place]: { round: cells[0].round, court: cells[0].court } } });
+  ok(GL.cellCollisions([{ matches: part }]) === 0 && part.find((c) => c.place === cells[1].place).court === cells[0].court, '고정 칸은 그대로, 나머지는 빈칸을 찾아 겹치지 않게');
+  /* 본선을 만든 뒤에도 같은 자리(미리 보기 자리 이름 = 실제 경기 자리 이름) */
+  const br = buildBracket(GL.koOrder(d.groups, 2, 'cross'));
+  const real = GL.koGridCells({ ...t, ko: { MD: { bracket: br } }, koPlace: r1.koPlace });
+  ok(real[0].id === br.rounds[0].matches[0].id && real[0].round === last + 6 && real[0].court === 2, '본선을 만든 뒤에도 옮긴 자리 그대로');
+  ok(GL.liveView({ ...t, koPlace: r1.koPlace }, '').grid.rounds.find((r) => r.round === last + 6).matches.some((m) => m.c === 2 && /8강/.test(m.tag)), '웹 시간표도 옮긴 자리');
+}
+
+/* 화면 연결 — 길게 눌러 끌기 · 조별 예선/본선 분류 */
+{
+  const { readFileSync } = await import('node:fs');
+  const mg = readFileSync(new URL('../src/components/MatchGrid.jsx', import.meta.url), 'utf8');
+  const gv = readFileSync(new URL('../src/components/GroupLeagueView.jsx', import.meta.url), 'utf8');
+  const td = readFileSync(new URL('../src/components/TournamentDraw.jsx', import.meta.url), 'utf8');
+  ok(/Gesture\.Pan\(\)\.enabled\(enabled\)\.activateAfterLongPress\(HOLD_MS\)\.runOnJS\(true\)/.test(mg) && /\.onStart\(start\)\.onUpdate\(move\)\.onEnd\(end\)\.onFinalize\(fin\)/.test(mg), '표: 길게 눌러 끌기(콜백은 이름 있는 함수 — JS 에서)');
+  ok(/scrollEnabled=\{!drag\}/.test(mg) && /여기에 놓으면 지우기/.test(mg) && /drag\.canDelete && drag\.trashTop != null/.test(mg), '표: 끄는 동안 가로 스크롤 멈춤 · 지울 수 있는 경기만 🗑 띠');
+  ok(/canDelete: \(m\) => !m\.ko/.test(gv) && /본선 경기는 지울 수 없습니다 — 옮기기만 됩니다/.test(gv) && /onMoveKo\(m, round, court\)/.test(gv), '조 화면: 본선 칸은 옮기기만');
+  ok(/const holdMenu = /.test(gv) && /옮길 칸 고르기/.test(gv) && /lifted: moving\?\.id/.test(gv), '움직이지 않고 떼면 메뉴 · 「옮길 칸 고르기」로 눌러서 옮기기도');
+  ok(/moveKoCell\(koGridCells\(t\)/.test(td) && /save\(\{ koPlace: res\.koPlace \}/.test(td) && /koPlace: null,/.test(td) && /dnd=\{allDnd\}/.test(td), '대진 화면: 본선 자리 저장 · 다시 작성하면 비움 · 전체 시간표도 끌기');
+  ok(/title=\{`\$\{events\.length > 1 \? `\$\{ev\.name\} ` : ''\}조별 예선`\}/.test(td) && /open=\{open\} onPress=\{\(\) => setGroupOpen\(!open\)\}/.test(td) && /\(groupOpen \?\? !divKo\?\.bracket\) && \(/.test(td), '조별 예선 분류 — 눌러서 접고 펴기(본선이 생기면 처음엔 접힘)');
+  ok(td.indexOf('조별 예선`}') < td.indexOf('본선 토너먼트`}') && td.indexOf('본선 토너먼트`}') < td.indexOf('<DivKnockout ko='), '본선 토너먼트 분류는 조별 예선 아래, 그 밑에 대진표');
+}
+
 /* 웹 — 내 경기 찾기(조별리그도 팀 대항처럼, 2026-10-29) */
 {
   const { readFileSync } = await import('node:fs');
@@ -552,13 +600,13 @@ console.log('[조마다 경기 수 같게]');
   ok((ui.match(/order: rules\.order/g) || []).length >= 3, '시간표를 다시 짤 때 경기 순서를 지킨다');
   ok(/roundTimes=\{gridTimes\} events=\{gridBands\}/.test(ui), '시간표에 타임별 시각');
   ok(/const availRounds = timingRounds\(timing\)/.test(ui) && /roundCount=\{gridRounds\} courtCount=\{courts\}/.test(ui), '시간표에 시간 안의 타임을 모두 줄로(빈 타임 포함)');
-  ok(/otherMatches=\{allGrid\(\)\.filter\(\(m\) => m\.ko \|\| \(m\.div && m\.div !== div\)\)\}/.test(ui) && /checkConflicts=\{\(mine\) => slotConflicts\(/.test(ui) && /blocked=\{\(r, c\) =>/.test(ui), '대진 수기 수정: 다른 부 경기도 함께 · 모든 부 겹침 확인');
+  ok(/otherMatches=\{allGrid\(\)\.filter\(\(m\) => m\.ko \|\| \(m\.div && m\.div !== div\)\)\}/.test(ui) && /checkConflicts=\{\(mine\) => slotConflicts\(/.test(ui) && /blocked=\{blockedFor\(div\)\}/.test(ui) && /const blockedFor = \(d\) => \(r, c\) =>/.test(ui), '대진 수기 수정: 다른 부 경기도 함께 · 모든 부 겹침 확인');
   ok(/cellCollisions\(groups\)/.test(ui) && /fixCollisions/.test(ui), '예전 시간표의 칸 겹침 — 알리고 [시간표 다시 짜기]');
   ok(/koGridCells\(t\)/.test(ui) && /\.\.\.koItems,/.test(ui) && /Math\.max\(availRounds, maxRound, koMax\)/.test(ui) && /m\.ko \|\| \(m\.div && m\.div !== div\)/.test(ui), '앱 시간표에 본선 칸(전체·조 화면)');
-  ok(/koPreview && \(/.test(ui) && /본선 토너먼트 \(예정\)/.test(ui) && /<BracketTree bracket=\{koPreview\.bracket\}/.test(ui), '본선을 만들기 전에도 본선 대진(예정)을 아래에');
+  ok(/koPreview && \(/.test(ui) && /badge=\{divKo\?\.bracket \? \(divKo\.championId \? '종료' : ''\) : '예정'\}/.test(ui) && /<BracketTree bracket=\{koPreview\.bracket\}/.test(ui), '본선을 만들기 전에도 본선 대진(예정)을 아래에');
   ok(/toggleSeed\(e\)/.test(ui) && /reseedGroups\(entries, groups, div/.test(ui) && /시드대로 조 다시 나누기/.test(ui), '시드 배정 · 시드대로 조 다시 나누기');
   const gv = readFileSync(new URL('../src/components/GroupLeagueView.jsx', import.meta.url), 'utf8');
-  ok(/editGroupMatch\(groups, draft, \{ blocked \}\)/.test(gv) && /대진 수기 수정/.test(gv) && /onPressEmpty: canEdit && drawEdit \? \(r, c\) => openEmpty/.test(gv) && /removeGroupMatch\(groups, draft\.id\)/.test(gv), '조 화면 시간표: [대진 수기 수정] — 경기 칸 고치기·빈칸에 넣기·지우기');
+  ok(/editGroupMatch\(groups, d, \{ blocked \}\)/.test(gv) && /const saveDraft = \(\) => applyDraft\(draft/.test(gv) && /대진 수기 수정/.test(gv) && /onPressEmpty: canEdit && \(moving \|\| drawEdit\) \? \(r, c\) => \(moving \? placeMatch\(moving, r, c\) : openEmpty/.test(gv) && /removeGroupMatch\(groups, draft\.id\)/.test(gv), '조 화면 시간표: [대진 수기 수정] — 경기 칸 고치기·빈칸에 넣기·지우기');
   ok((gv.match(/roundTimes=\{times\} events=\{events\}/g) || []).length === 2 && /times=\{gridTimes\} events=\{gridBands\} gridRounds=\{gridRounds\}/.test(ui) && /roundCount: editRounds, courtCount: editRounds \? courts : 0/.test(gv), '조 화면 시간표에도 시각 · 부가 하나면 빈 타임까지');
 }
 
