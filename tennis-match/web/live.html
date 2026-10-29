@@ -594,9 +594,30 @@
     });
   }
 
+  /* 서버 함수가 예전 판이라 시간표(grid)를 안 줄 때 — 조 경기의 타임·코트로 이 페이지가 직접 만든다
+     (2026-10-29 앱 주인: "실시간 웹에서 대진표·시간표가 안 보여" — 함수 배포 전에도 시간표는 보이게) */
+  function gridFromGroups(d) {
+    var by = {}, maxR = 0, maxC = Number(d.courts) || 0, times = {};
+    (d.groups || []).forEach(function (g) {
+      (g.matches || []).forEach(function (m) {
+        var r = Number(m.round), c = Number(m.court);
+        if (!r || !c) return;
+        (by[r] = by[r] || []).push({ c: c, tag: g.name, a: m.a, b: m.b, score: m.score || null });
+        if (m.time && !times[r]) times[r] = m.time;
+        maxR = Math.max(maxR, r); maxC = Math.max(maxC, c);
+      });
+    });
+    if (!maxR) return null;
+    var courts = [], rounds = [];
+    for (var c = 1; c <= maxC; c++) courts.push({ c: c, label: String(c) });
+    for (var r = 1; r <= maxR; r++) rounds.push({ round: r, time: times[r] || '', matches: by[r] || [] });
+    return { courts: courts, rounds: rounds, events: [] };
+  }
+
   function render() {
     var d = data;
     if (d.kind === 'teams') { renderTeams(d); return; }
+    if (!d.grid || !d.grid.rounds || !d.grid.rounds.length) d.grid = gridFromGroups(d);
     mountFind();
     courtNames = {};
     ((d.grid || {}).courts || []).forEach(function (k) { courtNames[k.c] = k.label; });
