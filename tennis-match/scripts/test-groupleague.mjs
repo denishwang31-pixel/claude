@@ -575,6 +575,7 @@ console.log('[조마다 경기 수 같게]');
   ok(/const holdMenu = /.test(gv) && /옮길 칸 고르기/.test(gv) && /lifted: moving\?\.id/.test(gv), '움직이지 않고 떼면 메뉴 · 「옮길 칸 고르기」로 눌러서 옮기기도');
   ok(/moveKoCell\(koGridCells\(t\)/.test(td) && /save\(\{ koPlace: res\.koPlace \}/.test(td) && /koPlace: null,/.test(td) && /dnd=\{allDnd\}/.test(td), '대진 화면: 본선 자리 저장 · 다시 작성하면 비움 · 전체 시간표도 끌기');
   ok(/title=\{`\$\{events\.length > 1 \? `\$\{ev\.name\} ` : ''\}조별 예선`\}/.test(td) && /open=\{open\} onPress=\{\(\) => setGroupOpen\(!open\)\}/.test(td) && /\(groupOpen \?\? !divKo\?\.bracket\) && \(/.test(td), '조별 예선 분류 — 눌러서 접고 펴기(본선이 생기면 처음엔 접힘)');
+  ok(/open=\{koOpen\} onPress=\{\(\) => setKoOpen\(!koOpen\)\}/.test(td) && /\{koOpen && <DivKnockout /.test(td) && /\{koOpen && koPreview && \(/.test(td), '본선 토너먼트 분류도 눌러서 접고 펴기');
   ok(td.indexOf('조별 예선`}') < td.indexOf('본선 토너먼트`}') && td.indexOf('본선 토너먼트`}') < td.indexOf('<DivKnockout ko='), '본선 토너먼트 분류는 조별 예선 아래, 그 밑에 대진표');
 }
 

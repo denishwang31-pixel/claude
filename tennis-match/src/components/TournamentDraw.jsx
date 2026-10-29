@@ -594,6 +594,8 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
   const koClash = useMemo(() => koItems.filter((k) => groups.some((g) => (g.matches || []).some((m) => m.round === k.round && m.court === k.court))).length, [koItems, groups]);
   /* 분류 머리줄 — 조별 예선은 접고 펼 수 있다. 본선을 만든 뒤에는 처음에 접어 둔다 */
   const [groupOpen, setGroupOpen] = useState(null);
+  /* 본선 토너먼트도 접고 펴기(2026-10-29 앱 주인: "본선 토너먼트도 접혀야") — 처음엔 펼쳐 둔다 */
+  const [koOpen, setKoOpen] = useState(true);
 
   return (
     <View>
@@ -1085,12 +1087,13 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
           {(divKo?.bracket?.rounds?.length > 0 || !!koPreview) && (
             <CategoryHeader title={`${events.length > 1 ? `${ev.name} ` : ''}본선 토너먼트`}
               badge={divKo?.bracket ? (divKo.championId ? '종료' : '') : '예정'}
-              sub={divKo?.bracket
-                ? `${divKo.bracket.rounds.length === 1 ? '결승' : `${2 ** divKo.bracket.rounds.length}강부터`}${isAdmin ? ' · 경기를 누르면 결과를 넣습니다' : ''}`
-                : `${RULE_LABELS.koSeed[rules.koSeed]} — 조 순위가 정해지면 그 자리에 팀이 들어갑니다`} />
+              sub={`${divKo?.bracket
+                ? `${divKo.bracket.rounds.length === 1 ? '결승' : `${2 ** divKo.bracket.rounds.length}강부터`}${isAdmin && koOpen ? ' · 경기를 누르면 결과를 넣습니다' : ''}`
+                : `${RULE_LABELS.koSeed[rules.koSeed]} — 조 순위가 정해지면 그 자리에 팀이 들어갑니다`}${koOpen ? '' : ' · 누르면 대진표가 나옵니다'}`}
+              open={koOpen} onPress={() => setKoOpen(!koOpen)} />
           )}
-          <DivKnockout ko={divKo} nameOfEntry={nameOfEntry} canEdit={isAdmin} onSave={saveKo} title={events.length > 1 ? ev.name : ''} />
-          {koPreview && (
+          {koOpen && <DivKnockout ko={divKo} nameOfEntry={nameOfEntry} canEdit={isAdmin} onSave={saveKo} title={events.length > 1 ? ev.name : ''} />}
+          {koOpen && koPreview && (
             <>
               <Text style={{ fontSize: 11.5, color: C.sub, marginTop: S.sm, marginBottom: 6, lineHeight: 17 }}>
                 {rules.koSeed === 'cross' || rules.koSeed === 'far' ? '조가 끝나면 그 자리에 팀 이름이 붙습니다.' : rules.koSeed === 'random' ? '본선을 만들 때 무작위로 정해집니다(같은 조는 첫 경기 피함). 지금은 교차 기준으로 그린 모양입니다.' : '조별리그 결과에 따라 자리가 바뀝니다(지금 순위로 그린 모양).'}
