@@ -420,6 +420,28 @@ console.log('[조마다 경기 수 같게]');
   eq([est5.koGames, est5.koRounds], [5, 3], '본선 6팀(부전승 2): 2+2+1경기 → 3타임');
 }
 
+/* ---------- 시간표 손으로 고치기 ---------- */
+{
+  const GL = await import('../src/lib/groupLeague.js');
+  const g = [{ id: 'A', entryIds: ['a', 'b', 'c', 'd'], matches: [
+    { id: 'm1', a: 'a', b: 'b', round: 1, court: 1, score: { a: 6, b: 2 } },
+    { id: 'm2', a: 'c', b: 'd', round: 1, court: 2, score: null },
+    { id: 'm3', a: 'a', b: 'c', round: 2, court: 1, score: null },
+  ] }];
+  const at = (gs, id) => gs[0].matches.find((m) => m.id === id);
+  const mv = GL.moveGroupMatch(g, 'm2', 3, 2);
+  ok(at(mv.groups, 'm2').round === 3 && at(mv.groups, 'm2').court === 2 && !mv.swapped && !mv.conflicts.length && at(g, 'm2').round === 1, '빈칸으로 옮기기(원본은 그대로)');
+  const sw = GL.moveGroupMatch(g, 'm1', 2, 1);
+  ok(sw.swapped === 'm3' && at(sw.groups, 'm1').round === 2 && at(sw.groups, 'm3').round === 1 && at(sw.groups, 'm1').score.a === 6, '경기가 있는 칸이면 자리 맞바꾸기 · 결과는 그대로');
+  const cf = GL.moveGroupMatch(g, 'm3', 1, 3);
+  eq(cf.conflicts, [{ round: 1, players: ['a', 'c'] }], '옮긴 타임에 같은 사람이 두 경기면 알려 준다');
+  eq(GL.slotConflicts(cf.groups).length, 1, '전체 겹침 점검');
+  ok(GL.moveGroupMatch(g, 'zz', 1, 1).error && GL.moveGroupMatch(g, 'm1', 0, 1).error, '없는 경기·이상한 칸');
+  ok(GL.moveGroupMatch(g, 'm1', 1, 1).groups === g, '같은 자리면 그대로');
+  const pof = (id) => ({ a: ['p1', 'p2'], b: ['p3', 'p4'], c: ['p1', 'p5'], d: ['p6', 'p7'] })[id];
+  eq(GL.slotConflicts([{ matches: [{ a: 'a', b: 'b', round: 1 }, { a: 'c', b: 'd', round: 1 }] }], pof), [{ round: 1, players: ['p1'] }], '선수 단위로 겹침(다른 부에 같은 사람)');
+}
+
 /* 화면 연결 — 대진 작성 화면 */
 {
   const { readFileSync } = await import('node:fs');
@@ -428,10 +450,12 @@ console.log('[조마다 경기 수 같게]');
   ok(/label="경기 순서/.test(ui) && /label="본선 배정 기준"/.test(ui) && /order: crit\.order, koSeed: crit\.koSeed/.test(ui), '작성 기준: 경기 순서 · 본선 배정');
   ok(/<RoundTimingEditor value=\{timing\} onSave=\{saveTiming\} \/>/.test(ui) && /drawEstimate\(roster, critRules\(\)/.test(ui), '작성 기준: 시간(시작·한 타임 길이) · 예상 타임');
   ok((ui.match(/order: rules\.order/g) || []).length >= 3, '시간표를 다시 짤 때 경기 순서를 지킨다');
-  ok(/roundTimes=\{roundTimesNow\} events=\{eventBands\}/.test(ui), '시간표에 타임별 시각');
+  ok(/roundTimes=\{gridTimes\} events=\{gridBands\}/.test(ui), '시간표에 타임별 시각');
+  ok(/moveGroupMatch\(groups, id, round, court, playersOfEntry\)/.test(ui) && /onPressEmpty=\{moving \? \(r, c\) => doMove\(r, c\)/.test(ui) && /roundCount=\{gridRounds \+ 1\} courtCount=\{courts\}/.test(ui), '시간표 수정: 경기 골라 빈칸·다른 경기로');
+  ok(/const availRounds = timingRounds\(timing\)/.test(ui) && /roundCount=\{gridRounds\} courtCount=\{courts\}/.test(ui), '시간표에 시간 안의 타임을 모두 줄로(빈 타임 포함)');
   ok(/toggleSeed\(e\)/.test(ui) && /reseedGroups\(entries, groups, div/.test(ui) && /시드대로 조 다시 나누기/.test(ui), '시드 배정 · 시드대로 조 다시 나누기');
   const gv = readFileSync(new URL('../src/components/GroupLeagueView.jsx', import.meta.url), 'utf8');
-  ok((gv.match(/roundTimes=\{times\} events=\{events\}/g) || []).length === 2 && /times=\{roundTimesNow\} events=\{eventBands\}/.test(ui), '조 화면 시간표에도 시각');
+  ok((gv.match(/roundTimes=\{times\} events=\{events\}/g) || []).length === 2 && /times=\{gridTimes\} events=\{gridBands\} gridRounds=/.test(ui) && /roundCount=\{gridRounds\} courtCount=\{gridRounds \? \(venue\?\.courts \|\| 0\) : 0\}/.test(gv), '조 화면 시간표에도 시각 · 부가 하나면 빈 타임까지');
 }
 
 console.log(`\n조별리그 테스트: ${pass} 통과 / ${fail} 실패`);

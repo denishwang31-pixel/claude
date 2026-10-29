@@ -90,7 +90,7 @@ function StandingTable({ group, nameOfEntry, advance, myEntryId, compact }) {
 export function GroupLeagueView({
   t, members = [], isAdmin, me = '', flash = () => {}, onUpdate, onKnockout,
   courtNames = [], label = '', editOpen, onRemoveTeam, extraEdit = null, hideRules = false,
-  candidates = null, sameGender = false, times = [], events = [],
+  candidates = null, sameGender = false, times = [], events = [], gridRounds = 0,
 }) {
   /* candidates — 이 부에 나갈 수 있는 사람 [{id,name,gender}]. 있으면 선수를 누를 때
      "누구로 바꿀까요?" 목록이 뜬다(대진 밖 사람으로 바꾸기 포함). sameGender — 혼복: 남↔남, 여↔여만 */
@@ -260,6 +260,7 @@ export function GroupLeagueView({
           </SectionTitle>
           <Card style={{ padding: 10 }}>
             <MatchGrid matches={gridMatches(groups)} nameOf={nameOfPlayer} genderOf={genderOf} me={me} venue={venue} roundTimes={times} events={events}
+              roundCount={gridRounds} courtCount={gridRounds ? (venue?.courts || 0) : 0}
               onPressMatch={canEdit ? (gm) => record(gm) : undefined} />
           </Card>
         </>

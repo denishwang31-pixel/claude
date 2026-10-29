@@ -422,6 +422,50 @@ export function schedule(groups, courts = 2, { playersOf = null, order = 'altern
   return out;
 }
 
+/* ---------------- 시간표 손으로 고치기 (2026-10-29 앱 주인: "시간별로 가능·불가능한 사람이 있어 수기 조정") ----------------
+   경기를 다른 타임·코트로 옮긴다. 그 칸에 다른 경기가 있으면 두 경기의 자리를 맞바꾼다. 결과(점수)는 그대로. */
+
+/** 한 타임에 두 경기에 든 사람 — [{ round, players:[id] }] */
+export function slotConflicts(groups, playersOf = (id) => [id], rounds = null) {
+  const byRound = new Map();
+  (groups || []).forEach((g) => (g.matches || []).forEach((m) => {
+    if (!m.round || (rounds && !rounds.includes(m.round))) return;
+    const seen = byRound.get(m.round) || new Map();
+    [...(playersOf(m.a) || [m.a]), ...(playersOf(m.b) || [m.b])].forEach((p) => seen.set(p, (seen.get(p) || 0) + 1));
+    byRound.set(m.round, seen);
+  }));
+  const out = [];
+  [...byRound.keys()].sort((a, b) => a - b).forEach((r) => {
+    const ps = [...byRound.get(r)].filter(([, n]) => n > 1).map(([p]) => p);
+    if (ps.length) out.push({ round: r, players: ps });
+  });
+  return out;
+}
+
+/**
+ * @returns { groups, swapped: 맞바꾼 경기 id | null, conflicts: 옮긴 두 타임의 겹침 } | { error }
+ */
+export function moveGroupMatch(groups, matchId, round, court, playersOf = (id) => [id]) {
+  const all = (groups || []).flatMap((g) => g.matches || []);
+  const m = all.find((x) => x.id === matchId);
+  if (!m) return { error: '옮길 경기를 찾지 못했습니다' };
+  const r = Math.round(Number(round)); const c = Math.round(Number(court));
+  if (!(r >= 1 && c >= 1)) return { error: '타임·코트가 잘못되었습니다' };
+  if (m.round === r && m.court === c) return { groups, swapped: null, conflicts: [] };
+  const other = all.find((x) => x.id !== m.id && x.round === r && x.court === c) || null;
+  const from = { round: m.round, court: m.court };
+  const next = (groups || []).map((g) => ({
+    ...g,
+    matches: (g.matches || []).map((x) => {
+      if (x.id === m.id) return { ...x, round: r, court: c };
+      if (other && x.id === other.id) return { ...x, round: from.round, court: from.court };
+      return x;
+    }),
+  }));
+  const touched = [...new Set([r, other ? from.round : null].filter(Boolean))];
+  return { groups: next, swapped: other ? other.id : null, conflicts: slotConflicts(next, playersOf, touched) };
+}
+
 /** 처음부터 끝까지 — 참가자 → 팀 → 조 → 경기 → 시간표 */
 export function buildLeague(players, rulesIn, { courts = 2, pairs = [], seeds = {} } = {}, rnd = Math.random) {
   const rules = normRules(rulesIn);
