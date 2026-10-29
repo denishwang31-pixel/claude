@@ -366,5 +366,73 @@ console.log('[조마다 경기 수 같게]');
   }
 }
 
+/* ---------- 2026-10-29: 경기 순서 · 본선 배정 · 시드 · 예상 타임 ---------- */
+{
+  const GL = await import('../src/lib/groupLeague.js');
+  const { buildBracket } = await import('../src/lib/tournament.js');
+  eq([GL.normRules({}).order, GL.normRules({}).koSeed, GL.normRules({ order: 'x', koSeed: 'y' }).koSeed, GL.normRules({ order: 'group', koSeed: 'random' }).order], ['alternate', 'cross', 'cross', 'group'], '기본값·이상한 값 정리');
+  /* 경기 순서 — 한 코트에 두 조 */
+  const mk = (id, n) => ({ id, name: id, entryIds: Array.from({ length: n }, (_, i) => `${id}${i}`), matches: [] });
+  const two = [mk('A', 3), mk('B', 3)].map((g) => ({ ...g, matches: GL.buildGroupMatches(g) }));
+  const seq = (gs) => gs.flatMap((g) => g.matches.map((m) => ({ g: g.id, r: m.round }))).sort((x, y) => x.r - y.r).map((x) => x.g).join('');
+  eq(seq(GL.schedule(two, 1)), 'ABABAB', '코트 1면 · 조 번갈아');
+  eq(seq(GL.schedule(two, 1, { order: 'group' })), 'AAABBB', '코트 1면 · 조별로 몰아서');
+  ok(GL.schedule(two, 2, { order: 'group' }).every((g) => g.matches.every((m) => m.round && m.court)), '몰아서도 모든 경기에 타임·코트');
+  /* 본선 배정 — 4개 조 × 2팀 = 8강 */
+  const groups = ['A', 'B', 'C', 'D'].map((id, gi) => {
+    const g = { id, name: `${id}조`, entryIds: [`${id}1`, `${id}2`, `${id}3`] };
+    /* 1번이 1위, 2번이 2위가 되게 결과를 넣는다. C조 1위는 가장 큰 차이로 이긴다(성적순 시드 1번) */
+    return { ...g, matches: [
+      { id: `${id}m1`, a: `${id}1`, b: `${id}2`, score: { a: 6, b: gi === 2 ? 0 : 4 } },
+      { id: `${id}m2`, a: `${id}1`, b: `${id}3`, score: { a: 6, b: gi === 2 ? 0 : 3 } },
+      { id: `${id}m3`, a: `${id}2`, b: `${id}3`, score: { a: 6, b: 2 } },
+    ] };
+  });
+  const pairs = (ids) => GL.firstRoundPairs(ids).map((p) => p.join('-')).join(' ');
+  eq(pairs(GL.koOrder(groups, 2, 'cross')), 'A1-B2 D1-C2 B1-A2 C1-D2', '이웃 조 교차: A1–B2, B1–A2, C1–D2, D1–C2');
+  const crossB = buildBracket(GL.koOrder(groups, 2, 'cross'));
+  const half = (id) => Math.floor(crossB.rounds[0].matches.findIndex((m) => m.a === id || m.b === id) / 2);
+  ok(['A', 'B', 'C', 'D'].every((g) => half(`${g}1`) !== half(`${g}2`)), '교차: 같은 조 1·2위는 서로 다른 쪽(결승 전까지 안 만남)');
+  eq(pairs(GL.koOrder(groups, 2, 'far')), 'A1-D2 D1-A2 B1-C2 C1-B2', '먼 조 교차: A1–D2, B1–C2');
+  eq(GL.koOrder(groups, 2, 'record')[0], 'C1', '성적순 시드: 가장 크게 이긴 조 1위가 1번');
+  eq(GL.koOrder(groups, 2, 'seed', [{ id: 'D2', seed: 1 }, { id: 'B1', seed: 2 }]).slice(0, 2), ['D2', 'B1'], '대회 시드 우선: 시드 팀이 맨 앞');
+  let seededRand = 1;
+  const rnd = () => { seededRand = (seededRand * 16807) % 2147483647; return (seededRand - 1) / 2147483646; };
+  const rid = GL.koOrder(groups, 2, 'random', [], rnd);
+  ok(rid.length === 8 && GL.firstRoundPairs(rid).every(([a, b]) => a[0] !== b[0]), '무작위: 같은 조끼리 첫 경기 없음');
+  /* 홀수 조(3개 조 × 2 = 6팀, 부전승 2) — 깨지지 않는다 */
+  const odd = GL.koOrder(groups.slice(0, 3), 2, 'cross');
+  ok(odd.length === 6 && new Set(odd).size === 6, '조가 홀수여도 진출 팀을 모두 놓는다');
+  /* 시드대로 조 다시 나누기 */
+  const es = Array.from({ length: 8 }, (_, i) => ({ id: `e${i}`, div: 'MD', players: [`p${i}a`, `p${i}b`], skill: 3, seed: i < 2 ? i + 1 : null }));
+  const gs0 = [{ id: 'g1', name: 'A조', div: 'MD', entryIds: ['e0', 'e1', 'e2', 'e3'], matches: [] }, { id: 'g2', name: 'B조', div: 'MD', entryIds: ['e4', 'e5', 'e6', 'e7'], matches: [] }];
+  const rs = GL.reseedGroups(es, gs0, 'MD', { courts: 2 });
+  ok(rs.groups && rs.groups[0].entryIds.includes('e0') && rs.groups[1].entryIds.includes('e1') && rs.groups.map((g) => g.id).join() === 'g1,g2', '1번 시드 A조, 2번 시드 B조(조 id 그대로)');
+  ok(rs.groups.every((g) => g.matches.length === 6 && g.matches.every((m) => m.round && m.court)), '조별 경기·시간표 새로');
+  const withScore = [{ ...gs0[0], matches: [{ id: 'x', a: 'e0', b: 'e1', score: { a: 6, b: 1 } }] }, gs0[1]];
+  ok(/결과가 있는/.test(GL.reseedGroups(es, withScore, 'MD').error || ''), '결과가 있으면 다시 나누지 않는다');
+  /* 예상 타임 — 16명 남복, 2개 조, 팀당 2경기, 코트 2면 */
+  const roster = Array.from({ length: 16 }, (_, i) => ({ id: `m${i}`, name: `남${i}`, gender: 'M', skill: 3 }));
+  const est = GL.drawEstimate(roster, { groupCount: 2, perTeam: 2, knockout: true, advance: 2 }, ['MD'], { courts: 2, koSizes: { MD: { teams: 4 } } });
+  ok(est.groupGames === 8 && est.groupRounds >= 4 && est.groupRounds <= 6, `조별 8경기 → 코트 2면이면 4타임 남짓 (${est.groupRounds})`);
+  eq([est.koGames, est.koRounds], [3, 2], '본선 4강: 3경기, 코트 2면 → 2타임');
+  const est5 = GL.drawEstimate(roster, { groupCount: 2, perTeam: 2 }, ['MD'], { courts: 2, koSizes: { MD: { teams: 6 } } });
+  eq([est5.koGames, est5.koRounds], [5, 3], '본선 6팀(부전승 2): 2+2+1경기 → 3타임');
+}
+
+/* 화면 연결 — 대진 작성 화면 */
+{
+  const { readFileSync } = await import('node:fs');
+  const ui = readFileSync(new URL('../src/components/TournamentDraw.jsx', import.meta.url), 'utf8');
+  ok(/koOrder\(gs, \(g\) => advanceOf\(rules, g\), rules\.koSeed, entries\)/.test(ui), '본선 만들기는 작성 기준의 배정 기준으로');
+  ok(/label="경기 순서/.test(ui) && /label="본선 배정 기준"/.test(ui) && /order: crit\.order, koSeed: crit\.koSeed/.test(ui), '작성 기준: 경기 순서 · 본선 배정');
+  ok(/<RoundTimingEditor value=\{timing\} onSave=\{saveTiming\} \/>/.test(ui) && /drawEstimate\(roster, critRules\(\)/.test(ui), '작성 기준: 시간(시작·한 타임 길이) · 예상 타임');
+  ok((ui.match(/order: rules\.order/g) || []).length >= 3, '시간표를 다시 짤 때 경기 순서를 지킨다');
+  ok(/roundTimes=\{roundTimesNow\} events=\{eventBands\}/.test(ui), '시간표에 타임별 시각');
+  ok(/toggleSeed\(e\)/.test(ui) && /reseedGroups\(entries, groups, div/.test(ui) && /시드대로 조 다시 나누기/.test(ui), '시드 배정 · 시드대로 조 다시 나누기');
+  const gv = readFileSync(new URL('../src/components/GroupLeagueView.jsx', import.meta.url), 'utf8');
+  ok((gv.match(/roundTimes=\{times\} events=\{events\}/g) || []).length === 2 && /times=\{roundTimesNow\} events=\{eventBands\}/.test(ui), '조 화면 시간표에도 시각');
+}
+
 console.log(`\n조별리그 테스트: ${pass} 통과 / ${fail} 실패`);
 if (fail) process.exit(1);

@@ -382,7 +382,7 @@ export function parseBracketImport(sheets, { t, members = [], personOf = (m) => 
   let outGroups = groups.map(({ _old, ...g }) => g);
   if (auto) {
     outGroups = schedule(groups.map(({ _old, ...g }) => ({ ...g, matches: buildGroupMatches(g, _old).map((m) => ({ ...m, div: g.div })) })),
-      courts, { playersOf: playersOfFn(entries) });
+      courts, { playersOf: playersOfFn(entries), order: rules.order });
   } else {
     outGroups = outGroups.map((g) => ({ ...g, matches: [...g.matches].sort((x, y) => x.round - y.round || x.court - y.court) }));
   }

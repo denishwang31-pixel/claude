@@ -46,12 +46,31 @@ export const DEFAULT_RULES = {
   knockout: true,     // false 면 조별리그만(본선 없이 조 순위로 끝)
   byDiv: {},          // 부마다 다르게(필요할 때만) — { MD: { groupCount: 2, advance: 4 }, WD: { advance: 2 } }
   groupAdvance: {},   // 조마다 다르게(필요할 때만) — { [조 id]: 3 }
+  /* 2026-10-29 앱 주인 — 경기 순서·본선 배정 기준 */
+  order: 'alternate', // 같은 코트를 쓰는 조끼리: alternate(번갈아) | group(조별로 몰아서 — A조 끝나고 B조)
+  koSeed: 'cross',    // 본선 배정: cross(이웃 조 교차 A1–B2) | far(먼 조 교차 A1–마지막 조 2위) | record(성적순 시드) | seed(대회 시드 우선) | random(무작위)
 };
+export const ORDER_KEYS = ['alternate', 'group'];
+export const KO_SEED_KEYS = ['cross', 'far', 'record', 'seed', 'random'];
 
 export const RULE_LABELS = {
   play: { doubles: '복식 (2명 1팀)', singles: '단식 (1명)' },
   teamMode: { balanced: '실력 균등 짝', random: '무작위 짝', manual: '직접 짝짓기' },
   groupMethod: { snake: '실력 고르게 (스네이크)', random: '무작위', grade: '같은 등급끼리' },
+  order: { alternate: '조 번갈아', group: '조별로 몰아서' },
+  koSeed: { cross: '이웃 조 교차', far: '먼 조 교차', record: '성적순 시드', seed: '대회 시드 우선', random: '무작위' },
+};
+/** 본선 배정 기준 설명 — 작성 기준 화면 */
+export const KO_SEED_HELP = {
+  cross: 'A조 1위 – B조 2위, B조 1위 – A조 2위, C조 1위 – D조 2위 … 같은 조 팀은 결승 전까지 안 만납니다.',
+  far: 'A조 1위 – 마지막 조 2위, B조 1위 – 그 앞 조 2위 … (조 1위들끼리는 늦게 만납니다)',
+  record: '조 1위들 중 성적(승률 → 득실차 → 득게임) 좋은 팀이 1번 시드. 1번 시드는 가장 약한 진출팀과 첫 경기.',
+  seed: '수기 수정에서 시드를 준 팀이 먼저(1번 시드가 가장 위), 나머지는 조 순위·성적순.',
+  random: '무작위로 놓되, 같은 조 팀끼리는 첫 경기에서 안 만나게 합니다.',
+};
+export const ORDER_HELP = {
+  alternate: '한 코트에 여러 조가 있으면 A조 → B조 → A조 … 번갈아 칩니다(한 조만 오래 쉬지 않게).',
+  group: '한 코트에 여러 조가 있으면 A조 경기를 모두 친 뒤 B조로 넘어갑니다(조별로 모여서).',
 };
 
 export const RANK_RULE_TEXT = '승수 → 승자승 → 게임 득실차 → 득게임 순';
@@ -70,6 +89,8 @@ export function normRules(r = {}) {
   x.perTeam = Math.max(0, Math.min(20, Math.round(Number(x.perTeam) || 0)));   // 0 = 풀리그
   x.format = x.format === 'kdk' ? 'kdk' : 'league';                              // 팀 고정 조별리그 / KDK
   x.knockout = x.knockout !== false;
+  if (!ORDER_KEYS.includes(x.order)) x.order = DEFAULT_RULES.order;
+  if (!KO_SEED_KEYS.includes(x.koSeed)) x.koSeed = DEFAULT_RULES.koSeed;
   /* 부·조마다 따로 — 숫자로 정한 값만 남긴다(빈칸 = 대회 기본값) */
   const num = (v, min) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Math.max(min, Math.round(Number(v))));
   const byDiv = {};
@@ -349,7 +370,7 @@ export function buildGroupMatches(group, old = []) {
    courts: 전체 코트 수. 조에 courts:[1,2] 를 정해 두면 그 조는 그 코트에서만 돈다
    (「A조는 1·2코트, B조는 3·4코트」처럼 조별로 따로 진행).
    같은 타임에 한 팀이 두 경기에 들어가지 않게, 풀리그 라운드 순서를 지키며 채운다. */
-export function schedule(groups, courts = 2, { playersOf = null } = {}) {
+export function schedule(groups, courts = 2, { playersOf = null, order = 'alternate' } = {}) {
   const total = Math.max(1, Math.round(Number(courts) || 1));
   const allCourts = Array.from({ length: total }, (_, i) => i + 1);
   /* 같은 타임에 겹치면 안 되는 사람 — 여러 부(남복·혼복)에 함께 나가는 사람도 있다.
@@ -369,11 +390,16 @@ export function schedule(groups, courts = 2, { playersOf = null } = {}) {
     const free = allCourts.filter((c) => !taken.has(c));
     lanes.push({ groups: shared, courts: free.length ? free : allCourts });
   }
-  /* 조를 번갈아 가며 라운드 순으로 줄 세운다 — 한 조만 먼저 끝나지 않게 */
+  /* 줄 세우기 — alternate: 조를 번갈아 가며 라운드 순으로(한 조만 먼저 끝나지 않게)
+                 group: 조별로 몰아서(앞 조 경기를 모두 줄 세운 뒤 다음 조 — 2026-10-29 앱 주인) */
   lanes.forEach((lane) => {
     const q = [];
     const maxRr = Math.max(0, ...lane.groups.flatMap((g) => g.matches.map((m) => m.rr || 1)));
-    for (let r = 1; r <= maxRr; r++) lane.groups.forEach((g) => g.matches.filter((m) => (m.rr || 1) === r).forEach((m) => q.push(m)));
+    if (order === 'group') {
+      lane.groups.forEach((g) => [...g.matches].sort((a, b) => (a.rr || 1) - (b.rr || 1)).forEach((m) => q.push(m)));
+    } else {
+      for (let r = 1; r <= maxRr; r++) lane.groups.forEach((g) => g.matches.filter((m) => (m.rr || 1) === r).forEach((m) => q.push(m)));
+    }
     lane.queue = q;
   });
   /* 타임을 하나씩 — 모든 줄(lane)이 같은 시계를 쓴다(한 사람이 두 코트에 동시에 서지 않게) */
@@ -590,6 +616,152 @@ export function leagueQualifiers(groups, advance = 2) {
   return out.sort((a, b) => a.rank - b.rank || a.groupIndex - b.groupIndex);
 }
 
+/* ---------------- 본선 배정 (2026-10-29 앱 주인: "16강이면 A조 1등, B조 2등 이렇게 붙게 — 기준 몇 개") ----------------
+   tournament.js buildBracket 은 「시드 순서」 목록을 받아 1번 시드 ↔ 마지막 시드 식으로 자리를 놓는다.
+   여기서는 기준에 맞게 그 순서를 만든다. 진출 팀 수가 2의 거듭제곱이 아니면 위 시드부터 부전승. */
+const seedPositions = (size) => {
+  let arr = [1, 2];
+  while (arr.length < size) { const n = arr.length * 2; arr = arr.flatMap((v) => [v, n + 1 - v]); }
+  return arr;
+};
+/** 시드 순서 → 첫 경기 짝 [[a,b], …] (부전승은 빠짐) */
+export function firstRoundPairs(ids) {
+  const n = ids.length;
+  if (n < 2) return [];
+  const size = 2 ** Math.ceil(Math.log2(n));
+  const pos = seedPositions(size).map((s) => (s <= n ? ids[s - 1] : null));
+  const out = [];
+  for (let i = 0; i < size; i += 2) if (pos[i] && pos[i + 1]) out.push([pos[i], pos[i + 1]]);
+  return out;
+}
+
+/**
+ * @param groups    한 부의 조(순위를 매길 결과가 들어 있는)
+ * @param advance   숫자 또는 (조) => 숫자
+ * @param mode      cross | far | record | seed | random (KO_SEED_HELP)
+ * @param entries   엔트리(시드 seed 를 본다)
+ * @returns 본선 진출 팀 id — 시드 순서(buildBracket 에 그대로)
+ */
+export function koOrder(groups, advance = 2, mode = 'cross', entries = [], rnd = Math.random) {
+  const gs = groups || [];
+  const rows = [];
+  gs.forEach((g, gi) => {
+    const n = typeof advance === 'function' ? advance(g) : advance;
+    const st = standings(g);
+    const sched = {};
+    (g.matches || []).forEach((m) => { sched[m.a] = (sched[m.a] || 0) + 1; sched[m.b] = (sched[m.b] || 0) + 1; });
+    st.slice(0, n).forEach((r, pos) => rows.push({
+      id: r.id, gi, pos, rate: sched[r.id] ? r.w / sched[r.id] : 0, diff: r.diff, gf: r.gf,
+    }));
+  });
+  if (rows.length < 2) return rows.map((r) => r.id);
+  const tiers = [];
+  rows.forEach((r) => { (tiers[r.pos] = tiers[r.pos] || []).push(r); });
+  const byGroup = (a, b) => a.gi - b.gi;
+  const byRecord = (a, b) => b.rate - a.rate || b.diff - a.diff || b.gf - a.gf || a.gi - b.gi;
+  const seedOf = new Map((entries || []).filter((e) => e.seed).map((e) => [e.id, Number(e.seed)]));
+  const G = gs.length;
+
+  if (mode === 'record') return tiers.flatMap((t) => [...(t || [])].sort(byRecord)).map((r) => r.id);
+  if (mode === 'seed') {
+    const seeded = rows.filter((r) => seedOf.has(r.id)).sort((a, b) => seedOf.get(a.id) - seedOf.get(b.id));
+    const rest = tiers.flatMap((t) => [...(t || [])].filter((r) => !seedOf.has(r.id)).sort(byRecord));
+    return [...seeded, ...rest].map((r) => r.id);
+  }
+  if (mode === 'random') {
+    const same = (ids) => {
+      const gOf = new Map(rows.map((r) => [r.id, r.gi]));
+      return firstRoundPairs(ids).some(([a, b]) => gOf.get(a) === gOf.get(b));
+    };
+    let best = rows.map((r) => r.id);
+    for (let i = 0; i < 300; i++) {
+      const ids = shuffle(rows, rnd).map((r) => r.id);
+      best = ids;
+      if (!same(ids)) break;
+    }
+    return best;
+  }
+  /* 교차 — 1위들을 조 순서대로 1…G번 시드, 2위들은 「짝 조」의 1위와 첫 경기가 되게 자리를 잡는다.
+     buildBracket 은 시드 s 와 (n+1−s) 를 붙인다(부전승이 없을 때). */
+  const first = [...(tiers[0] || [])].sort(byGroup);
+  const second = [...(tiers[1] || [])];
+  const restTiers = tiers.slice(2).flatMap((t) => [...(t || [])].sort(byGroup));
+  const n = rows.length;
+  const partner = (gi) => {
+    if (mode === 'far') return G - 1 - gi === gi ? (gi + 1) % G : G - 1 - gi;
+    if (G % 2 === 0) return gi ^ 1;                       // A↔B, C↔D …
+    return (gi + 1) % G;                                  // 조가 홀수면 A→B, B→C, … 마지막→A
+  };
+  const slots = Array(n).fill(null);
+  first.forEach((r, i) => { slots[i] = r.id; });
+  const left = [...second];
+  first.forEach((r, i) => {
+    const opp = n - 1 - i;                                // 이 1위와 붙는 자리
+    if (opp < first.length || slots[opp]) return;
+    const k = left.findIndex((x) => x.gi === partner(r.gi));
+    const pick = k >= 0 ? left.splice(k, 1)[0] : left.findIndex((x) => x.gi !== r.gi) >= 0
+      ? left.splice(left.findIndex((x) => x.gi !== r.gi), 1)[0] : left.shift();
+    if (pick) slots[opp] = pick.id;
+  });
+  const fill = [...left.sort(byGroup), ...restTiers];
+  for (let i = 0; i < n; i++) if (!slots[i] && fill.length) slots[i] = fill.shift().id;
+  return slots.filter(Boolean);
+}
+
+/**
+ * 시드대로 조 다시 나누기 — 한 부의 팀은 그대로, 시드 팀이 조마다 고르게(1번 시드 A조, 2번 B조 …, 스네이크)
+ * 결과가 하나라도 있으면 하지 않는다.
+ * @returns { groups } | { error }
+ */
+export function reseedGroups(entries, groups, div, { courts = 2, order = 'alternate', perTeam = 0 } = {}) {
+  const mine = (groups || []).filter((g) => g.div === div);
+  if (mine.some((g) => (g.matches || []).some((m) => m.score))) return { error: '이미 결과가 있는 경기가 있어 조를 다시 나눌 수 없습니다' };
+  const es = (entries || []).filter((e) => e.div === div);
+  if (!mine.length || !es.length) return { error: '이 부에 조가 없습니다' };
+  const fresh = assignGroups(es, { groupCount: mine.length, groupMethod: GROUP_METHOD.SNAKE }).map((g, i) => {
+    const old = mine[i];
+    const ng = { ...g, id: old?.id || g.id, name: old?.name || g.name, div, ...(old?.courts ? { courts: old.courts } : {}),
+      ...((old?.perTeam || perTeam) ? { perTeam: old?.perTeam || perTeam } : {}) };
+    return { ...ng, matches: buildGroupMatches(ng).map((m) => ({ ...m, div })) };
+  });
+  const others = (groups || []).filter((g) => g.div !== div);
+  return { groups: schedule([...others, ...fresh], courts, { playersOf: playersOfFn(entries), order }) };
+}
+
+/**
+ * 예상 타임 수 — 작성 전에 「팀당 N경기 · 코트 M면이면 몇 타임」을 미리 보여 준다(2026-10-29 앱 주인).
+ * 지금 기준으로 한 번 짜 보고(무작위 없이) 조별리그 타임 수를 센다. 본선은 라운드마다 코트에 나눠 어림한다.
+ * @returns { groupRounds, groupGames, koRounds, koGames }
+ */
+export function drawEstimate(roster, rulesIn, events, { courts = 2, excluded = {}, useGroups = true, koSizes = {} } = {}) {
+  const r = normRules(rulesIn);
+  const n = Math.max(1, Number(courts) || 1);
+  let groupRounds = 0; let groupGames = 0;
+  if (useGroups) {
+    const d = drawAll(roster, { ...r, groupMethod: r.groupMethod === GROUP_METHOD.RANDOM ? GROUP_METHOD.SNAKE : r.groupMethod },
+      events, { courts: n, excluded }, () => 0.5);
+    const ms = d.groups.flatMap((g) => g.matches || []);
+    groupGames = ms.length;
+    groupRounds = ms.reduce((x, m) => Math.max(x, Number(m.round) || 0), 0);
+  }
+  /* 본선 — 라운드마다 모든 부의 경기를 합쳐 코트 수로 나눈다(부전승은 빼고) */
+  let koRounds = 0; let koGames = 0;
+  const sizes = Object.values(koSizes).filter((x) => x && x.teams >= 2);
+  const depth = Math.max(0, ...sizes.map((x) => Math.ceil(Math.log2(x.teams))));
+  for (let lv = 0; lv < depth; lv++) {
+    let games = 0;
+    sizes.forEach((x) => {
+      const size = 2 ** Math.ceil(Math.log2(x.teams));
+      const level = size / 2 ** (lv + 1);
+      if (level < 1) return;
+      games += lv === 0 ? x.teams - level : level;       // 첫 라운드는 부전승을 뺀 경기 수
+    });
+    koGames += games;
+    koRounds += Math.ceil(games / n);
+  }
+  return { groupRounds, groupGames, koRounds, koGames };
+}
+
 /** 빠른 결과 입력 — 6게임 선승이면 6:0 … 6:5 (5:5 타이브레이크 승은 6:5). 그 밖은 직접 입력 */
 export function scoreChoices(games = 6) {
   const g = Math.max(1, Number(games) || 6);
@@ -703,7 +875,7 @@ export function drawAll(roster, rulesIn, events, { courts = 2, excluded = {}, us
     entries.push(...r.entries);
     groups.push(...r.groups);
   });
-  return { entries, groups: schedule(groups, courts, { playersOf: playersOfFn(entries) }), problems };
+  return { entries, groups: schedule(groups, courts, { playersOf: playersOfFn(entries), order: normRules(rulesIn).order }), problems };
 }
 
 /** 부 하나만 다시 짠다 — 다른 부의 대진·결과는 그대로, 시간표만 함께 다시 */
@@ -711,7 +883,7 @@ export function redrawDivision(t, evKey, roster, rulesIn, { courts = 2, excluded
   const r = drawDivision(roster, divRules(rulesIn, evKey), evKey, { excluded, useGroups }, rnd);
   const entries = [...(t.entries || []).filter((e) => e.div !== evKey), ...r.entries];
   const groups = [...(t.groups || []).filter((g) => g.div !== evKey), ...r.groups];
-  return { entries, groups: schedule(groups, courts, { playersOf: playersOfFn(entries) }), problem: [r.problem, r.notice].filter(Boolean).join(' · ') };
+  return { entries, groups: schedule(groups, courts, { playersOf: playersOfFn(entries), order: normRules(rulesIn).order }), problem: [r.problem, r.notice].filter(Boolean).join(' · ') };
 }
 
 /* ---------------- KDK 부 (개인전) ----------------
