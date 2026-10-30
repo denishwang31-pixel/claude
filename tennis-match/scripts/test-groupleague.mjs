@@ -674,6 +674,8 @@ console.log('[조마다 경기 수 같게]');
   ok(/me && hasName\(r\.name, me\) \? ' class="meRow"'/.test(lh) && /standings\(g, g\.advance != null \? g\.advance : d\.rules\.advance, me\)/.test(lh), '웹 조 순위: 내 팀 줄 칠하기');
   ok(/\(mine\[x\[0\]\] \? ' mt' : ''\)/.test(lh) && /class="golink" data-k="g/.test(lh), '웹: 내 조 탭 표시 · [순위 보기]');
   ok(lh.indexOf("tabs.push(['grid', '시간표'])") < lh.indexOf("tabs.push(['ko', '본선'])"), '웹: 시간표 탭이 맨 앞');
+  ok(/function liveLine\(d\)/.test(lh) && (lh.match(/liveLine\(d\)/g) || []).length >= 3 && /' 기준'/.test(lh) && /지금 새로 고침/.test(lh), '웹: 몇 시 기준 화면인지 · [지금 새로 고침]');
+  ok(/else \{ failN \+= 1; render\(\); \}\n          later\(\);/.test(lh) && /clearTimeout\(timer\);/.test(lh), '웹: 서버가 잠깐 오류를 내도 보던 화면을 두고 다시 읽는다(멈추지 않음)');
   ok(/function gridFromGroups\(d\)/.test(lh) && /if \(!d\.grid \|\| !d\.grid\.rounds \|\| !d\.grid\.rounds\.length\) d\.grid = gridFromGroups\(d\);/.test(lh), '웹: 서버가 예전 판이라 시간표를 안 줘도 조 경기로 시간표를 만든다');
 }
 

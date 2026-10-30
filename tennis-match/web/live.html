@@ -30,6 +30,9 @@
   .meta { font-size: 13px; color: var(--sub); }
   .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); margin-top: 6px; }
   .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--green2); }
+  .dot.off { background: var(--no); }
+  .live .now { font: inherit; font-size: 11.5px; font-weight: 800; color: var(--green); background: var(--green-soft); border: 0; border-radius: 999px; padding: 3px 9px; margin-left: 4px; cursor: pointer; }
+  .live .now[disabled] { opacity: .6; }
   .tabs { display: flex; gap: 6px; overflow-x: auto; margin: 16px 0 4px; padding-bottom: 4px; }
   .tab { font: inherit; font-size: 14px; font-weight: 700; padding: 8px 14px; border-radius: 999px;
     border: 1px solid var(--line); background: var(--card); color: var(--sub); white-space: nowrap; cursor: pointer; }
@@ -296,7 +299,7 @@
     mountFind();
     var top = '<div class="club">' + esc(d.club) + '</div><h1>' + esc(d.name) + '</h1>' +
       '<div class="meta">' + esc(d.date) + (d.rounds[0] && d.rounds[0].time ? ' ' + esc(d.rounds[0].time) : '') + ' · ' + d.done + '/' + d.total + '경기 끝남</div>' +
-      '<div class="live"><span class="dot"></span>' + (d.status === 'finished' ? '대회 종료' : '실시간 — 30초마다 새로 고침') + '</div>';
+      liveLine(d);
     var h = '';
     var me = findMe(d);
     var st = d.standings;
@@ -644,7 +647,7 @@
     if (!tab || !tabs.some(function (x) { return x[0] === tab; })) tab = tabs.length ? tabs[0][0] : null;
     var top = '<div class="club">' + esc(d.club) + '</div><h1>' + esc(d.name) + '</h1>' +
       '<div class="meta">' + esc(d.date) + ' · ' + d.rules.games + '게임 선승 · 순위: ' + esc(d.rankRule) + '</div>' +
-      '<div class="live"><span class="dot"></span>' + (d.status === 'finished' ? '대회 종료' : '실시간 — 30초마다 새로 고침') + '</div>';
+      liveLine(d);
     if (d.champion) top += '<div class="champ"><small>CHAMPION</small><b>🏆 ' + esc(d.champion) + '</b></div>';
     var h = '<div class="tabs">' + tabs.map(function (x) {
       return '<button class="tab' + (tab === x[0] ? ' on' : '') + (mine[x[0]] ? ' mt' : '') + '" data-k="' + x[0] + '">' + esc(x[1]) + '</button>';
@@ -683,24 +686,47 @@
   }
   /* 30초마다 다시 읽되, 화면을 안 보고 있을 때(다른 앱·화면 꺼짐)는 쉰다 — 돌아오면 바로 한 번 읽는다.
      켜 둔 채 잊어도 서버를 계속 부르지 않게(2026-10-04 앱 주인: 비용). 대회가 끝나면 아예 멈춘다. */
-  var waiting = false;
+  var waiting = false, timer = null, lastAt = 0, failN = 0;
   function later() {
+    clearTimeout(timer);
     if (document.hidden) { waiting = true; return; }
-    setTimeout(load, 30000);
+    timer = setTimeout(load, 30000);
   }
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden && waiting) { waiting = false; load(); }
+  });
+  /* 몇 시 기준 화면인지 · [지금 새로 고침] — 2026-10-30 앱 주인: "웹 링크가 실시간 업데이트 안 되는 것 같다".
+     서버가 잠깐 오류를 내도 보던 화면은 그대로 두고 30초 뒤 다시 읽는다(예전엔 오류 한 번이면 멈췄다) */
+  function hms(ms) { var x = new Date(ms); return [x.getHours(), x.getMinutes(), x.getSeconds()].map(function (v) { return String(v).padStart(2, '0'); }).join(':'); }
+  function liveLine(d) {
+    var fin = d.status === 'finished';
+    return '<div class="live"><span class="dot' + (failN ? ' off' : '') + '"></span>' + (fin ? '대회 종료' : '실시간 — 30초마다 새로 고침') +
+      (lastAt ? ' · ' + hms(lastAt) + ' 기준' : '') + (failN ? ' · <b style="color:var(--no)">연결 확인 중</b>' : '') +
+      ' <button class="now" type="button">지금 새로 고침</button></div>';
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('.now') : null;
+    if (!b || b.disabled) return;
+    b.disabled = true; b.textContent = '불러오는 중…';
+    load();
   });
   function load() {
     fetch('/api/live?c=' + encodeURIComponent(c) + '&t=' + encodeURIComponent(t), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        if (!j.ok) { app.innerHTML = '<div class="err">' + esc(j.message || '대회를 열지 못했습니다.') + '</div>'; return; }
+        if (!j.ok) {
+          if (!data) app.innerHTML = '<div class="err">' + esc(j.message || '대회를 열지 못했습니다.') + '</div>';
+          else { failN += 1; render(); }
+          later();
+          return;
+        }
+        failN = 0; lastAt = j.at || Date.now();
         data = j; render();
         if (j.status !== 'finished') later();
       })
       .catch(function () {
         if (!data) app.innerHTML = '<div class="err">연결이 불안정합니다. 잠시 후 다시 열어 주세요.</div>';
+        else { failN += 1; render(); }
         later();
       });
   }
