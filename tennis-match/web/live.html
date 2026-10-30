@@ -109,6 +109,7 @@
   .lad .tr.lose { background: var(--fill); }
   .lad .tr.lose .nm { color: var(--faint); }
   .lad .tr .nm.empty { color: var(--faint); }
+  small.tbx { font-size: .75em; font-weight: 700; opacity: .85; }
   /* 본선 상자 위 「3T 10:30 · 코트 A」 — 언제·어느 코트인지(앱 대진표와 같다) */
   .lad .sl { height: 16px; line-height: 16px; padding: 0 7px; font-size: 10px; font-weight: 800; background: var(--ink); color: #BEF264; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .lad .sl.no { background: var(--fill); color: var(--faint); }
@@ -167,6 +168,8 @@
   var c = q.get('c') || '', t = q.get('t') || '';
   var app = document.getElementById('app');
   var tab = null, data = null;
+  /* 타이브레이크 점수 — 있으면 「(7-5)」 작게(앱과 같다, 2026-10-30) */
+  var tbx = function (sc) { return sc && sc.tb ? ' <small class="tbx">(' + Number(sc.tb.a) + '-' + Number(sc.tb.b) + ')</small>' : ''; };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (x) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[x]; }); };
 
   function standings(g, advance, me) {
@@ -190,7 +193,7 @@
       var aw = m.score && m.score.a > m.score.b, bw = m.score && m.score.b > m.score.a;
       return '<div class="m' + (me && isMine(m, me) ? ' mine' : '') + '"><div class="when">' + (m.round ? m.round + '타임' : '') + (m.time ? ' ' + esc(m.time) : '') + '<span>' + (m.court ? '코트 ' + esc(courtLabel(m.court)) : '') + '</span></div>' +
         '<div class="teams"><div class="' + (aw ? 'win' : '') + '">' + (m.a ? hiNames(m.a, me) : '—') + '</div><div class="' + (bw ? 'win' : '') + '">' + (m.b ? hiNames(m.b, me) : '—') + '</div></div>' +
-        (m.score ? '<div class="sc">' + m.score.a + ' : ' + m.score.b + '</div>' : '<div class="sc wait">경기 전</div>') + '</div>';
+        (m.score ? '<div class="sc">' + m.score.a + ' : ' + m.score.b + tbx(m.score) + '</div>' : '<div class="sc wait">경기 전</div>') + '</div>';
     }).join('');
   }
   /* 조별리그 전체 시간표 — 가로 코트 × 세로 타임(앱 대진표와 같은 모양), 타임 옆 시각, 행사 띠 */
@@ -211,7 +214,7 @@
         var nm = function (n, won) { return '<div class="gn"' + (m.score ? (won ? ' style="color:var(--green);font-weight:800"' : ' style="color:var(--faint)"') : '') + '>' + (n ? hiNames(n, me) : '—') + '</div>'; };
         var cls = (m.score ? 'done' : '') + (me && isMine(m, me) ? ' mine' : '');
         return '<td' + (cls ? ' class="' + cls.trim() + '"' : '') + '><div class="gt"><span class="ty">' + esc(m.tag) + '</span>' +
-          (m.score ? '<span class="gs" style="background:var(--green)">' + m.score.a + ':' + m.score.b + '</span>' : '<span class="gs wait">경기 전</span>') + '</div>' +
+          (m.score ? '<span class="gs" style="background:var(--green)">' + m.score.a + ':' + m.score.b + tbx(m.score) + '</span>' : '<span class="gs wait">경기 전</span>') + '</div>' +
           nm(m.a, aw) + '<div class="gv">vs</div>' + nm(m.b, bw) + '</td>';
       }).join('') + '</tr>';
     });
@@ -252,7 +255,7 @@
       var st = !m.winner ? '' : m.winner === side ? 'win' : 'lose';
       var sc = m.score ? m.score[side] : null;
       return '<div class="tr ' + st + '"><span class="nm' + (nm ? '' : ' empty') + '">' + (nm ? hiNames(nm, me) : esc(bye ? '부전승' : '—')) + '</span>' +
-        (sc != null ? '<span class="s">' + sc + '</span>' : '') + '</div>';
+        (sc != null ? '<span class="s">' + sc + (m.score && m.score.tb ? '<small class="tbx"> (' + Number(m.score.tb[side]) + ')</small>' : '') + '</span>' : '') + '</div>';
     };
     R.forEach(function (round, r) {
       round.matches.forEach(function (m, i) {
@@ -387,7 +390,7 @@
       var pill = function (tm) { return tm ? '<span class="tp sm' + (tm.white ? ' white' : '') + '" style="background:' + esc(tm.color) + '">' + esc(tm.name) + '</span>' : ''; };
       return '<div class="gt"><span class="ty ' + esc(m.type) + '">' + esc(m.type) + '</span>' +
         (m.score ? '<span class="gs" style="' + (whiteWin ? 'background:#fff;color:#111827;border:1.5px solid #111827' : 'background:' + esc(ac)) + '">'
-          + m.score.a + ':' + m.score.b + (draw ? ' 무' : '') + '</span>' : '<span class="gs wait">경기 전</span>') + '</div>' +
+          + m.score.a + ':' + m.score.b + (draw ? ' 무' : '') + tbx(m.score) + '</span>' : '<span class="gs wait">경기 전</span>') + '</div>' +
         pill(byIdx[m.aTeam]) + '<div class="gn"' + nameStyle(m, aw) + '>' + names(m.a) + '</div>' +
         '<div class="gv">vs</div>' +
         pill(byIdx[m.bTeam]) + '<div class="gn"' + nameStyle(m, bw) + '>' + names(m.b) + '</div>';

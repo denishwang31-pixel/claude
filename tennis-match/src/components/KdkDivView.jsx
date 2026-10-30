@@ -7,11 +7,11 @@
    ============================================================ */
 import React, { useState } from 'react';
 import { View, Text } from 'react-native';
-import { kdkTables, setKdkScore, scoreChoices, KDK_RANK_TEXT } from '../lib/groupLeague';
+import { kdkTables, setKdkScore, KDK_RANK_TEXT } from '../lib/groupLeague';
 import { MatchGrid } from './MatchGrid';
+import { ScoreSheet } from './MatchBoard';
 import { MINE } from './Mine';
-import { useOptionSheet } from './native';
-import { Card, SectionTitle, Btn, Field } from './ui';
+import { Card, SectionTitle } from './ui';
 import { C, F } from '../lib/theme';
 
 function KdkTable({ g, me }) {
@@ -68,37 +68,25 @@ function KdkTable({ g, me }) {
  */
 export function KdkDivView({ kdk, div, games = 6, venue, nameOf, me = '', canEdit, onSave, title = '' }) {
   const d = kdk?.[div];
-  const [typed, setTyped] = useState(null);
-  const sheet = useOptionSheet();
+  const [scoring, setScoring] = useState(null);
   if (!d?.matches?.length) return null;
   const pname = (id) => d.players.find((p) => p.id === id)?.name || nameOf(id);
   const team = (ids) => (ids || []).map(pname).join('·');
   const cn = (c) => (venue?.courtNames && venue.courtNames[c - 1]) || String(c);
   const tables = kdkTables(d);
 
+  /* 결과 입력 — 게임 수 직접 입력 · 타이브레이크 체크(MatchBoard ScoreSheet, 2026-10-30 앱 주인) */
   const record = (m) => {
     if (!canEdit) return;
-    const opts = [
-      ...scoreChoices(games).map(([w, l]) => ({ key: `${w}:${l}`, label: `${team(m.teamA)}  ${w} : ${l}` })),
-      ...scoreChoices(games).map(([w, l]) => ({ key: `${l}:${w}`, label: `${team(m.teamB)}  ${w} : ${l}` })),
-      { key: 'type', label: '직접 입력' },
-      ...(m.score ? [{ key: 'clear', label: '결과 지우기', destructive: true }] : []),
-    ];
-    sheet.open({
-      title: `${m.round}타임 · 코트 ${cn(m.court)}\n${team(m.teamA)} vs ${team(m.teamB)}`,
-      options: opts,
-      onSelect: (o) => {
-        if (o.key === 'type') { setTyped({ m, a: '', b: '' }); return; }
-        if (o.key === 'clear') { onSave(setKdkScore(kdk, div, m.id, null), '결과를 지웠습니다'); return; }
-        const [a, b] = o.key.split(':').map(Number);
-        onSave(setKdkScore(kdk, div, m.id, { a, b }));
-      },
+    setScoring({
+      match: m, title: `${m.round}타임 · 코트 ${cn(m.court)} · ${games}게임 선승`,
+      A: { name: team(m.teamA) }, B: { name: team(m.teamB) }, allowDraw: false,
     });
   };
-  const saveTyped = () => {
-    if (typed.a === '' || typed.b === '' || +typed.a === +typed.b) return;
-    onSave(setKdkScore(kdk, div, typed.m.id, { a: +typed.a, b: +typed.b }));
-    setTyped(null);
+  const saveScore = (score) => {
+    const m = scoring?.match;
+    setScoring(null);
+    if (m) onSave(setKdkScore(kdk, div, m.id, score), score ? '' : '결과를 지웠습니다');
   };
 
   return (
@@ -109,18 +97,7 @@ export function KdkDivView({ kdk, div, games = 6, venue, nameOf, me = '', canEdi
       <Card style={{ padding: 10 }}>
         <MatchGrid matches={d.matches} nameOf={pname} me={me} venue={venue} onPressMatch={canEdit ? record : undefined} />
       </Card>
-      {typed && (
-        <Card style={{ marginTop: 8 }}>
-          <Text style={F.bodyBold}>{team(typed.m.teamA)} vs {team(typed.m.teamB)}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
-            <Field keyboardType="number-pad" placeholder="위 팀" value={typed.a} onChangeText={(v) => setTyped({ ...typed, a: v })} style={{ flex: 1 }} />
-            <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
-            <Field keyboardType="number-pad" placeholder="아래 팀" value={typed.b} onChangeText={(v) => setTyped({ ...typed, b: v })} style={{ flex: 1 }} />
-            <Btn small onPress={saveTyped}>저장</Btn>
-            <Btn small tone="ghost" onPress={() => setTyped(null)}>닫기</Btn>
-          </View>
-        </Card>
-      )}
+      <ScoreSheet target={scoring} onSave={saveScore} onClose={() => setScoring(null)} />
       <SectionTitle hint={`순위: ${KDK_RANK_TEXT}`}>{title}개인 순위 (실시간)</SectionTitle>
       {tables.map((g) => (
         <Card key={g.gi} style={{ marginBottom: 8 }}>
@@ -128,7 +105,6 @@ export function KdkDivView({ kdk, div, games = 6, venue, nameOf, me = '', canEdi
           <KdkTable g={g} me={me} />
         </Card>
       ))}
-      {sheet.node}
     </View>
   );
 }

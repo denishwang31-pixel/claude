@@ -15,13 +15,14 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Alert } from 'react-native';
 import {
   normRules, RULE_LABELS, RANK_RULE_TEXT, standings, progress, ensureSchedule, setScore,
-  moveEntry, swapPlayers, replacePlayer, advanceOf, setGroupCourts, schedule, scoreChoices, nameLookup,
+  moveEntry, swapPlayers, replacePlayer, advanceOf, setGroupCourts, schedule, nameLookup,
   editGroupMatch, removeGroupMatch,
 } from '../lib/groupLeague';
 import { MatchGrid } from './MatchGrid';
+import { ScoreSheet } from './MatchBoard';
 import { mineStyle, MineLegend, MINE } from './Mine';
 import { useOptionSheet } from './native';
-import { Card, SectionTitle, Chip, Btn, Field } from './ui';
+import { Card, SectionTitle, Chip, Btn } from './ui';
 import { C, S, R, F } from '../lib/theme';
 
 const ALL = '__all';
@@ -120,7 +121,7 @@ export function GroupLeagueView({
   const venue = { courts, courtNames };
   const cn = (c) => (courtNames && courtNames[c - 1]) || String(c);
   const [pickPlayer, setPickPlayer] = useState(null);   // 선수 맞바꾸기 — 첫 번째로 누른 사람
-  const [typed, setTyped] = useState(null);             // { id, a, b } 직접 입력 중
+  const [scoring, setScoring] = useState(null);         // 결과 입력 창(ScoreSheet) — 고른 경기
   const sheet = useOptionSheet();
   const canEdit = !!isAdmin && !!onUpdate;
 
@@ -130,32 +131,22 @@ export function GroupLeagueView({
   };
   const saveGroups = (gs, msg, opts) => save({ groups: gs }, msg, opts);
 
-  /* 결과 입력 — 빠른 버튼(6:0 …) + 직접 입력 + 지우기 */
+  /* 결과 입력 — 예전 대회(청백전·팀 리그)와 같은 아래 창. 게임 수를 직접 넣고, 타이브레이크면 체크하고 그 점수도
+     (2026-10-30 앱 주인: "점수를 고르는 게 아니라 입력하는 걸로 · 타이브레이크 여부 체크"). 조별리그는 무승부 없음 */
   const record = (m) => {
     if (!canEdit) return;
-    const g = rules.games;
-    const opts = [
-      ...scoreChoices(g).map(([w, l]) => ({ key: `${w}:${l}`, label: `${nameOfEntry(m.a)}  ${w} : ${l}` })),
-      ...scoreChoices(g).map(([w, l]) => ({ key: `${l}:${w}`, label: `${nameOfEntry(m.b)}  ${w} : ${l}` })),
-      { key: 'type', label: '직접 입력' },
-      ...(m.score ? [{ key: 'clear', label: '결과 지우기', destructive: true }] : []),
-    ];
-    sheet.open({
-      title: `${m.round}타임 · 코트 ${cn(m.court)}\n${nameOfEntry(m.a)} vs ${nameOfEntry(m.b)}`,
-      options: opts,
-      onSelect: (o) => {
-        if (o.key === 'type') { setTyped({ id: m.id, a: '', b: '' }); return; }
-        if (o.key === 'clear') { saveGroups(setScore(groups, m.id, null), '결과를 지웠습니다'); return; }
-        const [a, b] = o.key.split(':').map(Number);
-        saveGroups(setScore(groups, m.id, { a, b }));
-      },
+    setScoring({
+      match: m,
+      title: `${m.round}타임 · 코트 ${cn(m.court)} · ${rules.games}게임 선승`,
+      A: { name: nameOfEntry(m.a) }, B: { name: nameOfEntry(m.b) },
+      allowDraw: false,
     });
   };
-  const saveTyped = () => {
-    if (!typed) return;
-    if (typed.a === '' || typed.b === '' || +typed.a === +typed.b) return flash('스코어를 확인하세요 (동점 불가)');
-    saveGroups(setScore(groups, typed.id, { a: +typed.a, b: +typed.b }));
-    return setTyped(null);
+  const saveScore = (score) => {
+    const m = scoring?.match;
+    setScoring(null);
+    if (!m) return;
+    saveGroups(setScore(groups, m.id, score), score ? '결과를 넣었습니다' : '결과를 지웠습니다');
   };
 
   /* ---- 대진 수기 수정 (2026-10-29 앱 주인: "예전 대회처럼 시간표에 대진 수기 수정 버튼 → 대진표를 누르면 상대를 바꾸게") ----
@@ -450,7 +441,7 @@ export function GroupLeagueView({
           </SectionTitle>
           {canEdit && !drawEdit && (
             <Text style={{ fontSize: 11.5, color: C.sub, marginTop: -4, marginBottom: 8, lineHeight: 17 }}>
-              👆 경기 칸을 누르면 「6 : 0」 같은 빠른 버튼이 뜹니다. 점수가 다르면 「직접 입력」, 잘못 넣었으면 「결과 지우기」.{'\n'}
+              👆 경기 칸을 누르면 결과 입력 창이 뜹니다 — 두 팀 게임 수를 넣고, 타이브레이크로 끝났으면 체크하고 그 점수도. 잘못 넣었으면 「기록 지우기」.{'\n'}
               ✋ 길게 누른 채 끌면 다른 칸으로 옮기고, 빨간 🗑 띠에 놓으면 지웁니다.
             </Text>
           )}
@@ -463,24 +454,8 @@ export function GroupLeagueView({
         </>
       )}
 
-      {/* 직접 입력 — 시간표에서 「직접 입력」을 고르면 여기에 */}
-      {typed && (() => {
-        const m = groups.flatMap((g) => g.matches || []).find((x) => x.id === typed.id);
-        if (!m) return null;
-        return (
-          <Card style={{ marginTop: 8, borderColor: C.green, borderWidth: 1.5 }}>
-            <Text style={F.bodyBold}>{m.round}타임 · 코트 {cn(m.court)} — 점수 직접 입력</Text>
-            <Text style={{ fontSize: 12, color: C.sub, marginTop: 4 }}>{nameOfEntry(m.a)}  vs  {nameOfEntry(m.b)}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
-              <Field keyboardType="number-pad" placeholder="위 팀" value={typed.a} onChangeText={(v) => setTyped({ ...typed, a: v })} style={{ flex: 1 }} />
-              <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
-              <Field keyboardType="number-pad" placeholder="아래 팀" value={typed.b} onChangeText={(v) => setTyped({ ...typed, b: v })} style={{ flex: 1 }} />
-              <Btn small onPress={saveTyped}>저장</Btn>
-              <Btn small tone="ghost" onPress={() => setTyped(null)}>취소</Btn>
-            </View>
-          </Card>
-        );
-      })()}
+      {/* 결과 입력 창 — 시간표의 경기 칸을 누르면 아래에서 올라온다 */}
+      <ScoreSheet target={scoring} onSave={saveScore} onClose={() => setScoring(null)} />
 
       {/* 편성 수정 — 운영진 */}
       {canEdit && (

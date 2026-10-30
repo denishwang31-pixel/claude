@@ -590,6 +590,41 @@ console.log('[조마다 경기 수 같게]');
   ok(td.indexOf('조별 예선`}') < td.indexOf('본선 토너먼트`}') && td.indexOf('본선 토너먼트`}') < td.indexOf('<DivKnockout ko='), '본선 토너먼트 분류는 조별 예선 아래, 그 밑에 대진표');
 }
 
+/* ---------- 결과 입력 — 직접 입력 · 타이브레이크 (2026-10-30) ---------- */
+{
+  const SF = await import('../src/lib/scoreForm.js');
+  const GL = await import('../src/lib/groupLeague.js');
+  const { buildBracket, applyResult } = await import('../src/lib/tournament.js');
+  eq(SF.readScore({ a: '6', b: '3' }).score, { a: 6, b: 3 }, '게임 수 직접 입력');
+  ok(/숫자/.test(SF.readScore({ a: '', b: '3' }).error) && /숫자/.test(SF.readScore({ a: '6a', b: '3' }).error), '빈칸·글자는 막는다');
+  ok(/같습니다/.test(SF.readScore({ a: '5', b: '5' }).error) && SF.readScore({ a: '5', b: '5' }, { allowDraw: true }).score.a === 5, '무승부는 팀 대항만');
+  eq(SF.readScore({ a: '6', b: '5', tbOn: true, tbA: '7', tbB: '5' }).score, { a: 6, b: 5, tb: { a: 7, b: 5 } }, '타이브레이크 체크 → 타이브레이크 점수도');
+  ok(/두 칸/.test(SF.readScore({ a: '6', b: '5', tbOn: true, tbA: '7', tbB: '' }).error), '타이브레이크를 체크하면 점수 두 칸 모두');
+  ok(/다릅니다/.test(SF.readScore({ a: '6', b: '5', tbOn: true, tbA: '3', tbB: '7' }).error), '게임을 이긴 팀 = 타이브레이크를 이긴 팀');
+  ok(/한 개 차이/.test(SF.readScore({ a: '6', b: '2', tbOn: true, tbA: '7', tbB: '5' }).error), '타이브레이크면 게임 수 한 개 차이');
+  eq(SF.formOf({ a: 7, b: 6, tb: { a: 10, b: 8 } }), { a: '7', b: '6', tbOn: true, tbA: '10', tbB: '8' }, '고칠 때 넣었던 값 그대로');
+  /* 저장 — 조별리그·본선에 타이브레이크가 남고, 순위는 게임 수로 */
+  const roster = Array.from({ length: 8 }, (_, i) => ({ id: `s${i}`, name: `선수${i}`, gender: 'M', skill: 3 }));
+  const d = GL.drawAll(roster, { groupCount: 1, advance: 2 }, ['MD'], { courts: 2 }, () => 0.5);
+  const m0 = d.groups[0].matches[0];
+  const gs = GL.setScore(d.groups, m0.id, { a: 6, b: 5, tb: { a: 7, b: 3 } });
+  eq(gs[0].matches[0].score, { a: 6, b: 5, tb: { a: 7, b: 3 } }, '조별리그 결과에 타이브레이크 저장');
+  eq(GL.setScore(d.groups, m0.id, { a: 6, b: 5, tb: { a: 3, b: 7 } })[0].matches[0].score, { a: 6, b: 5 }, '이긴 팀이 다른 타이브레이크는 버린다');
+  ok(GL.standings(gs[0]).find((r) => r.id === m0.a).gf === 6, '순위·득실은 게임 수로만');
+  let br = buildBracket(['x', 'y', 'z', 'w']);
+  br = applyResult(br, br.rounds[0].matches[0].id, 6, 5, { a: 7, b: 4 });
+  ok(br.rounds[0].matches[0].score.tb.a === 7 && br.rounds[1].matches[0].a === br.rounds[0].matches[0].winner, '본선 결과에도 타이브레이크 · 이긴 팀은 다음 경기로');
+  const lv = GL.liveView({ stage: 'draw', events: ['MD'], entries: d.entries, groups: gs, courts: 2, rules: { advance: 2 } }, '');
+  ok(lv.groups[0].matches.some((m) => m.score?.tb?.a === 7) && lv.grid.rounds.some((r) => r.matches.some((m) => m.score?.tb?.b === 3)), '웹에도 타이브레이크 점수가 간다');
+  const { readFileSync } = await import('node:fs');
+  const rd = (f) => readFileSync(new URL(`../src/components/${f}`, import.meta.url), 'utf8');
+  const mb = rd('MatchBoard.jsx');
+  ok(/readScore\(f, \{ allowDraw \}\)/.test(mb) && /keyboardType="number-pad"/.test(mb) && /label="타이브레이크로 끝났어요"/.test(mb) && !/const GAMES = \[/.test(mb), '결과 입력 창: 고르기 대신 숫자 입력 · 타이브레이크 체크');
+  ok(/<ScoreSheet target=\{scoring\}/.test(rd('GroupLeagueView.jsx')) && !/scoreChoices/.test(rd('GroupLeagueView.jsx')) && /allowDraw: false/.test(rd('GroupLeagueView.jsx')), '조별리그: 같은 결과 입력 창(무승부 없음)');
+  ok(/<ScoreSheet target=\{scoring\}/.test(rd('KdkDivView.jsx')) && /applyResult\(bracket, m\.id, score\.a, score\.b, score\.tb \|\| null\)/.test(rd('TournamentDraw.jsx')) && /applyResult\(bracket, m\.id, score\.a, score\.b, score\.tb \|\| null\)/.test(rd('TournamentScreen.jsx')), 'KDK·본선도 같은 결과 입력 창');
+  ok(/m\.score\.tb && <Text/.test(rd('MatchGrid.jsx')) && /tb=\{m\.score\?\.tb \? m\.score\.tb\.a : null\}/.test(rd('BracketTree.jsx')) && /var tbx = function \(sc\)/.test(readFileSync(new URL('../web/live.html', import.meta.url), 'utf8')), '앱 시간표·본선 대진표·웹에 타이브레이크 표시');
+}
+
 /* 웹 — 내 경기 찾기(조별리그도 팀 대항처럼, 2026-10-29) */
 {
   const { readFileSync } = await import('node:fs');

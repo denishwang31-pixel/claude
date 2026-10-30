@@ -160,13 +160,14 @@ export function roundName(roundIndex, totalRounds) {
 }
 
 /** 승자 입력 후 다음 라운드에 전파 */
-export function applyResult(bracket, matchId, scoreA, scoreB) {
+export function applyResult(bracket, matchId, scoreA, scoreB, tb = null) {
   const rounds = bracket.rounds.map((r) => ({ ...r, matches: r.matches.map((m) => ({ ...m })) }));
   let found = null, ri = -1, mi = -1;
   rounds.forEach((r, i) => r.matches.forEach((m, j) => { if (m.id === matchId) { found = m; ri = i; mi = j; } }));
   if (!found) return bracket;
 
-  found.score = { a: scoreA, b: scoreB };
+  /* tb — 타이브레이크 점수 { a, b }(기록·표시용, lib/scoreForm.js) */
+  found.score = { a: scoreA, b: scoreB, ...(tb ? { tb: { a: tb.a, b: tb.b } } : {}) };
   found.winner = scoreA > scoreB ? found.a : found.b;
 
   // 다음 라운드 슬롯 갱신

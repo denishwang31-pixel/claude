@@ -33,6 +33,7 @@ import { DateField, Label } from './pickers';
 import { AppButton, Touchable, Segmented, useOptionSheet } from './native';
 import { TournamentSignup } from './TournamentSignup';
 import { Card, SectionTitle, Chip, Btn, Field, EmptyState, Divider } from './ui';
+import { ScoreSheet } from './MatchBoard';
 import { GenderMark, genderCount } from './Mine';
 import { C, S, R, F } from '../lib/theme';
 import { todayYmd } from '../lib/today';
@@ -731,23 +732,22 @@ function CreateTournament({ clubId, members, venues = [], onDone, flash }) {
 
 /* ---------------- 토너먼트 진행 ---------------- */
 function Knockout({ clubId, t, isAdmin, nameOfEntry, flash }) {
-  const [edit, setEdit] = useState(null);
-  const [sc, setSc] = useState({ a: '', b: '' });
+  /* 결과 입력 — 게임 수 직접 입력 · 타이브레이크 체크(MatchBoard ScoreSheet, 2026-10-30 앱 주인) */
+  const [scoring, setScoring] = useState(null);
   const bracket = t.bracket;
   if (!bracket?.rounds?.length) return <Card><Text style={{ color: C.sub }}>본선 대진이 아직 없습니다.</Text></Card>;
 
   const champion = championOf(bracket);
-  const editing = edit ? bracket.rounds.flatMap((r) => r.matches).find((m) => m.id === edit) : null;
-
-  const save = (matchId) => {
-    if (sc.a === '' || sc.b === '' || sc.a === sc.b) return flash('스코어 확인 (동점 불가)');
-    const next = applyResult(bracket, matchId, +sc.a, +sc.b);
+  const saveScore = (score) => {
+    const m = scoring?.match;
+    setScoring(null);
+    if (!m || !score) return;
+    const next = applyResult(bracket, m.id, score.a, score.b, score.tb || null);
     const done = championOf(next);
     updateTournament(clubId, t.id, {
       bracket: next,
       ...(done ? { status: 'finished', championId: done } : {}),
     });
-    setEdit(null); setSc({ a: '', b: '' });
     if (done) flash(`🏆 우승: ${nameOfEntry(done)}`);
   };
 
@@ -760,24 +760,15 @@ function Knockout({ clubId, t, isAdmin, nameOfEntry, flash }) {
         </Card>
       )}
       <Card style={{ padding: 10, marginTop: champion ? 10 : 0 }}>
-        <BracketTree bracket={bracket} nameOf={nameOfEntry} selectedId={edit}
-          onPressMatch={isAdmin ? (m) => { setEdit(m.id); setSc({ a: '', b: '' }); } : undefined} />
+        <BracketTree bracket={bracket} nameOf={nameOfEntry} selectedId={scoring?.match?.id}
+          onPressMatch={isAdmin ? (m) => setScoring({
+            match: m, title: '본선', A: { name: nameOfEntry(m.a) }, B: { name: nameOfEntry(m.b) }, allowDraw: false, canClear: false,
+          }) : undefined} />
         <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>
           굵은 초록 선 = 이긴 팀이 올라간 길 · 흐린 칸 = 진 팀{isAdmin ? ' · 경기를 누르면 결과를 넣습니다' : ''}
         </Text>
       </Card>
-      {editing && (
-        <Card style={{ marginTop: 8 }}>
-          <Text style={F.bodyBold}>{nameOfEntry(editing.a)} vs {nameOfEntry(editing.b)}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
-            <Field keyboardType="number-pad" placeholder="위 팀" value={sc.a} onChangeText={(v) => setSc({ ...sc, a: v })} style={{ flex: 1 }} />
-            <Text style={{ fontWeight: '700', color: C.faint }}>:</Text>
-            <Field keyboardType="number-pad" placeholder="아래 팀" value={sc.b} onChangeText={(v) => setSc({ ...sc, b: v })} style={{ flex: 1 }} />
-            <Btn small onPress={() => save(editing.id)}>저장</Btn>
-            <Btn small tone="ghost" onPress={() => setEdit(null)}>닫기</Btn>
-          </View>
-        </Card>
-      )}
+      <ScoreSheet target={scoring} onSave={saveScore} onClose={() => setScoring(null)} />
     </View>
   );
 }

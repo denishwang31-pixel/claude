@@ -8,15 +8,16 @@
 
    흐름
      · 아무것도 안 고른 채 경기를 누르면 → 위 버튼을 먼저 고르라고 알린다
-     · [결과 입력]  → 경기를 누르면 아래에서 점수 창이 올라온다(양 팀 게임 수 고르기)
+     · [결과 입력]  → 경기를 누르면 아래에서 점수 창이 올라온다(양 팀 게임 수를 직접 입력 · 타이브레이크 체크)
      · [대진표 수정] → 경기를 누르면 고치기 화면(LeagueMatchEditor). [경기 추가]·[대진 삭제]도 이때 보인다
    ⚠️ 창은 경기를 눌렀을 때 바로 하나만 연다 — 메뉴가 닫히는 중에 다른 창을 여는 일이 없게.
    ============================================================ */
-import React, { useEffect, useState } from 'react';
-import { View, Text, Modal, Pressable, ScrollView } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, Modal, Pressable, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppButton } from './native';
-import { Chip } from './ui';
+import { Field, CheckRow } from './ui';
+import { readScore, formOf } from '../lib/scoreForm';
 import { C, S, R, F } from '../lib/theme';
 import { breadcrumb } from '../lib/crashReport';
 
@@ -113,39 +114,51 @@ export function BoardModeBar({
   );
 }
 
-const GAMES = [0, 1, 2, 3, 4, 5, 6, 7];
-
 /**
- * 점수 창 — 양 팀 게임 수를 하나씩 눌러 고르고 [저장].
- * @param target { match, title, A:{name,color}, B:{name,color} } | null
- * @param onSave (score|null) => void   null 이면 기록 지우기
+ * 점수 창 — 양 팀 게임 수를 직접 입력하고 [저장]. 타이브레이크로 끝났으면 체크하고 타이브레이크 점수도.
+ * (2026-10-30 앱 주인: "점수를 고르는 게 아니라 입력하는 걸로 · 타이브레이크 여부 체크해서 점수 입력")
+ * @param target { match, title, A:{name,color}, B:{name,color}, allowDraw?, canClear? } | null
+ *               allowDraw — 무승부가 있는 대회(청백전·팀 리그)만 true. canClear 가 false 면 [기록 지우기] 없음
+ * @param onSave (score|null) => void   score = { a, b, tb? } · null 이면 기록 지우기
  */
 export function ScoreSheet({ target, onSave, onClose }) {
   const insets = useSafeAreaInsets();
-  const [a, setA] = useState(null);
-  const [b, setB] = useState(null);
+  const [f, setF] = useState(formOf(null));
+  const [err, setErr] = useState('');
+  const bRef = useRef(null);
+  const tbARef = useRef(null);
+  const tbBRef = useRef(null);
   useEffect(() => {
     if (!target) return;
-    setA(target.match?.score ? target.match.score.a : null);
-    setB(target.match?.score ? target.match.score.b : null);
+    setF(formOf(target.match?.score || null));
+    setErr('');
   }, [target]);
   /* ⚠️ 닫을 때 창을 없애지 않고 visible 만 끈다 — LeagueMatchEditor.jsx 같은 자리 주석 */
   if (!target) return <Modal visible={false} transparent animationType="slide" onRequestClose={onClose} />;
 
-  const row = (side, value, set) => (
-    <View style={{ marginTop: S.md }}>
-      <Text style={{ fontSize: 13, fontWeight: '800', color: side.color || C.text }}>{side.name}</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-        {GAMES.map((g) => (
-          <Chip key={g} tone={value === g ? 'green' : 'outline'} onPress={() => set(g)}>{String(g)}</Chip>
-        ))}
-      </View>
+  const allowDraw = target.allowDraw !== false;
+  const set = (k, v) => { setF((x) => ({ ...x, [k]: String(v).replace(/[^0-9]/g, '').slice(0, 2) })); setErr(''); };
+  const r = readScore(f, { allowDraw });
+  const save = () => { if (r.error) { setErr(r.error); return; } onSave(r.score); };
+  const box = (value, onChange, ref, next, label) => (
+    <Field ref={ref} keyboardType="number-pad" maxLength={2} value={value} onChangeText={onChange} selectTextOnFocus
+      returnKeyType={next ? 'next' : 'done'} onSubmitEditing={() => (next ? next.current?.focus?.() : save())}
+      accessibilityLabel={label} placeholder="0"
+      style={{ width: 76, textAlign: 'center', fontSize: 24, fontWeight: '900', paddingVertical: 8 }} />
+  );
+  const side = (s, value, key, ref, next) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: S.sm }}>
+      <Text numberOfLines={2} style={{ flex: 1, fontSize: 14, fontWeight: '800', color: s.color || C.text }}>{s.name}</Text>
+      {box(value, (v) => set(key, v), ref, next, `${s.name} 게임 수`)}
     </View>
   );
-  const ready = a !== null && b !== null;
+  const preview = !r.error
+    ? `${target.A.name} ${r.score.a} : ${r.score.b} ${target.B.name}${r.score.tb ? ` · 타이브레이크 ${r.score.tb.a}-${r.score.tb.b}` : ''}${r.score.a === r.score.b ? ' (무승부)' : ''}`
+    : '';
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.32)', justifyContent: 'flex-end' }} onPress={onClose}>
         <Pressable onPress={(e) => e.stopPropagation()}>
           <View style={{
@@ -155,16 +168,33 @@ export function ScoreSheet({ target, onSave, onClose }) {
             <ScrollView style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled">
               <Text style={{ fontSize: 15, fontWeight: '800', color: C.text }}>결과 입력</Text>
               <Text style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{target.title}</Text>
-              {row(target.A, a, setA)}
-              {row(target.B, b, setB)}
-              <Text style={{ fontSize: 12, color: C.sub, marginTop: S.md }}>
-                {ready ? `${target.A.name} ${a} : ${b} ${target.B.name}` : '양 팀 게임 수를 고르세요'}
+              <Text style={{ fontSize: 11.5, color: C.faint, marginTop: S.sm }}>게임 수를 숫자로 넣으세요</Text>
+              {side(target.A, f.a, 'a', null, bRef)}
+              {side(target.B, f.b, 'b', bRef, f.tbOn ? tbARef : null)}
+              <View style={{ marginTop: S.md }}>
+                <CheckRow checked={f.tbOn} onToggle={() => { setF((x) => ({ ...x, tbOn: !x.tbOn })); setErr(''); }}
+                  label="타이브레이크로 끝났어요" hint={f.tbOn ? '타이브레이크 점수를 넣으세요(예: 7-5, 10-8)' : '체크하면 타이브레이크 점수를 넣습니다'} />
+              </View>
+              {f.tbOn && (
+                <View style={{ marginTop: S.sm, padding: 10, borderRadius: R.md, backgroundColor: C.fill }}>
+                  <Text style={{ fontSize: 11.5, fontWeight: '800', color: C.sub }}>타이브레이크 점수</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                    <Text numberOfLines={1} style={{ flex: 1, fontSize: 12.5, fontWeight: '700', color: target.A.color || C.text, textAlign: 'right' }}>{target.A.name}</Text>
+                    {box(f.tbA, (v) => set('tbA', v), tbARef, tbBRef, `${target.A.name} 타이브레이크 점수`)}
+                    <Text style={{ fontSize: 18, fontWeight: '900', color: C.faint }}>-</Text>
+                    {box(f.tbB, (v) => set('tbB', v), tbBRef, null, `${target.B.name} 타이브레이크 점수`)}
+                    <Text numberOfLines={1} style={{ flex: 1, fontSize: 12.5, fontWeight: '700', color: target.B.color || C.text }}>{target.B.name}</Text>
+                  </View>
+                </View>
+              )}
+              <Text style={{ fontSize: 12.5, fontWeight: err ? '700' : '600', color: err ? C.danger : preview ? C.text : C.faint, marginTop: S.md, lineHeight: 18 }}>
+                {err || preview || '양 팀 게임 수를 넣으세요'}
               </Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: S.md }}>
                 <View style={{ flex: 1 }}>
-                  <AppButton full disabled={!ready} onPress={() => onSave({ a, b })}>저장</AppButton>
+                  <AppButton full onPress={save}>저장</AppButton>
                 </View>
-                {!!target.match?.score && (
+                {!!target.match?.score && target.canClear !== false && (
                   <AppButton variant="outlined" onPress={() => onSave(null)}>기록 지우기</AppButton>
                 )}
                 <AppButton variant="text" onPress={onClose}>닫기</AppButton>
@@ -173,6 +203,7 @@ export function ScoreSheet({ target, onSave, onClose }) {
           </View>
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

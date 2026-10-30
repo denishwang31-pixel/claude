@@ -26,7 +26,7 @@ const THIN = 1.5;
 const THICK = 3.5;
 
 /* 한 팀 줄 — 이긴 팀은 초록 굵게, 진 팀은 흐리게 */
-function TeamRow({ name, score, state, top }) {
+function TeamRow({ name, score, tb = null, state, top }) {
   const win = state === 'win';
   const lose = state === 'lose';
   return (
@@ -41,7 +41,9 @@ function TeamRow({ name, score, state, top }) {
         color: win ? C.green : lose ? C.faint : name ? C.text : C.faint,
       }}>{name || '—'}</Text>
       {score != null && (
-        <Text style={{ fontSize: 11, fontWeight: '800', color: win ? C.green : C.faint, marginLeft: 3 }}>{score}</Text>
+        <Text style={{ fontSize: 11, fontWeight: '800', color: win ? C.green : C.faint, marginLeft: 3 }}>
+          {score}{tb != null && <Text style={{ fontSize: 8.5 }}> ({tb})</Text>}
+        </Text>
       )}
     </View>
   );
@@ -64,8 +66,9 @@ function MatchBox({ m, firstRound, nameOf, x, y, w, h = H, slot = null, onPress,
           <Text numberOfLines={1} style={{ fontSize: 9.5, fontWeight: '800', color: slot ? C.lime : C.faint }}>{slot || (bye ? '부전승' : '시간 미정')}</Text>
         </View>
       )}
-      <TeamRow top name={m.a ? nameOf(m.a) : (bye ? '부전승' : '')} score={m.score ? m.score.a : null} state={st('a')} />
-      <TeamRow name={m.b ? nameOf(m.b) : (bye ? '부전승' : '')} score={m.score ? m.score.b : null} state={st('b')} />
+      {/* 타이브레이크 점수는 게임 수 옆에 작게 — 6 (7) / 5 (5) */}
+      <TeamRow top name={m.a ? nameOf(m.a) : (bye ? '부전승' : '')} score={m.score ? m.score.a : null} tb={m.score?.tb ? m.score.tb.a : null} state={st('a')} />
+      <TeamRow name={m.b ? nameOf(m.b) : (bye ? '부전승' : '')} score={m.score ? m.score.b : null} tb={m.score?.tb ? m.score.tb.b : null} state={st('b')} />
     </Pressable>
   );
 }

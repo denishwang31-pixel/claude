@@ -349,6 +349,8 @@ export function MatchGrid({
                           }}>
                             <Text style={{ fontSize: 13, fontWeight: '900', color: whiteWin ? '#111827' : '#fff' }}>
                               {m.score.a}:{m.score.b}{draw ? ' 무' : ''}
+                              {/* 타이브레이크 점수(있으면) — 작게 「(7-5)」 */}
+                              {!!m.score.tb && <Text style={{ fontSize: 10, fontWeight: '800' }}> ({m.score.tb.a}-{m.score.tb.b})</Text>}
                             </Text>
                           </View>
                         )

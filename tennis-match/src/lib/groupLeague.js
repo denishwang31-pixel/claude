@@ -644,9 +644,12 @@ export function setGroupCourts(groups, groupId, courtList, courts = 2) {
 /** 결과 넣기·지우기 */
 export function setScore(groups, matchId, score) {
   const ok = score && Number.isFinite(+score.a) && Number.isFinite(+score.b) && +score.a >= 0 && +score.b >= 0 && +score.a !== +score.b;
+  /* 타이브레이크 점수(tb) — 기록·표시용. 이긴 쪽이 게임 수와 같을 때만 남긴다(lib/scoreForm.js) */
+  const t = ok && score.tb;
+  const tb = t && Number.isFinite(+t.a) && Number.isFinite(+t.b) && +t.a !== +t.b && (+score.a > +score.b) === (+t.a > +t.b) ? { tb: { a: +t.a, b: +t.b } } : {};
   return groups.map((g) => ({
     ...g,
-    matches: (g.matches || []).map((m) => (m.id !== matchId ? m : { ...m, score: ok ? { a: +score.a, b: +score.b } : null })),
+    matches: (g.matches || []).map((m) => (m.id !== matchId ? m : { ...m, score: ok ? { a: +score.a, b: +score.b, ...tb } : null })),
   }));
 }
 
