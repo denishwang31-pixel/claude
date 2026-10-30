@@ -10,9 +10,10 @@
    bracket: tournament.js 의 { rounds:[{ matches:[{ id,a,b,score,winner }] }] }
      r 라운드 i 번째 경기의 승자 → r+1 라운드 floor(i/2) 번째 경기
    ============================================================ */
-import React, { useState } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { View, Text, Pressable, ScrollView, Animated } from 'react-native';
 import { roundName } from '../lib/tournament';
+import { DragCell } from './MatchGrid';
 import { C, R } from '../lib/theme';
 
 const ROW = 25;          // 한 팀 줄 높이
@@ -91,9 +92,15 @@ const Line = ({ x, y, w = 0, h = 0, thick }) => {
  * @param champion      우승 이름(있으면 결승 줄 이름 옆에 🏆)
  * @param slotOf        (라운드, 순서) → 「3T 10:30 · 코트 A」 — 주면 상자마다 언제·어느 코트인지 한 줄
  *                      (2026-10-29 앱 주인: "본선 토너먼트에 코트·시간 표시가 필요해")
+ * @param onSwap        (라운드, 끈 경기 순서, 놓은 경기 순서) — 주면 결승 전 상자를 길게 눌러 끌어
+ *                      같은 라운드 다른 상자 위에 놓으면 두 자리를 맞바꾼다(부모가 저장, 2026-10-30 앱 주인)
  */
-export function BracketTree({ bracket, nameOf, onPressMatch, selectedId, champion, slotOf = null }) {
+export function BracketTree({ bracket, nameOf, onPressMatch, selectedId, champion, slotOf = null, onSwap = null }) {
   const [avail, setAvail] = useState(330);
+  const [drag, setDrag] = useState(null);          // { r, i, over } 끄는 중
+  const live = useRef(null);
+  const ghost = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const api = useRef({});
   const rounds = bracket?.rounds || [];
   const RN = rounds.length;
   if (!RN) return null;
@@ -122,14 +129,51 @@ export function BracketTree({ bracket, nameOf, onPressMatch, selectedId, champio
   const lines = [];
   const boxes = [];
   const labels = [];
+  /* 끌기 — 상자 안 손가락 위치 + 움직인 거리 → 같은 라운드 어느 상자 위인지 */
+  const rectOf = (r, i) => { const p = posOf(r, i); return { x: p.cx - boxW / 2, y: rowY(p.row) }; };
+  const hit = (r, x, y) => rounds[r].matches.findIndex((_, j) => { const b = rectOf(r, j); return x >= b.x && x <= b.x + boxW && y >= b.y && y <= b.y + BH; });
+  api.current = {
+    start: (m, e) => {
+      const b = rectOf(m.r, m.i);
+      live.current = { r: m.r, i: m.i, x0: b.x + e.x, y0: b.y + e.y, over: -1 };
+      ghost.setValue({ x: b.x, y: b.y });
+      setDrag({ r: m.r, i: m.i, over: -1 });
+    },
+    move: (e) => {
+      const l = live.current;
+      if (!l) return;
+      const x = l.x0 + e.translationX; const y = l.y0 + e.translationY;
+      const b = rectOf(l.r, l.i);
+      ghost.setValue({ x: b.x + e.translationX, y: b.y + e.translationY });
+      const j = hit(l.r, x, y);
+      const over = j >= 0 && j !== l.i ? j : -1;
+      if (over !== l.over) { l.over = over; setDrag((d) => (d ? { ...d, over } : d)); }
+    },
+    end: (e, cancelled) => {
+      const l = live.current;
+      live.current = null;
+      setDrag(null);
+      if (!l || cancelled || l.over < 0) return;
+      onSwap?.(l.r, l.i, l.over);
+    },
+  };
 
   rounds.forEach((round, r) => {
     round.matches.forEach((m, i) => {
       const p = posOf(r, i);
       const y = rowY(p.row);
-      boxes.push(<MatchBox key={m.id} m={m} firstRound={r === 0} nameOf={nameOf} x={p.cx - boxW / 2} y={y} w={boxW}
-        h={BH} slot={slotOf ? slotOf(r, i, m) || '' : null}
-        onPress={onPressMatch} selected={selectedId === m.id} isFinal={p.side === 'final'} />);
+      const box = (bx, by) => (
+        <MatchBox key={m.id} m={m} firstRound={r === 0} nameOf={nameOf} x={bx} y={by} w={boxW}
+          h={BH} slot={slotOf ? slotOf(r, i, m) || '' : null}
+          onPress={onPressMatch} selected={selectedId === m.id || (!!drag && drag.r === r && drag.over === i)} isFinal={p.side === 'final'} />
+      );
+      /* 결승 전 상자는 길게 눌러 끌 수 있다(onSwap 이 있을 때) — 끄는 상자는 흐리게, 놓을 상자는 초록 테두리 */
+      boxes.push(onSwap && r < RN - 1 ? (
+        <DragCell key={m.id} m={{ ...m, r, i }} api={api} enabled
+          style={{ position: 'absolute', left: p.cx - boxW / 2, top: y, width: boxW, height: BH, opacity: drag && drag.r === r && drag.i === i ? 0.3 : 1 }}>
+          {box(0, 0)}
+        </DragCell>
+      ) : box(p.cx - boxW / 2, y));
       if (r === RN - 1) return;
       /* 다음 경기로 잇는 선 — 이긴 팀이 있으면 그 길이 굵어진다 */
       const pp = posOf(r + 1, Math.floor(i / 2));
@@ -161,14 +205,32 @@ export function BracketTree({ bracket, nameOf, onPressMatch, selectedId, champio
 
   return (
     <View onLayout={(e) => { const w = Math.floor(e.nativeEvent.layout.width); if (w > 0 && Math.abs(w - avail) > 2) setAvail(w); }}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} scrollEnabled={width > avail}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} scrollEnabled={width > avail && !drag}>
         <View style={{ width, height }}>
           {/* 가는 선을 먼저, 굵은 선을 나중에 — 겹치는 곳에서 회색이 초록 위로 올라오지 않게 */}
           {[...lines].sort((a, b) => Number(!!a.props.thick) - Number(!!b.props.thick))}
           {boxes}
           {labels}
+          {!!drag && (() => {
+            const m = rounds[drag.r].matches[drag.i];
+            return (
+              <Animated.View pointerEvents="none" style={{
+                position: 'absolute', left: 0, top: 0, width: boxW, borderRadius: 7, borderWidth: 2, borderColor: C.green,
+                backgroundColor: C.surface, elevation: 8, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
+                transform: ghost.getTranslateTransform(),
+              }}>
+                <Text numberOfLines={1} style={{ fontSize: 10.5, fontWeight: '800', color: C.text, paddingHorizontal: 6, paddingTop: 4 }}>{m.a ? nameOf(m.a) : '—'}</Text>
+                <Text numberOfLines={1} style={{ fontSize: 10.5, fontWeight: '800', color: C.text, paddingHorizontal: 6, paddingBottom: 4 }}>{m.b ? nameOf(m.b) : '—'}</Text>
+              </Animated.View>
+            );
+          })()}
         </View>
       </ScrollView>
+      {!!drag && (
+        <Text style={{ fontSize: 11, fontWeight: '800', color: C.green, marginTop: 4 }}>
+          {drag.over >= 0 ? '놓으면 두 경기의 자리를 맞바꿉니다(그 아래 경기도 함께)' : '같은 라운드의 다른 경기 위에 놓으세요'}
+        </Text>
+      )}
     </View>
   );
 }

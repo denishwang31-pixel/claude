@@ -27,6 +27,7 @@ import {
   groupSizesFor, gamesCheck, gamesFixes, gamesProblemText,
   koOrder, reseedGroups, drawEstimate, KO_SEED_HELP, ORDER_HELP, slotConflicts, cellCollisions, koGridCells,
   moveKoCell, editGroupMatch, removeGroupMatch, koPlaceKey,
+  koPermOf, swapKoPerm, permuteBracket, swapBracketSubtree,
 } from '../lib/groupLeague';
 import { tournamentRoundTimes, tournamentSchedule, timingRounds } from '../lib/schedule';
 import { RoundTimingEditor } from './RoundTimingEditor';
@@ -45,7 +46,7 @@ import { C, S, R, F } from '../lib/theme';
 const GRID_ALL = '__grid_all';
 
 /* ---------------- 부별 본선 ---------------- */
-function DivKnockout({ ko, nameOfEntry, canEdit, onSave, title, slotOf = null }) {
+function DivKnockout({ ko, nameOfEntry, canEdit, onSave, title, slotOf = null, onSwap = null }) {
   /* 제목은 부모의 「본선 토너먼트」 분류 머리줄이 단다.
      결과 입력 — 게임 수 직접 입력 · 타이브레이크 체크(MatchBoard ScoreSheet, 2026-10-30 앱 주인) */
   const [scoring, setScoring] = useState(null);
@@ -78,10 +79,10 @@ function DivKnockout({ ko, nameOfEntry, canEdit, onSave, title, slotOf = null })
         </Card>
       )}
       <Card style={{ padding: 10 }}>
-        <BracketTree bracket={bracket} nameOf={nameOfEntry} slotOf={slotOf}
+        <BracketTree bracket={bracket} nameOf={nameOfEntry} slotOf={slotOf} onSwap={canEdit ? onSwap : null}
           selectedId={scoring?.match?.id} onPressMatch={canEdit ? open : undefined} />
         <Text style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>
-          굵은 초록 선 = 이긴 팀이 올라간 길 · 흐린 칸 = 진 팀{canEdit ? ' · 경기를 누르면 결과를 넣습니다' : ''}
+          굵은 초록 선 = 이긴 팀이 올라간 길 · 흐린 칸 = 진 팀{canEdit ? ' · 경기를 누르면 결과를 넣습니다 · 길게 눌러 끌면 같은 라운드 경기와 자리를 바꿉니다' : ''}
         </Text>
       </Card>
       <ScoreSheet target={scoring} onSave={saveScore} onClose={() => setScoring(null)} />
@@ -311,7 +312,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         const d = drawKdkAll(roster, r, evs, { courts: n, excluded: t.excluded || {} });
         if (!Object.keys(d.kdk).length) { flash(d.problems[0] || 'KDK 대진을 짤 사람이 부족합니다(부마다 4명 이상)'); return; }
         await updateTournament(clubId, t.id, {
-          rules: r, courts: n, courtNames: names, events: evs, kdk: d.kdk, entries: [], groups: [], ko: {}, drawNotes: d.problems, koPlace: null,
+          rules: r, courts: n, courtNames: names, events: evs, kdk: d.kdk, entries: [], groups: [], ko: {}, drawNotes: d.problems, koPlace: null, koPerm: null,
         });
         flash(d.problems.length ? `KDK 대진을 작성했습니다 — 확인할 것 ${d.problems.length}건` : 'KDK 대진을 작성했습니다');
       } else if (scope === 'all') {
@@ -326,7 +327,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
         const ko = ug ? {} : Object.fromEntries(evs.map((k) => [k, koFor(d.entries.filter((e) => e.div === k))]).filter(([, v]) => v.bracket?.rounds?.length));
         await updateTournament(clubId, t.id, {
           rules: { ...r, groupAdvance: {} }, useGroupStage: ug, courts: n, courtNames: names, events: evs, entries: d.entries, groups: d.groups, ko, drawNotes: d.problems, kdk: null,
-          koPlace: null,     // 끌어 옮긴 본선 자리도 새로
+          koPlace: null, koPerm: null,     // 끌어 옮긴 본선 자리·바꾼 대진 순서도 새로
         });
         flash(d.problems.length ? `대진을 작성했습니다 — 확인할 것 ${d.problems.length}건` : '대진을 작성했습니다');
       } else {
@@ -350,6 +351,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
           rules: r, courts: n, courtNames: names, entries: d.entries, groups: d.groups, ko,
           drawNotes: d.problem ? [d.problem] : [], kdk: null,
           koPlace: Object.fromEntries(Object.entries(t.koPlace || {}).filter(([k]) => !k.startsWith(`${div}|`))),
+          koPerm: Object.fromEntries(Object.entries(t.koPerm || {}).filter(([k]) => k !== div)),
         });
         flash(d.problem || `${ev.name} 대진을 다시 작성했습니다`);
       }
@@ -434,8 +436,24 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
   const goKnockout = (gs) => {
     const q = koOrder(gs, (g) => advanceOf(rules, g), rules.koSeed, entries);
     if (q.length < 2) { flash('진출 팀이 부족합니다'); return; }
-    save({ ko: { ...(t.ko || {}), [div]: { bracket: buildBracket(q), championId: null } } },
+    /* 예정 대진표에서 끌어 바꾼 순서(t.koPerm)를 그대로 */
+    const base = buildBracket(q);
+    const bracket = permuteBracket(base, koPermOf(t, div, base.rounds[0]?.matches.length || 0));
+    save({ ko: { ...(t.ko || {}), [div]: { bracket, championId: null } } },
       `${ev.name} 본선 토너먼트 대진을 만들었습니다(${RULE_LABELS.koSeed[rules.koSeed]})`);
+  };
+  /* ---- 본선 대진 자리 바꾸기 (2026-10-30 앱 주인: "지금 규칙을 기본으로, 원하면 대진표에서 끌어서 바꾸기") ----
+     같은 라운드 두 경기를 그 아래 경기들과 함께 맞바꾼다 → 다음 라운드에서 만나는 상대가 바뀐다 */
+  const swapPreview = (r, i, j) => {
+    const n = koPreview?.bracket?.rounds?.[0]?.matches.length || 0;
+    if (!n) return;
+    save({ koPerm: { ...(t.koPerm || {}), [div]: swapKoPerm(koPermOf(t, div, n), r, i, j) } }, '본선 대진 자리를 맞바꿨습니다(예정)');
+  };
+  const resetPreview = () => save({ koPerm: { ...(t.koPerm || {}), [div]: null } }, '본선 대진을 기본 배치로 되돌렸습니다');
+  const swapReal = (r, i, j) => {
+    const res = swapBracketSubtree(divKo?.bracket, r, i, j);
+    if (res.error) { flash(res.error); return; }
+    if (res.bracket) save({ ko: { ...(t.ko || {}), [div]: { ...divKo, bracket: res.bracket } } }, '본선 대진 자리를 맞바꿨습니다');
   };
 
   /* ---- 본선 미리 보기 (2026-10-29 앱 주인: "토너먼트 대진은 안 보이는데 밑에 볼 수 있게") ----
@@ -452,8 +470,9 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
     });
     const order = koOrder(divGroups, (g) => advanceOf(rules, g), rules.koSeed === 'random' ? 'cross' : rules.koSeed, entries);
     if (order.length < 2) return null;
-    return { bracket: buildBracket(order), nameOf: (id) => label.get(id) || '' };
-  }, [useGroups, rules, divKo, divGroups, entries]);
+    const base = buildBracket(order);
+    return { bracket: permuteBracket(base, koPermOf(t, div, base.rounds[0]?.matches.length || 0)), nameOf: (id) => label.get(id) || '' };
+  }, [useGroups, rules, divKo, divGroups, entries, t.koPerm, div]);
 
   /* ---- 시드 (2026-10-29 앱 주인: "시드배정 기능") ----
      팀을 누르면 다음 번호 시드, 시드 팀을 다시 누르면 빼고 번호를 당긴다.
@@ -1098,7 +1117,7 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
                 : `${RULE_LABELS.koSeed[rules.koSeed]} — 조 순위가 정해지면 그 자리에 팀이 들어갑니다`}${koOpen ? '' : ' · 누르면 대진표가 나옵니다'}`}
               open={koOpen} onPress={() => setKoOpen(!koOpen)} />
           )}
-          {koOpen && <DivKnockout ko={divKo} nameOfEntry={nameOfEntry} canEdit={isAdmin} onSave={saveKo} title={events.length > 1 ? ev.name : ''} slotOf={koSlot} />}
+          {koOpen && <DivKnockout ko={divKo} nameOfEntry={nameOfEntry} canEdit={isAdmin} onSave={saveKo} title={events.length > 1 ? ev.name : ''} slotOf={koSlot} onSwap={isAdmin ? swapReal : null} />}
           {koOpen && koPreview && (
             <>
               <Text style={{ fontSize: 11.5, color: C.sub, marginTop: S.sm, marginBottom: 6, lineHeight: 17 }}>
@@ -1106,7 +1125,13 @@ export function TournamentDraw({ clubId, t, members = [], isAdmin, me = '', flas
                 {isAdmin ? ' 시간표의 본선 칸은 길게 눌러 끌어 옮길 수 있습니다.' : ''}
               </Text>
               <Card style={{ padding: 8 }}>
-                <BracketTree bracket={koPreview.bracket} nameOf={koPreview.nameOf} slotOf={koSlot} />
+                <BracketTree bracket={koPreview.bracket} nameOf={koPreview.nameOf} slotOf={koSlot} onSwap={isAdmin ? swapPreview : null} />
+                {isAdmin && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <Text style={{ flex: 1, fontSize: 11, color: C.faint, lineHeight: 16 }}>✋ 경기 상자를 길게 눌러 끌어 같은 라운드 다른 경기 위에 놓으면 자리가 바뀝니다 — 다음 라운드 상대가 달라집니다.</Text>
+                    {(t.koPerm?.[div] || []).some((v, k) => v !== k) && <Chip tone="outline" onPress={resetPreview}>기본 배치로</Chip>}
+                  </View>
+                )}
               </Card>
             </>
           )}

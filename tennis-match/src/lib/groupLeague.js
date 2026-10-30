@@ -1108,7 +1108,7 @@ export function koGridCells(t) {
       const ids = koOrder(gs, (g) => advanceOf(rules, g), rules.koSeed === 'random' ? 'cross' : rules.koSeed, entries);
       if (ids.length < 2) return;
       const size = 2 ** Math.ceil(Math.log2(ids.length));
-      const pos = seedPositions(size).map((sd) => (sd <= ids.length ? ids[sd - 1] : null));
+      const pos = permutePos(seedPositions(size).map((sd) => (sd <= ids.length ? ids[sd - 1] : null)), koPermOf(t, div, size / 2));
       slots = [];
       for (let n = size / 2, L = 0; n >= 1; n /= 2, L++) {
         slots.push(Array.from({ length: n }, (_, i) => (L === 0
@@ -1164,6 +1164,72 @@ export function koGridCells(t) {
     if (court !== 1) { court = 1; round += 1; }
   }
   return out;
+}
+
+/* ---------------- 본선 대진 자리 바꾸기 ----------------
+   2026-10-30 앱 주인: "A조 1위–B조 2위처럼 첫 경기 짝은 맞는데, 8강에서 누구와 붙는지는 16강 배치에 따라 달라진다.
+   지금 규칙을 기본으로 하고, 원하면 대진표에서 끌어서 바꾸고 싶다."
+   · 본선을 만들기 전: t.koPerm[부] = 첫 라운드 경기 순서(기본 [0,1,2,…]). 예정 대진표·시간표·웹·본선 만들기가 모두 따른다
+   · 본선을 만든 뒤: 대진표(bracket)에서 두 경기를 그 아래 경기들과 함께(가지째) 맞바꾼다 — 다음 라운드 결과가 없을 때만 */
+
+/** 첫 라운드 경기 순서 — 저장된 것이 맞는 모양이면 그것, 아니면 기본 순서 */
+export function koPermOf(t, div, n) {
+  const p = t?.koPerm?.[div || ''];
+  const ok = Array.isArray(p) && p.length === n && [...p].sort((x, y) => x - y).every((v, i) => v === i);
+  return ok ? p.map(Number) : Array.from({ length: n }, (_, i) => i);
+}
+/** 첫 라운드 자리(두 칸씩 한 경기) 목록을 경기 순서대로 다시 놓는다 */
+export function permutePos(pos, perm) {
+  return perm.flatMap((p) => [pos[2 * p], pos[2 * p + 1]]);
+}
+/** 본선 만들기 전 — r 라운드 k 번째와 l 번째 경기(그 아래 경기 묶음째)를 맞바꾼 새 순서 */
+export function swapKoPerm(perm, r, k, l) {
+  const w = 2 ** r;
+  const out = [...perm];
+  for (let j = 0; j < w; j++) { out[k * w + j] = perm[l * w + j]; out[l * w + j] = perm[k * w + j]; }
+  return out;
+}
+/* 다음 라운드 자리를 앞 라운드 승자로 다시 채운다(바뀐 자리는 결과도 비움) */
+function refill(rounds, from) {
+  for (let q = from + 1; q < rounds.length; q++) {
+    const prev = rounds[q - 1].matches;
+    rounds[q] = {
+      ...rounds[q],
+      matches: rounds[q].matches.map((m, k) => {
+        const a = prev[2 * k]?.winner || null; const b = prev[2 * k + 1]?.winner || null;
+        const same = a === (m.a || null) && b === (m.b || null);
+        return { ...m, a, b, fromA: prev[2 * k]?.id || null, fromB: prev[2 * k + 1]?.id || null, ...(same ? {} : { score: null, winner: null }) };
+      }),
+    };
+  }
+  return rounds;
+}
+/** 만든 대진표에 첫 라운드 순서를 입힌다(본선 만들기 때 koPerm 그대로) */
+export function permuteBracket(bracket, perm) {
+  const R = bracket?.rounds || [];
+  if (!R.length || !perm || perm.length !== R[0].matches.length) return bracket;
+  const rounds = R.map((r) => ({ ...r, matches: r.matches.map((m) => ({ ...m })) }));
+  rounds[0] = { ...rounds[0], matches: perm.map((p) => ({ ...R[0].matches[p] })) };
+  return { ...bracket, rounds: refill(rounds, 0) };
+}
+/**
+ * 본선을 만든 뒤 — r 라운드 k·l 번째 경기를 그 아래 경기들과 함께 맞바꾼다
+ * @returns { bracket } | { error }
+ */
+export function swapBracketSubtree(bracket, r, k, l) {
+  const R = bracket?.rounds || [];
+  if (!R.length || r < 0 || r >= R.length - 1) return { error: '결승은 자리를 바꿀 수 없습니다' };
+  if (k === l) return { error: '' };
+  if (R.slice(r + 1).some((rd) => rd.matches.some((m) => m.score))) return { error: '다음 라운드 결과가 있어 자리를 바꿀 수 없습니다' };
+  const rounds = R.map((rd) => ({ ...rd, matches: rd.matches.map((m) => ({ ...m })) }));
+  for (let q = 0; q <= r; q++) {
+    const w = 2 ** (r - q);
+    const ms = rounds[q].matches;
+    const next = [...ms];
+    for (let j = 0; j < w; j++) { next[k * w + j] = ms[l * w + j]; next[l * w + j] = ms[k * w + j]; }
+    rounds[q] = { ...rounds[q], matches: next };
+  }
+  return { bracket: { ...bracket, rounds: refill(rounds, r) } };
 }
 
 /** 본선 칸 자리 이름 — 부 · 라운드 · 대진표 안 순서(본선을 만들기 전 「A조 1위」 자리와 만든 뒤 실제 경기가 같은 이름) */
@@ -1272,7 +1338,7 @@ export function liveView(t, clubName = '') {
       const ids = koOrder(gs, (g) => advanceOf(rules, g), rules.koSeed === 'random' ? 'cross' : rules.koSeed, t.entries || []);
       if (ids.length < 2) return;
       const size = 2 ** Math.ceil(Math.log2(ids.length));
-      const pos = seedPositions(size).map((sd) => (sd <= ids.length ? tagOf.get(ids[sd - 1]) || '' : '부전승'));
+      const pos = permutePos(seedPositions(size).map((sd) => (sd <= ids.length ? tagOf.get(ids[sd - 1]) || '' : '부전승')), koPermOf(t, div, size / 2));
       const rounds = [];
       for (let n = size / 2, ri = 0; n >= 1; n /= 2, ri++) {
         rounds.push({

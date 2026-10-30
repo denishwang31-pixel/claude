@@ -590,6 +590,45 @@ console.log('[조마다 경기 수 같게]');
   ok(td.indexOf('조별 예선`}') < td.indexOf('본선 토너먼트`}') && td.indexOf('본선 토너먼트`}') < td.indexOf('<DivKnockout ko='), '본선 토너먼트 분류는 조별 예선 아래, 그 밑에 대진표');
 }
 
+/* ---------- 본선 대진 자리 바꾸기 — 끌어서 (2026-10-30) ---------- */
+{
+  const GL = await import('../src/lib/groupLeague.js');
+  const { buildBracket, applyResult } = await import('../src/lib/tournament.js');
+  const roster = Array.from({ length: 32 }, (_, i) => ({ id: `v${i}`, name: `선수${i}`, gender: 'M', skill: 3 }));
+  const d = GL.drawAll(roster, { groupCount: 4, advance: 2 }, ['MD'], { courts: 4 }, () => 0.5);
+  const t = { stage: 'draw', events: ['MD'], entries: d.entries, groups: d.groups, courts: 4, rules: { advance: 2, knockout: true, koSeed: 'cross' } };
+  eq(GL.koPermOf(t, 'MD', 4), [0, 1, 2, 3], '기본 배치는 지금 규칙 그대로');
+  eq(GL.koPermOf({ koPerm: { MD: [0, 0, 1, 2] } }, 'MD', 4), [0, 1, 2, 3], '망가진 순서는 무시');
+  const p1 = GL.swapKoPerm([0, 1, 2, 3], 0, 1, 2);
+  eq(p1, [0, 2, 1, 3], '8강 2번째·3번째 경기 자리 바꾸기');
+  eq(GL.swapKoPerm([0, 1, 2, 3], 1, 0, 1), [2, 3, 0, 1], '준결승 자리 바꾸기 — 그 아래 8강 두 경기가 함께');
+  const base = GL.koGridCells(t).filter((c) => c.level === 0);
+  const sw = GL.koGridCells({ ...t, koPerm: { MD: p1 } });
+  const pair = (c) => `${c.a.label}|${c.b.label}`;
+  ok(sw.filter((c) => c.level === 0).map(pair).sort().join() === base.map(pair).sort().join(), '첫 경기 짝(A조 1위–B조 2위)은 그대로');
+  ok(sw.find((c) => c.level === 1 && c.idx === 0).b.label !== GL.koGridCells(t).find((c) => c.level === 1 && c.idx === 0).b.label, '자리를 바꾸면 다음 라운드 상대가 바뀐다');
+  const lv = GL.liveView({ ...t, koPerm: { MD: p1 } }, '');
+  eq(lv.koPreview[0].rounds[0].matches.map((m) => `${m.a}|${m.b}`), [0, 2, 1, 3].map((k) => GL.liveView(t, '').koPreview[0].rounds[0].matches[k]).map((m) => `${m.a}|${m.b}`), '웹 본선(예정)도 바꾼 자리로');
+  /* 본선 만들기 — 바꾼 순서 그대로 */
+  const q = GL.koOrder(d.groups, 2, 'cross');
+  const made = GL.permuteBracket(buildBracket(q), p1);
+  const b0 = buildBracket(q);
+  ok(made.rounds[0].matches[1].a === b0.rounds[0].matches[2].a && made.rounds[1].matches[0].fromB === made.rounds[0].matches[1].id, '본선을 만들 때 바꾼 순서 그대로(다음 경기 연결도)');
+  /* 만든 뒤 — 결과가 있어도 그 라운드 안에서는 바꿀 수 있고, 다음 라운드 결과가 있으면 막는다 */
+  let br = applyResult(b0, b0.rounds[0].matches[0].id, 6, 2);
+  const s1 = GL.swapBracketSubtree(br, 0, 0, 3);
+  ok(s1.bracket.rounds[0].matches[3].score.a === 6 && s1.bracket.rounds[1].matches[1].b === s1.bracket.rounds[0].matches[3].winner && s1.bracket.rounds[1].matches[0].a === null, '8강 경기를 옮기면 이긴 팀도 새 자리의 준결승으로');
+  br = applyResult(br, br.rounds[0].matches[1].id, 6, 3);
+  br = applyResult(br, br.rounds[1].matches[0].id, 6, 4);
+  ok(/다음 라운드 결과/.test(GL.swapBracketSubtree(br, 0, 0, 2).error) && /결승/.test(GL.swapBracketSubtree(br, 2, 0, 0).error), '다음 라운드 결과가 있으면·결승은 못 바꾼다');
+  ok(GL.swapBracketSubtree(br, 1, 0, 1).bracket.rounds[0].matches[2].id === br.rounds[0].matches[0].id, '준결승을 바꾸면 그 아래 8강도 함께 옮긴다');
+  const { readFileSync } = await import('node:fs');
+  const bt = readFileSync(new URL('../src/components/BracketTree.jsx', import.meta.url), 'utf8');
+  const td = readFileSync(new URL('../src/components/TournamentDraw.jsx', import.meta.url), 'utf8');
+  ok(/onSwap && r < RN - 1 \?/.test(bt) && /<DragCell key=\{m\.id\}/.test(bt) && /onSwap\?\.\(l\.r, l\.i, l\.over\)/.test(bt), '대진표: 결승 전 상자를 길게 눌러 끌기');
+  ok(/onSwap=\{isAdmin \? swapPreview : null\}/.test(td) && /onSwap=\{isAdmin \? swapReal : null\}/.test(td) && /permuteBracket\(base, koPermOf\(t, div/.test(td) && /koPerm: null/.test(td), '대진 화면: 예정·실제 대진표에서 자리 바꾸기 · 본선 만들 때 반영 · 다시 짜면 비움');
+}
+
 /* ---------- 결과 입력 — 직접 입력 · 타이브레이크 (2026-10-30) ---------- */
 {
   const SF = await import('../src/lib/scoreForm.js');

@@ -137,7 +137,7 @@ export function EventBand({ ev, width }) {
    ⚠️ 앱 맨 바깥이 GestureHandlerRootView 라서, 끄는 동안에는 화면 세로 스크롤이 손가락을 가로채지 않는다. */
 const HOLD_MS = 350;
 const TRASH_H = 46;
-function DragCell({ m, enabled, api, children }) {
+export function DragCell({ m, enabled, api, children, style = undefined }) {
   const mRef = useRef(m);
   mRef.current = m;
   const gesture = useMemo(() => {
@@ -148,7 +148,7 @@ function DragCell({ m, enabled, api, children }) {
     return Gesture.Pan().enabled(enabled).activateAfterLongPress(HOLD_MS).runOnJS(true)
       .onStart(start).onUpdate(move).onEnd(end).onFinalize(fin);
   }, [enabled, api]);
-  return <GestureDetector gesture={gesture}><View collapsable={false}>{children}</View></GestureDetector>;
+  return <GestureDetector gesture={gesture}><View collapsable={false} style={style}>{children}</View></GestureDetector>;
 }
 
 export function MatchGrid({
