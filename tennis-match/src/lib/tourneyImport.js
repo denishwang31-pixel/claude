@@ -21,6 +21,7 @@ import { TOURNAMENT_FORMAT, TEAM_SIDES } from './constants.js';
 import { cleanTeamName, teamLook, packLeague, MAX_TEAMS, MIN_TEAMS, BLUE_WHITE_RED } from './teamLeague.js';
 import { makeGuest } from './groupLeague.js';
 import { tourneyHealth } from './tourneyHealth.js';
+import { keepTb } from './scoreForm.js';
 
 export const SHEET = { guide: '안내', people: '참가자', draw: '대진' };
 export const PEOPLE_HEAD = ['이름', '성별', '팀', '부수(선택)'];
@@ -343,6 +344,14 @@ export function parseImport(sheets, { t, members = [], personOf = (m) => ({ id: 
         if (kind === 'team' && ai === 1) {
           [teamA, teamB] = [teamB, teamA]; [ai, bi] = [bi, ai];
           if (score) score = { a: score.b, b: score.a };
+        }
+        /* 양식에 타이브레이크 칸이 없다 — 같은 사람들의 경기에 게임 수도 그대로면 넣어 둔 타이브레이크를 지킨다 */
+        if (score) {
+          const same = (x, y) => [...(x || [])].sort().join('|') === [...(y || [])].sort().join('|');
+          const olds = (kind === 'league' ? t?.league?.matches : t?.team?.matches) || [];
+          const o1 = olds.find((o) => o?.score?.tb && same(o.teamA, teamA) && same(o.teamB, teamB));
+          const o2 = o1 ? null : olds.find((o) => o?.score?.tb && same(o.teamA, teamB) && same(o.teamB, teamA));
+          score = keepTb(score, (o1 || o2)?.score, !!o2);
         }
         const gs = [...teamA, ...teamB].map((id) => personById[id].p.gender === 'F' ? 'F' : 'M');
         const typeKey = teamA.length === 1 ? 'SG' : gs.every((g) => g === 'M') ? 'MD' : gs.every((g) => g === 'F') ? 'WD' : 'MX';

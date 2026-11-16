@@ -331,5 +331,53 @@ section('조별리그 · 토너먼트 — 새로 적어 올리기');
   ok(r9.errors.some((e) => /라운드는/.test(e)), '이상한 라운드 이름');
 }
 
+section('타이브레이크 — 엑셀로 다시 올려도 남는다 (2026-11-16)');
+{
+  const { keepTb } = await import('../src/lib/scoreForm.js');
+  eq('같은 게임 수면 지킨다', keepTb({ a: 6, b: 5 }, { a: 6, b: 5, tb: { a: 7, b: 3 } }), { a: 6, b: 5, tb: { a: 7, b: 3 } });
+  eq('A·B 가 뒤바뀌어 적혔으면 타이브레이크도 뒤집어', keepTb({ a: 5, b: 6 }, { a: 6, b: 5, tb: { a: 7, b: 3 } }, true), { a: 5, b: 6, tb: { a: 3, b: 7 } });
+  eq('게임 수를 고쳤으면 버린다', keepTb({ a: 6, b: 4 }, { a: 6, b: 5, tb: { a: 7, b: 3 } }), { a: 6, b: 4 });
+  ok(keepTb(null, { a: 6, b: 5, tb: { a: 7, b: 3 } }) === null && keepTb({ a: 6, b: 5 }, null).tb === undefined, '점수를 지웠거나 예전 타이브레이크가 없으면 그대로');
+  /* 팀 대항 — 양식 받기 → 그대로 올리기 */
+  const t = {
+    id: 't1', name: '가을 청백전', date: '2026-10-20', format: 'blue_white', stage: 'team', roster: ['u1', 'u2', 'u3', 'u4'].map(P), courts: 2,
+    team: { teamA: [P('u1'), P('u2')], teamB: [P('u3'), P('u4')], unassigned: [], placement: 'manual', format: 'blue_white',
+      matches: [{ id: 'cm-1-1', round: 1, court: 1, team: true, teamA: ['u1', 'u2'], teamB: ['u3', 'u4'], score: { a: 6, b: 5, tb: { a: 7, b: 4 } } }] },
+  };
+  const r = parseImport(readXlsx(writeXlsx(buildTemplate(t))), { t, members, personOf });
+  eq('팀 대항: 오류 없음', r.errors, []);
+  eq('팀 대항: 타이브레이크 그대로', r.patch.team.matches[0].score, { a: 6, b: 5, tb: { a: 7, b: 4 } });
+  const rev = parseImport(sheets([['김철수', '남', '청팀'], ['이영희', '여', '청팀'], ['박민수', '남', '백팀'], ['최지은', '여', '백팀']], [[1, 1, '박민수', '최지은', '김철수', '이영희', 5, 6]]), { t, members, personOf });
+  eq('팀 대항: 거꾸로 적어도 그대로', rev.patch.team.matches[0].score, { a: 6, b: 5, tb: { a: 7, b: 4 } });
+  const chg = parseImport(sheets([['김철수', '남', '청팀'], ['이영희', '여', '청팀'], ['박민수', '남', '백팀'], ['최지은', '여', '백팀']], [[1, 1, '김철수', '이영희', '박민수', '최지은', 6, 2]]), { t, members, personOf });
+  eq('팀 대항: 게임 수를 고치면 타이브레이크는 빠진다', chg.patch.team.matches[0].score, { a: 6, b: 2 });
+  /* 조별리그 · 본선 */
+  const { buildBracketTemplate, parseBracketImport } = await import('../src/lib/bracketImport.js');
+  const { drawAll, setScore } = await import('../src/lib/groupLeague.js');
+  const { buildBracket, applyResult } = await import('../src/lib/tournament.js');
+  const roster = Array.from({ length: 8 }, (_, i) => ({ id: `m${i}`, name: `남${i}`, gender: 'M', skill: 3 }));
+  const d = drawAll(roster, { groupCount: 2, advance: 2, knockout: true }, ['MD'], { courts: 2 }, () => 0.5);
+  const gs = setScore(d.groups, d.groups[0].matches[0].id, { a: 5, b: 6, tb: { a: 8, b: 10 } });
+  let br = buildBracket(d.entries.map((e) => e.id));
+  br = applyResult(br, br.rounds[0].matches[0].id, 7, 6, { a: 7, b: 2 });
+  const tb = { id: 't', name: '봄 대회', date: '2026-11-01', stage: 'draw', format: 'group_bracket', events: ['MD'], roster, guests: [], entries: d.entries, groups: gs,
+    ko: { MD: { bracket: br, championId: null } }, courts: 2, rules: { groupCount: 2, advance: 2, knockout: true } };
+  const rb = parseBracketImport(readXlsx(writeXlsx(buildBracketTemplate(tb))), { t: tb, members: [] });
+  eq('조별리그: 오류 없음', rb.errors, []);
+  eq('조별리그: 타이브레이크 그대로', rb.patch.groups[0].matches.find((m) => m.id === d.groups[0].matches[0].id).score, { a: 5, b: 6, tb: { a: 8, b: 10 } });
+  eq('본선: 타이브레이크 그대로', rb.patch.ko.MD.bracket.rounds[0].matches[0].score, { a: 7, b: 6, tb: { a: 7, b: 2 } });
+}
+
+section('실시간 웹 — 팀 대항에도 타이브레이크');
+{
+  const { teamLiveView } = await import('../src/lib/teamLive.js');
+  const Q = (id, name) => ({ id, name, gender: 'M' });
+  const lv = teamLiveView({ stage: 'league', league: { teams: [{ players: [Q('a1', '가')] }, { players: [Q('b1', '나')] }], matches: [
+    { round: 1, court: 1, teamAIdx: 0, teamBIdx: 1, teamA: ['a1'], teamB: ['b1'], score: { a: 6, b: 5, tb: { a: 7, b: 5 } } },
+    { round: 2, court: 1, teamAIdx: 0, teamBIdx: 1, teamA: ['a1'], teamB: ['b1'], score: { a: 6, b: 2 } }] } });
+  eq('타이브레이크가 있으면 함께', lv.rounds[0].matches[0].score, { a: 6, b: 5, tb: { a: 7, b: 5 } });
+  eq('없으면 예전 모양 그대로', lv.rounds[1].matches[0].score, { a: 6, b: 2 });
+}
+
 console.log(`\n엑셀 불러오기 테스트: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);

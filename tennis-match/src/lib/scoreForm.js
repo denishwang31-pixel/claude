@@ -53,4 +53,16 @@ export function cleanTb(score) {
   return { a: +t.a, b: +t.b };
 }
 
-export default { readScore, formOf, tbText, cleanTb };
+/**
+ * 엑셀로 다시 올릴 때 — 양식에는 타이브레이크 칸이 없다. 같은 경기에 게임 수도 그대로면 넣어 둔 타이브레이크를 지킨다
+ * (2026-11-16: 엑셀을 다시 올리면 타이브레이크 점수가 사라졌다). 게임 수를 고쳤으면 버린다.
+ * @param flipped 예전 경기와 A·B 가 뒤바뀌어 적혔으면 true
+ */
+export function keepTb(score, oldScore, flipped = false) {
+  if (!score || !oldScore?.tb) return score;
+  const o = flipped ? { a: oldScore.b, b: oldScore.a, tb: { a: oldScore.tb.b, b: oldScore.tb.a } } : oldScore;
+  if (Number(o.a) !== Number(score.a) || Number(o.b) !== Number(score.b)) return score;
+  return { ...score, tb: { a: Number(o.tb.a), b: Number(o.tb.b) } };
+}
+
+export default { readScore, formOf, tbText, cleanTb, keepTb };

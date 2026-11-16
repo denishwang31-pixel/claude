@@ -139,7 +139,11 @@ export function teamLiveView(t, clubName = '') {
         bTeam: m.teamBIdx,
         a: (m.teamA || []).map(nameOf).join('·'),
         b: (m.teamB || []).map(nameOf).join('·'),
-        score: m.score ? { a: Number(m.score.a) || 0, b: Number(m.score.b) || 0 } : null,
+        /* tb — 타이브레이크 점수(있을 때만, 웹에 「6:5 (7-5)」로 보인다) */
+        score: m.score ? {
+          a: Number(m.score.a) || 0, b: Number(m.score.b) || 0,
+          ...(m.score.tb ? { tb: { a: Number(m.score.tb.a) || 0, b: Number(m.score.tb.b) || 0 } } : {}),
+        } : null,
       });
     });
 

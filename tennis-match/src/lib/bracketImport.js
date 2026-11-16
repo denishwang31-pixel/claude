@@ -18,6 +18,7 @@ import {
   EVENTS, EVENT_KEYS, eventOf, groupName, buildGroupMatches, schedule, playersOfFn, makeGuest, normRules, PLAY,
 } from './groupLeague.js';
 import { buildBracket, applyResult, championOf, roundName } from './tournament.js';
+import { keepTb } from './scoreForm.js';
 import { norm, cellStr, koGender, at, findSheet, headerOf, bodyRows, resolvePeople } from './importCommon.js';
 
 export const B_SHEET = { guide: '안내', people: '참가자', teams: '팀', groupGames: '조별경기', ko: '본선' };
@@ -370,6 +371,8 @@ export function parseBracketImport(sheets, { t, members = [], personOf = (m) => 
       slot.set(sk, r);
       [...A.players, ...B.players].forEach((pid) => busy.set(`${round}|${pid}`, r));
       const prev = g._old.find((m) => pairKey(m.a, m.b) === pairKey(A.id, B.id));
+      /* 양식에 타이브레이크 칸이 없다 — 같은 경기·같은 게임 수면 넣어 둔 타이브레이크를 지킨다 */
+      score = keepTb(score, prev?.score, !!prev && prev.a !== A.id);
       g.matches.push({ id: prev?.id || newId('gm'), groupId: g.id, a: A.id, b: B.id, rr: round, round, court, score, div });
       courts = Math.max(courts, court);
     });
@@ -456,7 +459,11 @@ export function parseBracketImport(sheets, { t, members = [], personOf = (m) => 
         if (!same && swapped) [a, b] = [b, a];
         else if (!same) { fail(`${x.where}: 앞 라운드 결과로 올라온 팀과 다릅니다.`); return; }
       }
-      bracket = applyResult(bracket, m.id, a, b);
+      /* 타이브레이크 — 예전 본선의 같은 두 팀 경기에 게임 수도 그대로면 지킨다 */
+      const old = (t?.ko?.[div]?.bracket?.rounds || []).flatMap((r) => r.matches || [])
+        .find((o) => o?.score?.tb && o.a && o.b && pairKey(o.a, o.b) === pairKey(m.a, m.b));
+      const kept = keepTb({ a, b }, old?.score, !!old && old.a !== m.a);
+      bracket = applyResult(bracket, m.id, a, b, kept.tb || null);
     }
     ko[div] = { bracket, championId: championOf(bracket) || null };
   });
